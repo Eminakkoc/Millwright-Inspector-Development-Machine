@@ -1,4 +1,40 @@
 #!/usr/bin/env bash
+#
+# commits.sh — git-range queries for the active feature's base-commit..HEAD.
+#
+# CACHE CONTRACTS (Phase 6.2 of the context-optimization plan).
+# This script hosts two cache-freshness checks. Each declares an output enum;
+# every call site MUST handle every value in the declared enum.
+#
+#   change-summary-fresh <feature>
+#     Output: exit-code only (0=fresh, 1=stale, 2=missing).
+#     Cache key: (base-commit, head, feature-id) — see
+#       `docs/context optimization/recommendations.md` § "Cache Key
+#       Specifications" → `change-summary.md`.
+#     Call sites must branch on all three exits. Treating exit !=0 as a
+#     single "regenerate" path is acceptable IF the regeneration logic
+#     handles both stale (overwrite) and missing (initialize from template)
+#     correctly. See `commands/mo-generate-implementation-diagrams.md`
+#     Step 2 / Step 2a for the canonical caller.
+#
+#   diagrams-fresh <feature>
+#     Output: stdout enum + exit code.
+#       Stdout: one of `fresh | stale | skipped | missing`.
+#       Exit:   0 for fresh/stale/skipped (normal-flow outcomes).
+#               1 for missing (diagnostic — invariant violation; callers
+#                              route to a recovery prompt rather than
+#                              silently regenerating).
+#     Cache key: (base-commit, latest-commit-touching-implementation/diagrams/).
+#     Call sites must handle all four enum values. Forgetting one — e.g.,
+#     treating `skipped` as `missing` — silently breaks the skip-recovery
+#     contract. See `commands/mo-generate-implementation-diagrams.md`
+#     Step 1.5 and `commands/mo-continue.md` Review-Resume Step 2.5 for
+#     canonical four-way switches.
+#
+# Discipline rule: no new cache may be added to this script without an
+# entry in this contract block AND in `recommendations.md` § "Cache Key
+# Specifications". Bad cache invalidation produces incorrect workflow
+# decisions (worse than re-doing the work).
 # commits.sh — query and format the commit range base-commit..HEAD.
 #
 # Usage:
@@ -191,8 +227,101 @@ PYEOF
     exit 1
     ;;
 
+  changed-files-only)
+    # Phase 6.5 of the context-optimization plan: extract just the
+    # `## Changed files` section body from `implementation/change-summary.md`,
+    # without any of the surrounding analysis sections (`## Detected
+    # entrypoints`, `## Suspected flows`, `## Omitted from analysis`, frontmatter).
+    # Used by stages 4, 6, 8 when the consumer only needs the file index
+    # (e.g., deciding which diagrams to refresh) and re-running `git diff`
+    # would burn cache. Returns the body of the section as-is — caller is
+    # responsible for parsing if they need structured fields.
+    #
+    # If change-summary.md does not exist or is stale, this command does NOT
+    # auto-regenerate — the caller is expected to gate via `change-summary-fresh`
+    # first. A stale or missing summary surfaces as exit 2 (so it can't be
+    # silently confused with a fresh empty index).
+    feature="${1:?feature required}"
+    summary_file="$(mo_impl_dir "$feature")/change-summary.md"
+    if [[ ! -f "$summary_file" ]]; then
+      echo "changed-files-only: $summary_file not found (run change-summary-fresh first to gate)" >&2
+      exit 2
+    fi
+    python3 - "$summary_file" <<'PYEOF'
+import re, sys
+path = sys.argv[1]
+with open(path) as f:
+    content = f.read()
+m = re.search(r'(?:^|\n)## Changed files\s*\n(.*?)(?=\n## |\Z)', content, re.DOTALL)
+if not m:
+    sys.stderr.write(f"changed-files-only: no `## Changed files` section in {path}\n")
+    sys.exit(1)
+print(m.group(1).strip())
+PYEOF
+    ;;
+
+  diagrams-fresh)
+    # Multi-state freshness output for implementation/diagrams/. Prints one of
+    # `fresh|stale|skipped|missing` to stdout. Exit codes:
+    #   0 — for `fresh`, `stale`, `skipped` (normal-flow outcomes)
+    #   1 — for `missing` (diagnostic — invariant violation; callers route to
+    #       a recovery prompt rather than silently regenerating)
+    #
+    # Cache key for `stale` detection: (base-commit,
+    #   latest-commit-touching-implementation/diagrams/).
+    # See `docs/context optimization/recommendations.md` § "Cache Key
+    # Specifications" → `diagrams-fresh` for the canonical contract.
+    feature="${1:?feature required}"
+    diagrams_dir="$(mo_impl_dir "$feature")/diagrams"
+    skipped="$(mo_fm_get "$(mo_progress_file)" '.active.implementation-diagrams-skipped' 2>/dev/null || echo 'false')"
+
+    if [[ "$skipped" == "true" ]]; then
+      # Invariant: when skipped=true the directory must NOT exist. /mo-draw-diagrams
+      # removes the directory FIRST, then sets the marker, so a crash in between
+      # leaves skipped=false (default) AND no directory → falls into the missing
+      # branch below. Surface a diagnostic if both are true (invariant violation).
+      if [[ -d "$diagrams_dir" ]] && [[ -n "$(find "$diagrams_dir" -maxdepth 1 -name '*.puml' -print -quit 2>/dev/null)" ]]; then
+        echo "missing"
+        echo "diagrams-fresh: invariant violation — implementation-diagrams-skipped=true but $diagrams_dir contains .puml files. Recover via /mo-draw-diagrams (will offer regeneration)." >&2
+        exit 1
+      fi
+      echo "skipped"
+      exit 0
+    fi
+
+    # skipped=false → check for actual .puml files
+    if [[ ! -d "$diagrams_dir" ]] || [[ -z "$(find "$diagrams_dir" -maxdepth 1 -name '*.puml' -print -quit 2>/dev/null)" ]]; then
+      echo "missing"
+      exit 1
+    fi
+
+    # Directory exists with .puml files. Compute freshness against the most
+    # recent commit that touched the diagrams directory.
+    base_commit="$(mo_fm_get "$(mo_progress_file)" '.active.base-commit' 2>/dev/null || echo '')"
+    if [[ -z "$base_commit" || "$base_commit" == "null" ]]; then
+      # No base-commit yet (pre-stage-3) — can't compute freshness; treat as stale.
+      echo "stale"
+      exit 0
+    fi
+
+    last_diagram_commit="$(git log -1 --format=%H -- "$diagrams_dir" 2>/dev/null || echo '')"
+    if [[ -z "$last_diagram_commit" ]]; then
+      # Diagrams not committed yet — count from base.
+      new_since_diagrams="$(git rev-list --count "${base_commit}..HEAD" 2>/dev/null || echo 0)"
+    else
+      new_since_diagrams="$(git rev-list --count "${last_diagram_commit}..HEAD" 2>/dev/null || echo 0)"
+    fi
+
+    if [[ "$new_since_diagrams" == "0" ]]; then
+      echo "fresh"
+    else
+      echo "stale"
+    fi
+    exit 0
+    ;;
+
   *)
-    echo "usage: commits.sh {list|yaml|populate-requirements|changed-files|change-summary-fresh} ..." >&2
+    echo "usage: commits.sh {list|yaml|populate-requirements|changed-files|changed-files-only|change-summary-fresh|diagrams-fresh} ..." >&2
     exit 2
     ;;
 esac

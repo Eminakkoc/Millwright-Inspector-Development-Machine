@@ -6,6 +6,8 @@ description: Render diagrams of the implementation (commit range base-commit..HE
 
 Generates the single set of diagrams the overseer reviews at stage 5. Each diagram shows the **implemented** behaviour of `base-commit..HEAD` with **pre-existing** participants, classes, and flows kept in view as framed/shaded context so the overseer can spot what changed at a glance.
 
+**Main-read budget (stage 4).** Allowed in main: `change-summary.md` (cached via `commits.sh change-summary-fresh`), `progress.md`, drift-probe filesystem state. Forbidden in main: diagram-source generation reads — delegated to a fresh sub-agent (Phase 3.1) under the per-event prompt gate. See `docs/workflow-spec.md` § "Main-read budget gates by stage" for the canonical table.
+
 ## Execution
 
 ### Step 1 — Resolve inputs
@@ -18,9 +20,31 @@ dest_dir="$data_root/workflow-stream/$active_feature/implementation/diagrams"
 mkdir -p "$dest_dir"
 ```
 
+### Step 1.5 — Diagram-set freshness check (skip regeneration when fresh)
+
+Before doing any diagram work, check whether the existing set is already current. The `diagrams-fresh` subcommand returns one of `fresh | stale | skipped | missing` (see `scripts/commits.sh diagrams-fresh` for the contract):
+
+```bash
+freshness="$($CLAUDE_PLUGIN_ROOT/scripts/commits.sh diagrams-fresh "$active_feature")"
+freshness_exit=$?
+```
+
+Branch on the output:
+
+- **`fresh`** (exit 0) — `implementation/diagrams/` exists with `.puml` files AND no commits since the last diagram-render commit. Print *"diagrams already current — skipping regeneration"* and exit 0. Do NOT proceed to Step 2.
+- **`stale`** (exit 0) — proceed to Step 2 to regenerate. (This is the typical case at stage-4 entry: diagrams either don't exist yet or new commits have landed.)
+- **`skipped`** (exit 0) — `implementation-diagrams-skipped=true`. This command was invoked anyway (most likely from the manual recovery path or stage-7 refresh). Proceed to Step 2 to regenerate; after success, the caller (`/mo-draw-diagrams` or stage-7's Step 2.5) is responsible for clearing `implementation-diagrams-skipped=false`.
+- **`missing`** (exit non-zero) — invariant violation diagnostic. Surface to the overseer:
+
+  > "diagrams-fresh returned `missing` for `$active_feature` — the workflow expected either `implementation/diagrams/` with `.puml` files OR `implementation-diagrams-skipped=true`, but neither holds. This may be the result of a partial run. Run `/mo-draw-diagrams` to regenerate, or `/mo-resume-workflow` for a state diagnosis."
+
+  Then exit non-zero. Do NOT silently regenerate — the routing layer in callers handles the recovery prompt.
+
 ### Step 2 — Ensure `implementation/change-summary.md` is current (AI work)
 
 Diagram generation reads from a cached analysis artifact instead of re-running the codebase scan from scratch. `/mo-update-blueprint` writes the same artifact when it runs in the same stage-4 turn (post-chain drift refresh), so the analysis happens once per `base-commit..HEAD` range.
+
+**Cache contract (load-bearing — do NOT bypass).** The `change-summary-fresh` check is the gate that prevents this command and `/mo-update-blueprint` from independently re-walking the codebase for the same `(base-commit, HEAD)` range. Both consumers MUST call `commits.sh change-summary-fresh` before regenerating; a future change that reads `change-summary.md` directly without the freshness gate would re-introduce the double-walk this cache exists to prevent. See `docs/context optimization/recommendations.md` § "Cache Key Specifications" → `change-summary.md` for the canonical key.
 
 ```bash
 summary_file="$dest_dir/../change-summary.md"
@@ -83,9 +107,43 @@ Now build each diagram subject from `change-summary.md` + targeted re-reads:
 1. **New** — actors, participants, messages, classes, and flows introduced by `base-commit..HEAD`. Derive from `## Detected entrypoints` and `## Suspected flows`, with diff hunks for the underlying code where needed.
 2. **Existing** — the pre-existing participants, classes, and flows the new code touches or sits next to. Derive from the unchanged side of touched files (read only what the bounded context policy allows). Only include enough context to make the new bits legible — do not redraw the whole system.
 
+### Step 2c — Seed `implementation/diagrams/` from `blueprints/current/diagrams/` (Phase 3.5)
+
+Stage 5 review and stage 8 archival both expect `implementation/diagrams/` to be a **complete diagram set** — one file per subject, matching the stage-2 set per `docs/workflow-spec.md` § "Diagram conventions" (subjects/filenames must match across both folders so the overseer can diff equivalent diagrams). If only changed-area diagrams are written to `implementation/diagrams/`, the unchanged subjects would be missing entirely and stage-5 review would be incomplete.
+
+To preserve the complete-set invariant, **seed the `.puml` files** from `blueprints/current/diagrams/` before any selective re-rendering. Copy ONLY `.puml` files — do NOT copy `README.md` (the blueprint and implementation README schemas are deliberately distinct: blueprint READMEs require `requirements-id`; implementation READMEs require `id` + `stage: implementation` and intentionally don't carry `requirements-id`. Copying would fail schema validation either way).
+
+```bash
+blueprint_diagrams="$data_root/workflow-stream/$active_feature/blueprints/current/diagrams"
+if [[ -d "$blueprint_diagrams" ]]; then
+  # Use cp -n so a re-run idempotently preserves any already-generated
+  # implementation versions. .puml only — README is generated fresh in Step 4.
+  for puml in "$blueprint_diagrams"/*.puml; do
+    [[ -f "$puml" ]] || continue
+    cp -n "$puml" "$dest_dir/$(basename "$puml")"
+  done
+fi
+```
+
+After this step, `implementation/diagrams/` contains one `.puml` per stage-2 subject. Step 3 then identifies which subjects are affected by `base-commit..HEAD` and re-renders only those — overwriting the seeded copies for affected subjects, leaving unchanged subjects with their stage-2 content.
+
+**Wording caveat for seeded-only diagrams.** Stage-2 and stage-4 conventions share the colour scheme but differ in baseline semantics: stage-2's legend reads "Planned" / "to be implemented" (per the cycle flavor); stage-4's reads "new in this implementation" (against the `base-commit` baseline). For subjects that received no implementation commits this cycle, the seeded `.puml` retains the stage-2 wording verbatim — which is correct (there was no implementation work to recolour, and the stage-2 design intent is the most accurate available representation), but is a presentation deviation from the standard stage-4 convention.
+
+The plan does NOT programmatically rewrite seeded legends (fragile string surgery on PlantUML). Instead, the freshly-generated implementation `README.md` (Step 4) and the stage-5 handoff message in `commands/mo-continue.md` Resume Step 7 surface the convention so the overseer interprets seeded-only diagrams as "design intent preserved without implementation changes in this cycle."
+
 ### Step 3 — Generate diagrams (AI + PlantUML MCP)
 
-Follow `docs/workflow-spec.md` § "Diagram conventions":
+**Selective re-render (Phase 3.5).** After Step 2c seeded `.puml` files from `blueprints/current/diagrams/`, identify which diagram subjects are actually affected by `base-commit..HEAD`. Sources for the "affected subjects" set:
+
+- `change-summary.md` `## Detected entrypoints` — the new public surface this cycle delivers, mapped back to which diagram subject covers it (e.g., new payment-webhook entrypoint → `sequence-payment-submit.puml`).
+- `change-summary.md` `## Suspected flows` — flows the implementation enables, mapped to the matching `sequence-<flow>.puml`.
+- `change-summary.md` `## Changed files` grouped by area — areas that map to a structural diagram subject (e.g., `services/payments/` → `class-payment-domain.puml` or `component-payment-pipeline.puml`).
+
+**Re-render the affected subjects only.** Overwrite their seeded `.puml` files in `implementation/diagrams/` with the freshly-rendered content using the existing-vs-new convention against the `base-commit` baseline. **Leave unchanged subjects** (those with no entries in the affected set) as the seeded stage-2 versions — those subjects had no implementation work this cycle, so the stage-2 design intent is the most accurate available representation.
+
+A 30-file change touching only `src/payments/` should re-render only the payments-related diagrams; the audit-log diagrams stay as their stage-2 versions.
+
+**Diagram set caps still apply.** Follow `docs/workflow-spec.md` § "Diagram conventions":
 
 - **`use-case-<feature>.puml`** — mandatory, exactly one. Implemented capabilities with framed actors that pre-existed.
 - **`sequence-<flow>.puml`** — 2–3 per feature, one per significant implemented flow. Render 1 only when the implementation genuinely has a single significant flow; **never render more than 3** (if more than 3 candidates exist, pick the most diff-worthy; surface a decomposition signal to the overseer if the count keeps creeping up).
@@ -116,20 +174,40 @@ Use this fixed visual convention so the overseer can read every diagram the same
 
   At stage 2 the legend's right-column wording shifts to reflect the cycle flavor (see `docs/blueprint-regeneration.md` Step C): for a bugfix cycle the legend reads "current (wrong) behavior" / "corrected behavior"; for an improvement cycle it reads "current capability" / "improved capability"; for greenfield it reads "pre-existing context" / "to be implemented." The colours stay the same — only the legend wording adapts.
 
-Use the PlantUML MCP (`plantuml` server) to render each diagram. Save the `.puml` source. Skip the `.svg` render — the millwright never reads `.svg` files (they're banned by the review commands' hard exclusion), and PlantUML sources are what the overseer diffs.
+Use the PlantUML MCP (`plantuml` server) to render each diagram. Save the `.puml` source.
+
+**`.puml`-only output by default — gated by `active.diagram-rendering`.** Read the field:
+
+```bash
+diagram_rendering="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get diagram-rendering 2>/dev/null || echo 'never')"
+```
+
+When `diagram_rendering=never` (default for every feature workflow), produce ONLY the `.puml` source files — do NOT render `.svg` or `.png`. The millwright never reads `.svg` files (they're banned by the review commands' hard exclusion), and PlantUML sources are what the overseer diffs. This is the path for >99% of cycles.
+
+When `diagram_rendering=on-request` (explicitly opted in by the overseer for this feature), render `.svg` alongside `.puml` only on an explicit request — never automatically as part of the generation flow. The "explicit request" trigger is intentionally not wired here yet; the field reserves the lever. If a CI / visual-QA scenario emerges, the trigger can be added without re-plumbing the gate.
 
 ### Step 4 — Write diagrams/README.md
 
+**Generate a fresh implementation README** — do NOT copy the blueprint README. The blueprint and implementation README schemas are deliberately distinct: blueprint READMEs require `requirements-id` (and forbid other fields via `additionalProperties: false`), while implementation READMEs require `id` + `stage: implementation` and intentionally do NOT carry `requirements-id` (see `schemas/diagrams-readme-implementation.schema.yaml:8-11` for the rationale).
+
+Use `scripts/uuid.sh` to mint the new id, then write the README manually with the literal frontmatter:
+
 ```yaml
 ---
-id: <uuid>
+id: <uuid-from-uuid.sh>
 stage: implementation
 ---
 ```
 
-Body: bullet list of diagrams with a one-line purpose each. If the implementation added a flow that wasn't in `requirements.md`, or omitted one that was, call it out under a `## Notable deviations from requirements` subsection — that's a heads-up for the overseer review at stage 5.
+Do NOT use `frontmatter.sh init diagrams-readme-implementation` — that path requires `templates/diagrams-readme-implementation.md.tmpl` which does not exist in the repo (`scripts/frontmatter.sh:20` will fail). Then validate the written file: `frontmatter.sh validate <path> diagrams-readme-implementation`.
 
-Use `$CLAUDE_PLUGIN_ROOT/scripts/uuid.sh` for the id.
+Body: bullet list of diagrams with a one-line purpose each, with each entry tagged as either `re-rendered` (Step 3 freshly rendered this subject from `base-commit..HEAD`) or `seeded-only` (seeded from stage-2 in Step 2c; no implementation commits touched this subject's area).
+
+When at least one subject is `seeded-only`, prepend the body with a short convention note:
+
+> *Some subjects below are tagged `seeded-only` — their `.puml` files are verbatim copies of the stage-2 blueprint diagrams. Those subjects had no implementation commits in `base-commit..HEAD`, so the stage-2 design intent is the most accurate available representation. Their legend wording (e.g., "Planned" or "to be implemented") follows stage-2 conventions; interpret them as "design preserved without implementation changes in this cycle." `re-rendered` subjects use the standard stage-4 wording against the `base-commit` baseline.*
+
+If the implementation added a flow that wasn't in `requirements.md`, or omitted one that was, call it out under a `## Notable deviations from requirements` subsection — that's a heads-up for the overseer review at stage 5.
 
 ### Step 5 — Report
 

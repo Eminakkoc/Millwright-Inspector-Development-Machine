@@ -37,6 +37,69 @@ If `target` is not `implementation`, error out:
 
 > "Only `--target=implementation` is supported today. To regenerate requirements-level diagrams, use `/mo-update-blueprint <reason>` (which rotates the blueprint and regenerates `requirements.md` / `config.md` / `diagrams/` from the implementation)."
 
+### Step 1.5 — Per-event diagram prompt (stage 4)
+
+Read the diagram-prompt setting and the skip marker:
+
+```bash
+diagram_prompt="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get diagram-prompt 2>/dev/null || echo 'prompt')"
+skipped="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get implementation-diagrams-skipped 2>/dev/null || echo 'false')"
+```
+
+**Branch on `(diagram_prompt, skipped)`:**
+
+- **`diagram_prompt=auto`** — skip the prompt entirely. The overseer opted into auto-generation earlier in this feature's workflow. Proceed to Step 2 (dispatch). After dispatch succeeds, clear `implementation-diagrams-skipped=false` (in case it was set from an earlier skip).
+- **`diagram_prompt=prompt` AND `skipped=true`** — recovery path: the overseer answered `n` at stage 4 earlier and is now manually invoking `/mo-draw-diagrams` to generate. Use the recovery prompt below instead of the stage-4 prompt.
+
+  **Recovery prompt** (Phase 3.4):
+
+  > "Stage-4 diagrams were skipped earlier this cycle. Generate them now? Reply:
+  >   - `y` — delegate to a fresh sub-agent now (~30s); covers the full `base-commit..HEAD` range and clears the skip marker so stage 8 archives the diagrams.
+  >   - `n` — keep the skip; stage-2 blueprint diagrams remain authoritative for this cycle."
+
+  Optional convenience: accept a `--force` (or `--generate`) flag in `$ARGUMENTS` that bypasses the recovery prompt and proceeds to dispatch directly. Useful for scripted recovery.
+
+  Branch on the answer:
+
+  - **`y` (or `--force`)** — proceed to Step 2 (dispatch). After dispatch succeeds, clear the marker:
+    ```bash
+    $CLAUDE_PLUGIN_ROOT/scripts/progress.sh set "implementation-diagrams-skipped=false"
+    ```
+  - **`n`** — exit 0 with no changes. The skip remains in place.
+
+- **`diagram_prompt=prompt` AND `skipped=false`** — fall through to the stage-4 prompt below.
+
+**Stage-4 prompt** (offered when `diagram_prompt=prompt`):
+
+> "Stage 4 is about to generate implementation diagrams for `<active_feature>`. Reply:
+>   - `y` — generate `.puml` source files now (delegated to a fresh sub-agent; ~30s).
+>   - `n` — skip diagram generation for this stage. The blueprint's stage-2 diagrams remain authoritative; review at stage 5 will reference those.
+>   - `auto` — generate, and don't ask again for diagrams during the rest of this feature's workflow (resets when the next feature activates)."
+
+Wait for the reply. Branch on the answer:
+
+- **`y`** — proceed to Step 2 (dispatch). After the dispatch succeeds, clear the skip marker (in case it was set from an earlier skip): `progress.sh set implementation-diagrams-skipped=false`.
+- **`auto`** — persist the preference, then proceed to Step 2:
+  ```bash
+  $CLAUDE_PLUGIN_ROOT/scripts/progress.sh set "diagram-prompt=auto"
+  ```
+  After the dispatch succeeds, also clear `implementation-diagrams-skipped=false`.
+- **`n`** — record the skip and clean any stale directory. **Order matters for crash safety**: remove the directory FIRST, then set the marker. If a session breaks between step 1 and step 2, the next `/mo-continue` sees `implementation-diagrams-skipped=false` (default) AND no `implementation/diagrams/` directory — `diagrams-fresh` (Phase 3.4) returns `missing`, which routes to the safe diagnostic recovery path. The reverse order would leave a window where the marker says skipped but stale `.puml` files still exist, and stage 8's archival loop (`[[ -d ... ]] && mv -n ...`) would silently archive them.
+
+  ```bash
+  data_root="$($CLAUDE_PLUGIN_ROOT/scripts/data-root.sh)"
+  active_feature="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get-active)"
+  impl_diagrams="$data_root/workflow-stream/$active_feature/implementation/diagrams"
+  [[ -d "$impl_diagrams" ]] && rm -rf "$impl_diagrams"
+  $CLAUDE_PLUGIN_ROOT/scripts/progress.sh set "implementation-diagrams-skipped=true"
+  ```
+
+  Then exit cleanly:
+
+  > "Skipped stage-4 diagram generation. Stage-5 review will reference the stage-2 blueprint diagrams under `blueprints/current/diagrams/`. To generate later, run `/mo-draw-diagrams` again."
+
+  Stop. Do NOT proceed to Step 2.
+
 ### Step 2 — Dispatch to the implementation generator
 
 For `--target=implementation`, run the body of `mo-generate-implementation-diagrams.md`. This is a thin wrapper — no behavior change. The implementation generator handles:

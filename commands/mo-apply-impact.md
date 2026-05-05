@@ -6,6 +6,8 @@ description: Generate blueprints/current/ for the active feature — requirement
 
 **Stage 2 launcher.** Pops the next feature off the queue, creates its `progress.md`, and generates the blueprint artifacts (requirements, config, diagrams).
 
+**Main-read budget (stage 2).** Allowed in main: `summary.md` (active feature section + cross-cutting), generated artifacts. Forbidden in main: codebase grounding pass — delegated to a fresh sub-agent (Phase 2.1) which writes `implementation/grounding-report.md`. See `docs/workflow-spec.md` § "Main-read budget gates by stage" for the canonical table.
+
 ## Invocation
 
 The millwright auto-invokes this command on two triggers — the overseer does **not** type it in the happy path:

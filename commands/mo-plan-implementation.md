@@ -202,7 +202,13 @@ Then write each section per the template's guide:
 - **`## Active scope`** — `branch: <primer_branch>`, `base-commit: <primer_base_commit>`, and one bullet per id in `implementing_ids` (pull each item's description from the active cycle's `todo-list.md`'s matching line; resolve the path via `$CLAUDE_PLUGIN_ROOT/scripts/quest.sh dir`).
 - **`## Goals (this cycle)`** — 5–20 line excerpt extracted from `requirements.md`'s `## Goals (this cycle)` section. Tighten — the chain reads the full file only if the primer is insufficient.
 - **`## Journal context (active feature)`** — 5–20 line digest from the active cycle's `summary.md`'s `## Feature: <active_feature>` section (resolve the path via `quest.sh dir`), plus any items from `## Cross-cutting constraints` that materially affect this feature.
-- **`## Likely-relevant skills & rules`** — at most five entries from `config.md`'s auto-block. Each entry: `<name>: <one-line reason>; path: <.claude/skills/...>`. Off-topic skills are reachable via `config.md`; do not list them here.
+- **`## Likely-relevant skills & rules`** — at most five entries from `config.md`'s **auto-block** (Phase 5.4 — pre-pass tighter skill metadata). Each entry: `<name>: <one-line reason>; path: <.claude/skills/...>`. Off-topic skills are reachable via `config.md`; do not list them here.
+
+  **Read from `config.md` only — do NOT enumerate `.claude/skills/` or `.claude/rules/` directly.** Stage 2's `mo-apply-impact` already produced `config.md`'s three-section list (`## Skills`, `## Rules`, `## Load on demand`) by filtering the raw skill library to what's likely-relevant for this cycle. The primer's job is to surface the highest-priority subset; reading the raw directories at stage 3 would re-do work stage 2 already did and pull every skill name into main context. Use `frontmatter.sh get`-style section extraction or, when `commands/mo-run.md`'s artifact-excerpt commands ship (Phase 6.5), a dedicated slice command — both produce the same result.
+
+  Quantitative budget: **≤ 5 entries inline**. If `config.md`'s `## Skills` and `## Rules` sections together carry ≤ 10 entries, pass them inline as bullets. If more than 10, pick the most-likely-relevant five for the primer and reference `config.md` itself by path for the rest.
+
+The `## Execution-mode hints` section is template-emitted (Phase 5.3) and does not need editing — it carries the concrete thresholds for `subagent-driven-development` and `direct` mode that the chain reads when deciding execution.
 
 The `## On-demand canonical files` section is template-emitted and does not need editing — it lists the files the chain should consult when the primer falls short.
 

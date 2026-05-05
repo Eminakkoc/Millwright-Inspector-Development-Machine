@@ -1,0 +1,56 @@
+$schema: "http://json-schema.org/draft-07/schema#"
+$id: millwright-overseer-development-machine/context-ledger.schema.yaml
+title: quest/<active-slug>/context-ledger.md frontmatter
+description: >
+  Per-cycle context-budget telemetry artifact. Phase 6.4 of the
+  context-optimization plan. Records context-heavy events (large reads,
+  delegations, sub-agent invocations) so regressions are detectable: if
+  a stage starts reading code in main when its main-read budget says it
+  shouldn't, the row's `location: main` for a `large` token-class read
+  surfaces the violation in the ledger.
+
+  Lives at `quest/<active-slug>/context-ledger.md` alongside the rest of
+  the cycle's quest files (todo-list.md, summary.md, progress.md,
+  queue-rationale.md). Persists permanently under the cycle's slug
+  subfolder once the cycle ends — historical telemetry is preserved as
+  part of the task archive.
+
+  Body content (the table itself) is appended-to by `scripts/ledger.sh
+  append`; the script does NOT validate frontmatter on every append (the
+  hook handles that on Edit/Write). Each command that does a context-heavy
+  read or delegation appends one row at the moment of the read.
+
+  Token class is intentionally coarse — exact accounting is unnecessary
+  for regression detection. Buckets: `small` (~under 2k tokens), `medium`
+  (~2k–20k), `large` (~over 20k).
+
+type: object
+additionalProperties: false
+required:
+  - id
+  - cycle-slug
+
+properties:
+  id:
+    type: string
+    pattern: "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"
+    description: UUID for cross-references; minted via scripts/uuid.sh.
+
+  cycle-slug:
+    type: string
+    minLength: 1
+    description: >
+      The active cycle's slug (`YYYY-MM-DD-<journal-slugs>` format with optional
+      hash suffix). Mirrors the parent directory name; included in frontmatter
+      for explicit cross-reference.
+
+  contributors:
+    type: array
+    items:
+      type: string
+    description: Optional list of contributors.
+
+  date:
+    type: string
+    format: date
+    description: Optional ISO-8601 date the ledger was first opened.

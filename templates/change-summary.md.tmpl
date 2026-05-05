@@ -29,7 +29,23 @@ Cached analysis of `{{BASE_COMMIT}}..{{HEAD}}`. Shared by `mo-generate-implement
      `status` letters: A = added, M = modified, D = deleted, R = renamed, C = copied.
      Binary diffs show "-/-" for adds/dels.
      Group by directory, layer, or feature concern — pick whichever makes the change
-     legible. Do NOT paste full diffs. -->
+     legible.
+
+     STRICT bounds (Phase 5.1 of the context-optimization plan — load-bearing for
+     stages 4, 6, 8 token budgets):
+
+     - Do NOT paste full diffs into this section. The file index + adds/dels
+       counts is the dominant content; consumers run `git diff` themselves
+       when they need actual hunks.
+     - If a per-file `<one-line purpose>` annotation is genuinely insufficient
+       and a small excerpt helps (e.g., a non-obvious schema migration), keep
+       the excerpt to ≤ 50 lines for that file AND ≤ 500 lines total across
+       all files combined. Past those bounds, append `(truncated)` to the file's
+       bullet and stop — the consumer reads the full hunk via `git diff` if
+       needed.
+     - If you hit the 500-line global cap, also write `truncated: <skipped-file-count>`
+       into the frontmatter (an optional field — schema does not require it).
+       This signals the consumer that the index is partial. -->
 
 ## Detected entrypoints
 

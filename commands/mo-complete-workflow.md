@@ -6,6 +6,8 @@ description: Finalize the active feature's workflow — archive blueprints, clea
 
 **Stage 8 finalizer.** Archives the blueprint into `history/`, clears the implementation folder, resets `progress.md`, and advances the workflow queue to the next feature.
 
+**Main-read budget (stage 8).** Allowed in main: `change-summary.md` (cached), archived blueprint files. The current implementation only rotates and archives — there is no codebase regeneration walk at stage 8 (the next feature's stage 2 builds the next `current/`). If a future change introduces stage-8 regeneration, it should be delegated to a fresh sub-agent per Phase 2.1's pattern. See `docs/workflow-spec.md` § "Main-read budget gates by stage" for the canonical table.
+
 ## Invocation
 
 The millwright auto-invokes this command on **stage-7 clean exit** — that is, immediately after the `/mo-continue` handler sets `overseer-review-completed=true` and advances `active.current-stage` to 7. (Stage 8 is conceptual — it names the finalizer phase but is not a persisted `active.current-stage` value; this command's `progress.sh finish` call sets `active=null` rather than incrementing the stage counter to 8.) The overseer does **not** type `/mo-complete-workflow` in the happy path; reaching stage 7 is itself the signal.
@@ -203,7 +205,7 @@ fi
 
 (Skipped on Branch I. Idempotent for Branch 0a re-entry — `mv -n` refuses to overwrite, so artifacts already moved on a prior partial run stay put.)
 
-Stage 4 rotated `blueprints/current/` into `blueprints/history/v${version}/`. The just-finished implementation artifacts (`overseer-review.md`, `review-context.md`, `change-summary.md`, and `diagrams/`) are part of the same audit record, so move them into a sibling `implementation/` subfolder under the new history version. This preserves every finding (including any `status: open` ones the overseer chose to defer) and the diagrams of `base-commit..HEAD` for posterity. The live `implementation/` folder is then empty and the next feature's stage-2 launcher re-creates children there.
+Stage 4 rotated `blueprints/current/` into `blueprints/history/v${version}/`. The just-finished implementation artifacts (`overseer-review.md`, `review-context.md`, `change-summary.md`, `grounding-report.md`, and `diagrams/`) are part of the same audit record, so move them into a sibling `implementation/` subfolder under the new history version. This preserves every finding (including any `status: open` ones the overseer chose to defer), the stage-2 grounding report, and the diagrams of `base-commit..HEAD` for posterity. The live `implementation/` folder is then empty and the next feature's stage-2 launcher re-creates children there.
 
 ```bash
 if [[ "${branch_route:-III}" == "III" || "${branch_route:-}" == "0a" || "${branch_route:-}" == "II" ]]; then
@@ -214,7 +216,15 @@ if [[ "${branch_route:-III}" == "III" || "${branch_route:-}" == "0a" || "${branc
   # Move each artifact if it exists. Using `mv -n` keeps it idempotent if the
   # command is re-invoked after a partial run; mv would otherwise refuse to
   # overwrite an existing target.
-  for artifact in overseer-review.md review-context.md change-summary.md; do
+  #
+  # Lazy archival validation (Phase 5.5 of the context-optimization plan):
+  # `mv` is a filesystem operation, not an Edit/Write — the PostToolUse hook
+  # does NOT fire frontmatter validation on moved files. Archived files are
+  # treated as immutable and frozen post-rotation, so re-validation would be
+  # noise. The live counterparts were validated when written; if a post-write
+  # tampering happened before rotation, that's a different problem from
+  # archival. Do not add explicit `frontmatter.sh validate` calls here.
+  for artifact in overseer-review.md review-context.md change-summary.md grounding-report.md; do
     [[ -e "$impl_dir/$artifact" ]] && mv -n "$impl_dir/$artifact" "$archive_dir/$artifact"
   done
   [[ -d "$impl_dir/diagrams" ]] && mv -n "$impl_dir/diagrams" "$archive_dir/diagrams"
@@ -222,7 +232,7 @@ if [[ "${branch_route:-III}" == "III" || "${branch_route:-}" == "0a" || "${branc
 fi
 ```
 
-The historical snapshot is then complete: `blueprints/history/v${version}/` carries the rotated `requirements.md`, `config.md`, `diagrams/`, `primer.md`, `reason.md`, AND `implementation/` (review file, review-context, change-summary, implementation diagrams). PMs querying past cycles can read the full audit trail from this single folder per feature-version.
+The historical snapshot is then complete: `blueprints/history/v${version}/` carries the rotated `requirements.md`, `config.md`, `diagrams/`, `primer.md`, `reason.md`, AND `implementation/` (review file, review-context, change-summary, grounding-report, implementation diagrams). PMs querying past cycles can read the full audit trail from this single folder per feature-version.
 
 ### Step 6 — Finish the active feature
 
@@ -236,6 +246,15 @@ if [[ "${branch_route:-III}" == "III" || "${branch_route:-}" == "0a" || "${branc
 fi
 remaining="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh queue-remaining 2>/dev/null || echo '')"
 ```
+
+**Atomic finalize affordance (Phase 5.5).** `progress.sh finish` accepts optional `--set field=value` pairs (mirroring `advance-to`) so future stage-8 logic that needs to write a top-level `progress.md` field at finalize time can bundle the write atomically:
+
+```bash
+# Example (no current call site uses this — affordance is reserved for future):
+$CLAUDE_PLUGIN_ROOT/scripts/progress.sh finish --set last-completion=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+```
+
+The `--set` writes target top-level fields only; setting `active.*` is rejected because `active` is being cleared. Do NOT introduce `advance-to 7 -1` as a finalize mechanism — `advance-to` only permits the whitelisted `3→5 | 5→7 | 6→7` transitions; stage-7 finalization stays on `progress.sh finish`.
 
 ### Step 7 — Report and auto-continue
 

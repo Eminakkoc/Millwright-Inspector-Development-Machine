@@ -59,6 +59,10 @@ properties:
           - execution-mode
           - planning-mode
           - review-mode
+          - review-mode-suggestion
+          - diagram-prompt
+          - diagram-rendering
+          - implementation-diagrams-skipped
           - implementation-completed
           - overseer-review-completed
           - worktree-path
@@ -122,6 +126,65 @@ properties:
               has the millwright address findings in the main session using
               review-context.md + overseer-review.md as required first reads.
               `none` until /mo-review records the choice.
+          review-mode-suggestion:
+            type: string
+            enum: [brainstorming, direct, none]
+            description: >
+              Hint persisted by stage 5 (`/mo-continue` Overseer Step 1.5)
+              after canonicalizing findings. Computed from the scope
+              distribution: `direct` when 100% of currently-open findings
+              have `scope: fix`, `brainstorming` when at least one finding
+              has scope ≠ fix, `none` when there are zero open findings.
+              Stage 6 (`/mo-review` Step 2.6) reads this to set the default
+              of the `review-mode` prompt — `direct` defaults to direct mode
+              with rationale; otherwise the prompt defaults to brainstorming.
+              Distinct from `review-mode`, which records the overseer's
+              actual choice. Initialized to `none` by progress.sh activate
+              and reset; set by stage 5; cleared back to `none` at the next
+              feature's activation.
+          diagram-prompt:
+            type: string
+            enum: [prompt, auto]
+            description: >
+              Per-feature setting for the per-event diagram prompt at stages
+              2 and 4. `prompt` (default) — ask the overseer before each
+              diagram-generation event. `auto` — skip the prompt and proceed
+              to generation directly. The overseer can opt into `auto` once
+              per feature workflow when answering the diagram prompt; the
+              field resets to `prompt` at the next feature's `activate`.
+              Quest-cycle-wide preferences would belong outside `active.*`
+              (e.g., a top-level field) — that is intentionally out of
+              scope here.
+          diagram-rendering:
+            type: string
+            enum: [never, on-request]
+            description: >
+              Per-feature setting controlling whether SVG/PNG renders are
+              produced alongside the `.puml` source. `never` (default) —
+              `.puml`-only output; SVG/PNG are NOT generated. `on-request`
+              — SVG/PNG are generated when an explicit request is made
+              (e.g., the overseer asks during the per-event prompt or via
+              a follow-up command). Even on `on-request`, rendering happens
+              only on explicit ask; it is never automatic. Stays `never`
+              for the entire feature workflow unless the overseer changes
+              it; resets to `never` at the next feature's `activate`.
+              Out of scope for the workflow plan: deciding *when* SVG/PNG
+              are useful (e.g., for CI / visual QA). The field reserves
+              the lever; specific rendering call sites stay deferred.
+          implementation-diagrams-skipped:
+            type: boolean
+            description: >
+              True when the overseer answered `n` to stage 4's per-event
+              diagram prompt. Records that no `.puml` files exist under
+              `implementation/diagrams/` by design (not because of a partial
+              run). Stage 5's overseer-review handoff and Stage 7's
+              diagram-refresh prompt branch on this marker so they don't
+              point the overseer at a non-existent folder. The directory
+              MUST NOT exist when this is true — `/mo-generate-implementation-diagrams.md`
+              removes any pre-existing directory BEFORE setting the marker
+              to preserve the invariant under crash. Cleared back to false
+              when a subsequent stage-4 `y`/`auto` or stage-7 generation
+              succeeds. Resets to false at the next feature's `activate`.
           implementation-completed:
             type: boolean
           overseer-review-completed:

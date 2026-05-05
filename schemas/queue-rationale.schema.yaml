@@ -59,3 +59,34 @@ properties:
       Latest batch number. Optional — missing means 1 (back-compat). Step 2A
       appends `## Batch <N+1>` and writes `batch: N+1` in the same operation;
       Step 2B refreshes this when flipping `status: draft → confirmed`.
+  scan-mode:
+    type: string
+    enum:
+      - journal-only
+      - code-aware
+    description: >
+      How the latest batch's ordering was derived. `journal-only` (default) —
+      the proposal came from `summary.md` cross-references and dependency
+      keywords (Phase 4.1 / 4.2 of the context-optimization plan, the cheap
+      path). `code-aware` — the heuristic flagged ambiguity and a fresh
+      sub-agent inspected cross-feature imports (Phase 4.3, the expensive
+      path). Optional — missing means `journal-only` for back-compat with
+      v10-era files. Used together with `summary-md-hash` and
+      `head-when-scanned` as the cache key when deciding whether to re-derive
+      the ordering on a mid-cycle re-entry.
+  summary-md-hash:
+    type: string
+    description: >
+      Optional cache field. Present only when `scan-mode: code-aware`. Hex
+      digest (sha-256, abbreviated) of the cycle's `summary.md` content at
+      scan time. Part of the cache key; if `summary.md` changes mid-cycle
+      (new batch added, edits during overseer review), the digest mismatches
+      and the next code-aware scan re-derives.
+  head-when-scanned:
+    type: string
+    pattern: "^[0-9a-f]{7,40}$"
+    description: >
+      Optional cache field. Present only when `scan-mode: code-aware`. Git
+      SHA of HEAD at the time the sub-agent inspected the codebase. Part of
+      the cache key; if HEAD moves between batches (commits landed) and the
+      scan was code-aware, the cached ordering may be stale and is re-derived.

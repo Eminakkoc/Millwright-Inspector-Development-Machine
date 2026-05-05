@@ -1,0 +1,64 @@
+$schema: "http://json-schema.org/draft-07/schema#"
+$id: millwright-overseer-development-machine/grounding-report.schema.yaml
+title: workflow-stream/<feature>/implementation/grounding-report.md frontmatter
+description: >
+  Stage-2 codebase-grounding report. Written by a fresh sub-agent during
+  /mo-apply-impact's Step A (Codebase-grounding pass) before the
+  requirements.md body is composed. The sub-agent walks the active
+  feature's seam (per todo item descriptions), identifies entrypoints /
+  suspected flows / pre-existing classes, classifies the seam and cycle
+  flavor, and writes this report. Main reads the report to compose the
+  requirements body.
+
+  The report is audit/debug state — not blueprint state. Its lifecycle
+  matches the rest of `implementation/`: archived at stage 8 alongside
+  overseer-review.md, change-summary.md, and diagrams/ under
+  blueprints/history/v[N+1]/implementation/grounding-report.md; deleted
+  on /mo-abort-workflow with the rest of the live implementation folder.
+
+  UUID pattern accepts any RFC 4122 version (v1-v8) with a valid variant
+  nibble — same permissive policy as other workflow schemas. New reports
+  generated via scripts/uuid.sh are v4 by default.
+
+type: object
+additionalProperties: false
+required:
+  - id
+  - feature
+  - seam-classification
+
+properties:
+  id:
+    type: string
+    pattern: "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"
+    description: UUID for cross-references; minted via scripts/uuid.sh.
+
+  feature:
+    type: string
+    minLength: 1
+    pattern: "^[a-z0-9][a-z0-9-]*$"
+    description: >
+      Kebab-case feature name; mirrors the workflow-stream/<feature>/ folder
+      that contains this report's parent implementation/ directory.
+
+  seam-classification:
+    type: string
+    enum: [backend, frontend, mixed, infra]
+    description: >
+      Overall classification of the feature's seam across the items in this
+      cycle. Drives the optional structural-diagram decision in Step C of
+      blueprint-regeneration.md (a `backend` or `mixed` seam may warrant a
+      class or component diagram; `frontend`-only and `infra`-only seams
+      typically don't). When items in the cycle span buckets, the
+      classification is `mixed`.
+
+  contributors:
+    type: array
+    items:
+      type: string
+    description: Optional list of contributors (sub-agent + overseer typically).
+
+  date:
+    type: string
+    format: date
+    description: Optional ISO-8601 date the report was generated.

@@ -38,3 +38,13 @@ properties:
     type: string
     pattern: "^[0-9a-f]{7,40}$"
     description: HEAD at the time the summary was written. Compared against `git rev-parse HEAD` for cache validation. Stale when the chain or review loop adds new commits.
+  truncated:
+    type: integer
+    minimum: 1
+    description: >
+      Optional field — present only when the body's `## Changed files` section
+      hit the 500-line global excerpt cap (Phase 5.1 of the context-optimization
+      plan) and one or more files were skipped from per-file annotations.
+      Records the count of skipped files so consumers know the index is partial.
+      Consumers reading change-summary.md should call `git diff base..HEAD` for
+      authoritative file content when this field is set.

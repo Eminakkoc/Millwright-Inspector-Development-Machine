@@ -92,6 +92,42 @@ A fourth implicit rule: **every artifact is auditable**. Blueprints are rotated 
 
   
 
+### 1.4 Alignment with the wider Software 3.0 / agentic-engineering view
+
+  
+
+The mo-workflow's design predates much of the current vocabulary around agentic AI engineering, but several recurring concepts in that discourse map directly onto its load-bearing decisions. The mapping below is descriptive, not prescriptive — the plugin works the same whether or not the operator buys into any particular framing — but it offers a useful lens for explaining *why* the choices were made.
+
+  
+
+- **Programming is prompting; the context window is the lever.** Rule 1 ("inputs live in files, not in conversation context") and Rule 3 ("layered context loading") operationalize the Software 3.0 view that prompts and curated context are the new programming surface. Every artifact under `workflow-stream/<feature>/` (`requirements.md`, `config.md`, `primer.md`, `review-context.md`, `change-summary.md`) is a deliberately-sized context window for a specific stage's LLM consumer. The `commands/mo-*.md` files are themselves prompts — text the agent reads and follows, not human tutorials.
+
+  
+
+- **Agent-native infrastructure.** Every runbook lives in `commands/*.md` so the agent reads it directly; every workflow `.md` carries YAML frontmatter validated by schema (`hooks/validate-on-write.sh`); the workflow's central state lives in a single LLM-legible `progress.md` rather than a database. An artifact only exists if it's parsable by whichever agent has to read it next — the validate-on-write hook closes that loop by failing the turn the moment an LLM writes invalid YAML.
+
+  
+
+- **Agentic engineering, not vibe coding — in both planning modes.** The mo-workflow lives entirely on the agentic-engineering side of the line. Every feature cycle goes through stage-2 spec review (`requirements.md`, `config.md`, `diagrams/`), stage-3 primer composition, stage-4 implementation diagrams, stage-5 structured findings (`overseer-review.md`), stage-6 review session when findings exist, and stage-8 blueprint rotation + `implementation/` archival. None of those gates is optional — they are the quality bar. The two planning modes differ only in *how the implementation work itself is run*: `planning-mode: brainstorming` invokes the brainstorming → writing-plans → executing-plans → finishing-a-development-branch chain in an isolated session with the chain's own spec/plan/execution approval gates, while `planning-mode: direct` keeps implementation in the main session with the millwright reading `primer.md` first. Direct mode trades the chain's internal ceremony for speed; it does **not** trade away the spec, the diagrams, the findings file, or the rotation history. Vibe coding — letting the agent land an implementation against an unwritten spec with no structured review — is explicitly not what this plugin does.
+
+  
+
+- **Verifiability as a design principle.** LLMs automate well in domains where output can be verified, so every feature cycle produces verifiable artifacts. `requirements.md`'s `commits:` field populated at stage 8 closes the loop between spec and diff; stage-2 blueprint diagrams and stage-4 implementation diagrams share the blue/green existing-vs-new convention so intent-vs-reality diffs are visual; `overseer-review.md` is structured by a finite scope-tier ladder (`fix | re-implement | re-plan | re-spec`) where each tier maps to a specific re-entry point in the chain; the commit range `base-commit..HEAD` is the single canonical implementation contract — the chain's spec/plan files are deliberately NOT tracked because they're internal chain state, not the verifiable surface.
+
+  
+
+- **Jaggedness as a safety design constraint.** Modern LLMs are jagged — peaking on tasks the labs trained for, breaking on edge cases that look superficially similar. Almost every recovery branch in the plugin exists because of this: the Resume Handler's drift-completion probe (Step 0), atomic `progress.sh advance-to` skip-transitions, resumable rotations (`.partial.tmp → .partial → vN`), `mo-complete-workflow`'s five-branch dispatch (0a / 0b / I / II / III), the worktree-fingerprint guard, the frontmatter-validation hook, and the mandatory overseer gates at stages 2, 5, and 6 are all designed around the assumption that the model can hand back broken or partial state at any point. The plugin never trusts a single transition.
+
+  
+
+- **Outsource thinking, not understanding.** The two-role split — overseer as design-and-direction authority, millwright as execution — operationalizes this exactly. The overseer reviews `requirements.md` (the spec) before any code is written, picks `planning-mode` and `review-mode`, reviews the implementation diagrams + diff before approval, writes findings, and ends every review session with an explicit `approve`. The plugin never lets the millwright self-approve; understanding stays with the human, and `direct` mode does not lower this bar — it just removes the brainstorming-chain ceremony, not the gates.
+
+  
+
+- **Layered, projected information as agent context.** The plugin's primer / review-context / change-summary / summary files are derived projections of canonical data, sized for a specific LLM consumer at a specific stage rather than dumped at full size. `summary.md` is feature-indexed so a stage reads only its active feature's section; `primer.md` is the stage-3 launch projection; `review-context.md` is the stage-6 review projection; `change-summary.md` is cache-keyed by `(base-commit, head)` so a projection only regenerates when its source actually changes. This is the same pattern that makes production-grade LLM knowledge-base / wiki systems token-efficient — derived projections of canonical data, not duplicated state.
+
+  
+
 ---
 
   
@@ -126,7 +162,7 @@ A fourth implicit rule: **every artifact is auditable**. Blueprints are rotated 
 
 - `/mo-continue` ×1 after the review session at stage 6 (only when there were findings).
 
-- Optional y/n diagram-refresh, optional blueprint-drift reason.
+- Diagram-refresh y/n (only when review-loop commits exist), blueprint-drift reason (overseer-supplied or `continue`).
 
   
 
@@ -554,7 +590,7 @@ This table summarizes who interacts with which plugin surface, for which purpose
 
 | Overseer | brainstorming review session OR direct review loop | Addresses findings; chain or millwright marks each `fixed`. Overseer types `approve` to end. | 6 | No iteration cap. |
 
-| Overseer | `/mo-continue` (after review session) | Review-Resume Handler: check/defer open findings, offer optional diagram refresh, then atomically advance 6→7 and auto-fire `/mo-complete-workflow`. | 6 → 7 → 8 | Only when there were findings. |
+| Overseer | `/mo-continue` (after review session) | Review-Resume Handler: check/defer open findings, offer a diagram refresh when review-loop commits exist, then atomically advance 6→7 and auto-fire `/mo-complete-workflow`. | 6 → 7 → 8 | Only when there were findings. |
 
 | Millwright (auto) | `/mo-complete-workflow` | Updates IMPLEMENTING → IMPLEMENTED, populates `commits:` in `requirements.md`, rotates `blueprints/current/` into `history/v[N+1]/`, archives the live `implementation/` into `history/v[N+1]/implementation/` (not deleted — preserves findings, review-context, change-summary, and diagrams as a permanent audit record), calls `progress.sh finish`. Auto-invokes next feature's `/mo-apply-impact` if queue non-empty; else asks for more TODO marks or recommends `/mo-run`. | 8 | Atomic close-out. |
 
@@ -608,7 +644,7 @@ Each stage has a precise entry condition, work list, and exit condition. `progre
 
 | 6 | Overseer review session | Overseer + chain/millwright via `/mo-review` | Stage-5 `/mo-continue` found open findings. | Review session exits (overseer types `approve`); overseer types `/mo-continue` again. |
 
-| 7 | Review completed (transitional) | Millwright | Either no-findings path (5 → 7 directly) or with-findings path (6 → 7). | Optional diagram-refresh; `mo-complete-workflow` auto-fires. |
+| 7 | Review completed (transitional) | Millwright | Either no-findings path (5 → 7 directly) or with-findings path (6 → 7). | With-findings path offers a diagram refresh when review-loop commits exist; no-findings path skips straight to `mo-complete-workflow`. |
 
 | 8 | Completion | Millwright via `/mo-complete-workflow` | Stage 7 reached. | Blueprint rotated, live `implementation/` archived into `history/v[N+1]/implementation/`, IMPLEMENTING → IMPLEMENTED, `progress.sh finish` called. Loop back to next queue feature or wait for more TODO marks. |
 
@@ -736,7 +772,7 @@ Pure launcher:
 
 2. Keep `sub-flow=reviewing` in place while the refresh decision is pending so the prompt is re-fireable on retry.
 
-3. Optional diagram refresh: if review-loop commits exist, prompt y/n to re-run `/mo-draw-diagrams` before stage 8 archives the live `implementation/diagrams/` (the refreshed render is what gets preserved into history).
+3. Diagram refresh: when review-loop commits exist, prompt y/n to re-run `/mo-draw-diagrams` before stage 8 archives the live `implementation/diagrams/` (the refreshed render is what gets preserved into history). Skipped silently when no review-loop commits exist; the y/n choice is the only optional bit.
 
 4. Atomically finalize with `progress.sh advance-to 6 7 --set sub-flow=none --set overseer-review-completed=true`, then auto-fire `/mo-complete-workflow`.
 
@@ -748,11 +784,13 @@ Pure launcher:
 
 2. `commits.sh populate-requirements <feature>` writes `commits:` field in `requirements.md` frontmatter (the canonical link between requirements and implementation).
 
-3. `blueprints.sh rotate <feature> --reason-kind completion --reason-summary "..."` moves `current/*` into `history/v[N+1]/`, writes `reason.md`, and **archives the live `implementation/` folder alongside as `history/v[N+1]/implementation/`** (overseer-review.md, review-context.md, change-summary.md, diagrams/ all preserved). This is an archive, not a delete: every finding (including any deferred `status: open` ones), the review-context snapshot, the change-summary, and the implementation diagrams survive as part of the rotated version. The rotated history version therefore contains: `requirements.md`, `config.md`, `diagrams/`, `primer.md`, `reason.md`, AND `implementation/`.
+3. `blueprints.sh rotate <feature> --reason-kind completion --reason-summary "..."` moves `blueprints/current/*` into `blueprints/history/v[N+1]/` and writes `reason.md`. This step rotates the blueprint artifacts only.
 
-4. `progress.sh finish` (active.feature → completed; active = null).
+4. `/mo-complete-workflow` then archives the live `implementation/` folder alongside the rotated blueprints as `blueprints/history/v[N+1]/implementation/` (overseer-review.md, review-context.md, change-summary.md, diagrams/ all preserved). This is an archive, not a delete: every finding (including any deferred `status: open` ones), the review-context snapshot, the change-summary, and the implementation diagrams survive as part of the rotated version. The rotated history version therefore contains: `requirements.md`, `config.md`, `diagrams/`, `primer.md`, `reason.md`, AND `implementation/`.
 
-5. If `queue` non-empty: announce next feature and auto-invoke `/mo-apply-impact` (loop back to stage 2).
+5. `progress.sh finish` (active.feature → completed; active = null).
+
+6. If `queue` non-empty: announce next feature and auto-invoke `/mo-apply-impact` (loop back to stage 2).
 
 If `queue` empty AND `[ ] TODO` items remain in the active cycle's `todo-list.md`: ask overseer to mark next batch and type `/mo-continue` (re-enters stage 1.5 via `progress.sh enqueue`).
 
@@ -848,7 +886,7 @@ All commands live under `commands/` as Markdown files with YAML frontmatter (`de
 
 - **Behavior**: PENDING→IMPLEMENTING via `todo.sh bulk-transition`; `git rev-parse HEAD` captured into `active.base-commit`; validates `## GIT BRANCH` (refuses main/master, refuses multi-line, refuses mismatch with HEAD); writes `primer.md` (compact stage-3 launch primer); asks overseer for `planning-mode` (`brainstorming` | `direct`); persists choice; brainstorming mode invokes the `brainstorming` skill, direct mode reads primer in main session.
 
-- **Post-conditions**: `active.current-stage=3`, `active.planning-mode` recorded, `active.sub-flow=chain-in-progress` (brainstorming) or `none` (direct).
+- **Post-conditions**: `active.current-stage=3`, `active.planning-mode` recorded, `active.sub-flow=chain-in-progress` for both planning modes. Direct mode is distinguished by `active.planning-mode=direct`; the Resume Handler later changes `sub-flow` through `resuming` and finally back to `none`.
 
   
 
@@ -932,7 +970,7 @@ The single touchpoint at every overseer gate. Reads `progress.md` and dispatches
 
 | 5 | any | **Overseer Handler** — canonicalize free-form findings, list-open. If empty, atomic `advance-to 5 7 --set sub-flow=none --set overseer-review-completed=true` and auto-fire `/mo-complete-workflow`. If non-empty, auto-fire `/mo-review` and stop |
 
-| 6 | reviewing | **Review-Resume Handler** — check/defer open findings, optional diagram refresh before advancing, then atomic `advance-to 6 7 --set sub-flow=none --set overseer-review-completed=true` and auto-fire `/mo-complete-workflow` |
+| 6 | reviewing | **Review-Resume Handler** — check/defer open findings, offer a diagram refresh when review-loop commits exist before advancing, then atomic `advance-to 6 7 --set sub-flow=none --set overseer-review-completed=true` and auto-fire `/mo-complete-workflow` |
 
 | 7 | any | Stage-7 finalize — auto-fire `/mo-complete-workflow` (idempotent via Branch II when re-entered after a partial finalize) |
 
@@ -1655,3 +1693,13 @@ What the millwright did automatically: `mo-apply-impact`, `mo-plan-implementatio
 - **Sub-flow** — `none | chain-in-progress | resuming | reviewing` — secondary state dimension on top of `current-stage`.
 
 - **Workflow stream** — the per-feature folder tree under `workflow-stream/<feature>/`.
+
+- **Software 3.0** — The view that with capable LLMs, programming shifts from writing code (Software 1.0) or curating training data (Software 2.0) to curating prompts and context windows. The plugin's file-based context discipline (Rule 1) and layered loading (Rule 3) operate in this paradigm — every artifact is context-window content for a specific stage's agent.
+
+- **Vibe coding** — Letting an AI agent land an implementation against an unwritten or informal spec with no structured review surface — the operator trusts the model, accepts the diff, and ships. **The mo-workflow is explicitly not vibe coding.** Even `planning-mode: direct` keeps the stage-2 spec review, the stage-3 primer, the stage-4 implementation diagrams, the stage-5 `overseer-review.md` findings, the optional stage-6 review session, and the stage-8 rotation + archival — the chain's internal ceremony is the only thing direct mode skips.
+
+- **Agentic engineering** — Coordinating AI agents and runbooks to ship production-quality software faster without sacrificing the pre-AI quality bar (security, correctness, maintainability). **This plugin operates entirely in the agentic-engineering paradigm.** The blueprint files, primer composition, implementation diagrams with existing-vs-new framing, the `IR-NNN`-structured findings file, the rotation history with `reason.md`, and the mandatory overseer gates at stages 2, 5, and 6 are all agentic-engineering primitives — and they apply to both planning modes equally.
+
+- **Jagged intelligence** — The tendency of LLMs to peak on tasks their training data and RL environments emphasized while breaking on superficially-similar but out-of-distribution tasks. The plugin treats jaggedness as a hard design constraint: every state transition is atomic or recoverable, every artifact is schema-validated on write, and the overseer's gates act as the final correctness check.
+
+- **Verifiable artifact** — A workflow output whose correctness can be checked against a finite contract — `requirements.md.commits` populated at stage 8, the blue/green existing-vs-new diagrams, the `IR-NNN`-structured findings file, the `base-commit..HEAD` diff. The plugin is built so that every cycle ends with a set of these, not just code.

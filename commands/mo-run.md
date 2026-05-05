@@ -7,6 +7,8 @@ argument-hint: "<journal-folder> [<journal-folder>...] [--archive-active]"
 
 **Stage 1 launcher.** Reads a caller-specified list of `journal/` sub-folders (topics to base this workflow on), creates a per-cycle subfolder under `quest/`, generates **three** of the cycle's files inside it (`todo-list.md`, `summary.md`, `progress.md`), and points `quest/active.md` at the new subfolder. Then prompts the overseer to mark PENDING items.
 
+**Main-read budget (stage 1).** Allowed in main: journal files (per Step 2.5 size policy — large files and many-small-folders delegated to fresh sub-agents). Forbidden in main: source code. See `docs/workflow-spec.md` § "Main-read budget gates by stage" for the canonical table.
+
 The fourth cycle file, `queue-rationale.md`, is written later by `/mo-continue`'s Pre-flight Step 2B at stage 1.5 — its absence is what the dispatcher in `commands/mo-continue.md` keys on to distinguish "selections still pending promotion" (Step 2A) from "queue-order proposal is awaiting overseer confirmation" (Step 2B). Creating it during `/mo-run` would skip Step 2A entirely.
 
 ## Inputs (positional, parsed from `$ARGUMENTS`)
@@ -249,7 +251,9 @@ total_bytes="$(du -cb "${files[@]}" 2>/dev/null | tail -1 | awk '{print $1}')"
 echo "  total: $total_bytes B across ${#files[@]} file(s)"
 ```
 
-**Thresholds** — if any single file exceeds **100 KB** OR the total exceeds **500 KB**, surface a warning to the overseer before reading bodies:
+**Two threshold tiers** — covering both "single huge file" and "many small files":
+
+**Tier 1 — Per-file summarization (existing).** If any single file exceeds **100 KB** OR the total exceeds **500 KB**, surface a warning to the overseer before reading bodies:
 
 > "Heads up — the journal intake is large. <N> file(s) exceed 100 KB and the total is <X> KB. I'll summarize per-file first, then build the cycle's `todo-list.md` and `summary.md` (inside the per-cycle quest subfolder) from the per-file summaries plus selected excerpts, rather than dumping every file into context. Reply `proceed` to continue, or `cancel` to halt and trim the inputs."
 >
@@ -257,9 +261,59 @@ echo "  total: $total_bytes B across ${#files[@]} file(s)"
 > - <path>: <bytes> B
 > - …)
 
-On `proceed`, follow the per-file summarization plan: read each large file once, write a per-file digest into a scratch buffer (or directly into `summary.md`'s `## Sources` section in Step 4), and use those digests to drive `todo-list.md` and the per-feature `summary.md` sections. Do not paste raw file content into the body of the quest files.
+On `proceed`, follow the per-file summarization plan: spawn one fresh sub-agent per oversized file (`Agent` with `subagent_type: general-purpose` — explicitly NOT a fork). Each sub-agent reads its assigned file once and returns a digest using the standard return contract (Phase 0 of the implementation plan; see `docs/sub-agent-return-contract.md`). The millwright weaves the digests into `summary.md`'s feature sections and `## Sources`. Do not paste raw file content into the body of the quest files.
 
-When all files are below threshold, proceed without prompting. The thresholds are conservative — small projects routinely come in well under them.
+**Tier 2 — Per-folder summarization (Phase 5.2 of the context-optimization plan).** Even when no single file exceeds the per-file threshold, a journal folder containing **>5 files AND >40 KB total** is worth delegating: reading 20 small notes individually accumulates the same context as one large file, but is invisible to the per-file check. Compute per-folder counts:
+
+```bash
+declare -A folder_count folder_bytes
+for f in "${files[@]}"; do
+  rel="${f#$data_root/journal/}"
+  folder="${rel%%/*}"
+  folder_count[$folder]=$(( ${folder_count[$folder]:-0} + 1 ))
+  bytes="$(wc -c <"$f" | tr -d ' ')"
+  folder_bytes[$folder]=$(( ${folder_bytes[$folder]:-0} + bytes ))
+done
+
+oversize_folders=()
+for folder in "${!folder_count[@]}"; do
+  if (( folder_count[$folder] > 5 && folder_bytes[$folder] > 40000 )); then
+    oversize_folders+=("$folder")
+  fi
+done
+```
+
+For each `oversize_folder`, spawn one fresh sub-agent for the folder (NOT one per file). Sub-agent prompt:
+
+```
+You are a fresh sub-agent invoked from `mo-run` Step 2.5 to digest a journal folder containing many small files. Your context is isolated from the main session — main does not see your tool calls, only your final return summary.
+
+**Task:**
+- Read every `.md` and `.txt` file under `<data_root>/journal/<folder>/` (including subdirectories, but excluding any `*.images/` subfolders).
+- Produce a structured digest covering: (a) the topics each file contributes, (b) cross-file patterns or contradictions, (c) any timestamps / contributors / decisions worth surfacing.
+- **Preserve source-file attribution.** Every claim in the digest cites the file it came from (e.g., "design.md notes that ..." or "see meeting-notes-2026-04-12.md §timestamps").
+
+**Output destination:** write the digest to `<data_root>/quest/<active-slug>/.scratch/folder-digest-<folder>.md`. The millwright reads the digest and weaves it into `summary.md`'s feature sections + `## Sources` in Step 4.
+
+---
+
+Required return shape — return ONLY this structure:
+
+Result: success | partial | blocked
+Artifacts changed:
+- <data_root>/quest/<active-slug>/.scratch/folder-digest-<folder>.md: digest of <count> files (<total bytes>) from journal/<folder>/
+Commits:
+Findings / risks:
+- <bullet, optional — surface any contradictions or missing context>
+Main should read:
+- <path to digest>: input for summary.md feature sections + Sources
+
+Total return must fit under ~1k tokens.
+```
+
+Surface the per-folder delegation plan to the overseer alongside the per-file plan when both fire; the overseer can opt out of either tier with `cancel`.
+
+When no folder hits the per-folder threshold AND no file hits the per-file threshold, proceed without prompting. The thresholds are conservative — small projects routinely come in well under them.
 
 ### Step 2.6 — Open the cycle subfolder
 

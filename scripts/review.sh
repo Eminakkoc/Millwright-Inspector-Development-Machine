@@ -1,5 +1,26 @@
 #!/usr/bin/env bash
-# review.sh — manage overseer-review.md.
+#
+# review.sh — manage overseer-review.md and review-context.md.
+#
+# CACHE CONTRACTS (Phase 6.2 of the context-optimization plan).
+# This script hosts one cache-aware operation:
+#
+#   sync-refs <feature> [--refresh-body]
+#     Without --refresh-body: re-syncs `requirements-id` frontmatter only;
+#       stamps a non-refresh marker. No cache key — runs unconditionally.
+#     With --refresh-body: regenerates `## Implemented surface` and
+#       `## Open findings (snapshot)` sections of review-context.md from
+#       current git state and `list-open` output.
+#       Cache key: (requirements-id, base-commit, HEAD-at-iteration-start).
+#       The current implementation regenerates unconditionally when the flag
+#       is set; a future optimization can add a no-op short-circuit when the
+#       cache key matches the prior refresh stamp. See
+#       `docs/context optimization/recommendations.md` § "Cache Key
+#       Specifications" → `review-context.md` body refresh.
+#     Output: exit code only (0 success / non-zero error). No enum.
+#
+# Discipline rule: no new cache may be added without an entry here AND in
+# recommendations.md § "Cache Key Specifications".
 #
 # Finding id convention: IR-NNN, zero-padded to 3 digits, monotonically
 # incrementing across the whole review file. IDs never reset per iteration.
@@ -17,8 +38,15 @@
 #                                                          # status ∈ open|fixed|wontfix
 #   review.sh iterate <feature>                           # adds "## Iteration N" divider
 #   review.sh list-open <feature>                         # prints open finding ids, one per line
-#   review.sh sync-refs <feature>                         # sync overseer-review.md's requirements-id
+#   review.sh list-open-summaries <feature>               # TSV: <id>\t<severity>\t<scope>\t<summary>
+#                                                          # for every open finding (Phase 6.5).
+#   review.sh sync-refs <feature> [--refresh-body]        # sync overseer-review.md's requirements-id
 #                                                          # to the current blueprint after a rotation.
+#                                                          # With --refresh-body, ALSO regenerates the
+#                                                          # `## Implemented surface` and `## Open findings
+#                                                          # (snapshot)` sections of review-context.md
+#                                                          # from current git state and `list-open`. Used
+#                                                          # by /mo-review's per-iteration loop (Phase 1.4).
 #   review.sh canonicalize <feature>                      # detect freeform (non-IR-NNN) text under
 #                                                          # ## Implementation Review and emit one TSV row
 #                                                          # per detected span: <line-start>\t<line-end>\t<text>.
@@ -184,16 +212,72 @@ for m in re.finditer(r'### (IR-\d{3}) — .*?\n(.*?)(?=\n### |\n## |\Z)', conten
 PYEOF
     ;;
 
+  list-open-summaries)
+    # Phase 6.5 of the context-optimization plan: emit IR-id + severity +
+    # scope + summary for every open finding, WITHOUT the multi-line
+    # `details:` body. Used by stages 5, 6 when only a cheat-sheet view is
+    # needed (e.g., the per-iteration sub-agent prompt's open-findings
+    # section). Reduces main-context reads when overseer-review.md has long
+    # details bodies.
+    #
+    # Output format: one TSV row per open finding —
+    #   <IR-id>\t<severity>\t<scope>\t<summary>
+    feature="${1:?feature required}"
+    dest="$(review_file "$feature")"
+    [[ -f "$dest" ]] || mo_die "review file not found: $dest"
+    python3 - "$dest" <<'PYEOF'
+import sys, re
+path = sys.argv[1]
+with open(path) as f:
+    content = f.read()
+for m in re.finditer(r'### (IR-\d{3}) — (.+?)\n(.*?)(?=\n### |\n## |\Z)', content, re.DOTALL):
+    fid, summary, block = m.group(1), m.group(2).strip(), m.group(3)
+    status_m = re.search(r'^- status:\s*(\S+)', block, re.MULTILINE)
+    severity_m = re.search(r'^- severity:\s*(\S+)', block, re.MULTILINE)
+    scope_m = re.search(r'^- scope:\s*(\S+)', block, re.MULTILINE)
+    if status_m and status_m.group(1) == 'open':
+        sev = severity_m.group(1) if severity_m else 'unknown'
+        scope = scope_m.group(1) if scope_m else 'unknown'
+        # TSV: tab-separated; summary may contain spaces but no tabs.
+        # Strip any embedded tabs from summary to keep TSV well-formed.
+        summary_clean = summary.replace('\t', ' ')
+        print(f'{fid}\t{sev}\t{scope}\t{summary_clean}')
+PYEOF
+    ;;
+
   sync-refs)
     # Update overseer-review.md's and review-context.md's requirements-id
     # frontmatter to match the current blueprints/current/requirements.md id.
     # Called after blueprint rotation + regeneration so an in-flight review
     # loop keeps its frontmatter pointing at live scope. Silently skips files
-    # that don't exist. The body of review-context.md is intentionally NOT
-    # regenerated — it remains a snapshot from when /mo-review was invoked;
-    # the chain reads canonical files (overseer-review.md, requirements.md)
-    # when it needs current state.
-    feature="${1:?feature required}"
+    # that don't exist.
+    #
+    # By default the body of review-context.md is NOT regenerated — only the
+    # frontmatter is synced and a staleness marker is stamped. Pass
+    # --refresh-body to ALSO regenerate the `## Implemented surface` and
+    # `## Open findings (snapshot)` sections from current git state and
+    # `review.sh list-open` output. /mo-review's per-iteration loop calls
+    # --refresh-body at iteration start so the snapshot reflects commits
+    # made by the previous iteration's sub-agent (Phase 1.4 of the
+    # context-optimization plan).
+    feature=""
+    refresh_body=0
+    while [[ $# -gt 0 ]]; do
+      case "$1" in
+        --refresh-body) refresh_body=1; shift ;;
+        --) shift; break ;;
+        -*) mo_die "sync-refs: unknown flag: $1" ;;
+        *)
+          if [[ -z "$feature" ]]; then
+            feature="$1"
+          else
+            mo_die "sync-refs: unexpected positional arg: $1"
+          fi
+          shift
+          ;;
+      esac
+    done
+    [[ -n "$feature" ]] || mo_die "sync-refs: feature required"
     new_requirements_id="$(mo_fm_get "$(mo_blueprints_current "$feature")/requirements.md" id)"
     rf="$(review_file "$feature")"
     if [[ -f "$rf" ]]; then
@@ -207,30 +291,136 @@ PYEOF
       # The marker lives between `<!-- mo:sync-marker -->` and the next blank
       # line / `<!--` so it can be replaced idempotently across re-runs.
       ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-      python3 - "$ctx" "$ts" <<'PYEOF'
+      python3 - "$ctx" "$ts" "$refresh_body" <<'PYEOF'
 import re, sys
-path, ts = sys.argv[1], sys.argv[2]
+path, ts, refresh = sys.argv[1], sys.argv[2], sys.argv[3] == '1'
 with open(path) as f:
     body = f.read()
-marker = (
-    f"\n> _Frontmatter `requirements-id` last synced at {ts} (mid-cycle "
-    f"blueprint refresh). Body content above and below was captured at "
-    f"`/mo-review` invocation and is NOT regenerated; read canonical files "
-    f"for current scope._\n"
-)
-# Find the managed marker line and rewrite the block until the next blank line
-# OR the next HTML comment.
+if refresh:
+    marker_text = (
+        f"\n> _Body sections (`## Implemented surface`, `## Open findings (snapshot)`) "
+        f"refreshed at {ts}. `requirements-id` also synced. Read canonical files "
+        f"(`overseer-review.md`, `requirements.md`) when current state matters beyond "
+        f"this snapshot._\n"
+    )
+else:
+    marker_text = (
+        f"\n> _Frontmatter `requirements-id` last synced at {ts} (mid-cycle "
+        f"blueprint refresh). Body content above and below was captured at "
+        f"`/mo-review` invocation and is NOT regenerated; read canonical files "
+        f"for current scope._\n"
+    )
 pat = re.compile(
     r'(<!--\s*mo:sync-marker[^>]*-->)(.*?)(?=\n\s*\n|\n<!--)',
     re.DOTALL,
 )
 m = pat.search(body)
 if m:
-    body = body[:m.end(1)] + marker + body[m.end():]
+    body = body[:m.end(1)] + marker_text + body[m.end():]
     with open(path, 'w') as f:
         f.write(body)
 PYEOF
-      mo_info "synced refs in $ctx (requirements-id=$new_requirements_id; stamped sync marker)"
+
+      if [[ "$refresh_body" == "1" ]]; then
+        # Regenerate the body's `## Implemented surface` and
+        # `## Open findings (snapshot)` sections.
+        base_commit="$("${MO_PLUGIN_ROOT}/scripts/progress.sh" get base-commit 2>/dev/null || echo '')"
+        ov_file="$(review_file "$feature")"
+        impl_dir="$(mo_impl_dir "$feature")"
+        diagrams_dir="$impl_dir/diagrams"
+        python3 - "$ctx" "$ov_file" "$base_commit" "$diagrams_dir" <<'PYEOF'
+import re, sys, subprocess
+from pathlib import Path
+
+ctx_path = sys.argv[1]
+ov_path = sys.argv[2]
+base_commit = sys.argv[3] or None
+diagrams_dir = Path(sys.argv[4])
+
+# --- Build new "Open findings (snapshot)" body ---
+findings_lines = []
+if Path(ov_path).is_file():
+    with open(ov_path) as f:
+        ov = f.read()
+    for m in re.finditer(
+        r'### (IR-\d{3}) — (.+?)\n(.*?)(?=\n### |\n## |\Z)',
+        ov, re.DOTALL
+    ):
+        fid, summary, block = m.group(1), m.group(2).strip(), m.group(3)
+        status_m = re.search(r'^- status:\s*(\S+)', block, re.MULTILINE)
+        severity_m = re.search(r'^- severity:\s*(\S+)', block, re.MULTILINE)
+        scope_m = re.search(r'^- scope:\s*(\S+)', block, re.MULTILINE)
+        if status_m and status_m.group(1) == 'open':
+            sev = severity_m.group(1) if severity_m else 'unknown'
+            scope = scope_m.group(1) if scope_m else 'unknown'
+            findings_lines.append(f'- `{fid}` ({sev}, {scope}): {summary}')
+findings_body = '\n'.join(findings_lines) if findings_lines else '_No open findings._'
+
+# --- Build new "Implemented surface" body ---
+surface_lines = []
+files = []
+if base_commit:
+    try:
+        out = subprocess.check_output(
+            ['git', 'diff', '--name-only', f'{base_commit}..HEAD'],
+            text=True, stderr=subprocess.DEVNULL,
+        )
+        files = [f.strip() for f in out.split('\n') if f.strip()]
+    except subprocess.CalledProcessError:
+        files = []
+
+if files:
+    areas = {}
+    for fp in files:
+        parts = fp.split('/')
+        area = '/'.join(parts[:2]) if len(parts) > 1 else parts[0]
+        areas.setdefault(area, 0)
+        areas[area] += 1
+    surface_lines.append('Changed areas:')
+    for area in sorted(areas):
+        n = areas[area]
+        surface_lines.append(f'- `{area}/` ({n} file{"s" if n != 1 else ""})')
+else:
+    surface_lines.append('Changed areas: _none in `base-commit..HEAD` yet_')
+
+surface_lines.append('')
+surface_lines.append('Diagrams:')
+if diagrams_dir.is_dir():
+    pumls = sorted(diagrams_dir.glob('*.puml'))
+    if pumls:
+        for p in pumls:
+            surface_lines.append(f'- `{p.name}`')
+    else:
+        surface_lines.append('- _no `.puml` files in `implementation/diagrams/`_')
+else:
+    surface_lines.append('- _`implementation/diagrams/` missing (skipped at stage 4 or not yet generated)_')
+
+surface_body = '\n'.join(surface_lines)
+
+# --- Replace the two sections in the ctx file ---
+with open(ctx_path) as f:
+    ctx = f.read()
+
+def replace_section(text, heading, new_body):
+    pat = re.compile(
+        rf'(^## {re.escape(heading)}\s*\n)(.*?)(?=^## |\Z)',
+        re.MULTILINE | re.DOTALL,
+    )
+    if pat.search(text):
+        return pat.sub(lambda _m: _m.group(1) + '\n' + new_body + '\n\n', text, count=1)
+    sys.stderr.write(f"warning: heading '## {heading}' not found in {ctx_path}; skipped\n")
+    return text
+
+ctx = replace_section(ctx, 'Implemented surface', surface_body)
+ctx = replace_section(ctx, 'Open findings (snapshot)', findings_body)
+
+with open(ctx_path, 'w') as f:
+    f.write(ctx)
+PYEOF
+        mo_info "synced refs in $ctx (requirements-id=$new_requirements_id; refreshed body)"
+      else
+        mo_info "synced refs in $ctx (requirements-id=$new_requirements_id; stamped sync marker)"
+      fi
     fi
     cs="$(mo_impl_dir "$feature")/change-summary.md"
     if [[ -f "$cs" ]]; then
@@ -361,7 +551,7 @@ PYEOF
     ;;
 
   *)
-    echo "usage: review.sh {init|add|set-status|iterate|list-open|sync-refs|canonicalize|strip-freeform} ..." >&2
+    echo "usage: review.sh {init|add|set-status|iterate|list-open|list-open-summaries|sync-refs|canonicalize|strip-freeform} ..." >&2
     exit 2
     ;;
 esac

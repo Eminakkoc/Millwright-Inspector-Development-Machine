@@ -4,9 +4,11 @@ description: Launch a brainstorming review session for the active feature. Reads
 
 # mo-review
 
-**Review-loop launcher — pure launcher, no driver logic.** Reads `overseer-review.md`, collects all open findings, and invokes the `brainstorming` Skill with those findings as the work definition. Brainstorming runs the review loop end-to-end — addressing findings (deciding internally between fix / re-implement / re-plan / re-spec), asking the overseer for approval, and re-reading `overseer-review.md` if the overseer adds new findings mid-session — until the overseer approves and the chain exits.
+**Review-loop driver.** Reads `overseer-review.md`, collects all open findings, and runs the review loop in main with one fresh sub-agent per iteration (brainstorming mode, Step 3a) or directly in main with no sub-agent dispatch (direct mode, Step 3b). Each iteration addresses the currently-open findings, asks the overseer for `approve` / `go again` / `abort`, and either exits or loops. Brainstorming mode's sub-agents handle cascade-scoped findings (`re-spec`, `re-plan`) inside their own context — those reads do not accumulate in main.
 
-**The session runs isolated from mo-workflow — same isolation model as stage 3.** `mo-review` does NOT block on the Skill, does NOT advance past stage 6, and does NOT auto-fire `/mo-complete-workflow`. After the brainstorming session exits, the overseer types `/mo-continue` to resume mo-workflow; the post-review-session resume handler in `/mo-continue` finalizes (advances 6 → 7 and auto-fires `/mo-complete-workflow`).
+**Main-read budget (stage 6).** Allowed in main: `review-context.md`, `overseer-review.md` (open IR-IDs only via `review.sh list-open-summaries` excerpt — Phase 6.5). Forbidden in main: source reads for findings — delegated to per-iteration sub-agent in brainstorming mode (Phase 1.3) unless `direct` mode is selected AND all findings are scope=`fix` (Phase 1.2 auto-routing). See `docs/workflow-spec.md` § "Main-read budget gates by stage" for the canonical table.
+
+**`mo-review` does NOT advance past stage 6, and does NOT auto-fire `/mo-complete-workflow`.** After the loop exits via `approve`, the overseer types `/mo-continue` to resume mo-workflow; the post-review-session Review-Resume Handler in `/mo-continue` finalizes (advances 6 → 7 and auto-fires `/mo-complete-workflow`).
 
 There is no AI-driven review pass. Findings are authored by the overseer (during stage 5, and any time during the review loop). `mo-review` is a hand-off mechanism, not a reviewer.
 
@@ -72,16 +74,33 @@ The `## On-demand canonical files` section is template-emitted and does not need
 
 ### Step 2.6 — Ask the overseer to pick a review mode
 
-Prompt the overseer:
+Read the suggestion that stage 5 (`/mo-continue` Overseer Step 1.6) persisted to `progress.md`:
+
+```bash
+suggestion="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get review-mode-suggestion 2>/dev/null || echo 'none')"
+```
+
+Branch the prompt's default and rationale on the suggestion:
+
+**If `suggestion == "direct"`** (all open findings have `scope: fix` — stage 5 detected this when canonicalizing):
 
 > "Review session — pick a mode for addressing the open findings on `$active_feature`:
 >
->   - **`brainstorming`** (default) — launches an isolated brainstorming review session. The chain reads each finding's `scope:` as a hint and decides per-finding whether to `fix` (patch), `re-implement`, `re-plan`, or `re-spec`. Best when findings span scope tiers, or when you want the chain to drive the decision.
+>   - **`direct`** (default — recommended) — All N open findings are simple fixes (`scope: fix`). I'll address them myself in this session, applying patches directly. This skips the brainstorming chain ceremony and is the cheapest path when every finding is a fix.
+>   - **`brainstorming`** — runs the loop in main with one fresh sub-agent per iteration. The sub-agent reads each finding's `scope:` as a hint and decides per-finding whether to `fix`, `re-implement`, `re-plan`, or `re-spec`. Use this if you want sub-agent dispatch even though findings are all fixes (e.g., to keep main context small).
+>
+> Reply `direct` (or just press Enter to accept the default), or `brainstorming` to override."
+
+**Otherwise** (`suggestion == "brainstorming"` or `none` — keep the current default):
+
+> "Review session — pick a mode for addressing the open findings on `$active_feature`:
+>
+>   - **`brainstorming`** (default) — runs the loop in main with one fresh sub-agent per iteration. The sub-agent reads each finding's `scope:` as a hint and decides per-finding whether to `fix` (patch), `re-implement`, `re-plan`, or `re-spec`. Best when findings span scope tiers, or when you want sub-agent dispatch to keep main context small (recommended for cycles with cascade-scoped findings).
 >   - **`direct`** — I address the findings myself in this session, applying patches directly. Best when every finding is `fix` or simple `re-implement` (small refactors with clear acceptance criteria) and you want to skip the chain ceremony.
 >
 > Reply `brainstorming` or `direct`."
 
-Wait for the reply. Persist:
+Wait for the reply. If the overseer presses Enter without typing (accept-default), use the suggestion-derived default (`direct` when suggestion was `direct`, `brainstorming` otherwise). Persist the actual choice:
 
 ```bash
 $CLAUDE_PLUGIN_ROOT/scripts/progress.sh set "review-mode=<choice>"
@@ -92,60 +111,198 @@ Then dispatch on the value:
 - `brainstorming` → continue to **Step 3a**.
 - `direct` → continue to **Step 3b**.
 
-### Step 3a — Brainstorming mode: invoke the Skill
+The persisted `active.review-mode` records the overseer's actual choice; `active.review-mode-suggestion` stays as stage 5 set it (it is informational and re-readable for debugging/audit, not mutated by stage 6).
 
-Use the `Skill` tool to invoke the `brainstorming` skill with the following primer message. Substitute `<$active_feature>` with the actual feature name. Substitute `<$data_root>` with the resolved data root (e.g. `millwright-overseer` by default; whatever `$data_root` evaluates to in this command's shell context). **The Skill is invoke-and-hand-off, not invoke-and-block** — same as `/mo-plan-implementation` at stage 3. The brainstorming session runs in an isolated interactive flow driven by the overseer; `mo-review` returns immediately after the Skill is invoked.
+### Step 3a — Brainstorming mode: main-driven loop with fresh per-iteration sub-agents
+
+**Architectural change from prior versions.** Step 3a no longer hands the entire `go again` loop to the brainstorming Skill. Main owns the iteration boundaries. Each iteration spawns one **fresh sub-agent** (`Agent` invocation with `subagent_type: general-purpose` — explicitly NOT a fork) that addresses the currently-open findings, returns a structured summary, and evaporates. Cascading scopes (`re-spec` / `re-plan`) still happen — but they happen *inside* the sub-agent's context, never accumulating in main.
+
+This caps per-iteration main-context growth at the sub-agent's return summary (~500 tokens). A 10-iteration loop adds ~5k tokens to main instead of ~500k.
+
+#### Step 3a.1 — Compute path constants
+
+```bash
+data_root="$($CLAUDE_PLUGIN_ROOT/scripts/data-root.sh)"
+quest_slug="$($CLAUDE_PLUGIN_ROOT/scripts/quest.sh current)"
+review_ctx="$data_root/workflow-stream/$active_feature/implementation/review-context.md"
+overseer_review="$data_root/workflow-stream/$active_feature/implementation/overseer-review.md"
+quest_summary="$data_root/quest/$quest_slug/summary.md"
+blueprint_dir="$data_root/workflow-stream/$active_feature/blueprints/current"
+```
+
+These are the paths the per-iteration sub-agent will reference. They do NOT change between iterations.
+
+#### Step 3a.2 — Iteration loop
+
+The loop runs while open findings exist AND the overseer has not typed `approve` or `abort`. Each iteration is one full address-pass.
+
+##### Step 3a.2.1 — Read open IR-IDs
+
+```bash
+open_ids="$($CLAUDE_PLUGIN_ROOT/scripts/review.sh list-open "$active_feature")"
+```
+
+If `open_ids` is empty: this should not happen at iteration entry — Step 2 already short-circuits the no-findings case. If it does happen mid-loop (e.g., the overseer manually closed all findings), exit cleanly per Step 3a.2.6 `approve` branch.
+
+##### Step 3a.2.2 — Refresh `review-context.md` body (skip on first iteration)
+
+On iteration 1, `review-context.md` is fresh from Step 2.5 — skip this step.
+
+On iterations 2+, the prior iteration may have committed code; the snapshot of `## Implemented surface` and `## Open findings (snapshot)` is stale. Refresh:
+
+```bash
+$CLAUDE_PLUGIN_ROOT/scripts/review.sh sync-refs "$active_feature" --refresh-body
+```
+
+`sync-refs --refresh-body` re-derives the two body sections from current git state and `review.sh list-open` output. The cache key `(requirements-id, base-commit, HEAD-at-iteration-start)` causes a no-op when nothing has moved — see `recommendations.md` § "Cache Key Specifications" → `review-context.md` body refresh.
+
+##### Step 3a.2.3 — Pre-classify cascade context + compose delta primer (Phase 1.6 + 7.1)
+
+For each open finding with scope ∈ {`re-spec`, `re-plan`}, read its block in `overseer-review.md` to extract IR-id, summary, and the file paths it references. Compose a small "cascade hints" section that the sub-agent prompt will include — paths and 1-line excerpts ONLY, never file content:
+
+- For `re-plan` cascades: include the path to the most recent plan file under `docs/superpowers/plans/` (the plan the chain wrote at stage 3) and a 1-line note on which step the finding invalidates.
+- For `re-spec` cascades: include both the plan path and the spec path under `docs/superpowers/specs/` plus a 1-line note on which design assumption the finding challenges.
+
+The sub-agent reads the actual plan/spec files inside its own context. **Do NOT pre-fetch file contents in main** — embedding bytes in the sub-agent's prompt pays for them twice (once in main during prompt construction, once in the sub-agent during processing) and defeats the optimization.
+
+**Delta primer (Phase 7.1).** For each cascade-scoped finding, also compose a delta primer the sub-agent will pass through when it invokes the cascading Skill (`brainstorming` for `re-spec`, `writing-plans` for `re-plan`). The delta primer tells the chain which sections to regenerate vs preserve, encouraging minimal-rework rather than full regeneration. Format:
 
 ```
-I'm addressing overseer review findings on the "<$active_feature>" feature. The implementation already exists in `base-commit..HEAD`; your job is to address the open findings the overseer wrote, ask for approval, and loop if more findings are added.
+DELTA PRIMER for <IR-NNN> (<scope>):
 
-**Context loading order** (read in this order; only escalate when a gap appears):
+You already produced <plan path> in a prior iteration of this cycle.
+<For re-spec: AND the spec at <spec path>.>
 
-1. **Required first read** — <$data_root>/workflow-stream/<$active_feature>/implementation/review-context.md
-   Compact snapshot of active scope, goals, implemented surface, and open-findings cheat sheet. For most loop trips this plus overseer-review.md is all you need.
+This finding invalidates: <one-line description of the invalidated section/step/assumption — extracted from the finding's details: body, NOT a re-read of the plan/spec content>.
 
-2. **Canonical findings (always)** — <$data_root>/workflow-stream/<$active_feature>/implementation/overseer-review.md
-   The source of truth for findings. Re-read on `go again` to pick up any new entries the overseer added mid-session.
+Regenerate ONLY the affected sections. Preserve unchanged sections verbatim — they were correct in the prior iteration and the cycle's later work depends on their stability.
 
-3. **On demand** — only if review-context.md leaves a gap on a specific topic:
-   - <$data_root>/workflow-stream/<$active_feature>/blueprints/current/requirements.md — full goals / planned / non-goals
-   - <$data_root>/workflow-stream/<$active_feature>/blueprints/current/config.md — full skills/rules + GIT BRANCH + Overseer Additions
-   - <$data_root>/workflow-stream/<$active_feature>/blueprints/current/primer.md — original stage-3 launch primer
-   - <$data_root>/quest/<active-slug>/summary.md — feature-indexed journal digest for the active cycle (the slug is in `quest/active.md`). Read `## Cross-cutting constraints` and `## Feature: <$active_feature>` first
+If during regeneration you discover the invalidation has a wider blast radius than initially identified, surface that in your return summary's `Findings / risks` so the overseer can decide whether to escalate (e.g., a re-plan finding that turns out to require a re-spec).
+```
 
-**Work definition** (open findings to address):
-Each open finding (`status: open`) is a block under `## Implementation Review` (or `## Iteration N` on later passes) in overseer-review.md with: id (IR-NNN), severity, scope (hint), details.
+The delta primer is **best-effort guidance**, not a hard contract. The cascading Skill (`brainstorming`/`writing-plans`) is owned out-of-tree; whether it honors the "regenerate only X" framing depends on the Skill's training. In practice:
+
+- A well-trained chain that recognizes the delta primer pattern will preserve unchanged sections and only re-derive the affected scope — saving substantial sub-agent context.
+- A chain that doesn't recognize the pattern will regenerate fully — which is the same behavior as today (no regression). The sub-agent's context still evaporates after return, so the cost is bounded.
+
+Either way, the delta primer doesn't introduce a failure mode. Worst case is no improvement; best case is meaningful cascade-cost reduction.
+
+If no open finding has cascade scope, omit the cascade hints section AND the delta primer entirely.
+
+##### Step 3a.2.4 — Spawn fresh sub-agent
+
+Invoke `Agent` with `subagent_type: general-purpose` (or another fresh-sub-agent type). The prompt is composed inline below. **Use `subagent_type` explicitly — a fork would inherit main's context and defeat the optimization.**
+
+Sub-agent prompt template (substitute literals for `<...>` placeholders):
+
+```
+You are a fresh sub-agent invoked from `mo-review` Step 3a to address overseer review findings on the "<active_feature>" feature. Your context is isolated from the main session — main does not see your tool calls, only your final return summary.
+
+**Required first reads (in order):**
+
+1. <review_ctx> — compact snapshot of active scope, goals, implemented surface, and open findings. This plus overseer-review.md is enough for most cases.
+2. <overseer_review> — canonical source of findings. Authoritative.
+
+**On-demand fallbacks** (read only if a gap surfaces):
+- <blueprint_dir>/requirements.md — full goals / planned / non-goals.
+- <blueprint_dir>/config.md — skills, rules, GIT BRANCH, Overseer Additions.
+- <blueprint_dir>/primer.md — original stage-3 launch primer.
+- <quest_summary> — read `## Cross-cutting constraints` and `## Feature: <active_feature>`.
+
+**Open findings to address this iteration:**
+
+<bullet list of open IR-IDs with severity + scope + summary, derived from `review.sh list-open` and per-IR scope/summary lookups>
+
+**Cascade hints** (only included when at least one open finding has scope ∈ {re-spec, re-plan}):
+
+<for each cascade-scoped finding: IR-id + scope + plan path + spec path (re-spec only) + 1-line invalidation note>
+
+**Delta primer** (Phase 7.1 — paired with each cascade hint):
+
+<for each cascade-scoped finding: insert the DELTA PRIMER block constructed in Step 3a.2.3 — names the existing plan/spec paths, names the invalidated section, asks for minimal regeneration>
+
+When you invoke the cascading Skill for a re-plan or re-spec finding, **include the delta primer verbatim in the Skill invocation prompt**. The primer asks the chain to preserve unchanged sections — that's the explicit intent of cascade pre-classification. If the chain regenerates fully despite the primer, that's expected for some Skill configurations and not a failure; surface it in `Findings / risks` only if the regeneration ignored an obvious preservation opportunity.
+
+Read those plan/spec files yourself if you need their content. Main has NOT pre-fetched anything for you — passing file paths is intentional.
 
 **How to address findings:**
-The `scope` field on each finding is a hint, not a directive. Decide for yourself the smallest rework that genuinely addresses the root cause:
+
+The `scope` field on each finding is a hint, not a directive. Pick the smallest rework that genuinely addresses the root cause:
 - `fix` — patch the existing code directly. Commit. Mark resolved.
-- `re-implement` — chain into `executing-plans` / `subagent-driven-development` for the affected sections; the existing plan stays.
-- `re-plan` — chain into `writing-plans` (with the concern bundle), then cascade through `executing-plans`. The existing spec stays; the chain regenerates the plan internally.
-- `re-spec` — full re-design from this skill. Cascade through `writing-plans` + `executing-plans`. The chain regenerates spec + plan + commits internally.
+- `re-implement` — re-do the affected sections (you may invoke `subagent-driven-development` for execution if it helps, but stay in this sub-agent's context). The existing plan stays.
+- `re-plan` — regenerate the plan for the affected scope. The existing spec stays. **Pass the delta primer to `writing-plans`**: it asks the chain to preserve unchanged plan steps and only re-derive the affected ones.
+- `re-spec` — full re-design. Regenerate spec + plan + commits. **Pass the delta primer to `brainstorming`**: when only one design assumption is invalidated, the chain may be able to preserve other spec sections rather than re-deriving the whole spec from scratch.
 
-Process findings in descending order of impact: re-spec → re-plan → re-implement → fix. A higher-tier action supersedes lower-tier findings in the same pass — mark them `fixed` with `fix-note: "superseded by re-spec at iteration N"` (or re-plan, etc.).
+Process findings in descending order of impact: re-spec → re-plan → re-implement → fix. A higher-tier action supersedes lower-tier findings in the same pass — mark superseded findings `fixed` with `fix-note: "superseded by re-spec at iteration N"` (or re-plan, etc.).
 
-**For each finding addressed**, call:
+**For each finding addressed**, commit your changes and call:
+
 ```bash
-$CLAUDE_PLUGIN_ROOT/scripts/review.sh set-status <feature> <IR-NNN> fixed "<one-line fix-note>"
+$CLAUDE_PLUGIN_ROOT/scripts/review.sh set-status "<active_feature>" <IR-NNN> fixed "<one-line fix-note>"
 ```
 
-(`<feature>` is `<$active_feature>`. Use `wontfix` instead of `fixed` if you and the overseer agree to skip it.)
+Use `wontfix` instead of `fixed` if a finding turns out to be invalid or already addressed. Do NOT mutate `progress.md` — that is mo-workflow's job, triggered later by the overseer's `/mo-continue`.
 
-**Loop pattern (this is the review loop):**
-1. Read `overseer-review.md`. List all `open` findings.
-2. Address them per the rules above. Commit your changes. Mark each finding resolved.
-3. Tell the overseer: *"All open findings addressed (resolved: <ids>). Either: (a) reply `approve` to exit the review session — then type `/mo-continue` to resume mo-workflow and finalize; (b) write new findings into `overseer-review.md` (any text editor; same `### IR-NNN` block format the overseer-review template shows) and reply `go again` so I can re-read."*
-4. On `approve` reply: tell the overseer *"Review session approved. Type `/mo-continue` to resume the mo-workflow and finalize."* Then exit cleanly. Do NOT call `set-status` or `progress.sh` for completion — those are mo-workflow's job, triggered by the overseer's `/mo-continue`.
-5. On `go again` reply: re-call `review.sh list-open` to pick up new finding ids, then go to step 1.
-6. On any other reply: treat as a verbal concern. Either (a) ask the overseer to write it into `overseer-review.md` first if it's a substantive review finding, or (b) address it inline if it's a clarifying question.
+**One-iteration discipline:** address ALL listed open findings before returning. Do not partially address and return. The main agent will spawn a new fresh sub-agent for the next iteration if the overseer types `go again`.
 
-**One-iteration discipline:** within step 2, fix ALL open findings before asking for approval. Do not partially fix and ask. Each loop trip is one full address-pass.
+---
 
-**Existing scope rules** (the same ones the overseer review template references): pick the smallest tier that genuinely resolves the root cause. If a narrower tier would leave the cause in place, escalate.
+Required return shape — return ONLY this structure. Do not narrate intermediate steps:
 
-Do NOT worry about the mo-workflow — when you exit, the overseer types `/mo-continue` to resume mo-workflow, which sanity-checks findings, advances stages, and finalizes the workflow via `/mo-complete-workflow`.
+Result: success | partial | blocked
+Artifacts changed:
+- <path>: <one-line note on what changed>
+Commits:
+- <sha>: <commit subject>
+Findings / risks:
+- <short bullet, optional>
+Main should read:
+- <path>: <reason why main needs this>
+
+Total return must fit under ~1k tokens. If your scope was too broad to summarize in 1k, return `Result: partial` and explain in Findings / risks; the main agent will re-scope.
 ```
+
+##### Step 3a.2.5 — Receive sub-agent return
+
+The fresh sub-agent returns one structured summary message (per the contract above). Parse it:
+
+- `Result: success` — proceed to Step 3a.2.6 (ask overseer).
+- `Result: partial` — surface the Findings/risks section to the overseer and ask whether to spawn another sub-agent for the unfinished work or to continue with the current state.
+- `Result: blocked` — surface the blockage, ask the overseer how to proceed (often this means dropping into direct mode, or aborting).
+
+##### Step 3a.2.6 — Surface summary to overseer; ask approve / go again / abort
+
+After the sub-agent returns, surface its summary to the overseer in chat. Then prompt:
+
+> "Iteration <N> complete. Resolved IR-IDs: `<list-from-summary>`. <Optional: surface 'Findings / risks' or 'Main should read' lines if non-empty.>
+>
+> Reply:
+>   - `approve` — exit the review loop. I'll tell you to type `/mo-continue` to resume mo-workflow and finalize.
+>   - `go again` — open `overseer-review.md` (any text editor) to add new findings (plain sentences are fine — I'll canonicalize them; or use the `### IR-NNN` block format directly). Then reply `go again` to start another iteration.
+>   - `abort` — invoke `/mo-abort-workflow` to cancel the workflow."
+
+Wait for the reply.
+
+##### Step 3a.2.7 — Branch on reply
+
+- **On `approve`:** Tell the overseer *"Review session approved. Type `/mo-continue` to resume the mo-workflow and finalize."* Exit Step 3a (do NOT call `progress.sh` for stage advance — the Review-Resume Handler in `mo-continue.md` owns finalization).
+- **On `go again`:** The overseer may have added free-form findings to `overseer-review.md`. Re-canonicalize:
+  ```bash
+  # Re-run canonicalization + classify any new free-form spans
+  $CLAUDE_PLUGIN_ROOT/scripts/review.sh canonicalize "$active_feature" || true
+  # If spans were found, classify and add them per the Step 1.5 recipe in commands/mo-continue.md.
+  # Then re-compute review-mode-suggestion (Step 1.6 recipe) so subsequent iterations reflect the new scope mix.
+  ```
+  Then loop back to Step 3a.2.1 for the next iteration.
+- **On `abort`:** Invoke `/mo-abort-workflow`. Stop.
+- **On any other reply:** Treat as a verbal concern. Either (a) ask the overseer to write it into `overseer-review.md` first if it's a substantive review finding (then loop back to Step 3a.2.7's `go again` branch), or (b) address it inline if it's a clarifying question (then re-prompt at Step 3a.2.6).
+
+#### Step 3a.3 — Why this design
+
+- **Per-iteration sub-agents cap main-context growth.** Each iteration the sub-agent's source-file reads, edits, and tool outputs stay in its disposable context. Main sees only the ~500-token return summary.
+- **Cascades stay contained.** A `re-spec` or `re-plan` finding triggers significant re-reads inside the sub-agent (plan/spec/code). Those reads do not enter main.
+- **Hand-off contract is preserved.** The terminal state is identical to the prior implementation: overseer types `approve`, then `/mo-continue`, and the Review-Resume Handler finalizes. Mo-workflow's state machine doesn't notice the internal refactor.
+- **Main runs the iteration boundaries.** The overseer's `approve` / `go again` / `abort` is consumed in main, not inside a Skill primer. This makes the loop reentrant after session breaks: a break between iterations leaves the workflow in a recoverable state (`sub-flow=reviewing` is already set; the next `/mo-continue` falls back into Step 3a's loop logic).
 
 ### Step 3b — Direct mode: address findings in this session
 
@@ -162,33 +319,36 @@ The millwright (this session) addresses each finding directly — no Skill is in
    ```
    Use `wontfix` instead of `fixed` if the overseer agrees to skip it.
 4. **One-iteration discipline:** address ALL open findings before asking for approval. Do not partially fix and ask.
-5. **Loop pattern (same as brainstorming mode, just driven from this session):**
+5. **Loop pattern (same iteration boundaries as brainstorming mode, just no sub-agent dispatch):**
    1. Read `overseer-review.md`; list `open` findings.
    2. Address them per the rules above; commit; mark each resolved.
-   3. Tell the overseer: *"All open findings addressed (resolved: \<ids\>). Either: (a) reply `approve` to end the review session — then type `/mo-continue` to resume mo-workflow and finalize; (b) add new findings to `overseer-review.md` (plain sentences are fine — I'll canonicalize them) and reply `go again` so I re-read."*
+   3. Tell the overseer: *"All open findings addressed (resolved: \<ids\>). Either: (a) reply `approve` to end the review session — then type `/mo-continue` to resume mo-workflow and finalize; (b) add new findings to `overseer-review.md` (plain sentences are fine — I'll canonicalize them) and reply `go again` so I re-read; (c) reply `abort` to invoke `/mo-abort-workflow`."*
    4. On `approve`: tell the overseer *"Review session approved. Type `/mo-continue` to resume the mo-workflow and finalize."* Then stop. Do NOT call `progress.sh` for completion — that's mo-workflow's job, triggered by `/mo-continue`.
-   5. On `go again`: re-canonicalize free-form additions (run `review.sh canonicalize` + `review.sh add` per Finding-5 step in `mo-continue.md` Overseer Step 1.5), then re-call `review.sh list-open` and go to step 1.
+   5. On `go again`: re-canonicalize free-form additions (run `review.sh canonicalize` + classify any new spans + `review.sh add` per the recipe in `mo-continue.md` Overseer Step 1.5). Then re-run `mo-continue.md` Overseer Step 1.6 to update `review-mode-suggestion` based on the new scope mix. Then refresh `review-context.md` body via `review.sh sync-refs --refresh-body` (Phase 1.4). Then re-call `review.sh list-open` and go to step 1.
+   6. On `abort`: invoke `/mo-abort-workflow`. Stop.
 6. **Existing scope rules** apply unchanged: pick the smallest tier that genuinely resolves the root cause; escalate if narrower tier leaves the cause in place.
 
 ### Step 4 — Hand off
 
 After Step 3a (brainstorming) or Step 3b (direct), stop driving the mo-workflow. Both modes converge on the same terminal: the overseer types `approve` to end the session, then types `/mo-continue` to resume mo-workflow.
 
-- **Brainstorming mode (Step 3a):** runs **isolated from mo-workflow** — same isolation model as stage 3. The overseer drives the session through to its terminal state (typing `approve`), then types `/mo-continue` to resume the mo-workflow.
-- **Direct mode (Step 3b):** runs in the main session. The overseer reviews fixes inline; when satisfied, types `approve` to end the loop, then `/mo-continue` to resume.
+- **Brainstorming mode (Step 3a):** runs in the main session, but each iteration delegates to a fresh sub-agent (`subagent_type: general-purpose`) whose context evaporates on return. Main owns the iteration boundaries (`approve` / `go again` / `abort`); the sub-agent owns the per-iteration finding work. The overseer drives the loop to its terminal state by typing `approve`, then `/mo-continue` to resume mo-workflow.
+- **Direct mode (Step 3b):** runs entirely in the main session — no sub-agent dispatch. Best when every open finding is `fix` or simple `re-implement` and the chain ceremony would just be overhead. The overseer reviews fixes inline; when satisfied, types `approve` to end the loop, then `/mo-continue` to resume.
 
 `mo-review` does **not** advance past stage 6. The Review-Resume Handler in `/mo-continue` (see `commands/mo-continue.md`) handles the post-session work when the overseer types `/mo-continue` after the session ends: sanity-checking no `open` findings remain, marking `overseer-review-completed=true`, setting `sub-flow=none`, advancing 6 → 7, and auto-firing `/mo-complete-workflow`.
 
-**Do not type `/mo-continue` while the brainstorming review session is mid-prompt** (e.g., while the chain is asking for `approve` / `go again`). Answer the chain first; type `/mo-continue` only after the chain has fully exited and returned control to the main session.
+**Do not type `/mo-continue` while a Step 3a sub-agent is mid-iteration** (i.e., while you're waiting on the sub-agent's return summary, or while main is asking for `approve` / `go again` / `abort`). Answer the prompt first; type `/mo-continue` only after Step 3a has fully exited via the `approve` branch and returned control with a "type /mo-continue to resume" message.
 
-## Delegation (optional)
+## Delegation (built-in)
 
-When `overseer-review.md` has more than ~5 open findings, finding clustering is a good delegation candidate (see `docs/workflow-spec.md` § "Delegation guidance"). Spawn one sub-agent per cluster with **disjoint** read/write scopes — each writes a per-cluster context file (e.g., `implementation/findings/<cluster>.md`) and proposes per-cluster scope (`fix` / `re-implement` / `re-plan` / `re-spec`). Capability tier: "general reasoning, medium effort" for fix/re-implement clusters; escalate to "most capable, high effort" for re-plan or re-spec clusters. The brainstorming session reads those per-cluster files instead of re-deriving context per finding. With ≤ 5 open findings, the chain handles them inline without delegation.
+Brainstorming mode (Step 3a) **delegates by default**: every iteration spawns one fresh sub-agent that addresses the currently-open findings and returns a structured summary. This is the dominant context-optimization win in the entire mo-workflow — it caps per-iteration main-context growth at the sub-agent's return summary regardless of how many findings or cascade scopes are involved.
+
+The earlier "cluster sub-agents for >5 findings" pattern (still mentioned in `docs/workflow-spec.md` § "Delegation guidance") is now redundant in brainstorming mode — Step 3a's per-iteration sub-agent handles arbitrary finding counts inside its own context. Cluster delegation is only relevant in direct mode if a single iteration has >5 findings AND the overseer explicitly wants per-cluster sub-agents instead of one in-main pass; in practice, switching to brainstorming mode is simpler.
 
 ## Notes
 
-- The brainstorming primer is a **layered load**: `review-context.md` + `overseer-review.md` are the required first reads; `requirements.md`, `config.md`, `summary.md`, and `primer.md` are on-demand fallbacks. The chain reads the codebase as needed.
-- `review-context.md` is a snapshot taken when `/mo-review` is invoked. Its body is NOT auto-refreshed if `/mo-update-blueprint` runs mid-loop — only the `requirements-id` frontmatter is re-pointed by `review.sh sync-refs`. The chain re-reads canonical files (`overseer-review.md`, `requirements.md`) when current state matters.
+- The Step 3a sub-agent prompt is a **layered load**: `review-context.md` + `overseer-review.md` are the required first reads; `requirements.md`, `config.md`, `summary.md`, and `primer.md` are on-demand fallbacks the sub-agent reads if a gap surfaces.
+- `review-context.md` body is **refreshed each iteration** by Step 3a.2.2 via `review.sh sync-refs --refresh-body` (cache-keyed on `(requirements-id, base-commit, HEAD-at-iteration-start)` — no-op when nothing has moved). The frontmatter `requirements-id` is also synced if `/mo-update-blueprint` ran mid-loop. The sub-agent re-reads canonical files (`overseer-review.md`, `requirements.md`) when current state matters beyond the snapshot.
 - `mo-review` does not generate findings. Authoring is the overseer's job (subjective concerns) and brainstorming's job (concerns surfaced during the session, written into `overseer-review.md` directly via the same `review.sh add` interface).
 - Brainstorming exits in one of three ways:
   - **Approval (clean exit):** all findings resolved + overseer types `approve` → session ends. The overseer then types `/mo-continue`, which fires the Review-Resume Handler in `/mo-continue` to advance 6→7 and auto-fire `/mo-complete-workflow`.

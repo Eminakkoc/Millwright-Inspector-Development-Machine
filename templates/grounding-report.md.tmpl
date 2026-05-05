@@ -1,0 +1,49 @@
+---
+id: {{UUID}}
+feature: {{FEATURE}}
+seam-classification: {{SEAM_CLASSIFICATION}}
+---
+
+# Codebase-grounding report — {{FEATURE}}
+
+Stage-2 audit artifact. Captured by `/mo-apply-impact` at stage-2 entry by a fresh sub-agent that walked the existing seam for each PENDING todo item this cycle. Used to compose the `requirements.md` body and to drive Step C's structural-diagram decision in `docs/blueprint-regeneration.md`.
+
+> _Snapshot caveat: this report reflects the codebase at stage-2 entry. It is NOT regenerated mid-cycle; the actual implementation may diverge after stage 3. For mid-cycle drift, see `/mo-update-blueprint`._
+
+<!-- Generated artifact — written by /mo-apply-impact's Step A grounding sub-agent.
+     Archived to blueprints/history/v[N+1]/implementation/grounding-report.md at
+     stage 8 by /mo-complete-workflow's archival loop. Treat overseer-review.md,
+     change-summary.md, and the canonical blueprint files as the active source
+     of truth; this is a one-shot snapshot to spare repeat codebase reads. -->
+
+## Per-item findings
+
+<!-- One subsection per todo item id in scope this cycle. Pattern:
+
+### <ITEM-ID> — <one-line description>
+
+- **Seam:** `<folder/path>` (existing files: `<file1>`, `<file2>`, ...).
+- **Pre-existing components:** `<existing class/function/module the new code must integrate with>`. Empty list if none (greenfield case).
+- **Cycle flavor:** greenfield | bugfix | improvement.
+- **Notes:** one or two lines on the integration shape, naming any constraints the requirements should respect.
+
+Example:
+
+### CART-001 — Add bulk add-to-cart
+
+- **Seam:** `services/cart/` (existing files: `services/cart/CartService.ts`, `services/cart/CartRepository.ts`).
+- **Pre-existing components:** `CartService.addItem(itemId, quantity)`, `CartRepository.upsertLine(...)`.
+- **Cycle flavor:** improvement.
+- **Notes:** extends the existing single-item path; the bulk variant should reuse `CartRepository.upsertLine` per row to avoid duplicating idempotency logic.
+-->
+
+## Overall seam summary
+
+<!-- 2–4 bullets summarizing the cross-item picture:
+
+- Dominant seam folder(s).
+- Key existing components new code must integrate with.
+- Classification rationale (why backend / frontend / mixed / infra).
+- Anything the requirements author should be especially careful about (e.g., a load-bearing legacy module, a pending migration in the same area).
+
+Keep this section concise — main reads it before writing requirements.md and uses it to anchor Goals to existing seams. Save longer notes for the per-item findings. -->

@@ -145,6 +145,10 @@ fm['active'] = {
     'execution-mode': 'none',
     'planning-mode': 'none',
     'review-mode': 'none',
+    'review-mode-suggestion': 'none',
+    'diagram-prompt': 'prompt',
+    'diagram-rendering': 'never',
+    'implementation-diagrams-skipped': False,
     'implementation-completed': False,
     'overseer-review-completed': False,
     'worktree-path': wt_path,
@@ -162,13 +166,41 @@ PYEOF
     ;;
 
   finish)
+    # Finalize the active feature: move active.feature to completed[] and set
+    # active=null. Phase 5.5 of the context-optimization plan adds an optional
+    # `--set field=value` pair pattern (mirroring `advance-to`) so callers can
+    # bundle a top-level field write with the finalize transition in one
+    # atomic file update. Useful when stage-8 wants to set a top-level flag
+    # alongside finalization without a separate `progress.sh set` call.
+    #
+    # Note: --set targets TOP-LEVEL fields only. The active block is being
+    # torn down here, so writes inside `active.*` are meaningless.
+    set_args=()
+    while [[ $# -gt 0 ]]; do
+      case "$1" in
+        --set)
+          [[ $# -ge 2 ]] || mo_die "finish: --set requires field=value"
+          set_args[${#set_args[@]}]="$2"
+          shift 2
+          ;;
+        --set=*)
+          set_args[${#set_args[@]}]="${1#--set=}"
+          shift
+          ;;
+        *)
+          mo_die "finish: unknown argument: $1 (expected --set field=value)"
+          ;;
+      esac
+    done
+
     dest="$(progress_file)"
     require_file "$dest"
     require_active "$dest"
     mo_assert_worktree_match
-    python3 - "$dest" <<'PYEOF'
+    python3 - "$dest" "${set_args[@]:-}" <<'PYEOF'
 import sys, re, yaml
 path = sys.argv[1]
+extra_sets = sys.argv[2:]
 with open(path) as f:
     content = f.read()
 m = re.match(r'^---\n(.*?)\n---\n(.*)$', content, re.DOTALL)
@@ -176,6 +208,24 @@ fm = yaml.safe_load(m.group(1)) or {}
 active = fm['active']
 fm.setdefault('completed', []).append(active['feature'])
 fm['active'] = None
+# Apply any --set field=value pairs to top-level fields. active.* writes are
+# meaningless here (active is being set to None).
+for kv in extra_sets:
+    if not kv:
+        continue
+    if '=' not in kv:
+        sys.stderr.write(f"finish: --set value missing '=': {kv}\n")
+        sys.exit(2)
+    field, value = kv.split('=', 1)
+    if field.startswith('active.') or field == 'active':
+        sys.stderr.write(f"finish: cannot set active.* fields during finalize (active is being cleared): {field}\n")
+        sys.exit(2)
+    # Try YAML-parsing the value so booleans/numbers/lists land as the right type.
+    try:
+        parsed = yaml.safe_load(value)
+    except yaml.YAMLError:
+        parsed = value
+    fm[field] = parsed
 with open(path, 'w') as f:
     f.write('---\n')
     f.write(yaml.safe_dump(fm, default_flow_style=False, sort_keys=False))
@@ -233,6 +283,10 @@ fm['active'] = {
     'execution-mode': 'none',
     'planning-mode': 'none',
     'review-mode': 'none',
+    'review-mode-suggestion': 'none',
+    'diagram-prompt': 'prompt',
+    'diagram-rendering': 'never',
+    'implementation-diagrams-skipped': False,
     'implementation-completed': False,
     'overseer-review-completed': False,
     'worktree-path': old.get('worktree-path'),

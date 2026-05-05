@@ -188,8 +188,42 @@ PYEOF
       | sort
     ;;
 
+  feature-section)
+    # Phase 6.5 of the context-optimization plan: extract just one feature's
+    # section from the active cycle's summary.md, plus the cross-cutting
+    # constraints, instead of reading the whole file. Used by stages 2, 3, 6
+    # when only the active feature's content is needed; the on-disk file
+    # stays canonical, but the slice keeps main-context reads bounded.
+    #
+    # Output: stdout carries the `## Cross-cutting constraints` section
+    # followed by the matching `## Feature: <feature>` section. Other
+    # features' sections are intentionally omitted. Exit 0 on success;
+    # exit 1 if the feature is not found in the file.
+    feature="${1:?feature required}"
+    quest_dir="$(mo_quest_active_dir)" || mo_die "feature-section: no active quest"
+    summary_file="$quest_dir/summary.md"
+    [[ -f "$summary_file" ]] || mo_die "feature-section: $summary_file not found"
+    python3 - "$summary_file" "$feature" <<'PYEOF'
+import re, sys
+path, target = sys.argv[1], sys.argv[2]
+with open(path) as f:
+    content = f.read()
+# Extract `## Cross-cutting constraints` (always emit if present).
+cc = re.search(r'(^## Cross-cutting constraints\s*\n.*?)(?=^## |\Z)', content, re.MULTILINE | re.DOTALL)
+if cc:
+    print(cc.group(1).rstrip())
+    print()
+# Extract the matching feature section.
+fs = re.search(rf'(^## Feature:\s+{re.escape(target)}\s*\n.*?)(?=^## |\Z)', content, re.MULTILINE | re.DOTALL)
+if not fs:
+    sys.stderr.write(f"feature-section: no `## Feature: {target}` heading in {path}\n")
+    sys.exit(1)
+print(fs.group(1).rstrip())
+PYEOF
+    ;;
+
   *)
-    echo "usage: quest.sh {slug|start|end|init-pointer|current|dir|has-active|status|list} ..." >&2
+    echo "usage: quest.sh {slug|start|end|init-pointer|current|dir|has-active|status|list|feature-section} ..." >&2
     exit 2
     ;;
 esac

@@ -291,7 +291,7 @@ Read into working memory:
 - **Previous `config.md`:** `$data_root/workflow-stream/$active_feature/blueprints/history/v${version}/config.md`. The `## GIT BRANCH` and `## Overseer Additions` sections are preserved at Step 4d via `blueprints.sh preserve-overseer-sections` — you don't need to copy them by hand.
 - **Implementation reality (cached):**
 
-  Use `implementation/change-summary.md` as the source of truth for what the implementation delivers. The same artifact backs `mo-generate-implementation-diagrams` so the analysis runs once per `base-commit..HEAD` range:
+  Use `implementation/change-summary.md` as the source of truth for what the implementation delivers. The same artifact backs `mo-generate-implementation-diagrams` so the analysis runs once per `base-commit..HEAD` range. **Cache contract (load-bearing — do NOT bypass):** the `change-summary-fresh` check is the gate that prevents this command and `mo-generate-implementation-diagrams` from independently re-walking the codebase for the same `(base-commit, HEAD)` range. A future change that reads `change-summary.md` directly without the freshness gate would re-introduce the double-walk this cache exists to prevent.
 
   ```bash
   if $CLAUDE_PLUGIN_ROOT/scripts/commits.sh change-summary-fresh "$active_feature"; then

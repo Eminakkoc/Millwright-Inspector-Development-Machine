@@ -1,0 +1,70 @@
+# Sub-agent return contract
+
+This template defines the **canonical return shape** that every fresh sub-agent invoked from a mo-workflow command MUST produce. The contract exists to prevent sub-agent summaries from growing into long prose narratives that slowly recreate the main-context bloat that delegation was meant to avoid.
+
+This file is **not** rendered by `frontmatter.sh init`. It is consumed by sub-agent prompt templates (in `commands/*.md`) by inclusion-by-reference: each delegated stage's prompt ends with the literal "Required return shape" block reproduced verbatim from this template, plus the "Return only this structure. Do not narrate intermediate steps." instruction.
+
+## Required return shape
+
+When a fresh sub-agent (any `subagent_type: general-purpose` invocation from a mo-workflow command) finishes its work, its single return message MUST follow this structure:
+
+```
+Result: success | partial | blocked
+Artifacts changed:
+- <path>: <one-line note on what changed>
+Commits:
+- <sha>: <commit subject>
+Findings / risks:
+- <short bullet, optional>
+Main should read:
+- <path>: <reason why main needs this>
+```
+
+## Field semantics
+
+- **Result** — required. One of three values:
+  - `success` — the sub-agent completed its task as instructed.
+  - `partial` — the sub-agent did some of the work but had to stop (ambiguity, missing prerequisites, scope outside its assigned range). Findings/risks should explain.
+  - `blocked` — the sub-agent could not start or was interrupted. Findings/risks must explain.
+- **Artifacts changed** — list of files written or modified. Include the path and a one-line note describing the change. Empty list (`Artifacts changed:` followed by no bullets) is allowed when the sub-agent only read or analyzed.
+- **Commits** — list of git commits the sub-agent produced. Each line is `<short-sha>: <subject>`. Empty list is allowed when no commits were produced.
+- **Findings / risks** — optional bullets surfacing issues the sub-agent encountered but couldn't resolve (e.g., ambiguity needing overseer input, edge cases discovered, risks the main agent should be aware of). Use sparingly — this is for things main needs to act on, not narration.
+- **Main should read** — list of files main agent needs to consume next (e.g., the artifact the sub-agent produced for main to act on). Each line is `<path>: <reason>`. Empty list is allowed if the sub-agent's work needs no follow-up reads in main.
+
+## Rules
+
+1. **Total return must fit under ~1k tokens.** If a sub-agent produces more, scope was too broad or the agent is narrating instead of summarizing. Tighten the prompt and re-run, or split the work across multiple sub-agents.
+2. **No free-form prose returns.** The sub-agent prompt MUST end with the instruction "Return only this structure. Do not narrate intermediate steps." Free-form narrative defeats the optimization.
+3. **Artifacts changed is the audit trail.** Anything the sub-agent wrote outside this list is invisible to main and effectively forgotten on return. Include every meaningful write.
+4. **Findings / risks is for main-action items.** If a finding doesn't require main to do something, it's narration — drop it.
+5. **Main should read is for sequencing.** Main reads these paths to continue the workflow. The sub-agent's intermediate reads stay in the sub-agent's context and never enter main.
+
+## Example
+
+A stage-2 codebase-grounding sub-agent might return:
+
+```
+Result: success
+Artifacts changed:
+- millwright-overseer/workflow-stream/payments/implementation/grounding-report.md: structured report with entrypoints, suspected flows, pre-existing classes
+Commits:
+Findings / risks:
+- Found two distinct payment-handler signatures in src/payments/legacy/ vs src/payments/v2/ — overseer should confirm which is the seam this cycle targets.
+Main should read:
+- millwright-overseer/workflow-stream/payments/implementation/grounding-report.md: input for requirements.md and config.md generation
+```
+
+Note: total length ~250 tokens. The actual codebase-walk reads (~65k tokens of source files) stayed in the sub-agent's context and evaporated on return.
+
+## Where this contract is enforced
+
+Each delegated-stage prompt template (in the corresponding `commands/*.md` file) includes the "Required return shape" block above and the "Return only this structure" instruction. The list of call sites that bind this contract:
+
+- `commands/mo-review.md` Step 3a (per-iteration review sub-agent — Phase 1.3 of the implementation plan)
+- `commands/mo-apply-impact.md` (codebase-grounding sub-agent — Phase 2.1)
+- `commands/mo-generate-implementation-diagrams.md` (diagram-generation sub-agent — Phase 3.1)
+- `commands/mo-draw-diagrams.md` (overseer-invokable wrapper for the same — Phase 3.1)
+- `commands/mo-continue.md` Pre-flight Step 2A (queue-rationale sub-agent fallback under Option 1B — Phase 4.3)
+- `commands/mo-run.md` Step 2.5 (per-folder summarization — Phase 5.2; existing per-file summarization should also adopt this contract)
+
+When adding a new delegated-stage prompt to mo-workflow, copy the "Required return shape" block from this template verbatim and add it to the new prompt. Do not paraphrase — the literal shape is what trains consistent sub-agent behavior.

@@ -93,7 +93,124 @@ Reached when the overseer has just finished marking items (`[x] TODO` lines exis
      $CLAUDE_PLUGIN_ROOT/scripts/progress.sh enqueue <feat1> [<feat2> ...]
      ```
      where `<featN>` is the de-duplicated set of feature headings that hold PENDING items in `todo-list.md`. `enqueue` refuses duplicates against `queue ∪ completed`, so a feature already finished in this cycle would error out — surface that to the overseer (they probably wrote a TODO under the wrong heading).
-4. **Analyze codebase for cross-feature dependencies.** For ≥ 2 features in the queue, do a bounded inspection (grep for cross-feature imports, references in shared modules) to surface ordering hints. Skip when there's only one feature.
+4. **Derive cross-feature ordering signals — journal-first, code-aware as fallback.** Replaces the prior unconditional codebase scan (which violated the "intake stages don't read code" invariant — see `docs/context optimization/recommendations.md` § "Issue 1"). Skip the whole step when there's only one feature in the queue.
+
+   For ≥ 2 features, follow this three-step flow:
+
+   **Step 4a — Journal-only proposal (Phase 4.1).** Derive the ordering from `summary.md` content alone. Read the cycle's `summary.md` `## Cross-cutting constraints` and the `## Feature: <feature>` sections (these are already in main context from stage 1). Compose a proposed order based on:
+   - Explicit cross-feature references in the body (e.g., `## Feature: payments` mentioning `audit-log` is a dependency signal).
+   - Dependency keywords inside feature sections: `depends on`, `blocks`, `requires`, `precondition`.
+   - The default ordering produced by `/mo-run` (already in `progress.md.queue`) when no signals surface.
+
+   This step writes nothing on its own — the proposed order is held in chat to be presented in step 5 below.
+
+   **Step 4b — Heuristic short-circuit (Phase 4.2).** Decide whether step 4a is enough or whether a code-aware scan is justified:
+
+   ```bash
+   data_root="$($CLAUDE_PLUGIN_ROOT/scripts/data-root.sh)"
+   summary_file="$($CLAUDE_PLUGIN_ROOT/scripts/quest.sh dir)/summary.md"
+   features_in_queue="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh queue-remaining | sed '/^$/d')"
+
+   ambiguous=0
+   # Signal 1: any feature name appears inside another feature's section body
+   while IFS= read -r feat; do
+     [[ -z "$feat" ]] && continue
+     # Use python for robust section walking
+     hits="$(python3 - "$summary_file" "$feat" "$features_in_queue" <<'PYEOF'
+import re, sys
+path, target_feat, all_feats = sys.argv[1], sys.argv[2], sys.argv[3].split('\n')
+with open(path) as f:
+    content = f.read()
+# Find each ## Feature: <name> section
+for m in re.finditer(r'^## Feature:\s+(\S+)\s*\n(.*?)(?=^## |\Z)', content, re.MULTILINE | re.DOTALL):
+    section_feat, body = m.group(1).strip(), m.group(2)
+    if section_feat == target_feat:
+        continue
+    # Does target_feat appear anywhere in this other feature's body?
+    if re.search(rf'\b{re.escape(target_feat)}\b', body):
+        print('1')
+        sys.exit(0)
+print('0')
+PYEOF
+)"
+     if [[ "$hits" == "1" ]]; then
+       ambiguous=1
+       break
+     fi
+   done <<< "$features_in_queue"
+
+   # Signal 2: dependency keywords inside any feature section
+   if [[ "$ambiguous" == "0" ]] && grep -qiE '\b(depends on|blocks|requires|precondition)\b' "$summary_file"; then
+     ambiguous=1
+   fi
+   ```
+
+   - **`ambiguous=0`** — journal-only ordering is sufficient. Skip Step 4c. Use the proposal from Step 4a in step 5.
+   - **`ambiguous=1`** — fall through to Step 4c.
+
+   **Step 4c — Sub-agent fallback for code-aware ordering (Phase 4.3 — Option 1B).** When the heuristic flags ambiguity, delegate the dependency analysis to a fresh sub-agent. Do NOT do the codebase scan in main — that's the leak Phase 4.1 closes.
+
+   First check the cache. If a `queue-rationale.md` from a prior batch in this cycle exists with `scan-mode: code-aware` AND its cache key still matches, reuse the existing rationale instead of spawning a new sub-agent:
+
+   ```bash
+   qr_file="$($CLAUDE_PLUGIN_ROOT/scripts/quest.sh dir)/queue-rationale.md"
+   if [[ -f "$qr_file" ]]; then
+     cached_scan_mode="$($CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get "$qr_file" scan-mode 2>/dev/null || echo 'journal-only')"
+     cached_summary_hash="$($CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get "$qr_file" summary-md-hash 2>/dev/null || echo '')"
+     cached_head="$($CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get "$qr_file" head-when-scanned 2>/dev/null || echo '')"
+     current_summary_hash="$(shasum -a 256 "$summary_file" | awk '{print $1}' | cut -c1-16)"
+     current_head="$(git rev-parse HEAD 2>/dev/null || echo '')"
+     if [[ "$cached_scan_mode" == "code-aware" \
+        && "$cached_summary_hash" == "$current_summary_hash" \
+        && "$cached_head" == "$current_head" ]]; then
+       echo "queue-rationale.md cache hit (scan-mode=code-aware) — reusing prior code-aware ordering"
+       cache_hit=1
+     else
+       cache_hit=0
+     fi
+   else
+     cache_hit=0
+   fi
+   ```
+
+   If `cache_hit=1`, use the cached order from `qr_file`'s `features` frontmatter and skip the sub-agent. The cached body's `### Order` and `### Dependencies` carry the existing reasoning — surface those in step 5's proposal.
+
+   If `cache_hit=0`, spawn a fresh sub-agent (`Agent` invocation with `subagent_type: general-purpose` — explicitly NOT a fork; a fork would inherit main context and re-introduce the leak). Sub-agent prompt template:
+
+   ```
+   You are a fresh sub-agent invoked from `mo-continue` Pre-flight Step 2A item 4 to inspect cross-feature codebase dependencies for the queue: <comma-separated features_in_queue>. Your context is isolated from the main session — main does not see your tool calls, only your final return summary.
+
+   **Required first reads:**
+
+   1. <summary_file> — the cycle's summary.md. Read `## Cross-cutting constraints` and each `## Feature: <name>` section in scope.
+
+   **Your task:**
+
+   1. For each feature in scope, identify the smallest set of existing files / folders / symbols the feature's TODO items would naturally touch (heuristics: keyword grep on the feature name + journal cues, neighboring features in the same module).
+   2. Detect cross-feature dependencies: import chains, shared modules, schema dependencies, runtime-coupling between features.
+   3. Propose a queue order that respects the dependencies — features that block others run first.
+   4. Bounding rules: ≤ 5 files inspected per feature; skip generated/vendor/lock/build artefacts.
+
+   **Return only a 2–3 sentence summary** of the proposed order and the strongest dependency signal you found. Example: "Order: audit-log → payments. The payments feature's planned `services/payments/PaymentService.ts` will read from `services/audit/AuditLog.append()`, which the audit-log feature introduces. No reverse dependency surfaced."
+
+   ---
+
+   Required return shape — return ONLY this structure. Do not narrate intermediate steps:
+
+   Result: success | partial | blocked
+   Artifacts changed:
+   - <path>: <one-line note>  (likely empty for this task — the sub-agent does not write files)
+   Commits:
+   - <sha>: <commit subject>  (likely empty)
+   Findings / risks:
+   - <short bullet, optional>
+   Main should read:
+   - <path>: <reason>  (likely empty)
+
+   Total return must fit under ~1k tokens.
+   ```
+
+   Receive the sub-agent return summary. Use the proposed order in step 5. The cache key fields (`scan-mode: code-aware`, `summary-md-hash`, `head-when-scanned`) will be written into `queue-rationale.md` by Step 2B when the overseer confirms the order — main is responsible for passing these to Step 2B's frontmatter init/update.
 5. **Propose the prioritized order.** Print the order as a numbered list and the dependency reasoning underneath. End the message with:
    > "Reply `/mo-continue` to accept this order, or paste a different order (one feature per line) and then `/mo-continue` to confirm."
 6. **Mid-cycle re-entry only — append a draft batch to `queue-rationale.md` (Item 7 of the v11 plan).** When this Step 2A run is the mid-cycle re-entry path (queue was empty + we just re-populated via `enqueue`), `queue-rationale.md` already exists from the prior cycle's batches and its top-level `status` is `confirmed`. Append a new `## Batch <N+1> — <today>` body with the proposed order in `### Order` (and `### Dependencies`/`### Notes` if applicable). Refresh top-level frontmatter atomically with the body write: `batch: N+1`, `status: draft`, `features: <previous confirmed cumulative + proposed order for new batch>`. This makes the next `/mo-continue` route to the draft-confirmation row in the dispatcher (Item 5) → Step 2B (extended) for confirmation.
@@ -148,12 +265,26 @@ fi
 
    Then fill the body via `Edit` per the template's section guide (one `## Batch 1 — <date>` section with `### Order`, `### Dependencies`, `### Notes`). Top-level `status` and `batch` may be omitted (schema defaults handle them as `confirmed`/`1`).
 
+   **Cache fields (Phase 4.3 of the context-optimization plan).** If Step 2A's item 4 ran the code-aware sub-agent fallback (Step 4c), record the cache key fields so a subsequent mid-cycle re-entry can short-circuit the scan. Set these via `frontmatter.sh set` after the init:
+
+   ```bash
+   if [[ "$step_2a_scan_mode" == "code-aware" ]]; then
+     summary_md_hash="$(shasum -a 256 "$summary_file" | awk '{print $1}' | cut -c1-16)"
+     head_when_scanned="$(git rev-parse HEAD 2>/dev/null || echo '')"
+     $CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh set "$qr_file" scan-mode code-aware
+     $CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh set "$qr_file" summary-md-hash "$summary_md_hash"
+     [[ -n "$head_when_scanned" ]] && $CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh set "$qr_file" head-when-scanned "$head_when_scanned"
+   fi
+   # When step_2a_scan_mode is unset or `journal-only`, omit these fields — schema default is journal-only.
+   ```
+
    **(b) Draft — targeted edit of the existing file** (Item 7 + Item 5 extension):
 
    - Update only the **latest batch's** `### Order / ### Dependencies / ### Notes` body to reflect the confirmed order and reasoning. Do NOT add a new batch (Item 7 reserves the append step for Step 2A); do NOT rewrite earlier batch bodies (audit history).
    - Refresh top-level `features:` to the cumulative ordered list across all batches (previous confirmed batches' features in order, plus the just-confirmed latest batch's features). Use `mo_fm_set` (via `frontmatter.sh set`) to preserve the rest of the frontmatter.
    - Set top-level `batch:` to the latest batch number (`qr_batch`).
    - Flip top-level `status:` from `draft` to `confirmed`.
+   - **Cache fields:** if Step 2A's item 4 ran the code-aware sub-agent for the latest batch, refresh `scan-mode`, `summary-md-hash`, `head-when-scanned` per case (a) above. If the sub-agent didn't run (cache hit during step 4c, or journal-only path), leave the fields as they were on the prior batch's confirmation.
    - **Load-bearing invariant:** after Step 2B returns, `queue-rationale.md.features - progress.completed` must equal `progress.queue` in order, or Row A will not fire between features. Verify this before the auto-fire below.
 
 4. **Reorder the queue.**
@@ -641,9 +772,23 @@ The Resume Handler eliminates stage 4 as a persisted state. The atomic `advance-
 $CLAUDE_PLUGIN_ROOT/scripts/progress.sh advance-to 3 5 --set sub-flow=none
 ```
 
-Tell the overseer:
+Tell the overseer. The wording branches on `implementation-diagrams-skipped` so the review target is unambiguous:
 
-> "Stage 5 — ready for your review. Look at: commits `$base_commit..HEAD` and diagrams under `implementation/diagrams` (existing-system context is shaded grey; new functionality is highlighted). Write your findings into `implementation/overseer-review.md` (or leave it empty to approve). Type `/mo-continue` when done."
+```bash
+skipped="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get implementation-diagrams-skipped 2>/dev/null || echo 'false')"
+```
+
+**When `skipped=false` (the normal case):**
+
+> "Stage 5 — ready for your review. Look at: commits `$base_commit..HEAD` and diagrams under `implementation/diagrams` (existing-system context is shaded grey; new functionality is highlighted).
+>
+> *Note on seeded-only diagrams:* if `implementation/diagrams/README.md` flags any subject as `seeded-only`, that `.puml` is a verbatim copy of the stage-2 blueprint diagram — those subjects had no implementation commits in `base-commit..HEAD`. Treat them as 'design intent preserved' rather than implementation drift; the legend wording (e.g., 'Planned') reflects the stage-2 baseline.
+>
+> Write your findings into `implementation/overseer-review.md` (or leave it empty to approve). Type `/mo-continue` when done."
+
+**When `skipped=true` (overseer answered `n` to stage-4 diagram prompt):**
+
+> "Stage 5 — ready for your review. Look at: commits `$base_commit..HEAD` and the **stage-2 blueprint diagrams** under `blueprints/current/diagrams` (implementation diagrams were skipped at stage 4 — the blueprint diagrams remain authoritative for this cycle). Write your findings into `implementation/overseer-review.md` (or leave it empty to approve). Type `/mo-continue` when done. To generate implementation diagrams now, run `/mo-draw-diagrams` first."
 
 Stop here.
 
@@ -675,7 +820,7 @@ unstructured="$($CLAUDE_PLUGIN_ROOT/scripts/review.sh canonicalize "$active_feat
 canon_exit=$?
 ```
 
-`canonicalize` exits `0` (already canonical — skip to Step 2), `3` (unstructured spans found — proceed below), or non-zero (error — surface and abort). When spans are found, `stdout` carries one TSV row per span: `<line-start>\t<line-end>\t<flattened-text>`.
+`canonicalize` exits `0` (already canonical — skip to Step 1.6), `3` (unstructured spans found — proceed below, then continue to Step 1.6), or non-zero (error — surface and abort). When spans are found, `stdout` carries one TSV row per span: `<line-start>\t<line-end>\t<flattened-text>`.
 
 For each TSV row, the millwright (the LLM, not the script) classifies and converts:
 
@@ -705,7 +850,52 @@ When all spans are converted, tell the overseer:
 
 > "I converted **N** free-form finding(s) into `### IR-NNN` blocks. Severity and scope are my classifications — open `overseer-review.md` to override before the review session begins. Continuing to review..."
 
-Then fall through to Step 2 (which re-runs `list-open` and now sees the freshly-added structured findings).
+Then fall through to Step 1.6.
+
+### Overseer Step 1.6 — Persist review-mode-suggestion
+
+After canonicalization completes (whether spans were found or the file was already canonical), compute the scope-distribution suggestion that stage 6 will use to default its review-mode prompt. The hint is computed here, at canonicalization time, because findings are already classified and the scope is stable; computing it again at stage 6 would re-derive the same fact.
+
+Logic:
+
+- If `review.sh list-open` returns nothing (zero open findings): `suggestion=none`.
+- If every open finding has `scope: fix`: `suggestion=direct`.
+- If at least one open finding has scope ≠ fix: `suggestion=brainstorming`.
+
+```bash
+data_root="$($CLAUDE_PLUGIN_ROOT/scripts/data-root.sh)"
+ov_file="$data_root/workflow-stream/$active_feature/implementation/overseer-review.md"
+open_count="$($CLAUDE_PLUGIN_ROOT/scripts/review.sh list-open "$active_feature" | wc -l | tr -d ' ')"
+if [[ "$open_count" == "0" ]]; then
+  suggestion="none"
+else
+  # Walk overseer-review.md; flag if any open finding has scope != fix.
+  has_non_fix="$(python3 - "$ov_file" <<'PYEOF'
+import re, sys
+with open(sys.argv[1]) as f:
+    content = f.read()
+for m in re.finditer(r'### (IR-\d{3}) —.*?\n(.*?)(?=\n### |\n## |\Z)', content, re.DOTALL):
+    block = m.group(2)
+    status = re.search(r'^- status:\s*(\S+)', block, re.MULTILINE)
+    scope = re.search(r'^- scope:\s*(\S+)', block, re.MULTILINE)
+    if status and status.group(1) == 'open' and scope and scope.group(1) != 'fix':
+        print('1')
+        sys.exit(0)
+print('0')
+PYEOF
+)"
+  if [[ "$has_non_fix" == "1" ]]; then
+    suggestion="brainstorming"
+  else
+    suggestion="direct"
+  fi
+fi
+$CLAUDE_PLUGIN_ROOT/scripts/progress.sh set "review-mode-suggestion=$suggestion"
+```
+
+The persisted hint is read at stage 6 by `commands/mo-review.md` Step 2.6 to default the `review-mode` prompt — `direct` defaults to direct mode with an explicit rationale; `brainstorming` and `none` keep the current default. The field is `none` until stage 5 sets it, and resets to `none` at the next feature's `progress.sh activate`.
+
+Then fall through to Step 2.
 
 ### Overseer Step 2 — Check for open findings
 
@@ -763,13 +953,15 @@ remaining_open="$($CLAUDE_PLUGIN_ROOT/scripts/review.sh list-open "$active_featu
 
 If `remaining_open` is empty, fall through to Step 2 (advance and finalize).
 
-If `remaining_open` is non-empty, the review session ended without resolving every finding — the same ambiguity as the stage-3 abandoned-chain case. The session may have exited cleanly with deferred findings, or it may have been interrupted mid-loop. Prompt the overseer:
+If `remaining_open` is non-empty, the review session ended without resolving every finding — the same ambiguity as the stage-3 abandoned-chain case. The session may have exited cleanly with intentionally-deferred findings, or it may have been interrupted mid-loop. The three replies below are NOT auto-defaulted; the overseer must pick deliberately, because the choice has different downstream consequences. Prompt the overseer:
 
-> "Review session ended with **N** open finding(s): `<id-list>`. Did the session finish, or was it interrupted?
+> "Review session ended with **N** open finding(s): `<id-list>`. Pick one — there is no default:
 >
->   - `completed` — keep them open and proceed; the workflow advances 6 → 7 with the finding(s) still `open`. Use this if you and the chain agreed to defer them. `mo-complete-workflow` archives `overseer-review.md` into `blueprints/history/v[N]/implementation/` at stage 8, so the deferred findings remain queryable in the historical record. (If you want them *addressed* in this cycle instead of just archived, run `/mo-review` to re-launch the loop.)
->   - `abandoned` — re-launch the brainstorming review session via `/mo-review` to address the remaining findings. Stage stays at 6 until the session exits cleanly; you'll type `/mo-continue` again afterward.
->   - `abort` — cancel the workflow via `/mo-abort-workflow`."
+>   - `completed` — **You and the chain intentionally deferred these findings as non-blocking follow-up work.** The workflow advances 6 → 7 with the finding(s) still `open`. `mo-complete-workflow` archives `overseer-review.md` into `blueprints/history/v[N]/implementation/` at stage 8, so the deferred findings remain queryable in the historical record. Use this when you've decided the open findings are worth tracking but not worth blocking this cycle on. (If you want them *addressed* in this cycle instead of just archived, choose `abandoned` instead — `completed` does not re-launch the review loop.)
+>   - `abandoned` — **The session was interrupted mid-loop, or the findings still need to be addressed.** Re-launches the brainstorming review session via `/mo-review`. Stage stays at 6 until the session exits cleanly; you'll type `/mo-continue` again afterward.
+>   - `abort` — **Something went wrong — cancel the workflow.** Invokes `/mo-abort-workflow`.
+>
+> Reply with one of the three keywords."
 
 - **On `completed`** — fall through to Step 2.
 - **On `abandoned`** — invoke `/mo-review` (which reads the open findings, prompts for a review-mode, and re-launches the loop) and **stop**. Do NOT advance past stage 6. The next `/mo-continue` after the new session exits will re-enter this handler.
@@ -779,27 +971,47 @@ If `remaining_open` is non-empty, the review session ended without resolving eve
 
 `sub-flow=reviewing` stays in place until after the diagram-refresh prompt at Step 2.5 (Item 4 of the v11 plan). This makes the refresh prompt re-fireable on retry — if a session break happens between "overseer answered the prompt" and "rotation finalized," the next `/mo-continue` re-enters this handler and re-prompts (the overseer can answer the same way; the prompt is idempotent because no state changed yet).
 
-### Review-Resume Step 2.5 — Offer diagram refresh
+### Review-Resume Step 2.5 — Offer diagram refresh (or recovery)
 
-The review session may have committed new code. The implementation diagrams under `implementation/diagrams/` reflect the state at the post-chain Resume Handler — they don't capture review-loop fixes. Before finalizing, give the overseer the option to refresh:
+The review session may have committed new code. Before finalizing, offer the overseer a chance to update implementation diagrams. The prompt branches on the multi-state output of `commits.sh diagrams-fresh`:
 
 ```bash
-data_root="$($CLAUDE_PLUGIN_ROOT/scripts/data-root.sh)"
-review_commits="$(git rev-list --count "$base_commit..HEAD" 2>/dev/null || echo 0)"
-diagram_commits="$(git log --format=%H -- "$data_root/workflow-stream/$active_feature/implementation/diagrams/" | head -1)"
-new_since_diagrams="$(git rev-list --count "${diagram_commits:-$base_commit}..HEAD" 2>/dev/null || echo 0)"
+freshness="$($CLAUDE_PLUGIN_ROOT/scripts/commits.sh diagrams-fresh "$active_feature" 2>/dev/null)"
+freshness_exit=$?
 ```
 
-Prompt the overseer:
+Branch on `freshness`:
 
-> "The review session committed **N** additional commits since the original implementation diagrams were generated. Regenerate the diagrams to reflect the final state of `base-commit..HEAD`?
->
->   - `y` — re-run `/mo-draw-diagrams` before finalizing (~30 seconds; useful so the final snapshot reflects the review-loop fixes before stage 8 archives the diagrams into `blueprints/history/v[N+1]/implementation/diagrams/`).
->   - `n` — proceed directly to `/mo-complete-workflow`. The diagrams stay at the post-chain snapshot; they'll be archived as-is (not deleted) at stage 8.
->
-> (y/n)"
+- **`fresh`** (exit 0) — diagrams are already current. Skip the prompt entirely; fall through to Step 2.6.
+- **`stale`** (exit 0) — refresh prompt:
 
-Skip the prompt entirely when `new_since_diagrams == 0` (no review-loop commits — diagrams are already current). On `y`, invoke `/mo-draw-diagrams` and continue. On `n`, continue. Either way, fall through to Step 2.6.
+  > "The review session committed additional commits since the implementation diagrams were generated. Regenerate them?
+  >
+  >   - `y` — re-run `/mo-draw-diagrams` before finalizing (~30 seconds; useful so the final snapshot reflects the review-loop fixes before stage 8 archives the diagrams into `blueprints/history/v[N+1]/implementation/diagrams/`).
+  >   - `n` — proceed directly to `/mo-complete-workflow`. The diagrams stay at the post-chain snapshot; they'll be archived as-is (not deleted) at stage 8.
+  >
+  > (y/n)"
+
+- **`skipped`** (exit 0) — recovery prompt (stage 4 was skipped):
+
+  > "Implementation diagrams were skipped at stage 4. The review session committed commits in `base-commit..HEAD` since then. Reply:
+  >   - `y` — generate implementation diagrams now via `/mo-draw-diagrams` (~30s; covers the full `base-commit..HEAD` range and clears the skip marker so stage 8 archives them).
+  >   - `n` — proceed without implementation diagrams. Stage-2 blueprint diagrams remain the only diagram artifact archived at stage 8.
+  >
+  > (y/n)"
+
+- **`missing`** (exit non-zero) — diagnostic. Surface to the overseer and ask how to proceed:
+
+  > "diagrams-fresh returned `missing` for `$active_feature` — the workflow expected either implementation diagrams to exist OR the skip marker to be set, but neither holds. Reply:
+  >   - `y` — generate implementation diagrams now via `/mo-draw-diagrams` (treats this as a fresh stage-4 entry).
+  >   - `n` — proceed without implementation diagrams.
+  >   - `abort` — invoke `/mo-abort-workflow` for a clean recovery."
+
+On `y` (any branch), invoke `/mo-draw-diagrams`. The wrapper's Step 1.5 routes correctly: for `skipped=true` it offers the recovery prompt (then clears the marker after success); for `skipped=false` it offers the regular stage-4 prompt or proceeds directly when `diagram-prompt=auto`. Either way, after `/mo-draw-diagrams` returns successfully, `implementation-diagrams-skipped` will be `false`. Continue to Step 2.6.
+
+On `n`, continue to Step 2.6 unchanged.
+
+On `abort` (only valid for the `missing` branch), invoke `/mo-abort-workflow` and stop.
 
 ### Review-Resume Step 2.6 — Atomic finalize (advance-to 6 → 7)
 

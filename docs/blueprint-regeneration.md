@@ -48,39 +48,91 @@ $CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh init requirements "$dest" \
 
 The schema requires `todo-item-ids` to be a non-empty array of strings. Each item-id (e.g. `PAY-001`, `AUD-002`) is alphanumeric, so the comma-separated list lands cleanly inside the template's `[{{TODO_ITEM_IDS}}]` brackets.
 
-### Codebase-grounding pass (run before writing the body)
+### Codebase-grounding pass (delegated to a fresh sub-agent)
 
 Before writing the requirements body, do a **bounded codebase pass** scoped to the active feature's PENDING todo items. The goal is to anchor each requirement item to the **existing seam** where the change lands (a service folder, a module, a layer, a hook point), so Goals describe a high-level solution sketch rather than a pure restatement of intent. This pass also gives Step C the inputs it needs to render existing-vs-new diagrams.
 
-For each item id in `$active_item_ids`:
+**Delegate this pass to a fresh sub-agent.** The grounding pass involves reading 5+ candidate files per todo item — those reads, if done in main, accumulate in main context for the rest of the workflow (stages 2 through 8). Instead, spawn a fresh sub-agent (`Agent` invocation with `subagent_type: general-purpose` — explicitly NOT a fork) whose context is disposable. The sub-agent walks the seam, classifies, and writes a structured `grounding-report.md`; main reads that report (small, ~2–4 KB) instead of the seam (large, ~60k tokens).
 
-1. Read the item's description in `quest/<active-slug>/todo-list.md` and the relevant excerpt of `summary.md`'s `## Feature: <$active_feature>` section.
-2. Identify the smallest set of existing files / folders / symbols the item naturally touches. Heuristics: keyword grep, neighboring features in the same feature folder, sibling files in the obvious module (e.g., for "add to cart" → `services/`, `routes/`, the existing cart entity if any).
-3. Note the seam name (`services/`, `events/`, `domain/cart/`, etc.) and any pre-existing component the new functionality must integrate with (e.g., a base service class, an existing repository, an event bus).
-4. **Classify the seam** as one of `backend | frontend | mixed | infra`. Step C reads this classification to decide whether to render the optional structural diagram (class or component). Use this allowlist of folder patterns — if multiple buckets match across the items in this cycle, the feature classification is `mixed`:
+**Initialize the report.** Before invoking the sub-agent, create the destination file with valid frontmatter so it's writable when the sub-agent fills the body. The sub-agent will overwrite frontmatter fields (notably `seam-classification`) at write time; we just need the skeleton in place:
+
+```bash
+impl_dir="$data_root/workflow-stream/$active_feature/implementation"
+mkdir -p "$impl_dir"
+report_dest="$impl_dir/grounding-report.md"
+$CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh init grounding-report "$report_dest" \
+  "FEATURE=$active_feature" \
+  "SEAM_CLASSIFICATION=mixed"
+```
+
+`SEAM_CLASSIFICATION=mixed` is a placeholder; the sub-agent recomputes and overwrites it via `frontmatter.sh set` after analyzing the seam.
+
+**Spawn the sub-agent.** Invoke `Agent` with `subagent_type: general-purpose`. Compose the prompt from the template below. Substitute `<placeholder>` literals with concrete values from the caller context.
+
+Sub-agent prompt template:
+
+```
+You are a fresh sub-agent invoked from `mo-apply-impact` Step A to do the stage-2 codebase-grounding pass for the "<active_feature>" feature. Your context is isolated from the main session — main does not see your tool calls, only your final return summary.
+
+**Required first reads:**
+
+1. <quest_dir>/todo-list.md — find the items in scope this cycle: <comma-separated active_item_ids>. Read each item's description.
+2. <quest_dir>/summary.md — read `## Cross-cutting constraints` and `## Feature: <active_feature>` sections.
+
+**Your task — for each item id in scope:**
+
+1. Identify the smallest set of existing files / folders / symbols the item naturally touches. Heuristics: keyword grep, neighboring features in the same feature folder, sibling files in the obvious module (e.g., for "add to cart" → `services/`, `routes/`, the existing cart entity if any).
+2. Note the seam name (`services/`, `events/`, `domain/cart/`, etc.) and any pre-existing component the new functionality must integrate with (e.g., a base service class, an existing repository, an event bus).
+3. **Classify the seam** as one of `backend | frontend | mixed | infra`. Use this allowlist of folder patterns — if multiple buckets match across this item's reads, classify as `mixed`:
    - `backend`: `services/`, `controllers/`, `routes/`, `domain/`, `models/`, `repositories/`, `events/`, `workers/`, `jobs/`, `handlers/`, `api/`.
    - `frontend`: `components/`, `pages/`, `views/`, `screens/`, `hooks/`, `containers/`.
    - `infra`: `migrations/`, `terraform/`, `k8s/`, `ci/`, `scripts/`.
 
    Projects with non-standard layouts: pick the closest match by intent (a folder of HTTP request handlers is `backend` even if it's named `endpoints/`). When the closest match is genuinely ambiguous, prefer `mixed` over guessing.
 
-5. **Classify the cycle flavor** as one of `greenfield | bugfix | improvement`. The flavor is detected per Goals item (a single cycle can have a mix); it does **not** persist anywhere — it's a framing decision the millwright uses to phrase the Goals body and to pick the legend wording in Step C. No frontmatter field, no schema change.
-
-   Detection rules (apply in order; first match wins):
+4. **Classify the cycle flavor** as one of `greenfield | bugfix | improvement`. Detection rules (apply in order; first match wins):
 
    - **Bugfix** if the todo description contains an explicit defect signal: keywords like "fix", "bug", "broken", "regression", "crash", "incorrect", "resolve issue", or links to a defect ticket; AND the seam already contains the targeted functionality (the buggy code is what's being fixed).
    - **Improvement** if the seam already contains a working version of the feature the todo names AND the todo description signals enhancement: keywords like "improve", "extend", "optimize", "enhance", "expand", "upgrade", "speed up", "make … faster / more accurate / more reliable".
-   - **Greenfield** otherwise — the seam either is empty for this todo or doesn't yet contain the targeted functionality. This is the default; ambiguous items fall here. The overseer corrects at the stage-2 review gate if the millwright guessed wrong.
-
-   When a single Goals item legitimately spans flavors ("fix the empty-cart bug AND extend the add-to-cart path to accept bulk requests"), prefer to split it into two Goals lines so each carries one flavor. If splitting isn't natural, take the dominant flavor and let the prose carry the rest.
+   - **Greenfield** otherwise — the seam either is empty for this todo or doesn't yet contain the targeted functionality. This is the default; ambiguous items fall here.
 
 **Bounding rules** (this is a stage-2 pass, not a full read of the project):
 
 - Diff hunks aren't available yet — let the todo description and feature folder structure drive your reads.
-- ≤ 5 files per todo item; skip generated/vendor/lock/build artefacts. If you needed to read more than that to identify the seam, the todo item is probably too vague — surface it to the overseer rather than guessing.
-- The pass writes nothing on its own — the findings feed Goals (below) and the diagrams in Step C.
+- ≤ 5 files per todo item; skip generated/vendor/lock/build artefacts. If you needed to read more than that to identify the seam, surface that as a finding/risk in your return summary — main will flag it to the overseer.
 
-**Greenfield case.** If the project is empty or has no relevant existing seams (first-cycle bootstrap), each Goals item collapses to pure intent — that's correct, there's nothing to anchor to. Do not fabricate seams that don't exist yet; the chain at stage 3 will introduce them.
+**Greenfield case.** If the project is empty or has no relevant existing seams (first-cycle bootstrap), the per-item finding has empty `Pre-existing components` and flavor `greenfield` — that's correct, there's nothing to anchor to. Do not fabricate seams that don't exist yet.
+
+**Write the report.** Fill `<report_dest>` (already initialized with frontmatter by main):
+
+1. **Update the `seam-classification` frontmatter** to the overall classification across all items in this cycle (`backend` if every item is backend; `frontend` if every item is frontend; `mixed` if items span buckets; `infra` if every item is infra). Use `scripts/frontmatter.sh set <report_dest> seam-classification <value>`.
+2. **Fill `## Per-item findings`** with one subsection per item id (`### <ITEM-ID> — <description>`) covering: seam, pre-existing components, cycle flavor, notes. Follow the template's example.
+3. **Fill `## Overall seam summary`** with 2–4 bullets summarizing the cross-item picture and the classification rationale.
+4. Validate the file: `scripts/frontmatter.sh validate <report_dest> grounding-report`.
+
+---
+
+Required return shape — return ONLY this structure. Do not narrate intermediate steps:
+
+Result: success | partial | blocked
+Artifacts changed:
+- <path>: <one-line note on what changed>
+Commits:
+- <sha>: <commit subject>
+Findings / risks:
+- <short bullet, optional>
+Main should read:
+- <path>: <reason why main needs this>
+
+Total return must fit under ~1k tokens.
+```
+
+**Receive the sub-agent return** and proceed. Main now reads `$report_dest` to extract:
+- The `seam-classification` frontmatter value (drives Step C's optional-structural-diagram decision).
+- The per-item findings (drive the Goals body — phrasing follows the cycle flavor noted in each subsection).
+- The overall seam summary (provides the cross-item context for Goals composition).
+
+The grounding pass writes nothing else on its own — the report is the only artifact. The findings feed Goals (below) and the diagrams in Step C.
 
 Then write the requirements body with **three clearly-labeled scope sections**:
 
@@ -156,6 +208,34 @@ If HEAD is `main`/`master`/detached, leave the section unfilled — `/mo-plan-im
 
 ## Step C — Generate requirement-level diagrams (AI work)
 
+### Step C.0 — Per-event diagram prompt (stage 2)
+
+Read the diagram-prompt setting:
+
+```bash
+diagram_prompt="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get diagram-prompt 2>/dev/null || echo 'prompt')"
+```
+
+If `diagram_prompt=auto`, skip the prompt and proceed directly to Step C.1 (diagram generation). The overseer opted into auto-generation earlier in this feature's workflow.
+
+If `diagram_prompt=prompt`, ask the overseer:
+
+> "Stage 2 is about to generate blueprint diagrams for `<active_feature>`. Stage-2 approval requires diagrams (use-case + supporting set), so this step is mandatory. Reply:
+>   - `y` — generate `.puml` source files now (delegated to a fresh sub-agent; ~30s).
+>   - `auto` — generate, and don't ask again for diagrams during the rest of this feature's workflow (resets when the next feature activates)."
+
+The `n` option is intentionally absent. Stage-2 approval requires the blueprint diagram set (`scripts/blueprints.sh check-current` enforces this), so silently allowing `n` would strand the workflow. If the overseer wants to defer, they should run `/mo-abort-workflow` rather than land a partial blueprint.
+
+Wait for the reply. Branch:
+
+- **`y`** — proceed to Step C.1.
+- **`auto`** — persist the preference, then proceed to Step C.1:
+  ```bash
+  $CLAUDE_PLUGIN_ROOT/scripts/progress.sh set "diagram-prompt=auto"
+  ```
+
+### Step C.1 — Render diagrams
+
 Generate diagrams into `millwright-overseer/workflow-stream/$active_feature/blueprints/current/diagrams/`. Follow the caps in `docs/workflow-spec.md` § "Diagram conventions":
 
 - **Mandatory**: one `use-case-<feature>.puml` use-case diagram.
@@ -182,7 +262,11 @@ Apply the same blue/green visual rules at both stages: pre-existing participants
 
 If the codebase-grounding pass found no existing seams for a given diagram (greenfield bootstrap with empty seam), the blue `Existing` block is empty or omitted — render only the green elements and note "no pre-existing context" in the legend.
 
-Use the `plantuml` MCP to render each diagram; save the `.puml` source alongside any generated artifact. Also write a `diagrams/README.md` with the `requirements-id` back-reference and a listing of all diagrams. Generate a fresh `id:` UUID for the README via `scripts/uuid.sh` and write it alongside `requirements-id`:
+Use the `plantuml` MCP to render each diagram; save the `.puml` source alongside any generated artifact.
+
+**`.puml`-only output by default — gated by `active.diagram-rendering`.** Same contract as `commands/mo-generate-implementation-diagrams.md`: when `diagram-rendering=never` (the default), produce ONLY the `.puml` source files. SVG/PNG rendering is reserved for `diagram-rendering=on-request` and is never automatic. Read the field via `progress.sh get diagram-rendering`.
+
+Also write a `diagrams/README.md` with the `requirements-id` back-reference and a listing of all diagrams. Generate a fresh `id:` UUID for the README via `scripts/uuid.sh` and write it alongside `requirements-id`:
 
 ```bash
 diagrams_readme="$data_root/workflow-stream/$active_feature/blueprints/current/diagrams/README.md"

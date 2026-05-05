@@ -46,7 +46,7 @@ echo "Current stage:  $current_stage"
 echo "This will:"
 echo "  - revert IMPLEMENTING todos for the active feature back to PENDING"
 [[ "$drop_mode" == "requeue" ]] && echo "  - move '$active_feature' to the end of progress.md.queue"
-echo "  - delete implementation/ (overseer-review.md, review-context.md, change-summary.md, diagrams/)"
+echo "  - delete implementation/ (overseer-review.md, review-context.md, change-summary.md, grounding-report.md, diagrams/)"
 [[ "$drop_mode" == "" ]]        && echo "  - reset progress.md to a fresh stage-2 state (active.feature + active.branch preserved for retry)"
 echo "  - keep blueprints/current/ intact"
 echo "  - keep the active quest cycle's subfolder under quest/<active-slug>/ intact (cycle stays open — abort only resets the active feature)"
@@ -72,6 +72,7 @@ rm -rf "$impl_dir"/diagrams
 rm -f "$impl_dir"/overseer-review.md
 rm -f "$impl_dir"/review-context.md
 rm -f "$impl_dir"/change-summary.md
+rm -f "$impl_dir"/grounding-report.md
 ```
 
 ### Step 5 — Update progress.md based on `drop_mode`
