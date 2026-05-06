@@ -224,15 +224,17 @@ if [[ "${branch_route:-III}" == "III" || "${branch_route:-}" == "0a" || "${branc
   # noise. The live counterparts were validated when written; if a post-write
   # tampering happened before rotation, that's a different problem from
   # archival. Do not add explicit `frontmatter.sh validate` calls here.
-  for artifact in overseer-review.md review-context.md change-summary.md grounding-report.md; do
+  for artifact in overseer-review.md review-context.md change-summary.md grounding-report.md \
+                  manual-test-plan.md manual-test-results.md; do
     [[ -e "$impl_dir/$artifact" ]] && mv -n "$impl_dir/$artifact" "$archive_dir/$artifact"
   done
   [[ -d "$impl_dir/diagrams" ]] && mv -n "$impl_dir/diagrams" "$archive_dir/diagrams"
+  [[ -d "$impl_dir/manual-test-plan.history" ]] && mv -n "$impl_dir/manual-test-plan.history" "$archive_dir/manual-test-plan.history"
   # Leave the implementation/ folder itself in place (empty) — next workflow re-creates children.
 fi
 ```
 
-The historical snapshot is then complete: `blueprints/history/v${version}/` carries the rotated `requirements.md`, `config.md`, `diagrams/`, `primer.md`, `reason.md`, AND `implementation/` (review file, review-context, change-summary, grounding-report, implementation diagrams). PMs querying past cycles can read the full audit trail from this single folder per feature-version.
+The historical snapshot is then complete: `blueprints/history/v${version}/` carries the rotated `requirements.md`, `config.md`, `diagrams/`, `primer.md`, `reason.md`, AND `implementation/` (review file, review-context, change-summary, grounding-report, implementation diagrams, plus any manual-test plan/results and rotated `manual-test-plan.history/` from the stage-5 sub-flow). PMs querying past cycles can read the full audit trail from this single folder per feature-version.
 
 ### Step 6 — Finish the active feature
 

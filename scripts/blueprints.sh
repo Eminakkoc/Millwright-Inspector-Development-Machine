@@ -531,8 +531,46 @@ else:
 PYEOF
     ;;
 
+  manual-test-plan-path)
+    feature="${1:?feature required}"
+    echo "$(mo_impl_dir "$feature")/manual-test-plan.md"
+    ;;
+
+  manual-test-results-path)
+    feature="${1:?feature required}"
+    echo "$(mo_impl_dir "$feature")/manual-test-results.md"
+    ;;
+
+  manual-test-plan-rotate)
+    # Move the current manual-test-plan.md (and manual-test-results.md, if present)
+    # into manual-test-plan.history/<UTC-timestamp>/. Called by /mo-manual-test-plan
+    # on regeneration (--force or direct `y` when an existing plan was found) and
+    # by --discard-existing. The caller is responsible for preserving the prior
+    # plan's `seed-family-id` BEFORE invoking this helper unless --new-seed-family
+    # was explicitly requested.
+    feature="${1:?feature required}"
+    impl_dir="$(mo_impl_dir "$feature")"
+    plan_file="$impl_dir/manual-test-plan.md"
+    results_file="$impl_dir/manual-test-results.md"
+    history_dir="$impl_dir/manual-test-plan.history"
+    if [[ ! -f "$plan_file" && ! -f "$results_file" ]]; then
+      mo_die "manual-test-plan-rotate: no manual-test-plan.md or manual-test-results.md to rotate at $impl_dir"
+    fi
+    timestamp="$(date -u +%Y-%m-%dT%H-%M-%SZ)"
+    target="$history_dir/$timestamp"
+    mkdir -p "$target"
+    if [[ -f "$plan_file" ]]; then
+      mv "$plan_file" "$target/manual-test-plan.md"
+    fi
+    if [[ -f "$results_file" ]]; then
+      mv "$results_file" "$target/manual-test-results.md"
+    fi
+    mo_info "rotated manual-test artifacts → $target"
+    echo "$target"
+    ;;
+
   *)
-    echo "usage: blueprints.sh {ensure-current|rotate|resume-partial|preserve-overseer-sections|check-current|branch-status} ..." >&2
+    echo "usage: blueprints.sh {ensure-current|rotate|resume-partial|preserve-overseer-sections|check-current|branch-status|manual-test-plan-path|manual-test-results-path|manual-test-plan-rotate} ..." >&2
     exit 2
     ;;
 esac

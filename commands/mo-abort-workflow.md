@@ -73,6 +73,9 @@ rm -f "$impl_dir"/overseer-review.md
 rm -f "$impl_dir"/review-context.md
 rm -f "$impl_dir"/change-summary.md
 rm -f "$impl_dir"/grounding-report.md
+rm -f "$impl_dir"/manual-test-plan.md
+rm -f "$impl_dir"/manual-test-results.md
+rm -rf "$impl_dir"/manual-test-plan.history
 ```
 
 ### Step 5 — Update progress.md based on `drop_mode`

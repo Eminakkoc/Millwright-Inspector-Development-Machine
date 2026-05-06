@@ -1,0 +1,94 @@
+$schema: "http://json-schema.org/draft-07/schema#"
+$id: millwright-overseer-development-machine/manual-test-results.schema.yaml
+title: workflow-stream/<feature>/implementation/manual-test-results.md frontmatter
+description: >
+  Per-scenario verdict log written by /mo-manual-test-run as scenarios are
+  evaluated. Body holds one canonical `### <SCENARIO_ID> — <VERDICT>` block
+  per scenario with bullets for Verdict / Observation / Recorded at / Seeded
+  / Cited as IR-NNN; this schema validates frontmatter shape only. The runner
+  performs additional active-plan ownership validation at read time
+  (results.feature, results.plan-id, results.seed-family-id must match the
+  active feature and current manual-test-plan.md frontmatter).
+
+type: object
+additionalProperties: false
+required:
+  - id
+  - feature
+  - plan-id
+  - seed-family-id
+  - state
+  - current-scenario
+  - total
+  - passed
+  - failed
+  - skipped
+  - started-at
+  - finished-at
+
+properties:
+  id:
+    type: string
+    pattern: "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"
+    description: Per-results-file UUID. Stable across pause/resume; rotated alongside the plan on `--force`.
+  feature:
+    type: string
+    pattern: "^[a-z0-9][a-z0-9-]*$"
+  plan-id:
+    type: string
+    pattern: "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"
+    description: >
+      Copied from manual-test-plan.md frontmatter `id` at results-file render
+      time. The runner compares this to the current plan's `id` to detect a
+      stale results file pointing at a rotated plan.
+  seed-family-id:
+    type: string
+    pattern: "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"
+    description: >
+      Copied from the plan's `seed-family-id` (which is preserved across
+      `--force` regeneration). Identifies the seeded IR family this run's
+      auto-seed loop will upsert into.
+  state:
+    type: string
+    enum: [in-progress, complete]
+    description: >
+      File-level state. `in-progress` while the per-scenario loop is active
+      OR paused; `complete` after step 4's terminal mutation. Distinct from
+      progress.md `manual-test-state` — that's workflow-level for dispatcher
+      routing.
+  current-scenario:
+    oneOf:
+      - type: "null"
+      - type: string
+        minLength: 1
+    description: >
+      Scenario id the runner will (re-)show on next entry. Set BEFORE
+      rendering the scenario; preserved across `pause`. Cleared to null only
+      when the loop reaches its terminal state.
+  total:
+    type: integer
+    minimum: 0
+    description: Count of scenarios in the plan at render time.
+  passed:
+    type: integer
+    minimum: 0
+  failed:
+    type: integer
+    minimum: 0
+  skipped:
+    type: integer
+    minimum: 0
+  started-at:
+    type: string
+    minLength: 1
+    description: ISO-8601 timestamp captured at first results-file render.
+  finished-at:
+    oneOf:
+      - type: "null"
+      - type: string
+        minLength: 1
+    description: >
+      ISO-8601 timestamp set when state flips to `complete`. Required to be
+      non-null when `state: complete`; the runner enforces this state-specific
+      invariant at read time (the static schema can't because it depends on
+      another field).

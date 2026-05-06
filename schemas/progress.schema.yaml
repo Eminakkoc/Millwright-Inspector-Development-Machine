@@ -65,6 +65,8 @@ properties:
           - implementation-diagrams-skipped
           - implementation-completed
           - overseer-review-completed
+          - manual-test-state
+          - manual-test-failure-policy
           - worktree-path
           - git-common-dir
           - git-worktree-dir
@@ -94,7 +96,7 @@ properties:
               with active=null.
           sub-flow:
             type: string
-            enum: [none, chain-in-progress, resuming, reviewing]
+            enum: [none, chain-in-progress, resuming, reviewing, manual-testing]
           base-commit:
             oneOf:
               - type: "null"
@@ -189,6 +191,67 @@ properties:
             type: boolean
           overseer-review-completed:
             type: boolean
+          manual-test-state:
+            type: string
+            enum: [none, running, complete, skipped]
+            description: >
+              Coarse lifecycle marker for the stage-5 manual-test phase.
+                - `none` — initial value at activate. Also the state when a
+                  plan has been generated but the overseer has deferred
+                  running it (file exists at
+                  workflow-stream/<feature>/implementation/manual-test-plan.md
+                  but the per-scenario loop has not started). The "plan
+                  exists" signal lives in the file's existence, not in this
+                  enum — skill preconditions distinguish the two `none`
+                  cases by checking file presence.
+                - `running` — per-scenario loop is active OR paused mid-run.
+                  Paired with sub-flow=manual-testing for dispatcher routing.
+                  Pause persists state as `running` (not a new value) and
+                  writes the current scenario id to manual-test-results.md
+                  frontmatter.
+                - `complete` — loop finished (pass/fail counts live in
+                  manual-test-results.md frontmatter).
+                - `skipped` — overseer declined the manual-test phase entirely
+                  at the stage-5 plan prompt (no plan generated, no scenarios
+                  run). Reserved for "decline the phase" only. Resets to
+                  `none` at next feature's activate.
+
+              `/mo-manual-test-run --finalize-skipped` does NOT set this state.
+              Bulk-skipping remaining scenarios from a paused state is
+              treated as a *completed run with skipped count* — terminal
+              state is `complete`, with the skipped count tracked in
+              manual-test-results.md frontmatter. `skipped` means "phase
+              declined"; `complete` means "run reached its terminal state".
+          manual-test-failure-policy:
+            type: string
+            enum: [auto-seed, manual, none]
+            description: >
+              Records the overseer's answer to the auto-seed prompt at the
+              end of a manual-test run. Set by `mo-manual-test-run` (the
+              single owner of seeding for manual-test results).
+                - `none` — initial value; also the value when the run is
+                  `skipped` or when no failures occurred.
+                - `auto-seed` — overseer chose to run the auto-seed loop.
+                  Cycle-level intent/outcome marker, NOT a guarantee that
+                  every failed scenario ended with a seeded IR. Individual
+                  failures may remain unseeded when the overseer picks `skip`
+                  on a closed-IR or orphan-family prompt, or when a helper
+                  hard error aborts the loop. The per-scenario `Seeded:`
+                  cache in the results file is the source of truth for how
+                  many failures currently have a successful seed action.
+                  Seeded failures are written as canonical `### IR-NNN`
+                  blocks (with `- source: manual-test` and `- seed-id: ...`
+                  fields) into overseer-review.md under
+                  `## Implementation Review`.
+                - `manual` — overseer answered `n`; overseer-review.md was
+                  not modified by the run; the overseer authors any
+                  findings themselves.
+              The Overseer Handler at commands/mo-continue.md (stage 5)
+              reads this field for its summary line ONLY — it must not
+              auto-seed, reopen, reclassify, or rewrite manual-test seeded
+              IR blocks based on this value. Existing canonicalization of
+              overseer-authored free-form review text remains outside this
+              invariant.
           drift-check-completed:
             type: boolean
             description: >

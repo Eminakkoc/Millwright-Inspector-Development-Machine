@@ -73,7 +73,25 @@ Skills (optional — at least one source required):
   ✓ executing-plans (local: .claude/skills/executing-plans)
   ✓ subagent-driven-development (local: .claude/skills/subagent-driven-development)
   ✓ finishing-a-development-branch (local: .claude/skills/finishing-a-development-branch)
+
+Manual-testing feature (stage-5 sub-flow):
+  ✓ templates/manual-test-plan.md.tmpl
+  ✓ templates/manual-test-results.md.tmpl
+  ✓ schemas/manual-test-plan.schema.yaml
+  ✓ schemas/manual-test-results.schema.yaml
+  ✓ schema:sub-flow=manual-testing
+  ✓ schema:manual-test-state
+  ✓ schema:manual-test-failure-policy
+  ✓ review.sh:upsert-manual-test-failure
+  ✓ review.sh:find-by-seed-id
+  ✓ review.sh:find-by-seed-id-family
+  ✓ review.sh:FIELD_RE (extended with source/seed-id)
+  ✓ blueprints.sh:manual-test-plan-path
+  ✓ blueprints.sh:manual-test-results-path
+  ✓ blueprints.sh:manual-test-plan-rotate
 ```
+
+The "Manual-testing feature" group records the artifacts and script subcommands that `/mo-manual-test-plan` and `/mo-manual-test-run` depend on (per `docs/manual-testing/plan.md` § 3.8). Detection is in `scripts/doctor.sh`; this command does not duplicate the logic — it only renders the JSON `record` output. Missing items here surface as clear named checks instead of cryptic runtime errors at first invocation. The highest-risk silent-failure is `review.sh:FIELD_RE` — without the `source`/`seed-id` extension, `canonicalize` would corrupt auto-seeded blocks (the new fields would look like freeform paragraphs and break IR_HEAD_RE boundaries).
 
 ### Step 3 — If `status == "ok"` — done
 

@@ -127,6 +127,60 @@ check_skill_local_or_plugin() {
   record "$name" plugin "$required" "$present" "$location" "$hints"
 }
 
+check_repo_file() {
+  # check_repo_file <name> <relative-path> <required>
+  # Records present=true (severity=ok) when "$MO_PLUGIN_ROOT/$relpath" exists,
+  # present=false otherwise. install_hints is empty (these are repo artifacts;
+  # the operator fixes them via the manual-testing implementation, not via apt/brew).
+  local name="$1" relpath="$2" required="$3"
+  local target="${MO_PLUGIN_ROOT}/$relpath"
+  if [[ -e "$target" ]]; then
+    record "$name" env "$required" true "$relpath" '{}'
+  else
+    record "$name" env "$required" false "" "$(printf '{"any": "missing %s — implement docs/manual-testing/plan.md or restore from git history"}' "$relpath")"
+  fi
+}
+
+check_review_sh_subcommand() {
+  # check_review_sh_subcommand <subcommand> <required>
+  # Probes `review.sh <sub> --help` (no `--help` is implemented, so we instead
+  # run the subcommand with deliberately invalid args and look for a usage line
+  # naming the subcommand). Cheaper alternative: grep the script source for the
+  # case label, which is what we do here — same signal, no side effects.
+  local sub="$1" required="$2"
+  if grep -qE "^  ${sub}\\)" "${MO_PLUGIN_ROOT}/scripts/review.sh" 2>/dev/null; then
+    record "review.sh:${sub}" env "$required" true "scripts/review.sh" '{}'
+  else
+    record "review.sh:${sub}" env "$required" false "" "$(printf '{"any": "review.sh missing subcommand %s — implement docs/manual-testing/plan.md § 3.7"}' "$sub")"
+  fi
+}
+
+check_progress_schema_field() {
+  # check_progress_schema_field <name> <pattern> <required>
+  # Greps schemas/progress.schema.yaml for <pattern>. Used to verify the
+  # manual-testing additions landed (sub-flow enum value, manual-test-state
+  # field, manual-test-failure-policy field). Each is recorded separately so
+  # the operator knows which piece is missing on partial updates.
+  local name="$1" pattern="$2" required="$3"
+  if grep -qE "$pattern" "${MO_PLUGIN_ROOT}/schemas/progress.schema.yaml" 2>/dev/null; then
+    record "$name" env "$required" true "schemas/progress.schema.yaml" '{}'
+  else
+    record "$name" env "$required" false "" "$(printf '{"any": "schemas/progress.schema.yaml missing %s — implement docs/manual-testing/plan.md § 1.2-1.3"}' "$name")"
+  fi
+}
+
+check_review_sh_field_re() {
+  # check_review_sh_field_re — verifies FIELD_RE recognizes `source` and `seed-id`.
+  # This is the highest-risk silent-failure: without the extension, canonicalize
+  # corrupts auto-seeded blocks (the `source` and `seed-id` lines look like
+  # freeform paragraphs and break IR_HEAD_RE boundaries).
+  if grep -qE "severity\|scope\|status\|source\|seed-id\|details\|fix-note" "${MO_PLUGIN_ROOT}/scripts/review.sh" 2>/dev/null; then
+    record "review.sh:FIELD_RE" env true true "extended" '{}'
+  else
+    record "review.sh:FIELD_RE" env true false "" '{"any": "review.sh FIELD_RE missing source/seed-id extension — implement docs/manual-testing/plan.md § 3.7.3 (canonicalize will silently corrupt auto-seeded blocks without it)"}'
+  fi
+}
+
 check_env_git_repo() {
   # `--is-inside-work-tree` returns true even on a freshly-initialized repo
   # with zero commits, where HEAD is unborn. Stage 3+ uses
@@ -275,6 +329,36 @@ check_cli docling false "$(hints_docling)"
 # be available either via the superpowers plugin OR a local `.claude/skills/<name>/SKILL.md`.
 for s in brainstorming writing-plans executing-plans subagent-driven-development finishing-a-development-branch; do
   check_skill_local_or_plugin "$s" true
+done
+
+# REQUIRED manual-testing feature artifacts (stage-5 sub-flow per docs/manual-testing/plan.md).
+# These are repo artifacts the manual-testing implementation creates; they must be present for
+# /mo-manual-test-plan and /mo-manual-test-run to function. Missing pieces surface as clear
+# named checks rather than as cryptic runtime errors.
+check_repo_file "templates/manual-test-plan.md.tmpl"      "templates/manual-test-plan.md.tmpl"     true
+check_repo_file "templates/manual-test-results.md.tmpl"   "templates/manual-test-results.md.tmpl"  true
+check_repo_file "schemas/manual-test-plan.schema.yaml"    "schemas/manual-test-plan.schema.yaml"   true
+check_repo_file "schemas/manual-test-results.schema.yaml" "schemas/manual-test-results.schema.yaml" true
+
+# Verify progress.schema.yaml carries the manual-testing additions (each grepped separately so
+# partial updates surface clearly).
+check_progress_schema_field "schema:sub-flow=manual-testing"   "manual-testing"             true
+check_progress_schema_field "schema:manual-test-state"          "^          manual-test-state:"          true
+check_progress_schema_field "schema:manual-test-failure-policy" "^          manual-test-failure-policy:" true
+
+# Verify review.sh has the new subcommands and the FIELD_RE extension.
+check_review_sh_subcommand upsert-manual-test-failure true
+check_review_sh_subcommand find-by-seed-id            true
+check_review_sh_subcommand find-by-seed-id-family     true
+check_review_sh_field_re
+
+# Verify blueprints.sh has the manual-test path resolvers and rotate.
+for sub in manual-test-plan-path manual-test-results-path manual-test-plan-rotate; do
+  if grep -qE "^  ${sub}\\)" "${MO_PLUGIN_ROOT}/scripts/blueprints.sh" 2>/dev/null; then
+    record "blueprints.sh:${sub}" env true true "scripts/blueprints.sh" '{}'
+  else
+    record "blueprints.sh:${sub}" env true false "" "$(printf '{"any": "blueprints.sh missing subcommand %s — implement docs/manual-testing/plan.md § 3.6"}' "$sub")"
+  fi
 done
 
 # ---------- Preflight short-circuit --------------------------------------

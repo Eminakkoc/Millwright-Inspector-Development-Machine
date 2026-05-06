@@ -55,14 +55,17 @@ current_stage="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get current-stage)"
 sub_flow="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get sub-flow)"
 ```
 
-| Current stage | Sub-flow      | Handler                                                       |
-| ------------- | ------------- | ------------------------------------------------------------- |
-| 2             | (any)         | **Approve Handler** — auto-fire `/mo-plan-implementation`     |
-| 3             | (any)         | Post-chain resume (see Resume Handler below)                  |
-| 5             | (any)         | Overseer-review received (see Overseer Handler below)         |
-| 6             | reviewing     | Post-review-session resume (see Review-Resume Handler below)  |
-| 7             | (any)         | Stage-7 finalize — auto-fire `/mo-complete-workflow` (Item 4 of v11 plan; idempotent via Branch II in mo-complete-workflow when re-entered after a partial finalize) |
-| any other     | —             | Delegate to `/mo-resume-workflow` for state diagnosis         |
+| Current stage | Sub-flow         | Handler                                                       |
+| ------------- | ---------------- | ------------------------------------------------------------- |
+| 2             | (any)            | **Approve Handler** — auto-fire `/mo-plan-implementation`     |
+| 3             | (any)            | Post-chain resume (see Resume Handler below)                  |
+| **5**         | **`manual-testing`** | **Manual-Test-Resume Handler** (manual-test paused or in progress — re-enters `/mo-manual-test-run`) |
+| 5             | (any)            | Overseer-review received (see Overseer Handler below)         |
+| 6             | reviewing        | Post-review-session resume (see Review-Resume Handler below)  |
+| 7             | (any)            | Stage-7 finalize — auto-fire `/mo-complete-workflow` (Item 4 of v11 plan; idempotent via Branch II in mo-complete-workflow when re-entered after a partial finalize) |
+| any other     | —                | Delegate to `/mo-resume-workflow` for state diagnosis         |
+
+The `5 | manual-testing` row covers paused or in-progress manual-test runs — the Manual-Test-Resume Handler re-enters `/mo-manual-test-run` to continue from the persisted `current-scenario`. It must come **before** the `5 | (any)` row in the table; tables evaluate top-down and a misordered append would shadow the manual-testing row, misrouting paused manual tests to the Overseer Handler and treating them as normal findings review.
 
 For the "any other" case (active or pre-flight), invoke `/mo-resume-workflow` and stop — let it report state and recommend the next command.
 
@@ -784,19 +787,105 @@ skipped="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get implementation-diagrams-s
 >
 > *Note on seeded-only diagrams:* if `implementation/diagrams/README.md` flags any subject as `seeded-only`, that `.puml` is a verbatim copy of the stage-2 blueprint diagram — those subjects had no implementation commits in `base-commit..HEAD`. Treat them as 'design intent preserved' rather than implementation drift; the legend wording (e.g., 'Planned') reflects the stage-2 baseline.
 >
-> Write your findings into `implementation/overseer-review.md` (or leave it empty to approve). Type `/mo-continue` when done."
+> Before reviewing the implementation, would you like a manual test plan generated for this feature? (`y`/`n`)
+>
+>   - `y` — I'll generate `workflow-stream/<active_feature>/implementation/manual-test-plan.md` based on the blueprint + implementation diff + a codebase scan. After generation I'll offer to run it interactively. Failures can auto-seed as findings.
+>   - `n` — skip manual testing; go directly to findings authoring (write into `implementation/overseer-review.md`, or leave empty to approve).
+>
+> Reply `y` or `n`."
 
 **When `skipped=true` (overseer answered `n` to stage-4 diagram prompt):**
 
-> "Stage 5 — ready for your review. Look at: commits `$base_commit..HEAD` and the **stage-2 blueprint diagrams** under `blueprints/current/diagrams` (implementation diagrams were skipped at stage 4 — the blueprint diagrams remain authoritative for this cycle). Write your findings into `implementation/overseer-review.md` (or leave it empty to approve). Type `/mo-continue` when done. To generate implementation diagrams now, run `/mo-draw-diagrams` first."
+> "Stage 5 — ready for your review. Look at: commits `$base_commit..HEAD` and the **stage-2 blueprint diagrams** under `blueprints/current/diagrams` (implementation diagrams were skipped at stage 4 — the blueprint diagrams remain authoritative for this cycle).
+>
+> Before reviewing the implementation, would you like a manual test plan generated for this feature? (`y`/`n`)
+>
+>   - `y` — generate `manual-test-plan.md` and offer to run it. Failures can auto-seed as findings.
+>   - `n` — skip manual testing; go directly to findings authoring (write into `implementation/overseer-review.md`, or leave empty to approve). To generate implementation diagrams now, run `/mo-draw-diagrams` first.
+>
+> Reply `y` or `n`."
+
+**On the manual-test prompt's reply:**
+
+- `y` → auto-fire `/mo-manual-test-plan --from-resume`. The flag suppresses the duplicate no-existing-plan y/n prompt at `/mo-manual-test-plan` step 2; if a plan already exists, that skill uses it unchanged instead of rotating it silently. Stop driving — the new skill takes over and converges back into the existing flow.
+- `n` → set the manual-test phase as declined and continue to findings authoring:
+
+  ```bash
+  $CLAUDE_PLUGIN_ROOT/scripts/progress.sh set manual-test-state=skipped manual-test-failure-policy=none
+  ```
+
+  Then print the existing stage-5 review message tail (`"Write your findings into implementation/overseer-review.md (or leave it empty to approve). Type /mo-continue when done."`).
 
 Stop here.
+
+---
+
+## Manual-Test-Resume Handler (current-stage = 5, sub-flow = manual-testing)
+
+Reached when the dispatcher matches the `5 | manual-testing` row (a manual-test run is paused mid-scenario, in progress, or finished writing results but hasn't cleared `sub-flow` yet — the auto-seed loop crashed or the workflow was interrupted between `state=complete` and the final `sub-flow=none manual-test-state=complete` mutation).
+
+### Manual-Test-Resume Step 1 — Read state
+
+```bash
+mt_state="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get manual-test-state)"
+mt_policy="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get manual-test-failure-policy)"
+plan_path="$($CLAUDE_PLUGIN_ROOT/scripts/blueprints.sh manual-test-plan-path "$active_feature")"
+results_path="$($CLAUDE_PLUGIN_ROOT/scripts/blueprints.sh manual-test-results-path "$active_feature")"
+plan_exists=$([[ -f "$plan_path" ]] && echo 1 || echo 0)
+results_exists=$([[ -f "$results_path" ]] && echo 1 || echo 0)
+results_state=""
+results_cursor=""
+if [[ "$results_exists" == 1 ]]; then
+  results_state="$($CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get "$results_path" state 2>/dev/null || echo '')"
+  results_cursor="$($CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get "$results_path" current-scenario 2>/dev/null || echo '')"
+fi
+```
+
+### Manual-Test-Resume Step 2 — Dispatch
+
+| Condition                                                                          | Behavior                                                                                                                                                                                                                                |
+| ---------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `plan_exists=1`, `results_exists=0`                                                | Plan was generated and `/mo-manual-test-run` was auto-fired, but the run crashed before step 1 created the results file. Print `"Resuming manual test — results file missing, will recreate from template."` Auto-fire `/mo-manual-test-run` (Branch A); step 1 of the run renders the results template from scratch and step 2 runs the env-up phase as if from fresh. |
+| `plan_exists=0`, `results_exists=0`                                                | Inconsistent state — markers say a run is in progress but neither input file exists. Print: `"Inconsistent manual-test state: sub-flow=manual-testing but no plan or results file. Reset with progress.sh set sub-flow=none manual-test-state=none and start over via /mo-continue (which will re-prompt for plan generation), OR run /mo-resume-workflow for full diagnosis."` **Stop. Do NOT auto-mutate.** |
+| `plan_exists=1`, `results_exists=1`, `results_state=in-progress`, `results_cursor` non-null | Paused mid-run. Print `"Resuming manual test at scenario $results_cursor. Re-confirm your local environment is up."` Auto-fire `/mo-manual-test-run` (Branch A).                                                                                                                |
+| `plan_exists=1`, `results_exists=1`, `results_state=in-progress`, `results_cursor` null     | Results file rendered but loop never reached scenario 1. Same as above — auto-fire `/mo-manual-test-run` (Branch A) to start from scenario 1.                                                                                  |
+| `plan_exists=1`, `results_exists=1`, `results_state=complete`                      | **Reachable, not defensive.** `/mo-manual-test-run` writes `state=complete` BEFORE the auto-seed loop and BEFORE clearing `sub-flow` (deliberately, so a crash mid-seed leaves `sub-flow=manual-testing` for re-entry). The handler must NOT clear sub-flow and fall through to the Overseer Handler — that would bypass the seed-recovery path. **Auto-fire `/mo-manual-test-run --seed-only`** (Branch B). Branch B's entry-guard table dispatches on `manual-test-failure-policy` and either re-prompts, re-runs the upsert loop, or finalizes. Branch B clears `sub-flow=none` as its last mutation; the next `/mo-continue` lands in the Overseer Handler. |
+
+After auto-fire, stop driving — the run skill drives the overseer; another `/mo-continue` post-run lands in the Overseer Handler.
 
 ---
 
 ## Overseer Handler (current-stage = 5)
 
 Runs after the overseer has reviewed the implementation and either filled `overseer-review.md` with findings or left it empty.
+
+### Overseer Step 0 — Manual-test summary line (read-only)
+
+If `workflow-stream/<active_feature>/implementation/manual-test-results.md` exists, surface a one-line summary in the entry log:
+
+```bash
+results_path="$($CLAUDE_PLUGIN_ROOT/scripts/blueprints.sh manual-test-results-path "$active_feature")"
+if [[ -f "$results_path" ]]; then
+  passed="$($CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get "$results_path" passed)"
+  failed="$($CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get "$results_path" failed)"
+  total="$($CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get "$results_path" total)"
+  policy="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get manual-test-failure-policy)"
+  # seeded_failed = count of failed verdict blocks whose `Seeded:` field is `true`.
+  # Computed from the verdict blocks; do NOT infer from manual-test-failure-policy.
+  seeded_failed="$(awk '
+    /^### / && /— /              { in_block=1; verdict=""; seeded=""; next }
+    /^- \*\*Verdict:\*\* /        { verdict=$3; next }
+    /^- \*\*Seeded:\*\* /         { seeded=$3 }
+    in_block && (/^### / || /^## /) { if (verdict=="fail" && seeded=="true") c++; in_block=0 }
+    END                           { if (verdict=="fail" && seeded=="true") c++; print (c+0) }
+  ' "$results_path")"
+  echo "Manual test: $passed/$total passed, $failed failed (failure-policy: $policy; seeded $seeded_failed/$failed failures)."
+fi
+```
+
+**The Overseer Handler must NOT mutate `overseer-review.md` because of manual-test results.** By the time this handler runs, `/mo-manual-test-run` has already either run the auto-seed loop (possibly leaving some failed scenarios unseeded if the overseer picked `skip` on per-IR prompts) or recorded `failure-policy=manual` and written nothing. Seeded failures are already-canonical `### IR-NNN` blocks. The handler must not auto-seed, reopen, reclassify, or rewrite seeded IR blocks based on `manual-test-results.md`.
+
+The existing canonicalization pass at Step 1.5 below remains allowed to mutate `overseer-review.md` for **overseer-authored free-form review text** — that is a separate legacy behavior and not a manual-test write path. Idempotency for seeded blocks is enforced durably by the `- seed-id:` field on each auto-seeded IR-NNN block (`/mo-manual-test-run`'s single-owner discipline; see `docs/manual-testing/plan.md` § 2.2 "Auto-seed ownership recap").
 
 ### Overseer Step 1 — Verify overseer-review.md exists
 

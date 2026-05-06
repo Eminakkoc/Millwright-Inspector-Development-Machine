@@ -69,8 +69,41 @@ Then fill the body via `Edit`, following the template's section guide:
 - **`## Goals (this cycle)`** — 5–20 line excerpt from `requirements.md` `## Goals (this cycle)`.
 - **`## Implemented surface`** — two short lists. (a) Changed areas: prefer reading from `implementation/change-summary.md`'s `## Changed files` section when fresh — it already groups paths by area and notes adds/dels per file; check freshness with `commits.sh change-summary-fresh "$active_feature"`. If stale or missing, fall back to `commits.sh changed-files "$active_feature"` and group manually. Either way, do not paste diffs. (b) Diagrams: list every file under `implementation/diagrams/` with a one-line purpose pulled from its `diagrams/README.md`.
 - **`## Open findings (snapshot)`** — one line per `IR-NNN` from `review.sh list-open "$active_feature"`, in the order they appear in `overseer-review.md`. Format: `IR-NNN (<severity>): <summary>`.
+- **`## Manual test results`** (only when `workflow-stream/<feature>/implementation/manual-test-results.md` exists) — emit a header line `<passed>/<total> scenarios passed; <failed> failed.` followed by one line per failed scenario in results-file order, citing the most relevant family member per the priority rule below. Append the section to `review-context.md` after `## Open findings (snapshot)`. The `IR-NNN` citation MUST be resolved at generation time via `review.sh find-by-seed-id-family` — do NOT read from the results-file `Cited as IR-NNN:` cache (it can drift if the review session renumbered or merged blocks since auto-seeding). Algorithm:
 
-The `## On-demand canonical files` section is template-emitted and does not need editing.
+  ```
+  read manual-test-results.md frontmatter (passed, failed, total, plan-id, seed-family-id)
+  emit "## Manual test results"
+  emit "<passed>/<total> scenarios passed; <failed> failed."
+  for each failed scenario S in results-file order:
+    base_seed_id = "manual-test:" + seed_family_id + ":" + S.id
+    family = review.sh find-by-seed-id-family "$active_feature" "$base_seed_id"
+      # TSV: <IR-NNN>\t<seed-id>\t<status>, ordered by NUMERIC suffix ascending
+      # (base = generation 0, then :r1, :r2, ..., :r10, :r11). NOT lexicographic.
+    cited_row = pick from family in priority order:
+      1. open regression IR with the highest numeric suffix (max-N where status=open and N≥1)
+      2. else base IR if status=open
+      3. else IR with the highest numeric suffix overall (regression or base) regardless of status
+         — preserves traceability to the latest seeded artifact
+      4. else empty (no IR exists for this scenario)
+    if cited_row non-empty:
+      cited_ir = cited_row.IR-NNN; cited_status = cited_row.status
+      if cited_status == "open":
+        emit "Scenario <S.id>: <S.observation_one_line>; cited in <cited_ir> (open)"
+      else:
+        emit "Scenario <S.id>: <S.observation_one_line>; cited in <cited_ir> (status: <cited_status>; no open seeded finding remains)"
+      update results-file scenario S — set "Cited as IR-NNN: <cited_ir>" (refresh the cache)
+    else:
+      emit "Scenario <S.id>: <S.observation_one_line>; (auto-seed declined or all family IRs deleted — no IR)"
+      update results-file scenario S — clear the cache by rendering exactly
+        "- **Cited as IR-NNN:**" with no value after the colon (the literal string "null" is invalid)
+  ```
+
+  Two important invariants: (1) the `Cited as IR-NNN:` field in `manual-test-results.md` is a **cache** populated by review-context generation, NOT by `/mo-manual-test-run` — auto-seed writes blocks but does not write back the resulting `IR-NNN` to the results file (it would race with the review session's renumbering). Review-context regeneration is the unique writer. (2) `find-by-seed-id-family` returning empty is a *recoverable* state, not an error: emit the "no IR" form and clear the cache to a blank-after-colon shape.
+
+  Brainstorming sub-agents reading `review-context.md` get the manual-test signal in their first read with up-to-date IR citations, without main needing to re-narrate.
+
+The `## On-demand canonical files` section is template-emitted and does not need editing. No `schemas/review-context.schema.yaml` change is required for the manual-test addition (the schema validates frontmatter only).
 
 ### Step 2.6 — Ask the overseer to pick a review mode
 
