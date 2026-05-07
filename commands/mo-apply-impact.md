@@ -6,7 +6,7 @@ description: Generate blueprints/current/ for the active feature — requirement
 
 **Stage 2 launcher.** Pops the next feature off the queue, creates its `progress.md`, and generates the blueprint artifacts (requirements, config, diagrams).
 
-**Main-read budget (stage 2).** Allowed in main: `summary.md` (active feature section + cross-cutting), generated artifacts. Forbidden in main: codebase grounding pass — delegated to a fresh sub-agent (Phase 2.1) which writes `implementation/grounding-report.md`. See `docs/workflow-spec.md` § "Main-read budget gates by stage" for the canonical table.
+**Main-read budget (stage 2).** Allowed in main: `summary.md` (active feature section + cross-cutting), generated artifacts. Forbidden in main: (a) codebase grounding pass — delegated to `subagent_type: millwright-overseer-development-machine:codebase-grounder` (Phase 2.1) which writes `implementation/grounding-report.md`; (b) diagram framing + render — delegated to `subagent_type: millwright-overseer-development-machine:blueprint-diagrammer` (Step C of `docs/blueprint-regeneration.md`) which writes `.puml` sources into `blueprints/current/diagrams/`. Main writes only the `diagrams/README.md` after the sub-agent returns. See `docs/workflow-spec.md` § "Main-read budget gates by stage" for the canonical table.
 
 ## Invocation
 
@@ -109,8 +109,75 @@ Pass `$active_feature` and `$active_item_ids` through to the shared steps. The s
 
 Do NOT call `progress.sh advance` here — `progress.sh activate` (Step 1) already set `current-stage=2`, which represents "blueprints generated, awaiting overseer approval." Stage 2 → 3 is owned by `/mo-plan-implementation` (which calls `progress.sh advance 2` after branch validation, todo promotion, and base-commit capture). Calling `advance 2` here would cause `/mo-plan-implementation` to fail with a stage mismatch on the next step.
 
-Tell the overseer:
+#### Step 3.1 — Compute the stage-3 effort suggestion (soft, conditional)
 
-> "Blueprints generated for `$active_feature` at `workflow-stream/$active_feature/blueprints/current/`. Review `requirements.md`, `config.md`, and `diagrams/`. If adjustments are needed, edit the files directly — pay attention to `config.md`'s `## GIT BRANCH` section (declare the feature branch there if it isn't pre-filled). When ready, type **`/mo-continue`** — the Approve Handler in `mo-continue.md` will validate the blueprint files and auto-launch `mo-plan-implementation`."
+The brainstorming chain at stage 3 runs in this main session and makes design decisions the rest of the cycle depends on. When this cycle has design-heavy signals, surface a soft suggestion to bump effort to `xhigh` before the overseer types `/mo-continue`. See `docs/sub-agent-profiles/plan.md` § "Main session sizing — stage 3 effort suggestion" for the rationale.
+
+The suggestion is one-way (the millwright cannot read the current effort level), non-blocking, and fires at most once per feature cycle.
+
+**Compute three signals** from artifacts already on disk:
+
+```bash
+data_root="$($CLAUDE_PLUGIN_ROOT/scripts/data-root.sh)"
+grounding_report="$data_root/workflow-stream/$active_feature/implementation/grounding-report.md"
+requirements_path="$data_root/workflow-stream/$active_feature/blueprints/current/requirements.md"
+
+# Signal 1: any in-scope item is greenfield. Per docs/workflow-spec.md:597,
+# cycle flavor is per-item in the report body, not persisted as a single
+# overall classification — grep the body lines.
+signal_greenfield=0
+if [[ -f "$grounding_report" ]] && \
+   grep -qiE '^- \*\*Cycle flavor:\*\* greenfield' "$grounding_report"; then
+  signal_greenfield=1
+fi
+
+# Signal 2: seam-classification = mixed (frontmatter, set by codebase-grounder).
+signal_mixed=0
+if [[ -f "$grounding_report" ]]; then
+  seam="$($CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get "$grounding_report" seam-classification 2>/dev/null || echo '')"
+  if [[ "$seam" == "mixed" ]]; then
+    signal_mixed=1
+  fi
+fi
+
+# Signal 3: design-heavy keywords in requirements.md ## Goals (this cycle).
+# Bound the grep to the Goals section by extracting between its heading and
+# the next top-level heading.
+signal_keywords=0
+if [[ -f "$requirements_path" ]]; then
+  goals_block="$(awk '/^## Goals \(this cycle\)/{flag=1;next} /^## /{flag=0} flag' "$requirements_path")"
+  if printf '%s' "$goals_block" | grep -qiE '\b(refactor|redesign|architecture|migrate|introduce|decouple|abstraction|schema|restructure|rewrite)\b'; then
+    signal_keywords=1
+  fi
+fi
+
+signal_count=$(( signal_greenfield + signal_mixed + signal_keywords ))
+```
+
+**Build the suggestion line only when ≥ 2 signals fire.** Otherwise leave `effort_suggestion=""` and skip the appended block in Step 3.2.
+
+```bash
+effort_suggestion=""
+if (( signal_count >= 2 )); then
+  fired=()
+  (( signal_greenfield )) && fired+=("any-item-greenfield")
+  (( signal_mixed ))      && fired+=("seam-classification=mixed")
+  (( signal_keywords ))   && fired+=("design-heavy keyword in Goals")
+  fired_list="$(IFS=' + '; printf '%s' "${fired[*]}")"
+  read -r -d '' effort_suggestion <<EOF || true
+
+---
+**Effort suggestion for stage 3.** This cycle has design-heavy signals: ${fired_list}. The brainstorming chain at stage 3 runs in this main session and makes design decisions the rest of the cycle depends on. Consider \`/effort xhigh\` before typing \`/mo-continue\` for this cycle. Drop back to \`/effort high\` after stage 3 — the lighter stages (4–8) don't benefit from xhigh.
+
+This is a suggestion, not a gate. If you've read the blueprint and the design feels straightforward, \`high\` is fine and faster.
+EOF
+fi
+```
+
+#### Step 3.2 — Hand-off message
+
+Tell the overseer (append `$effort_suggestion` only when non-empty):
+
+> "Blueprints generated for `$active_feature` at `workflow-stream/$active_feature/blueprints/current/`. Review `requirements.md`, `config.md`, and `diagrams/`. If adjustments are needed, edit the files directly — pay attention to `config.md`'s `## GIT BRANCH` section (declare the feature branch there if it isn't pre-filled). When ready, type **`/mo-continue`** — the Approve Handler in `mo-continue.md` will validate the blueprint files and auto-launch `mo-plan-implementation`.${effort_suggestion}"
 
 Then stop and wait for the overseer to type `/mo-continue`. Do NOT auto-advance to stage 3 without that signal — this is the mandatory review gate. The Approve Handler in `commands/mo-continue.md` (current-stage = 2) handles the rest: blueprint sanity check, then auto-fire of `/mo-plan-implementation`.

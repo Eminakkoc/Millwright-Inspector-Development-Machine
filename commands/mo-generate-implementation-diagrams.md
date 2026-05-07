@@ -6,7 +6,7 @@ description: Render diagrams of the implementation (commit range base-commit..HE
 
 Generates the single set of diagrams the overseer reviews at stage 5. Each diagram shows the **implemented** behaviour of `base-commit..HEAD` with **pre-existing** participants, classes, and flows kept in view as framed/shaded context so the overseer can spot what changed at a glance.
 
-**Main-read budget (stage 4).** Allowed in main: `change-summary.md` (cached via `commits.sh change-summary-fresh`), `progress.md`, drift-probe filesystem state. Forbidden in main: diagram-source generation reads — delegated to a fresh sub-agent (Phase 3.1) under the per-event prompt gate. See `docs/workflow-spec.md` § "Main-read budget gates by stage" for the canonical table.
+**Main-read budget (stage 4).** Allowed in main: `progress.md`, drift-probe filesystem state, the sub-agent's return summary, and the `.puml` file listing for the README write. Forbidden in main: diff hunks, change-summary.md body composition, and PlantUML source generation — delegated to `subagent_type: millwright-overseer-development-machine:implementation-analyst` (Phase 3.1) under the per-event prompt gate. The change-summary cache check (`commits.sh change-summary-fresh`) runs in main only as a freshness probe to set the `summary_state` flag passed into the sub-agent prompt; main does not read the body. See `docs/workflow-spec.md` § "Main-read budget gates by stage" for the canonical table.
 
 ## Execution
 
@@ -40,125 +40,167 @@ Branch on the output:
 
   Then exit non-zero. Do NOT silently regenerate — the routing layer in callers handles the recovery prompt.
 
-### Step 2 — Ensure `implementation/change-summary.md` is current (AI work)
+### Step 2 — Resolve inputs and spawn the implementation-analyst sub-agent
 
 Diagram generation reads from a cached analysis artifact instead of re-running the codebase scan from scratch. `/mo-update-blueprint` writes the same artifact when it runs in the same stage-4 turn (post-chain drift refresh), so the analysis happens once per `base-commit..HEAD` range.
 
 **Cache contract (load-bearing — do NOT bypass).** The `change-summary-fresh` check is the gate that prevents this command and `/mo-update-blueprint` from independently re-walking the codebase for the same `(base-commit, HEAD)` range. Both consumers MUST call `commits.sh change-summary-fresh` before regenerating; a future change that reads `change-summary.md` directly without the freshness gate would re-introduce the double-walk this cache exists to prevent. See `docs/context optimization/recommendations.md` § "Cache Key Specifications" → `change-summary.md` for the canonical key.
 
-```bash
-summary_file="$dest_dir/../change-summary.md"
-if $CLAUDE_PLUGIN_ROOT/scripts/commits.sh change-summary-fresh "$active_feature"; then
-  echo "change-summary.md is current (cache hit) — reusing"
-else
-  echo "change-summary.md is missing or stale — regenerating"
-  # Fall through to Step 2a.
-fi
-```
-
-#### Step 2a — Generate or refresh `change-summary.md`
-
-When the freshness check fails (exit 1 = stale, exit 2 = missing), regenerate the artifact:
+#### Step 2.1 — Resolve sub-agent inputs (main)
 
 ```bash
 requirements_file="$data_root/workflow-stream/$active_feature/blueprints/current/requirements.md"
 requirements_id="$($CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get "$requirements_file" id)"
 base_commit_sha="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get base-commit)"
 head_sha="$(git rev-parse HEAD)"
-$CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh init change-summary \
-  "$data_root/workflow-stream/$active_feature/implementation/change-summary.md" \
-  "REQUIREMENTS_ID=$requirements_id" \
-  "FEATURE=$active_feature" \
-  "BASE_COMMIT=$base_commit_sha" \
-  "HEAD=$head_sha"
+diagram_rendering="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get diagram-rendering 2>/dev/null || echo 'never')"
+summary_file="$dest_dir/../change-summary.md"
+blueprint_diagrams_dir="$data_root/workflow-stream/$active_feature/blueprints/current/diagrams"
+
+if $CLAUDE_PLUGIN_ROOT/scripts/commits.sh change-summary-fresh "$active_feature"; then
+  summary_state="fresh"
+else
+  summary_state="stale-or-missing"
+fi
 ```
 
-Then fill the body via `Edit`. Source the changed-file list from the script — do **not** re-scan the working tree:
+#### Step 2.2 — Initialize change-summary.md frontmatter when stale (main)
+
+When `summary_state=stale-or-missing`, pre-create the file with valid frontmatter so the sub-agent only has to fill the body (mirrors Step A's "Initialize the report" pattern in `docs/blueprint-regeneration.md`):
 
 ```bash
-$CLAUDE_PLUGIN_ROOT/scripts/commits.sh changed-files "$active_feature"
-# Emits TSV rows: <status>\t<adds>\t<dels>\t<path>
+if [[ "$summary_state" == "stale-or-missing" ]]; then
+  $CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh init change-summary \
+    "$summary_file" \
+    "REQUIREMENTS_ID=$requirements_id" \
+    "FEATURE=$active_feature" \
+    "BASE_COMMIT=$base_commit_sha" \
+    "HEAD=$head_sha"
+fi
 ```
 
-For each file in the changed-files output, decide what depth to inspect using the **bounded context policy** below. Then write each section per the template's guide:
+When `summary_state=fresh`, leave the file alone — the sub-agent will read it as-is and skip the regeneration phase internally.
 
-- **`## Range`** — fill `commit count` from `git rev-list --count "$base_commit_sha..HEAD"`.
-- **`## Changed files`** — group the TSV rows by area (top-level dir, layer, or feature concern). Format: `<status> <path> (+adds/-dels): <one-line purpose>`. Skip the per-file purpose for trivial files (e.g., simple imports). Do **not** paste full diffs.
-- **`## Detected entrypoints`** — public surface introduced or modified: HTTP routes, RPC handlers, CLI commands, scheduled jobs, queue consumers, new exports. One bullet per entrypoint with `<path>:<symbol>`. Skip the section if no public surface changed.
-- **`## Suspected flows`** — end-to-end flows the change enables (validated against the actual diagram pass in Step 3). Each entry: `<flow name>: <one-line trace>`.
-- **`## Omitted from analysis`** — every changed file you intentionally skipped per the bounded-context policy, listed by path so reviewers can spot blind spots.
+#### Step 2.3 — Spawn the sub-agent
 
-#### Bounded context policy
+**Delegate change-summary regeneration + diagram framing + selective re-render to a fresh sub-agent.** Bounded-context reading of the diff (often hundreds of lines across many files) and PlantUML rendering both belong off main — keeping them in a disposable sub-agent caps main's per-cycle bloat at the return summary. This was the workload labelled "delegation candidate" in prior versions; it is now mandatory, not optional.
 
-The naive expansion — read every changed file plus all callers/callees — pulls hundreds of lines of unchanged code into the analysis context for moderate-sized diffs. Apply these defaults:
+Invoke `Agent` with `subagent_type: millwright-overseer-development-machine:implementation-analyst`. Compose the prompt from the template below. Substitute `<placeholder>` literals with concrete values resolved above.
 
-1. **Diff hunks first.** Always read `git diff "$base_commit_sha..HEAD" -- <path>` for every changed file before opening unchanged-side context.
-2. **Cap caller/callee expansion at 3 per changed file.** Only open more when a flow would be unreadable without them — and note the expansion in the file's `## Changed files` bullet.
-3. **Prefer symbol search over whole-file reads.** If you only need the signature or one function from a caller/callee, grep for it rather than `Read`-ing the whole file.
-4. **Skip generated/vendor/lock files.** Default omissions: `dist/`, `build/`, `node_modules/`, `vendor/`, `*.lock`, `package-lock.json`, `yarn.lock`, `Cargo.lock`, `Gemfile.lock`, `*.min.js`, `*.svg`. List anything skipped under `## Omitted from analysis`.
-5. **Skip large binary diffs.** Files where `commits.sh changed-files` reports `-/-` for adds/dels are binary; record the path under `## Omitted from analysis` and move on.
+Sub-agent prompt template:
 
-When the cache is fresh (Step 2 freshness check exited 0), skip Step 2a entirely — the summary is already correct for the current range.
+```
+You are a fresh sub-agent invoked from `mo-generate-implementation-diagrams` (Step 2.3) at stage 4. Your context is isolated from the main session — main does not see your tool calls, only your final return summary.
 
-### Step 2b — Frame diagrams from the cached summary (AI work)
+**Inputs (resolved by main, passed in this prompt):**
 
-Now build each diagram subject from `change-summary.md` + targeted re-reads:
+- active_feature: <active_feature>
+- base_commit: <base_commit_sha>
+- HEAD: <head_sha>
+- summary_file: <summary_file>
+- summary_state: <summary_state>          # "fresh" or "stale-or-missing"
+- diagrams_dir: <dest_dir>                # implementation/diagrams/ destination
+- blueprint_diagrams_dir: <blueprint_diagrams_dir>  # source for seeding
+- diagram_rendering: <diagram_rendering>  # "never" (>99% path) or "on-request"
+- requirements_path: <requirements_file>
 
-1. **New** — actors, participants, messages, classes, and flows introduced by `base-commit..HEAD`. Derive from `## Detected entrypoints` and `## Suspected flows`, with diff hunks for the underlying code where needed.
-2. **Existing** — the pre-existing participants, classes, and flows the new code touches or sits next to. Derive from the unchanged side of touched files (read only what the bounded context policy allows). Only include enough context to make the new bits legible — do not redraw the whole system.
+**Your task — three phases:**
 
-### Step 2c — Seed `implementation/diagrams/` from `blueprints/current/diagrams/` (Phase 3.5)
+### Phase 1 — Ensure `change-summary.md` is current
 
-Stage 5 review and stage 8 archival both expect `implementation/diagrams/` to be a **complete diagram set** — one file per subject, matching the stage-2 set per `docs/workflow-spec.md` § "Diagram conventions" (subjects/filenames must match across both folders so the overseer can diff equivalent diagrams). If only changed-area diagrams are written to `implementation/diagrams/`, the unchanged subjects would be missing entirely and stage-5 review would be incomplete.
+- If `summary_state=fresh`, read <summary_file> as the analysis cache and skip to Phase 2 — do NOT re-walk the codebase.
+- If `summary_state=stale-or-missing`, the file is pre-initialized with valid frontmatter by main. Fill the body via `Edit` per `templates/change-summary.md.tmpl`. Source the changed-file list from the helper:
 
-To preserve the complete-set invariant, **seed the `.puml` files** from `blueprints/current/diagrams/` before any selective re-rendering. Copy ONLY `.puml` files — do NOT copy `README.md` (the blueprint and implementation README schemas are deliberately distinct: blueprint READMEs require `requirements-id`; implementation READMEs require `id` + `stage: implementation` and intentionally don't carry `requirements-id`. Copying would fail schema validation either way).
+  ```bash
+  $CLAUDE_PLUGIN_ROOT/scripts/commits.sh changed-files "<active_feature>"
+  # Emits TSV rows: <status>\t<adds>\t<dels>\t<path>
+  ```
+
+  Body sections to fill:
+  - `## Range` — fill `commit count` from `git rev-list --count "<base_commit_sha>..HEAD"`.
+  - `## Changed files` — group the TSV rows by area (top-level dir, layer, or feature concern). Format: `<status> <path> (+adds/-dels): <one-line purpose>`. Skip the per-file purpose for trivial files. Do NOT paste full diffs.
+  - `## Detected entrypoints` — public surface introduced or modified: HTTP routes, RPC handlers, CLI commands, scheduled jobs, queue consumers, new exports. One bullet per entrypoint with `<path>:<symbol>`. Skip the section if no public surface changed.
+  - `## Suspected flows` — end-to-end flows the change enables (validated against the diagram pass in Phase 3). Each entry: `<flow name>: <one-line trace>`.
+  - `## Omitted from analysis` — every changed file you intentionally skipped per the bounded-context policy below, listed by path so reviewers can spot blind spots.
+
+  Bounded context policy (apply throughout Phase 1):
+
+  1. Diff hunks first. Always read `git diff "<base_commit_sha>..HEAD" -- <path>` for every changed file before opening unchanged-side context.
+  2. Cap caller/callee expansion at 3 per changed file. Only open more when a flow would be unreadable without them — and note the expansion in the file's `## Changed files` bullet.
+  3. Prefer symbol search over whole-file reads. If you only need the signature or one function, grep for it rather than `Read`-ing the whole file.
+  4. Skip generated/vendor/lock files. Default omissions: `dist/`, `build/`, `node_modules/`, `vendor/`, `*.lock`, `package-lock.json`, `yarn.lock`, `Cargo.lock`, `Gemfile.lock`, `*.min.js`, `*.svg`.
+  5. Skip large binary diffs. Files where `commits.sh changed-files` reports `-/-` for adds/dels are binary; record the path under `## Omitted from analysis`.
+
+### Phase 2 — Seed `<diagrams_dir>` from `<blueprint_diagrams_dir>`
+
+Stage 5 review and stage 8 archival both expect `<diagrams_dir>` to be a complete diagram set — one file per subject, matching the stage-2 set. Seed the `.puml` files from the blueprint folder before any selective re-rendering. `cp -n` ensures idempotent re-runs preserve already-generated implementation versions. Copy ONLY `.puml` files — do NOT copy `README.md` (the schemas are deliberately distinct).
 
 ```bash
-blueprint_diagrams="$data_root/workflow-stream/$active_feature/blueprints/current/diagrams"
-if [[ -d "$blueprint_diagrams" ]]; then
-  # Use cp -n so a re-run idempotently preserves any already-generated
-  # implementation versions. .puml only — README is generated fresh in Step 4.
-  for puml in "$blueprint_diagrams"/*.puml; do
+if [[ -d "<blueprint_diagrams_dir>" ]]; then
+  for puml in "<blueprint_diagrams_dir>"/*.puml; do
     [[ -f "$puml" ]] || continue
-    cp -n "$puml" "$dest_dir/$(basename "$puml")"
+    cp -n "$puml" "<diagrams_dir>/$(basename "$puml")"
   done
 fi
 ```
 
-After this step, `implementation/diagrams/` contains one `.puml` per stage-2 subject. Step 3 then identifies which subjects are affected by `base-commit..HEAD` and re-renders only those — overwriting the seeded copies for affected subjects, leaving unchanged subjects with their stage-2 content.
+### Phase 3 — Selective re-render against `<base_commit>..HEAD`
 
-**Wording caveat for seeded-only diagrams.** Stage-2 and stage-4 conventions share the colour scheme but differ in baseline semantics: stage-2's legend reads "Planned" / "to be implemented" (per the cycle flavor); stage-4's reads "new in this implementation" (against the `base-commit` baseline). For subjects that received no implementation commits this cycle, the seeded `.puml` retains the stage-2 wording verbatim — which is correct (there was no implementation work to recolour, and the stage-2 design intent is the most accurate available representation), but is a presentation deviation from the standard stage-4 convention.
+Identify which diagram subjects are affected by the commit range. Sources for the "affected subjects" set:
 
-The plan does NOT programmatically rewrite seeded legends (fragile string surgery on PlantUML). Instead, the freshly-generated implementation `README.md` (Step 4) and the stage-5 handoff message in `commands/mo-continue.md` Resume Step 7 surface the convention so the overseer interprets seeded-only diagrams as "design intent preserved without implementation changes in this cycle."
-
-### Step 3 — Generate diagrams (AI + PlantUML MCP)
-
-**Selective re-render (Phase 3.5).** After Step 2c seeded `.puml` files from `blueprints/current/diagrams/`, identify which diagram subjects are actually affected by `base-commit..HEAD`. Sources for the "affected subjects" set:
-
-- `change-summary.md` `## Detected entrypoints` — the new public surface this cycle delivers, mapped back to which diagram subject covers it (e.g., new payment-webhook entrypoint → `sequence-payment-submit.puml`).
+- `change-summary.md` `## Detected entrypoints` — new public surface mapped back to which diagram subject covers it (e.g., new payment-webhook entrypoint → `sequence-payment-submit.puml`).
 - `change-summary.md` `## Suspected flows` — flows the implementation enables, mapped to the matching `sequence-<flow>.puml`.
-- `change-summary.md` `## Changed files` grouped by area — areas that map to a structural diagram subject (e.g., `services/payments/` → `class-payment-domain.puml` or `component-payment-pipeline.puml`).
+- `change-summary.md` `## Changed files` grouped by area — areas that map to a structural diagram subject.
 
-**Re-render the affected subjects only.** Overwrite their seeded `.puml` files in `implementation/diagrams/` with the freshly-rendered content using the existing-vs-new convention against the `base-commit` baseline. **Leave unchanged subjects** (those with no entries in the affected set) as the seeded stage-2 versions — those subjects had no implementation work this cycle, so the stage-2 design intent is the most accurate available representation.
+Re-render the affected subjects only. Overwrite their seeded `.puml` files in `<diagrams_dir>` using the existing-vs-new convention against the `<base_commit>` baseline. Leave unchanged subjects (no entries in the affected set) as the seeded stage-2 versions — those subjects had no implementation work this cycle. A 30-file change touching only `src/payments/` should re-render only the payments-related diagrams.
 
-A 30-file change touching only `src/payments/` should re-render only the payments-related diagrams; the audit-log diagrams stay as their stage-2 versions.
+**Diagram set caps** (per `docs/workflow-spec.md` § "Diagram conventions"):
 
-**Diagram set caps still apply.** Follow `docs/workflow-spec.md` § "Diagram conventions":
+- `use-case-<feature>.puml` — mandatory, exactly one. Implemented capabilities with framed actors that pre-existed.
+- `sequence-<flow>.puml` — one per significant implemented flow, targeting 2–3 total per feature. Render 1 only when the implementation genuinely has a single significant flow; never render more than 3 (if more than 3 candidates exist, pick the most diff-worthy; surface a decomposition signal under `Findings / risks` if the count keeps creeping up).
+- One optional structural diagram — `class-<domain>.puml` OR `component-<subject>.puml`, never both. Read the seam classification from `<requirements_path>` Goals items (carried forward from Step A's codebase-grounding pass). The optional slot fires only when seam is `backend`/`mixed` AND:
+  - Class when the implementation introduced 3+ new domain classes/modules with non-trivial relationships (inheritance, composition with shared lifecycle, bidirectional association, or branching dependency graph).
+  - Component when the implementation introduced 3+ new components/modules with non-trivial dependencies (fan-out, fan-in, cross-bucket dependency, or multiple inbound callers) but isn't class-heavy enough for a class diagram.
+  - Linear chains do not qualify (e.g., `controller → service → repo`). Skip the slot.
+  - One-sentence test. If you can't articulate the diagram's purpose in one sentence beyond its filename, skip.
+  - Skip for `frontend` / `infra` seams.
 
-- **`use-case-<feature>.puml`** — mandatory, exactly one. Implemented capabilities with framed actors that pre-existed.
-- **`sequence-<flow>.puml`** — 2–3 per feature, one per significant implemented flow. Render 1 only when the implementation genuinely has a single significant flow; **never render more than 3** (if more than 3 candidates exist, pick the most diff-worthy; surface a decomposition signal to the overseer if the count keeps creeping up).
-- **One optional structural diagram — `class-<domain>.puml` OR `component-<subject>.puml`, never both.** Read the seam classification from the feature's `blueprints/current/requirements.md` Goals items (carried forward from Step A's codebase-grounding pass). The optional slot fires only when the seam is `backend` or `mixed` AND the implementation meets the content threshold:
-  - **Class** when the implementation introduced 3+ new domain classes/modules with non-trivial relationships (inheritance, composition with shared lifecycle, bidirectional association, or branching dependency graph).
-  - **Component** when the implementation introduced 3+ new components/modules with non-trivial dependencies (fan-out, fan-in, cross-bucket dependency, or multiple inbound callers) but isn't class-heavy enough for a class diagram.
-  - **Linear chains do not qualify** (e.g., `controller → service → repo`). Skip the slot.
-  - **One-sentence test.** If you can't articulate the diagram's purpose in one sentence beyond its filename, skip.
-  - **Skip for `frontend` / `infra` seams.**
+  Pick whichever fits the *implemented* topology best — even if stage 2 picked the other type, the implementation reality wins here. The overseer can compare the matched filenames across both diagram folders; if stage 2 rendered `class-payment-domain.puml` and stage 4 renders `component-payment-pipeline.puml`, that mismatch is itself signal of chain restructure and surfaces in the post-chain drift check.
 
-  Pick whichever fits the *implemented* topology best — even if stage-2 picked the other type, the implementation reality wins here. The overseer can compare the matched filenames across both diagram folders; if stage 2 rendered a `class-payment-domain.puml` and stage 4 rendered `component-payment-pipeline.puml`, that mismatch is itself signal that the chain restructured the work, and shows up in the post-chain drift check.
+**Existing-vs-new convention** (use the canonical PlantUML snippets in this same file's "Existing-vs-new convention" subsection below):
 
-#### Existing-vs-new convention (consistent across all diagrams)
+- Existing — blue (`#D6EAF8` fill, `#3498DB` strokes) inside `box "Existing system" #D6EAF8 … end box` (sequence) or `package "Existing" #D6EAF8 { … }` (class / use-case / component); blue arrows `A -[#3498DB]-> B`; `#D6EAF8` activations.
+- New — green (`#D4EDDA` fill, `#27AE60` strokes) inside `box "New" #D4EDDA … end box` or `package "New" #D4EDDA { … }`; green arrows `C -[#27AE60]-> D`; `#D4EDDA` activations.
+- Standard legend block; stage-4 wording reads `"existing (pre-base-commit)"` / `"new in this implementation"`.
 
-Use this fixed visual convention so the overseer can read every diagram the same way. The convention uses two colours: **blue for existing**, **green for new (to-be / implemented)**.
+**Render gate.** When `<diagram_rendering>=never` (default >99% path), produce ONLY `.puml` source files via the PlantUML MCP — do NOT render `.svg`/`.png`. Render `.svg` only when `<diagram_rendering>=on-request`.
+
+**Wording caveat for seeded-only diagrams.** Stage-2 and stage-4 conventions share the colour scheme but differ in baseline semantics: stage-2's legend reads "Planned" / "to be implemented"; stage-4's reads "new in this implementation". For subjects that received no implementation commits this cycle, the seeded `.puml` retains the stage-2 wording verbatim — that's correct (no implementation work to recolour) but is a presentation deviation from the standard stage-4 convention. Do NOT programmatically rewrite seeded legends — main's freshly-generated implementation `README.md` (next step) surfaces the convention to the overseer.
+
+---
+
+Required return shape — return ONLY this structure. Do not narrate intermediate steps:
+
+Result: success | partial | blocked
+Artifacts changed:
+- <path>: <one-line note on what changed>     (include change-summary.md if regenerated, plus every re-rendered diagram path)
+Commits:
+- <sha>: <commit subject>     (likely empty — diagrams aren't committed by you)
+Findings / risks:
+- <short bullet, optional — surface notable deviations from requirements.md, decomposition signals, missing-context notes>
+Main should read:
+- <path>: <reason>     (likely empty — main reads the diagrams folder directly)
+
+Total return must fit under ~1k tokens.
+```
+
+#### Step 2.4 — Receive the sub-agent return (main)
+
+Validate that `<dest_dir>` contains the expected `.puml` files (at minimum the mandatory `use-case-<feature>.puml`) and that `<summary_file>` exists with valid frontmatter. If `Result: blocked` or files are missing, surface the failure to the overseer and stop — do not silently advance.
+
+### Existing-vs-new convention (canonical PlantUML snippets — referenced by stage-2 and stage-4 diagram passes)
+
+Use this fixed visual convention so the overseer can read every diagram the same way. The convention uses two colours: **blue for existing**, **green for new (to-be / implemented)**. Both the stage-2 `blueprint-diagrammer` sub-agent and the stage-4 `implementation-analyst` sub-agent embed this section in their working context — keep it in sync if you change either.
 
 - **Existing — blue.** Pre-existing participants/classes/components are grouped in a blue-tinted block: `box "Existing system" #D6EAF8 … end box` (sequence) or `package "Existing" #D6EAF8 { … }` (class / use-case / component). Pre-existing message arrows, activations, and component dependencies use the matching blue stroke / fill: `A -[#3498DB]-> B` for arrows and `#D6EAF8` for activations.
 - **New — green.** New participants/classes/components are grouped in a green-tinted block: `box "New" #D4EDDA … end box` (sequence) or `package "New" #D4EDDA { … }` (class / use-case / component). New arrows, activations, and dependencies use green: `C -[#27AE60]-> D` for arrows and `#D4EDDA` for activations. **Do not** use the default (uncoloured) skin for new elements — the colour is part of the convention so the diff is unambiguous.
@@ -174,19 +216,7 @@ Use this fixed visual convention so the overseer can read every diagram the same
 
   At stage 2 the legend's right-column wording shifts to reflect the cycle flavor (see `docs/blueprint-regeneration.md` Step C): for a bugfix cycle the legend reads "current (wrong) behavior" / "corrected behavior"; for an improvement cycle it reads "current capability" / "improved capability"; for greenfield it reads "pre-existing context" / "to be implemented." The colours stay the same — only the legend wording adapts.
 
-Use the PlantUML MCP (`plantuml` server) to render each diagram. Save the `.puml` source.
-
-**`.puml`-only output by default — gated by `active.diagram-rendering`.** Read the field:
-
-```bash
-diagram_rendering="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get diagram-rendering 2>/dev/null || echo 'never')"
-```
-
-When `diagram_rendering=never` (default for every feature workflow), produce ONLY the `.puml` source files — do NOT render `.svg` or `.png`. The millwright never reads `.svg` files (they're banned by the review commands' hard exclusion), and PlantUML sources are what the overseer diffs. This is the path for >99% of cycles.
-
-When `diagram_rendering=on-request` (explicitly opted in by the overseer for this feature), render `.svg` alongside `.puml` only on an explicit request — never automatically as part of the generation flow. The "explicit request" trigger is intentionally not wired here yet; the field reserves the lever. If a CI / visual-QA scenario emerges, the trigger can be added without re-plumbing the gate.
-
-### Step 4 — Write diagrams/README.md
+### Step 3 — Write diagrams/README.md (main)
 
 **Generate a fresh implementation README** — do NOT copy the blueprint README. The blueprint and implementation README schemas are deliberately distinct: blueprint READMEs require `requirements-id` (and forbid other fields via `additionalProperties: false`), while implementation READMEs require `id` + `stage: implementation` and intentionally do NOT carry `requirements-id` (see `schemas/diagrams-readme-implementation.schema.yaml:8-11` for the rationale).
 
@@ -201,18 +231,14 @@ stage: implementation
 
 Do NOT use `frontmatter.sh init diagrams-readme-implementation` — that path requires `templates/diagrams-readme-implementation.md.tmpl` which does not exist in the repo (`scripts/frontmatter.sh:20` will fail). Then validate the written file: `frontmatter.sh validate <path> diagrams-readme-implementation`.
 
-Body: bullet list of diagrams with a one-line purpose each, with each entry tagged as either `re-rendered` (Step 3 freshly rendered this subject from `base-commit..HEAD`) or `seeded-only` (seeded from stage-2 in Step 2c; no implementation commits touched this subject's area).
+Body: bullet list of diagrams with a one-line purpose each, with each entry tagged as either `re-rendered` (the sub-agent's Phase 3 freshly rendered this subject from `base-commit..HEAD`) or `seeded-only` (Phase 2 seeded from stage-2; no implementation commits touched this subject's area).
 
 When at least one subject is `seeded-only`, prepend the body with a short convention note:
 
 > *Some subjects below are tagged `seeded-only` — their `.puml` files are verbatim copies of the stage-2 blueprint diagrams. Those subjects had no implementation commits in `base-commit..HEAD`, so the stage-2 design intent is the most accurate available representation. Their legend wording (e.g., "Planned" or "to be implemented") follows stage-2 conventions; interpret them as "design preserved without implementation changes in this cycle." `re-rendered` subjects use the standard stage-4 wording against the `base-commit` baseline.*
 
-If the implementation added a flow that wasn't in `requirements.md`, or omitted one that was, call it out under a `## Notable deviations from requirements` subsection — that's a heads-up for the overseer review at stage 5.
+If the implementation added a flow that wasn't in `requirements.md`, or omitted one that was, call it out under a `## Notable deviations from requirements` subsection — that's a heads-up for the overseer review at stage 5. The sub-agent will have surfaced these under `Findings / risks` in its return summary; promote the relevant ones into the README here.
 
-### Step 5 — Report
+### Step 4 — Report
 
 > "Implementation diagrams generated at `$dest_dir` (N diagrams). Existing-system context is shaded; new functionality is highlighted."
-
-## Delegation (optional)
-
-When Step 2a fires (cache miss/stale) and the diff touches many areas, writing the `change-summary.md` body is a good delegation candidate (see `docs/workflow-spec.md` § "Delegation guidance"). One sub-agent at "strong code-analysis, high effort" tier; output artifact is `implementation/change-summary.md`; chat reply stays ≤ 20 lines. The millwright reads the artifact for Step 2b's diagram framing. When the cache is fresh (Step 2 exited 0), no delegation is needed.

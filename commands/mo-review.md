@@ -148,7 +148,7 @@ The persisted `active.review-mode` records the overseer's actual choice; `active
 
 ### Step 3a — Brainstorming mode: main-driven loop with fresh per-iteration sub-agents
 
-**Architectural change from prior versions.** Step 3a no longer hands the entire `go again` loop to the brainstorming Skill. Main owns the iteration boundaries. Each iteration spawns one **fresh sub-agent** (`Agent` invocation with `subagent_type: general-purpose` — explicitly NOT a fork) that addresses the currently-open findings, returns a structured summary, and evaporates. Cascading scopes (`re-spec` / `re-plan`) still happen — but they happen *inside* the sub-agent's context, never accumulating in main.
+**Architectural change from prior versions.** Step 3a no longer hands the entire `go again` loop to the brainstorming Skill. Main owns the iteration boundaries. Each iteration spawns one **fresh sub-agent** (`Agent` invocation with `subagent_type: millwright-overseer-development-machine:review-iteration-runner` — explicitly NOT a fork) that addresses the currently-open findings, returns a structured summary, and evaporates. Cascading scopes (`re-spec` / `re-plan`) still happen — but they happen *inside* the sub-agent's context, never accumulating in main.
 
 This caps per-iteration main-context growth at the sub-agent's return summary (~500 tokens). A 10-iteration loop adds ~5k tokens to main instead of ~500k.
 
@@ -224,7 +224,7 @@ If no open finding has cascade scope, omit the cascade hints section AND the del
 
 ##### Step 3a.2.4 — Spawn fresh sub-agent
 
-Invoke `Agent` with `subagent_type: general-purpose` (or another fresh-sub-agent type). The prompt is composed inline below. **Use `subagent_type` explicitly — a fork would inherit main's context and defeat the optimization.**
+Invoke `Agent` with `subagent_type: millwright-overseer-development-machine:review-iteration-runner`. The prompt is composed inline below. **Use `subagent_type` explicitly — a fork would inherit main's context and defeat the optimization.**
 
 Sub-agent prompt template (substitute literals for `<...>` placeholders):
 
@@ -365,7 +365,7 @@ The millwright (this session) addresses each finding directly — no Skill is in
 
 After Step 3a (brainstorming) or Step 3b (direct), stop driving the mo-workflow. Both modes converge on the same terminal: the overseer types `approve` to end the session, then types `/mo-continue` to resume mo-workflow.
 
-- **Brainstorming mode (Step 3a):** runs in the main session, but each iteration delegates to a fresh sub-agent (`subagent_type: general-purpose`) whose context evaporates on return. Main owns the iteration boundaries (`approve` / `go again` / `abort`); the sub-agent owns the per-iteration finding work. The overseer drives the loop to its terminal state by typing `approve`, then `/mo-continue` to resume mo-workflow.
+- **Brainstorming mode (Step 3a):** runs in the main session, but each iteration delegates to a fresh sub-agent (`subagent_type: millwright-overseer-development-machine:review-iteration-runner`) whose context evaporates on return. Main owns the iteration boundaries (`approve` / `go again` / `abort`); the sub-agent owns the per-iteration finding work. The overseer drives the loop to its terminal state by typing `approve`, then `/mo-continue` to resume mo-workflow.
 - **Direct mode (Step 3b):** runs entirely in the main session — no sub-agent dispatch. Best when every open finding is `fix` or simple `re-implement` and the chain ceremony would just be overhead. The overseer reviews fixes inline; when satisfied, types `approve` to end the loop, then `/mo-continue` to resume.
 
 `mo-review` does **not** advance past stage 6. The Review-Resume Handler in `/mo-continue` (see `commands/mo-continue.md`) handles the post-session work when the overseer types `/mo-continue` after the session ends: sanity-checking no `open` findings remain, marking `overseer-review-completed=true`, setting `sub-flow=none`, advancing 6 → 7, and auto-firing `/mo-complete-workflow`.

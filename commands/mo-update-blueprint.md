@@ -298,14 +298,16 @@ Read into working memory:
     echo "change-summary.md is current — reading from cache"
   else
     echo "change-summary.md missing or stale — regenerating before reading"
-    # See `commands/mo-generate-implementation-diagrams.md` Step 2a for the
-    # full body-fill recipe (template + section guide + bounded context policy).
-    # The summary block below covers the steps inline so this command is
-    # self-contained.
+    # See `commands/mo-generate-implementation-diagrams.md` Step 2.2 (main:
+    # init) + the implementation-analyst sub-agent's Phase 1 (body fill) for
+    # the canonical recipe. mo-update-blueprint.md inlines an equivalent
+    # main-side recipe below rather than spawning the sub-agent — this command
+    # runs alongside other main-context work that already references the
+    # diff hunks, so a sub-agent dispatch here would not save context.
   fi
   ```
 
-  When regeneration is needed, follow the same recipe documented in `mo-generate-implementation-diagrams.md` Step 2a:
+  When regeneration is needed, follow the same recipe documented in `mo-generate-implementation-diagrams.md` Step 2.2 (main-side init) plus the implementation-analyst sub-agent's Phase 1 (body fill); the inlined block below is the equivalent main-side path used here:
 
   ```bash
   base_commit_sha="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get base-commit)"
@@ -323,7 +325,7 @@ Read into working memory:
   $CLAUDE_PLUGIN_ROOT/scripts/commits.sh changed-files "$active_feature"
   ```
 
-  Then fill the body of `change-summary.md` per its template guide (`## Range`, `## Changed files`, `## Detected entrypoints`, `## Suspected flows`, `## Omitted from analysis`), applying the bounded context policy from `mo-generate-implementation-diagrams.md` Step 2a (diff hunks first; ≤ 3 callers/callees per file; skip generated/vendor/lock; record skips).
+  Then fill the body of `change-summary.md` per its template guide (`## Range`, `## Changed files`, `## Detected entrypoints`, `## Suspected flows`, `## Omitted from analysis`), applying the bounded context policy embedded in the implementation-analyst sub-agent prompt at `mo-generate-implementation-diagrams.md` Step 2.3 / Phase 1 (diff hunks first; ≤ 3 callers/callees per file; skip generated/vendor/lock; record skips).
 
   Goals re-derivation in Step 4b reads from `change-summary.md` plus targeted diff hunks for the entrypoints it lists. Do NOT re-walk the whole codebase here.
 

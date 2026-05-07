@@ -6,7 +6,8 @@
 
 - Plugin-shipped agents under `agents/` at the plugin root are installed automatically when a user installs the plugin. They become invocable via `subagent_type: millwright-overseer-development-machine:<agent-name>`.
 - Both `model:` and `effort:` frontmatter fields work in plugin-shipped agents (identically to user-local ones). `tools:` and `skills:` also work; `hooks:`, `mcpServers:`, and `permissionMode:` are silently ignored in plugin-shipped agents (security restriction — workaround is to copy the agent into a user's `~/.claude/agents/` if those fields are needed).
-- The mo-workflow has **eight spawn sites** today (all using `subagent_type: general-purpose` with no model or effort hint). Seven distinct workloads — the two diagram-generation wrappers at stage 4 share `implementation-analyst` — so we ship **seven agent profiles**.
+- The mo-workflow today has **five concrete spawn sites** (call sites with an actual `Agent` invocation: mo-run.md:264, mo-run.md:286-289, blueprint-regeneration.md:70 (Step A), mo-continue.md:181, mo-review.md:227) plus **three prose-gate sites** that describe delegation in user-facing prompts and budget statements but contain no `Agent` invocation (mo-apply-impact.md Step C, mo-generate-implementation-diagrams.md Step 2a/2b, mo-draw-diagrams.md — the last is a wrapper that dispatches to mo-generate-implementation-diagrams). Migration is therefore NOT a uniform one-line change — see "## Migration strategy" for the split. We still ship **seven agent profiles** because each workload is distinct (the two diagram-generation wrappers at stage 4 share `implementation-analyst`).
+- The recently-added stage-5 manual-testing sub-flow (`mo-manual-test-plan` + `mo-manual-test-run`) is **out of scope** for this plan: `mo-manual-test-plan` does codebase grep in main rather than delegating to a sub-agent, so it is not yet a spawn site. It is a clear future candidate (workload shape mirrors `codebase-grounder`) and is recorded under "What this plan does NOT do" for the next planning cycle to pick up.
 - Tier mix: 2× haiku (cheap journal digestion), 3× sonnet (codebase analysis + diagram framing at stage 2 + dependency mapping), 2× opus (stage-4 architectural analysis + review-iteration execution).
 - Plugin-shipped subagents receive **only** the agent file's Markdown body as their system prompt — not the full Claude Code system prompt. The body must therefore carry the role definition; the spawn-site prompt provides per-invocation task instructions. Each profile below includes a minimal body spec.
 - Stage 3 is the only stage where the **main session** does heavy work (the brainstorming chain runs in main, not in a sub-agent). The plan adds a single soft effort suggestion at the stage 2 → 3 boundary so the overseer can `/effort xhigh` for design-heavy cycles. No suggestions at any other stage.
@@ -45,7 +46,23 @@ When a plugin-shipped subagent is invoked, three pieces of context are composed 
 
 The bodies in this plan are deliberately short (~12-25 lines each). They describe the agent's role, behavioral defaults, and reference the standardized return contract (`docs/sub-agent-return-contract.md`) — they do **not** duplicate the spawn-site task instructions. The spawn-site prompt remains the source of truth for per-invocation work; the body is the source of truth for "what kind of agent is this, always."
 
-Migration at each spawn site is a one-line change (`subagent_type: general-purpose` → `subagent_type: millwright-overseer-development-machine:<name>`). The existing spawn-site prompts already include role-introduction sentences ("You are a fresh sub-agent invoked from `mo-run` Step 2.5 …"); these can stay as-is in the first migration pass since reinforcing the role at both system-prompt and user-message layers is harmless. A later cleanup pass can trim spawn-site prompts to the per-invocation specifics, since the body now covers the role.
+Migration is **not** a uniform one-line change. It splits into two categories:
+
+1. **Existing `Agent` invocations to retarget** (5 sites — one-line change each, swap `subagent_type: general-purpose` → `subagent_type: millwright-overseer-development-machine:<name>`):
+   - `commands/mo-run.md:264` (per-oversized-file digester)
+   - `commands/mo-run.md:286-289` (per-folder digester)
+   - `docs/blueprint-regeneration.md:70` (Step A — codebase-grounding sub-agent invoked from `mo-apply-impact`)
+   - `commands/mo-continue.md:181` (Pre-flight Step 4c dependency-mapper)
+   - `commands/mo-review.md:227` (Step 3a.2.4 review-iteration runner)
+
+2. **Prose-gate sites that need a concrete `Agent` invocation added** (3 sites — these currently describe delegation in user-facing prompts ("delegated to a fresh sub-agent") and main-read budget statements but contain no actual call):
+   - `docs/blueprint-regeneration.md` Step C / `commands/mo-apply-impact.md` Step C — blueprint-diagrammer. Step C.0's prompt says "delegated to a fresh sub-agent" but Step C.1's body just lists the work main is currently doing. The implementation cycle must add an `Agent` invocation with a fresh prompt template + return-contract block.
+   - `commands/mo-generate-implementation-diagrams.md` Step 2a/2b — implementation-analyst (change-summary + diagram framing). Line 9's budget statement and line 218's "Delegation (optional)" note describe the delegation, but the runbook body fills `change-summary.md` via main-side `Edit`. The implementation cycle must promote that to a real `Agent` invocation, drop the "optional" caveat, and embed the return contract.
+   - `commands/mo-draw-diagrams.md` — wrapper that dispatches to `mo-generate-implementation-diagrams`. Once #2 above is concretized, the wrapper inherits the spawn site for free; no separate invocation needed.
+
+For category 1, the existing spawn-site prompts already include role-introduction sentences ("You are a fresh sub-agent invoked from `mo-run` Step 2.5 …"); these can stay as-is in the first migration pass since reinforcing the role at both system-prompt and user-message layers is harmless. A later cleanup pass can trim spawn-site prompts to the per-invocation specifics, since the body now covers the role.
+
+For category 2, the implementation cycle authors a complete prompt (per-invocation specifics + return-contract block + role-introduction sentence) since none exists today. The agent body provides the role definition; the new spawn-site prompt provides the runtime task.
 
 ## Profile catalog
 
@@ -159,7 +176,7 @@ Behavioral defaults:
 - Prefer symbol-search and grep over whole-file reads. Only escalate to whole-file reads when a signature is genuinely insufficient.
 - When seam buckets match across multiple items in the cycle, classify as `mixed` rather than picking the most-touched bucket.
 - When cycle-flavor signals conflict, apply the rule order in the spawn prompt — first match wins; do NOT vote across signals.
-- Write the report via `frontmatter.sh init` first (placeholder values), then `frontmatter.sh set` for the final classification — never raw `Write` to bypass schema validation.
+- The spawn prompt provides a pre-initialized report path — main runs `frontmatter.sh init` BEFORE invoking you (per `docs/blueprint-regeneration.md` Step A "Initialize the report"). Do NOT re-run `frontmatter.sh init` unless the file is missing AND the spawn prompt explicitly authorizes recovery. Fill the body, run `frontmatter.sh set` for `seam-classification`, then `frontmatter.sh validate <path> grounding-report` to confirm schema compliance — never raw `Write` to bypass validation.
 
 Return shape: follow `docs/sub-agent-return-contract.md`. Name the grounding-report path under `Artifacts changed`. Total return ≤ 1k tokens.
 ```
@@ -168,7 +185,7 @@ Return shape: follow `docs/sub-agent-return-contract.md`. Name the grounding-rep
 
 **Used by:** `commands/mo-apply-impact.md` Step C (stage 2 blueprint diagram generation). Per-event prompt and runbook live in `docs/blueprint-regeneration.md:209-260`.
 
-**Workload.** Frame and render the stage-2 blueprint diagram set into `blueprints/current/diagrams/` from the cycle's `requirements.md` Goals items and the seam classification produced by the prior `codebase-grounder` pass. Renders one mandatory `use-case-<feature>.puml`, 2-3 `sequence-<flow>.puml` per significant flow named in Goals, and at most one optional structural diagram (class OR component, never both — only when seam is `backend`/`mixed` and the content threshold is met). Calls the PlantUML MCP for `.puml` source generation.
+**Workload.** Frame and render the stage-2 blueprint diagram set into `blueprints/current/diagrams/` from the cycle's `requirements.md` Goals items and the seam classification produced by the prior `codebase-grounder` pass. Renders one mandatory `use-case-<feature>.puml`; one `sequence-<flow>.puml` per significant end-to-end flow, targeting 2-3 total per feature (render 1 only for a genuinely single-flow feature; never render more than 3); and at most one optional structural diagram (class OR component, never both — only when seam is `backend`/`mixed` and the content threshold is met). Calls the PlantUML MCP for `.puml` source generation.
 
 **Why a separate profile (vs. reusing `implementation-analyst`).** The diagram framing convention is identical to stage 4, but the inputs differ enough that prompt-level reuse is cleaner than agent-level reuse:
 
@@ -209,7 +226,7 @@ tools:
 You are a fresh sub-agent invoked from `mo-apply-impact` Step C. Your task is to frame and render the stage-2 blueprint diagram set for a feature into `blueprints/current/diagrams/` from the cycle's `requirements.md` Goals items and the seam classification produced by the prior `codebase-grounder` pass at stage 2.
 
 Behavioral defaults:
-- Diagram set caps follow `docs/workflow-spec.md` § "Diagram conventions": one mandatory `use-case-<feature>.puml`; 2–3 `sequence-<flow>.puml` per significant flow named in Goals (never more than 3); at most one optional structural diagram (`class-<domain>.puml` OR `component-<subject>.puml`, never both) when seam is `backend`/`mixed` AND the feature introduces 3+ new domain classes/modules with non-trivial relationships. Linear chains do not qualify.
+- Diagram set caps follow `docs/workflow-spec.md` § "Diagram conventions": one mandatory `use-case-<feature>.puml`; one `sequence-<flow>.puml` per significant end-to-end flow named in Goals, targeting 2–3 total per feature (render 1 only when the feature genuinely has a single significant flow; never render more than 3 — pick the most diff-worthy and describe the rest in Goals prose if more candidates exist); at most one optional structural diagram (`class-<domain>.puml` OR `component-<subject>.puml`, never both) when seam is `backend`/`mixed` AND the feature introduces 3+ new domain classes/modules with non-trivial relationships. Linear chains do not qualify.
 - Stage-2 baseline: `existing` = the current HEAD codebase; `new` = the additions sketched by Goals items. Read HEAD minimally to identify pre-existing system elements the new work integrates with — do not survey the whole repo.
 - Existing-vs-new visual convention is the canonical one (blue `#D6EAF8`/`#3498DB` for existing, green `#D4EDDA`/`#27AE60` for new) with the standard legend block. Only the right-column legend wording shifts with cycle flavor: `greenfield` → "pre-existing context" / "to be implemented"; `bugfix` → "current (wrong) behavior" / "corrected behavior"; `improvement` → "current capability" / "improved capability".
 - Use the PlantUML MCP to render. Output `.puml` source only — do NOT produce `.svg`/`.png`.
@@ -257,7 +274,7 @@ You are a fresh sub-agent invoked from `mo-generate-implementation-diagrams` (or
 
 Behavioral defaults:
 - Bounded-context policy for change-summary generation: read diff hunks first; cap caller/callee expansion at 3 per changed file; prefer symbol search over whole-file reads; skip generated/vendor/lock/build artefacts; record every skipped path under `## Omitted from analysis` so reviewers can spot blind spots.
-- Diagram caps follow `docs/workflow-spec.md` § "Diagram conventions": one mandatory `use-case-<feature>.puml`; 2–3 `sequence-<flow>.puml` (never more than 3); at most one optional structural diagram (`class-<domain>.puml` OR `component-<subject>.puml`, never both) only when seam is `backend`/`mixed` and the implementation introduced 3+ new classes/modules with non-trivial relationships. Linear chains (controller → service → repo) do not qualify.
+- Diagram caps follow `docs/workflow-spec.md` § "Diagram conventions": one mandatory `use-case-<feature>.puml`; one `sequence-<flow>.puml` per significant implemented flow, targeting 2–3 total per feature (render 1 only when the implementation genuinely has a single significant flow; never render more than 3); at most one optional structural diagram (`class-<domain>.puml` OR `component-<subject>.puml`, never both) only when seam is `backend`/`mixed` and the implementation introduced 3+ new classes/modules with non-trivial relationships. Linear chains (controller → service → repo) do not qualify.
 - Stage-4 baseline: `existing` = codebase at `active.base-commit`; `new` = `base-commit..HEAD`. Apply the canonical blue/green convention (`#D6EAF8`/`#3498DB` for existing, `#D4EDDA`/`#27AE60` for new) with the standard legend block. Stage-4 legend wording reads "existing (pre-`base-commit`)" / "new in this implementation".
 - Seed `implementation/diagrams/` from `blueprints/current/diagrams/` first (Step 2c of the runbook), then selectively re-render only subjects affected by `base-commit..HEAD`. Leave unchanged subjects as their seeded stage-2 versions — those subjects had no implementation work this cycle.
 - Use the PlantUML MCP to render. Output `.puml` source only when `active.diagram-rendering=never` (the >99% path). Render `.svg` only when explicitly opted in via `diagram-rendering=on-request`.
@@ -278,16 +295,22 @@ Return shape: follow `docs/sub-agent-return-contract.md`. Name `change-summary.m
 - Frequency: per iteration in brainstorming mode. A clean cycle has 1–2 iterations; a contentious one can have 5+.
 - **Consider `effort: xhigh`** when the project's review cycles are long-tailed (cascading findings, multiple `re-spec` events). Start with `high`; bump if iterations are coming back unresolved.
 
-**Tools needed:** Effectively all — `Read`, `Write`, `Edit`, `Bash`, `Grep`. The `Skill` tool is also required so the sub-agent can invoke `brainstorming` and `writing-plans` for cascade scopes. Note that the sub-agent does NOT spawn further sub-agents (no `Agent` tool needed) — cascading work happens inside Skills it invokes directly.
+**Tools needed:** Effectively all — `Read`, `Write`, `Edit`, `Bash`, `Grep`. The `Skill` tool is also required so the sub-agent can invoke `brainstorming` and `writing-plans` for `re-spec` / `re-plan` cascades. Note that the sub-agent does NOT spawn further sub-agents (no `Agent` tool needed) — Claude Code subagents cannot spawn further subagents, so any skill whose core behavior is sub-agent dispatch (e.g., `subagent-driven-development`) is **not** a valid fallback inside `review-iteration-runner`. `re-implement` execution stays inline in the sub-agent's own context (the smaller refactors that scope is sized for don't need a sub-agent to run); deeper execution help that genuinely requires sub-agent dispatch belongs at session level (main / overseer flow), not here.
+
+**Why no `skills:` frontmatter declaration.** The `skills:` frontmatter would inject those skills' full content into the sub-agent's system prompt at startup AND would make the listed skill names a hard install-time dependency. Both are wrong here:
+
+- `README.md` § "Requirements" says the Superpowers plugin is "**Deliberately NOT declared as a Claude Code plugin dependency**" because Claude Code's plugin-dependency field is a hard load-time gate; users can satisfy these skills via Superpowers OR via local `.claude/skills/<name>/SKILL.md` files. Pinning `brainstorming` / `writing-plans` in the agent frontmatter would re-introduce that hard gate and break the local-skill-equivalents path.
+- Cascade scopes (`re-spec` / `re-plan`) fire in maybe 10–20% of iterations. Preloading those skills' full content into every iteration's system prompt — even the iterations that only need `fix` scope — is wasted tokens.
+
+The sub-agent invokes the cascade skills on demand via the `Skill` tool. If a skill name is registered (under either Superpowers or a local `SKILL.md`), the Skill tool finds and invokes it. If neither path is available, the cascade-scoped IR is structurally **unresolvable in this iteration** — `re-implement` does not address the cause that motivated the `re-plan` / `re-spec` scope, so silently demoting it would mark a structurally open problem as fixed. Instead, the sub-agent must return `Result: blocked`, leave every cascade-scoped IR in its current open state (do NOT call `review.sh set-status … fixed`), and name the missing skill under `Findings / risks` so main can prompt the overseer to run `/mo-doctor` (or install Superpowers / a local equivalent) and re-trigger the iteration. `/mo-init` and `/mo-doctor` already detect missing Superpowers skills and prompt the install — that diagnostic flow is the right place for the dependency, not the agent frontmatter.
 
 ```yaml
 ---
 name: review-iteration-runner
-description: Per-iteration review-finding addressor for mo-review brainstorming mode. Reads open findings, picks scope tiers, applies fixes, invokes cascade Skills with delta primers. Used by mo-review Step 3a.2.4.
+description: Per-iteration review-finding addressor for mo-review brainstorming mode. Reads open findings, picks scope tiers, applies fixes, invokes cascade Skills (brainstorming / writing-plans) on demand for re-spec / re-plan scopes. Used by mo-review Step 3a.2.4.
 model: opus
 effort: high
 tools: [Read, Write, Edit, Bash, Grep, Skill]
-skills: [brainstorming, writing-plans]
 ---
 ```
 
@@ -299,7 +322,7 @@ You are a fresh sub-agent invoked from `mo-review` Step 3a per iteration of the 
 Behavioral defaults:
 - Required first reads: `review-context.md` then `overseer-review.md`. Other canonical files (`requirements.md`, `config.md`, `primer.md`, `summary.md`) are on-demand fallbacks; read only when the snapshot leaves a gap on a specific topic.
 - The `scope` field on each finding is a hint, not a directive. Scope tiers in increasing weight: `fix` → `re-implement` → `re-plan` → `re-spec`. Pick the smallest tier that genuinely addresses the root cause; do NOT default to `fix` when the cause is structural.
-- For `re-plan` cascades, invoke the `writing-plans` Skill carrying the delta primer from the spawn prompt verbatim. For `re-spec` cascades, invoke `brainstorming` carrying the delta primer. The primer asks the cascading Skill to preserve unchanged sections — pass it through unchanged.
+- For `re-plan` cascades, invoke the `writing-plans` Skill via the `Skill` tool carrying the delta primer from the spawn prompt verbatim. For `re-spec` cascades, invoke `brainstorming` carrying the delta primer. The primer asks the cascading Skill to preserve unchanged sections — pass it through unchanged. These skills are not preloaded into your system prompt (see profile description); the `Skill` tool resolves them at call time against whichever provider is registered (Superpowers plugin or local `.claude/skills/<name>/SKILL.md`). If the Skill tool reports the name is unknown, do NOT silently demote the IR's scope: `re-implement` does not address the structural cause that motivated `re-plan` / `re-spec`. Stop the iteration, return `Result: blocked`, leave every cascade-scoped IR in its current open state (do NOT call `review.sh set-status … fixed`), and surface the missing-skill name under `Findings / risks` so main can prompt the overseer to run `/mo-doctor` and re-trigger the iteration once the skill is available. Non-cascade IRs (`fix` / `re-implement`) you handled in this iteration before the cascade attempt MAY be committed and marked resolved.
 - Process findings in descending impact order: `re-spec` → `re-plan` → `re-implement` → `fix`. A higher-tier action supersedes lower-tier findings in the same pass; mark superseded findings `fixed` with `fix-note: "superseded by re-spec at iteration N"` (or re-plan, etc.).
 - One-iteration discipline: address ALL listed open findings before returning. Do not partially address and return. Main spawns a new fresh sub-agent for the next iteration if the overseer types `go again`.
 - Commit per fix; call `review.sh set-status` (or `wontfix` if the finding turns out invalid or already addressed) for each finding addressed. Do NOT mutate `progress.md` — that is mo-workflow's job, triggered later by the overseer's `/mo-continue`.
@@ -374,7 +397,7 @@ The three sonnet profiles (`codebase-grounder`, `blueprint-diagrammer`, `depende
 
 ## Main session sizing — stage 3 effort suggestion
 
-The six sub-agent profiles cover every spawn site, but they don't address the model + effort the **main session** itself runs at. That matters because **stage 3 is the only stage where main does heavy reasoning work** — the brainstorming → writing-plans → executing-plans / subagent-driven-development chain runs in the main agent's context, not in a sub-agent (see `commands/mo-plan-implementation.md:237-258` for the Skill invocation that takes over main, and Step 4b for direct mode which also runs in main). Every other stage in the workflow is either light orchestration around sub-agent calls, bash glue, or waiting for the overseer.
+The seven sub-agent profiles cover every spawn site, but they don't address the model + effort the **main session** itself runs at. That matters because **stage 3 is the only stage where main does heavy reasoning work** — the brainstorming → writing-plans → executing-plans / subagent-driven-development chain runs in the main agent's context, not in a sub-agent (see `commands/mo-plan-implementation.md:237-258` for the Skill invocation that takes over main, and Step 4b for direct mode which also runs in main). Every other stage in the workflow is either light orchestration around sub-agent calls, bash glue, or waiting for the overseer.
 
 ### Why only stage 3 gets a suggestion
 
@@ -385,7 +408,7 @@ The six sub-agent profiles cover every spawn site, but they don't address the mo
 | 2 (`mo-apply-impact`) | Delegates to `codebase-grounder` (Step A) + `blueprint-diagrammer` (Step C); both sonnet/high | No |
 | **3 (`mo-plan-implementation`)** | **Brainstorming chain (Skill in main) or direct mode — both heavy, both in main** | **Yes** |
 | 4 (`mo-generate-implementation-diagrams`) | Delegates to `implementation-analyst` (opus/high) | No |
-| 5 (overseer review) | Main waits for human | No |
+| 5 (overseer review) | Mostly main waits for human. **Exception:** `mo-manual-test-plan` Step 3 does codebase grep in main during plan generation. Workload is structured grounding (not design-heavy), so default effort is fine — flagged below as a future delegation candidate. | No |
 | 6 (`mo-review`) | Delegates to `review-iteration-runner` (opus/high) per iteration | No |
 | 7–8 (complete/archive) | Bash orchestration | No |
 
@@ -401,10 +424,10 @@ The suggestion is **soft** — it does not block the hand-off message and does n
 
 ### Signal heuristic
 
-The millwright computes three signals from artifacts already on disk after stage 2 completes:
+The millwright computes three signals from artifacts already on disk after stage 2 completes. **Source correction:** `config.md`'s auto-block contains only Skills/Rules/Load-on-demand summaries (per `templates/config.md.tmpl`); seam and cycle flavor live in `implementation/grounding-report.md`. Per `docs/workflow-spec.md:597`, cycle flavor is *deliberately* not persisted as a single overall classification — it's a per-item field in the grounding report's body.
 
-1. **Cycle flavor = `greenfield`** — read from `config.md`'s auto-block (set by the `codebase-grounder` sub-agent at stage 2). Greenfield = building from scratch, more design decisions, fewer existing patterns to follow.
-2. **Seam = `mixed`** — also from `config.md`'s auto-block. Mixed = changes ripple across architecture layers (backend + frontend, or backend + infra, etc.), so design choices have wider blast radius.
+1. **Any item is `cycle flavor: greenfield`** — grep `implementation/grounding-report.md` body for `- **Cycle flavor:** greenfield` lines. One greenfield item suffices: greenfield work means building from scratch, more design decisions, fewer existing patterns to follow. (Optional refinement for a future cycle: add a `cycle-flavor-summary` frontmatter field to `schemas/grounding-report.schema.yaml` + `templates/grounding-report.md.tmpl` if a single overall flavor is needed elsewhere; the heuristic can then `frontmatter.sh get` it instead of grepping the body.)
+2. **`seam-classification = mixed`** — read from `implementation/grounding-report.md` frontmatter via `$CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get <path> seam-classification`. Mixed = changes ripple across architecture layers (backend + frontend, or backend + infra), so design choices have wider blast radius.
 3. **Design-heavy keywords in `requirements.md` `## Goals (this cycle)`** — case-insensitive grep on the Goals section bullets for any of: `refactor`, `redesign`, `architecture`, `migrate`, `introduce`, `decouple`, `abstraction`, `schema`, `restructure`, `rewrite`. One match suffices.
 
 **Combination rule:** if **≥ 2 of 3 signals fire**, surface the suggestion. If 0–1 signals fire, stay silent — default `high` is fine and an extra prompt would be friction.
@@ -413,11 +436,11 @@ The signals are deliberately conservative. Most cycles won't trigger the suggest
 
 ### Suggestion message template
 
-When ≥ 2 signals fire, append the following block to the existing Step 3 hand-off message in `mo-apply-impact.md`. Substitute `<…>` placeholders with the actual signals that fired.
+When ≥ 2 signals fire, append the following block to the existing Step 3 hand-off message in `mo-apply-impact.md`. Substitute `<…>` placeholders with the actual signals that fired (e.g., `"any-item-greenfield + seam-classification=mixed + 'refactor' in Goals"`).
 
 ```
 ---
-**Effort suggestion for stage 3.** This cycle has design-heavy signals: <e.g., "greenfield + mixed seam + 'refactor' in Goals">. The brainstorming chain at stage 3 runs in this main session and makes design decisions the rest of the cycle depends on. Consider `/effort xhigh` before typing `/mo-continue` for this cycle. Drop back to `/effort high` after stage 3 — the lighter stages (4–8) don't benefit from xhigh.
+**Effort suggestion for stage 3.** This cycle has design-heavy signals: <…>. The brainstorming chain at stage 3 runs in this main session and makes design decisions the rest of the cycle depends on. Consider `/effort xhigh` before typing `/mo-continue` for this cycle. Drop back to `/effort high` after stage 3 — the lighter stages (4–8) don't benefit from xhigh.
 
 This is a suggestion, not a gate. If you've read the blueprint and the design feels straightforward, `high` is fine and faster.
 ```
@@ -444,22 +467,35 @@ The millwright cannot read the current effort level (no tool exposes it), so the
 When the agent files are added in a subsequent feature cycle, the migration is mechanical:
 
 1. **Author each agent file** under `agents/<profile-name>.md` with the frontmatter and Markdown body specified in this plan. The Markdown body is the agent's system prompt at runtime — it is NOT optional. Body length should match the spec here (~12-25 lines per agent); avoid expanding into a long playbook since per-invocation specifics belong in the spawn-site prompt.
-2. **Switch each spawn site** from `subagent_type: general-purpose` to `subagent_type: millwright-overseer-development-machine:<profile-name>` in the prompt-composition step. There are eight spawn sites total; the new `blueprint-diagrammer` agent serves the `mo-apply-impact.md` Step C site and the `implementation-analyst` agent serves both the `mo-generate-implementation-diagrams` site and the `mo-draw-diagrams` wrapper.
+2. **Wire up each spawn site** per the two-category split in "## What an agent definition controls vs. what stays at the spawn site":
+   - **5 existing `Agent` invocations to retarget** (one-line `subagent_type: general-purpose` → `subagent_type: millwright-overseer-development-machine:<profile-name>` change each):
+     - `commands/mo-run.md:264` → `journal-file-digester`
+     - `commands/mo-run.md:286-289` → `journal-folder-digester`
+     - `docs/blueprint-regeneration.md:70` (Step A invoked from `mo-apply-impact`) → `codebase-grounder`
+     - `commands/mo-continue.md:181` → `dependency-mapper`
+     - `commands/mo-review.md:227` → `review-iteration-runner`
+   - **2 prose-gate sites that need a concrete `Agent` invocation added** (the runbook today describes delegation in user-facing prompts but contains no actual call):
+     - `commands/mo-apply-impact.md` Step C (runbook at `docs/blueprint-regeneration.md` Step C) → `blueprint-diagrammer`. Author a fresh prompt template (per-invocation specifics + return-contract block + role-introduction sentence), insert the `Agent` invocation at Step C.1 where main currently does the work, and drop the "delegated to a fresh sub-agent" prose from Step C.0's user prompt now that the delegation is real.
+     - `commands/mo-generate-implementation-diagrams.md` Step 2a/2b → `implementation-analyst`. Same pattern: author the prompt template, insert the `Agent` invocation, and remove the "Delegation (optional)" caveat at line 218 — the dispatch is now mandatory.
+   - **1 wrapper that inherits its spawn site for free**: `commands/mo-draw-diagrams.md` dispatches to `mo-generate-implementation-diagrams`; once the prose-gate above is concretized, the wrapper picks up `implementation-analyst` automatically. No separate edit needed.
 3. **Leave the spawn-site prompts unchanged in the first migration pass.** The standardized return contract in `docs/sub-agent-return-contract.md` is still embedded at the call site, and the existing role-introduction sentences ("You are a fresh sub-agent invoked from `mo-run` Step 2.5 …") harmlessly reinforce the body's role definition. A later cleanup pass can trim spawn-site prompts to per-invocation specifics once the bodies have been validated.
 4. **No state-machine changes.** The mo-workflow's progress-tracking, freshness gates, and cache keys are agnostic to which agent ran the work.
-5. **Add the stage-3 effort suggestion logic** to `commands/mo-apply-impact.md` Step 3: compute the three signals (`cycle-flavor`, `seam`, design-heavy-keyword grep on Goals), and conditionally append the suggestion block to the hand-off message when ≥ 2 signals fire. Read `cycle-flavor` and `seam` from `config.md`'s auto-block; grep `requirements.md` `## Goals (this cycle)` for the keyword list.
+5. **Add the stage-3 effort suggestion logic** to `commands/mo-apply-impact.md` Step 3: compute the three signals (any-item-greenfield, `seam-classification=mixed`, design-heavy-keyword grep on Goals), and conditionally append the suggestion block to the hand-off message when ≥ 2 signals fire. Read `seam-classification` from `implementation/grounding-report.md` frontmatter via `frontmatter.sh get`; grep the same file's body for `- **Cycle flavor:** greenfield` lines; grep `blueprints/current/requirements.md` `## Goals (this cycle)` for the keyword list. (NOT `config.md` — its auto-block is Skills/Rules/Load-on-demand only; seam and cycle flavor live in the grounding report.)
 
 ## What this plan does NOT do
 
 - **No agent files are written.** This document specifies the seven profiles, including each agent's frontmatter AND minimal body. Implementation (writing the seven `agents/*.md` files) is a separate cycle.
-- **No spawn-site edits.** The eight `subagent_type: general-purpose` references in `commands/` stay as-is until the implementation cycle. The stage-3 effort suggestion is also unimplemented today — `mo-apply-impact.md` Step 3's hand-off message is unchanged until the implementation cycle.
+- **No spawn-site edits.** The 5 existing `Agent` invocations stay at `subagent_type: general-purpose` until the implementation cycle retargets them. The 2 prose-gate sites stay as prose ("delegated to a fresh sub-agent" in user-facing prompts and budget statements, with no actual `Agent` call) until the implementation cycle adds concrete invocations there. The `mo-draw-diagrams` wrapper is untouched in either pass — it inherits its dispatch from `mo-generate-implementation-diagrams`. The stage-3 effort suggestion is also unimplemented today — `mo-apply-impact.md` Step 3's hand-off message is unchanged until the implementation cycle.
 - **No per-spawn effort overrides for sub-agents.** Each sub-agent's `model` + `effort` are fixed in its frontmatter. Per-spawn `model:` overrides at the call site are technically possible (the `Agent` tool accepts `model:` per invocation) but `effort:` is not per-spawn — we'd only add per-spawn `model:` if a specific call site needs to deviate from the profile default.
 - **No main-session model switching.** The stage-3 suggestion only addresses *effort*, not model class. Switching `sonnet → opus` mid-session has different cost/cache implications and is left to the overseer's session-launch decision.
+- **No agent profile for the manual-test-plan generator.** `commands/mo-manual-test-plan.md` Step 3 reads `requirements.md` + `config.md` + `change-summary.md` + `summary.md` and runs a codebase grep (env-var references, docker-compose service names, GraphQL/REST routes, error-code constants, UI route paths) in main, then renders `manual-test-plan.md`. The workload shape mirrors `codebase-grounder`: read codebase, classify against a fixed schema, write a structured document. A future cycle should consider promoting it to a spawn site with a dedicated `manual-test-planner` profile (likely `sonnet / high`, tools `[Read, Write, Edit, Bash, Grep]`). The companion `mo-manual-test-run` command is NOT a delegation candidate — it is an interactive per-scenario driver that prompts the overseer between every step. Both stay in main for now.
 
 ## References
 
 - `docs/sub-agent-return-contract.md` — return-shape contract every spawn site embeds (unchanged by this plan)
 - `docs/workflow-spec.md` § "Main-read budget gates by stage" — table of which stages delegate
 - `docs/workflow-spec.md` § "Delegation guidance" — the doc's own guidance on tier selection
+- `commands/mo-manual-test-plan.md` + `commands/mo-manual-test-run.md` — stage-5 manual-testing sub-flow, recorded under "What this plan does NOT do" as a future delegation candidate
+- `docs/manual-testing/plan.md` — design rationale for the stage-5 sub-flow
 - Claude Code subagent docs — https://code.claude.com/docs/en/sub-agents.md (frontmatter schema, plugin-namespaced names)
 - Claude Code plugin docs — https://code.claude.com/docs/en/plugins.md (`agents/` directory layout, install behavior)

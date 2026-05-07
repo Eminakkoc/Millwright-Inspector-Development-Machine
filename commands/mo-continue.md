@@ -178,7 +178,7 @@ PYEOF
 
    If `cache_hit=1`, use the cached order from `qr_file`'s `features` frontmatter and skip the sub-agent. The cached body's `### Order` and `### Dependencies` carry the existing reasoning — surface those in step 5's proposal.
 
-   If `cache_hit=0`, spawn a fresh sub-agent (`Agent` invocation with `subagent_type: general-purpose` — explicitly NOT a fork; a fork would inherit main context and re-introduce the leak). Sub-agent prompt template:
+   If `cache_hit=0`, spawn a fresh sub-agent (`Agent` invocation with `subagent_type: millwright-overseer-development-machine:dependency-mapper` — explicitly NOT a fork; a fork would inherit main context and re-introduce the leak). Sub-agent prompt template:
 
    ```
    You are a fresh sub-agent invoked from `mo-continue` Pre-flight Step 2A item 4 to inspect cross-feature codebase dependencies for the queue: <comma-separated features_in_queue>. Your context is isolated from the main session — main does not see your tool calls, only your final return summary.

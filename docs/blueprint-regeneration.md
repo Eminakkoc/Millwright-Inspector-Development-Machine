@@ -52,7 +52,7 @@ The schema requires `todo-item-ids` to be a non-empty array of strings. Each ite
 
 Before writing the requirements body, do a **bounded codebase pass** scoped to the active feature's PENDING todo items. The goal is to anchor each requirement item to the **existing seam** where the change lands (a service folder, a module, a layer, a hook point), so Goals describe a high-level solution sketch rather than a pure restatement of intent. This pass also gives Step C the inputs it needs to render existing-vs-new diagrams.
 
-**Delegate this pass to a fresh sub-agent.** The grounding pass involves reading 5+ candidate files per todo item — those reads, if done in main, accumulate in main context for the rest of the workflow (stages 2 through 8). Instead, spawn a fresh sub-agent (`Agent` invocation with `subagent_type: general-purpose` — explicitly NOT a fork) whose context is disposable. The sub-agent walks the seam, classifies, and writes a structured `grounding-report.md`; main reads that report (small, ~2–4 KB) instead of the seam (large, ~60k tokens).
+**Delegate this pass to a fresh sub-agent.** The grounding pass involves reading 5+ candidate files per todo item — those reads, if done in main, accumulate in main context for the rest of the workflow (stages 2 through 8). Instead, spawn a fresh sub-agent (`Agent` invocation with `subagent_type: millwright-overseer-development-machine:codebase-grounder` — explicitly NOT a fork) whose context is disposable. The sub-agent walks the seam, classifies, and writes a structured `grounding-report.md`; main reads that report (small, ~2–4 KB) instead of the seam (large, ~60k tokens).
 
 **Initialize the report.** Before invoking the sub-agent, create the destination file with valid frontmatter so it's writable when the sub-agent fills the body. The sub-agent will overwrite frontmatter fields (notably `seam-classification`) at write time; we just need the skeleton in place:
 
@@ -67,7 +67,7 @@ $CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh init grounding-report "$report_dest" 
 
 `SEAM_CLASSIFICATION=mixed` is a placeholder; the sub-agent recomputes and overwrites it via `frontmatter.sh set` after analyzing the seam.
 
-**Spawn the sub-agent.** Invoke `Agent` with `subagent_type: general-purpose`. Compose the prompt from the template below. Substitute `<placeholder>` literals with concrete values from the caller context.
+**Spawn the sub-agent.** Invoke `Agent` with `subagent_type: millwright-overseer-development-machine:codebase-grounder`. Compose the prompt from the template below. Substitute `<placeholder>` literals with concrete values from the caller context.
 
 Sub-agent prompt template:
 
@@ -234,39 +234,71 @@ Wait for the reply. Branch:
   $CLAUDE_PLUGIN_ROOT/scripts/progress.sh set "diagram-prompt=auto"
   ```
 
-### Step C.1 — Render diagrams
+### Step C.1 — Render diagrams (delegated to a fresh sub-agent)
 
-Generate diagrams into `millwright-overseer/workflow-stream/$active_feature/blueprints/current/diagrams/`. Follow the caps in `docs/workflow-spec.md` § "Diagram conventions":
+**Delegate the diagram framing + render pass to a fresh sub-agent.** Same context-isolation rationale as Step A: framing the stage-2 diagram set requires reading the cycle's `requirements.md` Goals, the per-item findings in `grounding-report.md`, and a minimal HEAD codebase scan to identify pre-existing system elements. Doing those reads in main accumulates them across the rest of the workflow; doing them inside a fresh sub-agent keeps the reads disposable and main only sees the return summary.
+
+**Spawn the sub-agent.** Invoke `Agent` with `subagent_type: millwright-overseer-development-machine:blueprint-diagrammer`. Compose the prompt from the template below. Substitute `<placeholder>` literals with concrete values from the caller context (`<active_feature>`, `<requirements_path>`, `<grounding_report_path>`, `<diagrams_dir>`, `<diagram_rendering>`).
+
+Sub-agent prompt template:
+
+```
+You are a fresh sub-agent invoked from `mo-apply-impact` Step C to frame and render the stage-2 blueprint diagram set for the "<active_feature>" feature. Your context is isolated from the main session — main does not see your tool calls, only your final return summary.
+
+**Required first reads:**
+
+1. <requirements_path> — read `## Goals (this cycle)` to identify the significant end-to-end flows and the new functionality this cycle delivers.
+2. <grounding_report_path> — read frontmatter `seam-classification` (drives the optional structural-diagram decision) AND `## Per-item findings` (per-item seam, pre-existing components, cycle flavor — drives the legend wording for each diagram).
+
+**Output destination:** write `.puml` source files into <diagrams_dir>. Do NOT write README.md (main writes that after you return).
+
+**Diagram set caps** (per `docs/workflow-spec.md` § "Diagram conventions"):
 
 - **Mandatory**: one `use-case-<feature>.puml` use-case diagram.
-- **Conditional**: 2–3 `sequence-<flow>.puml` per feature — one per significant end-to-end flow from the Goals items. Render 1 only when the feature genuinely has a single significant flow; **never render more than 3** (if more than 3 candidates exist, pick the most diff-worthy and describe the rest in the Goals prose; if you find yourself wanting 4+, surface a decomposition request to the overseer).
-- **Optional, at most one**: either a `class-<domain>.puml` OR a `component-<subject>.puml`, never both. The slot fires only when the feature seam (from Step A's classification) is `backend` or `mixed` AND the content threshold is met:
+- **Conditional**: one `sequence-<flow>.puml` per significant end-to-end flow from the Goals items, targeting 2–3 total per feature. Render 1 only when the feature genuinely has a single significant flow; **never render more than 3** (if more than 3 candidates exist, pick the most diff-worthy and describe the rest in the Goals prose; if you find yourself wanting 4+, surface a decomposition request under `Findings / risks`).
+- **Optional, at most one**: either a `class-<domain>.puml` OR a `component-<subject>.puml`, never both. Fires only when seam-classification is `backend` or `mixed` AND the content threshold is met:
   - **Class** when the feature introduces 3+ new domain classes/modules with non-trivial relationships (inheritance, composition with shared lifecycle, bidirectional association, or branching dependency graph).
   - **Component** when the feature introduces 3+ new components/modules with non-trivial dependencies (fan-out, fan-in, cross-bucket dependency, or multiple inbound callers) but isn't class-heavy enough for a class diagram.
   - **Linear chains do not qualify.** A `controller → service → repo` topology is not "non-trivial" regardless of how many modules it touches; skip the optional slot.
   - **One-sentence test.** Before rendering, write a one-sentence purpose for the diagram beyond the filename. If you can't articulate the value, skip.
-  - **Skip for `frontend` or `infra` seams.** UI topology lives in the component tree; infra topology lives in manifests. Don't render structural diagrams for those.
+  - **Skip for `frontend` or `infra` seams.**
 
-**Existing-vs-new framing applies at stage 2 too.** The convention is the same one `mo-generate-implementation-diagrams` uses (canonical PlantUML snippets in `commands/mo-generate-implementation-diagrams.md` § "Existing-vs-new convention"), but the **baseline differs by stage**:
+**Existing-vs-new framing.** Stage-2 baseline: `existing` = the current HEAD codebase (read minimally to identify pre-existing system elements the new work integrates with — do not survey the whole repo); `new` = the additions sketched by the Goals items. Apply the canonical blue/green convention:
 
-- Stage-2 baseline (this runbook): `existing` = the current HEAD codebase (what's there before this cycle); `new` = the additions sketched by the Goals items, derived from the codebase-grounding pass above.
-- Stage-4 baseline (`mo-generate-implementation-diagrams`): `existing` = the codebase at `active.base-commit`; `new` = `base-commit..HEAD`.
+- pre-existing inside `box "Existing system" #D6EAF8 … end box` (sequence) or `package "Existing" #D6EAF8 { … }` (class / use-case / component); blue arrows `A -[#3498DB]-> B`; `#D6EAF8` activations.
+- new inside `box "New" #D4EDDA … end box` or `package "New" #D4EDDA { … }`; green arrows `C -[#27AE60]-> D`; `#D4EDDA` activations.
+- Every diagram carries the standard legend block. Right-column wording shifts with the per-item cycle flavor read from `grounding-report.md`:
+  - `greenfield` → "pre-existing context" / "to be implemented".
+  - `bugfix` → "current (wrong) behavior" / "corrected behavior".
+  - `improvement` → "current capability" / "improved capability".
+- If the grounding pass found no existing seams for a given diagram (greenfield bootstrap with empty seam), the blue `Existing` block is empty or omitted — render only the green elements and note "no pre-existing context" in the legend.
 
-Apply the same blue/green visual rules at both stages: pre-existing participants/classes/components inside `box "Existing system" #D6EAF8 … end box` (sequence) or a tinted `package "Existing" #D6EAF8 { … }` (class / use-case / component); pre-existing arrows `A -[#3498DB]-> B` with `#D6EAF8` activations; new elements inside `box "New" #D4EDDA … end box` or `package "New" #D4EDDA { … }`, with green arrows `C -[#27AE60]-> D` and `#D4EDDA` activations. Each diagram carries the same legend block. Sharing the convention across stages lets the overseer diff the stage-2 and stage-4 diagrams with one visual vocabulary — the green set in the stage-2 diagram is what was planned, the green set in the matching stage-4 diagram is what was actually built; matching subjects (same `<type>-<subject>.puml` filename) make the comparison direct.
+**Render gate.** Read `<diagram_rendering>` (passed in from main; the `.active.diagram-rendering` field). When `diagram-rendering=never` (the default for >99% of cycles), output ONLY the `.puml` source files via the PlantUML MCP — do NOT produce `.svg` or `.png`. Render `.svg` only when `diagram-rendering=on-request`.
 
-**Legend wording shifts with cycle flavor (Step A's classification).** The colours stay the same; only the right-hand column of the legend is rephrased so the reader knows what the diff is about:
+**Bounding rules:** the HEAD codebase read is for grounding the existing-side of each diagram, NOT for re-doing Step A's work. Cap reads at ≤ 3 files per diagram subject; prefer symbol-search over whole-file reads; skip generated/vendor/lock/build artefacts.
 
-- `greenfield` Goals item: legend reads "pre-existing context" / "to be implemented".
-- `bugfix` Goals item: legend reads "current (wrong) behavior" / "corrected behavior".
-- `improvement` Goals item: legend reads "current capability" / "improved capability".
+---
 
-If the codebase-grounding pass found no existing seams for a given diagram (greenfield bootstrap with empty seam), the blue `Existing` block is empty or omitted — render only the green elements and note "no pre-existing context" in the legend.
+Required return shape — return ONLY this structure. Do not narrate intermediate steps:
 
-Use the `plantuml` MCP to render each diagram; save the `.puml` source alongside any generated artifact.
+Result: success | partial | blocked
+Artifacts changed:
+- <path>: <one-line purpose>
+Commits:
+- <sha>: <commit subject>  (likely empty — diagrams aren't committed by you)
+Findings / risks:
+- <short bullet, optional — surface decomposition signals or missing-context notes>
+Main should read:
+- <path>: <reason>  (likely empty — main reads the diagrams folder directly)
 
-**`.puml`-only output by default — gated by `active.diagram-rendering`.** Same contract as `commands/mo-generate-implementation-diagrams.md`: when `diagram-rendering=never` (the default), produce ONLY the `.puml` source files. SVG/PNG rendering is reserved for `diagram-rendering=on-request` and is never automatic. Read the field via `progress.sh get diagram-rendering`.
+Total return must fit under ~1k tokens.
+```
 
-Also write a `diagrams/README.md` with the `requirements-id` back-reference and a listing of all diagrams. Generate a fresh `id:` UUID for the README via `scripts/uuid.sh` and write it alongside `requirements-id`:
+**Receive the sub-agent return.** Main now resumes Step C.1's downstream work: validate that `<diagrams_dir>` contains the expected `.puml` files (at minimum the mandatory `use-case-<feature>.puml`) and proceed to write the README below. If the sub-agent returned `Result: blocked` or the expected files are missing, surface the failure to the overseer and stop — do not silently advance.
+
+**Cross-stage convention reference.** The blue/green visual rules are identical to stage 4's; the canonical PlantUML snippets live in `commands/mo-generate-implementation-diagrams.md` § "Existing-vs-new convention". Stage-2 and stage-4 share the convention so the overseer diffs equivalent diagrams with one visual vocabulary — the green set in the stage-2 diagram is what was planned, the green set in the matching stage-4 diagram is what was actually built; matching subjects (same `<type>-<subject>.puml` filename) make the comparison direct.
+
+**Step C.2 — Write `diagrams/README.md` (main).** With the `.puml` files in place, write a `diagrams/README.md` with the `requirements-id` back-reference and a listing of all diagrams. Generate a fresh `id:` UUID for the README via `scripts/uuid.sh` and write it alongside `requirements-id`:
 
 ```bash
 diagrams_readme="$data_root/workflow-stream/$active_feature/blueprints/current/diagrams/README.md"

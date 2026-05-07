@@ -261,7 +261,7 @@ echo "  total: $total_bytes B across ${#files[@]} file(s)"
 > - <path>: <bytes> B
 > - …)
 
-On `proceed`, follow the per-file summarization plan: spawn one fresh sub-agent per oversized file (`Agent` with `subagent_type: general-purpose` — explicitly NOT a fork). Each sub-agent reads its assigned file once and returns a digest using the standard return contract (Phase 0 of the implementation plan; see `docs/sub-agent-return-contract.md`). The millwright weaves the digests into `summary.md`'s feature sections and `## Sources`. Do not paste raw file content into the body of the quest files.
+On `proceed`, follow the per-file summarization plan: spawn one fresh sub-agent per oversized file (`Agent` with `subagent_type: millwright-overseer-development-machine:journal-file-digester` — explicitly NOT a fork). Each sub-agent reads its assigned file once and returns a digest using the standard return contract (Phase 0 of the implementation plan; see `docs/sub-agent-return-contract.md`). The millwright weaves the digests into `summary.md`'s feature sections and `## Sources`. Do not paste raw file content into the body of the quest files.
 
 **Tier 2 — Per-folder summarization (Phase 5.2 of the context-optimization plan).** Even when no single file exceeds the per-file threshold, a journal folder containing **>5 files AND >40 KB total** is worth delegating: reading 20 small notes individually accumulates the same context as one large file, but is invisible to the per-file check. Compute per-folder counts:
 
@@ -283,7 +283,7 @@ for folder in "${!folder_count[@]}"; do
 done
 ```
 
-For each `oversize_folder`, spawn one fresh sub-agent for the folder (NOT one per file). Sub-agent prompt:
+For each `oversize_folder`, spawn one fresh sub-agent for the folder (NOT one per file). Invoke `Agent` with `subagent_type: millwright-overseer-development-machine:journal-folder-digester`. Sub-agent prompt:
 
 ```
 You are a fresh sub-agent invoked from `mo-run` Step 2.5 to digest a journal folder containing many small files. Your context is isolated from the main session — main does not see your tool calls, only your final return summary.
