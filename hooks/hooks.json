@@ -9,6 +9,15 @@
             "command": "$CLAUDE_PLUGIN_ROOT/hooks/validate-on-write.sh"
           }
         ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$CLAUDE_PLUGIN_ROOT/hooks/track-stage-tokens.sh"
+          }
+        ]
       }
     ]
   }

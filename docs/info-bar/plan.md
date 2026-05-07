@@ -68,23 +68,32 @@ A `PostToolUse` hook with `Bash` matcher. Fires after every Bash invocation, but
 | `progress.sh reorder <features...>` | `"1.5"` | `null` (cycle-level) |
 | `progress.sh advance 2` | `"2"` | `active.feature` (set by the prior `activate`) |
 | `progress.sh advance-to 3 5` | `"3+4"` (collapsed — see below) | `active.feature` |
+| `progress.sh set sub-flow=none manual-test-state=complete` | `"5-mt"` (manual-test sub-flow finalized — see "Manual-test sub-flow" below) | `active.feature` |
 | `progress.sh advance 5` | `"5"` (with-findings path; review session begins next) | `active.feature` |
 | `progress.sh advance-to 5 7` | `"5"` (no-findings path; review skipped entirely) | `active.feature` |
 | `progress.sh advance-to 6 7` | `"6"` (review session completed) | `active.feature` |
 | `progress.sh finish` | `"8"` | `completed[-1]` (read post-state — `finish` cleared `active`) |
 
-**Anchor-only triggers** (update sidecar's `current_feature` for status-line display, but DO NOT write a row):
+**Anchor-only triggers** (update sidecar's `current_feature` and/or `current_stage` for status-line display, but DO NOT write a row):
 
 | Command | Side effect |
 |---|---|
 | `quest.sh start` | No-op for token attribution. Cycle folder is created here, but the next trigger (`progress.sh init`) is what writes the stage-1 row. |
 | `progress.sh activate <feature>` | Update sidecar `current_feature` to the activated feature. **No row written.** Stage 2's actual completion row is written later by `progress.sh advance 2`. |
+| `progress.sh set sub-flow=manual-testing manual-test-state=running` | Update sidecar `current_stage` to `"5-mt"` so the status line shows the manual-test sub-flow has begun. **No row written.** The work is captured later when `progress.sh set sub-flow=none manual-test-state=complete` fires. |
+| `progress.sh set manual-test-state=skipped manual-test-failure-policy=none` | Phase declined at the stage-5 prompt OR via `--discard-existing`. **No row written and no anchor change** — no manual-test work happened, so the eventual stage-5 row absorbs the planning-prompt tokens normally. |
 
 For any other Bash invocation, the hook exits silently and instantly.
+
+**Trigger pattern matching for `progress.sh set`.** `progress.sh set` accepts multiple `field=value` pairs in a single invocation. The hook matches on the EXACT field-value combinations listed in the tables (any order, with possible additional pairs that are ignored — though the workflow does not currently mix manual-test sets with unrelated sets in a single call). Use a regex that anchors on the field-value pair: `progress\.sh\s+set\b.*\bsub-flow=none\b.*\bmanual-test-state=complete\b` (and the symmetric `manual-testing/running` pattern). Pure `progress.sh set` invocations that don't match any manual-test pattern (e.g., `progress.sh set base-commit=...`) are silently ignored — they're intra-stage state writes, not stage transitions.
 
 **Why `activate` is anchor-only, not a row-writing trigger.** `progress.sh activate` runs at the START of `/mo-apply-impact` (`commands/mo-apply-impact.md:46-47`) — before blueprint generation work happens. Stage 2 actually COMPLETES later, when `/mo-plan-implementation` calls `progress.sh advance 2` (`commands/mo-plan-implementation.md:172-174`). Treating `activate` as a row-writing trigger would either double-write stage 2 or attribute only the activation/setup tokens to stage 2 (missing the blueprint-generation work). Treating it as anchor-only is correct: stage-2 row writes once, when `advance 2` fires, covering all tokens since the prior trigger.
 
 **Stage 4 — conceptual, never persisted.** Per `docs/workflow-spec.md` §"Stage 4", `current-stage=4` is never persisted in `progress.md` — the Resume Handler ends with `progress.sh advance-to 3 5`, collapsing stages 3 and 4 into a single transition. The hook records the combined work as one row with `stage: "3+4"`. Splitting them would require explicit logical markers in the Resume Handler, which the workflow intentionally avoids.
+
+**Manual-test sub-flow (`"5-mt"`).** Stage 5 is widened by `docs/manual-testing/plan.md` to "overseer evaluation" — an optional manual-test sub-flow runs BEFORE findings authoring. While the sub-flow is active, `progress.md` carries `sub-flow=manual-testing` and `manual-test-state=running`; the LAST mutation of `/mo-manual-test-run`'s auto-seed loop (and Branch B finalization, and Branch C `--finalize-skipped` finalization) is `progress.sh set sub-flow=none manual-test-state=complete`. The hook treats the entry mutation as anchor-only (sets the sidecar's `current_stage` to `"5-mt"` so the status line reflects the active sub-flow) and the exit mutation as row-writing (writes a `"5-mt"` row capturing all tokens consumed during the sub-flow). The subsequent stage-5 row (`advance 5` or `advance-to 5 7`) then captures only the *post-manual-test* findings-authoring + Overseer Handler tokens — meaningfully cleaner attribution than rolling everything into a single `"5"` row.
+
+**Multiple `"5-mt"` rows per feature are valid.** A single feature may legitimately fire the manual-test finalization more than once: `/mo-manual-test-run --seed-only` re-trigger after observation edits writes its own finalize, as does `--finalize-skipped`. Each finalize emits a row; consumers analyzing per-feature totals must sum across all `"5-mt"` rows in the feature's window. The status line shows the most recent. The skipped-phase path (overseer answered `n` to "generate plan?" or used `--discard-existing`) writes NO `"5-mt"` row — the eventual stage-5 row absorbs the planning-prompt tokens.
 
 **Stage 7 — transitional, never a row label.** Stage 7 is reached only via `advance-to 5 7` (no findings) or `advance-to 6 7` (review completed), both of which immediately auto-fire `/mo-complete-workflow`. No work is attributed to stage 7 itself. The hook writes the from-stage label (`"5"` or `"6"`); the stage-7 reach is implicit. The next row is `"8"` (written by `finish`).
 
@@ -129,18 +138,19 @@ A small JSON file the hook writes and the status line reads.
   "up_to_that_point_tokens": 247891,
   "last_advance_at": "2026-05-12T14:23:01Z",
   "stages": [
-    { "stage": "1",   "feature": null,        "tokens": 61000,  "completed_at": "2026-05-12T13:15:02Z" },
-    { "stage": "1.5", "feature": null,        "tokens": 4900,   "completed_at": "2026-05-12T13:18:14Z" },
-    { "stage": "2",   "feature": "payments",  "tokens": 24800,  "completed_at": "2026-05-12T13:35:48Z" },
-    { "stage": "3+4", "feature": "payments",  "tokens": 157191, "completed_at": "2026-05-12T14:23:01Z" }
+    { "stage": "1",    "feature": null,        "tokens": 61000,  "completed_at": "2026-05-12T13:15:02Z" },
+    { "stage": "1.5",  "feature": null,        "tokens": 4900,   "completed_at": "2026-05-12T13:18:14Z" },
+    { "stage": "2",    "feature": "payments",  "tokens": 24800,  "completed_at": "2026-05-12T13:35:48Z" },
+    { "stage": "3+4",  "feature": "payments",  "tokens": 157191, "completed_at": "2026-05-12T14:23:01Z" },
+    { "stage": "5-mt", "feature": "payments",  "tokens": 89240,  "completed_at": "2026-05-12T15:01:33Z" }
   ]
 }
 ```
 
 Field notes:
 
-- `stage` is a string — most rows are integer-as-string (`"1"`, `"2"`, …) or the half-stage `"1.5"`, but the collapsed transition writes `"3+4"`. Using a string consistently avoids JSON-number-vs-string surprises in jq queries.
-- `feature` is the kebab-case feature name for stages 2–8, or `null` for cycle-level stages 1 / 1.5. Stage numbers REPEAT across features in a multi-feature cycle (e.g., feature A's stage 2 and feature B's stage 2 are different rows, disambiguated by `feature`).
+- `stage` is a string — most rows are integer-as-string (`"1"`, `"2"`, …), the half-stage `"1.5"`, the collapsed Resume-Handler transition `"3+4"`, or the manual-test sub-flow row `"5-mt"`. Using a string consistently avoids JSON-number-vs-string surprises in jq queries.
+- `feature` is the kebab-case feature name for stages 2–8 (including `"5-mt"`), or `null` for cycle-level stages 1 / 1.5. Stage numbers REPEAT across features in a multi-feature cycle (e.g., feature A's stage 2 and feature B's stage 2 are different rows, disambiguated by `feature`). The manual-test row label `"5-mt"` may also appear MORE than once per feature when `--seed-only` re-triggers fire — each finalize writes a row.
 - `current_feature` mirrors the just-completed row's `feature` (so the status line can render `cycle <slug> · feature <X> · stage <N>`).
 - `up_to_that_point_tokens` is `sum(stages[].tokens)` cycle-wide, across all features. `current_stage_tokens` mirrors `stages[-1].tokens`.
 
@@ -168,7 +178,7 @@ A second state file the hook writes alongside the sidecar. Where the sidecar hol
 Per-record fields:
 
 - `ts` — ISO timestamp of the stage-advance event.
-- `stage` — stage label, always a string. Valid values: `"1"`, `"1.5"`, `"2"`, `"3+4"` (the collapsed Resume Handler transition), `"5"`, `"6"`, `"8"`. **Stage `"4"` and `"7"` never appear** as row labels — stage 4 is folded into `"3+4"`; stage 7 is transitional and folded into the from-stage row (`"5"` or `"6"`).
+- `stage` — stage label, always a string. Valid values: `"1"`, `"1.5"`, `"2"`, `"3+4"` (the collapsed Resume Handler transition), `"5-mt"` (manual-test sub-flow finalized — only present when the overseer ran `/mo-manual-test-run`), `"5"`, `"6"`, `"8"`. **Stage `"4"` and `"7"` never appear** as row labels — stage 4 is folded into `"3+4"`; stage 7 is transitional and folded into the from-stage row (`"5"` or `"6"`). When a manual-test phase ran, the subsequent `"5"` row captures only the post-manual-test findings-authoring + Overseer Handler tokens (NOT the manual-test work, which lives in the preceding `"5-mt"` row).
 - `feature` — kebab-case feature name for stages 2–8, or `null` for cycle-level stages 1 / 1.5. **Required for disambiguation in multi-feature cycles** — without it, the same stage number appearing twice (once per feature) would be ambiguous. Stage 8 records read `feature` from `completed[-1]` of `progress.md` (because `finish` clears `active` before the hook fires).
 - `tokens` — breakdown for the just-completed stage:
   - `input` — uncached input tokens.
@@ -185,12 +195,14 @@ Per-record fields:
     - `tokens_total` — total tokens consumed by the sub-agent during this stage's window.
     - `context_size` — sub-agent's most-recent-turn input size (its context-window occupancy at hand-off time).
 
-**Multi-feature cycles.** A cycle that processes N features writes between (2 + 4N) and (2 + 5N) records: 2 cycle-level (stages 1, 1.5) plus 4 or 5 per feature.
+**Multi-feature cycles.** A cycle that processes N features writes between (2 + 4N) and (2 + 6N) records: 2 cycle-level (stages 1, 1.5) plus 4 to 6 per feature, depending on whether the manual-test sub-flow ran and whether findings were authored.
 
-- **No-findings path (4 rows per feature):** `"2"`, `"3+4"`, `"5"` (the `advance-to 5 7` row), `"8"`.
-- **With-findings path (5 rows per feature):** `"2"`, `"3+4"`, `"5"` (the `advance 5` row), `"6"` (the `advance-to 6 7` row), `"8"`.
+- **No-findings, no manual-test (4 rows per feature):** `"2"`, `"3+4"`, `"5"` (`advance-to 5 7`), `"8"`.
+- **No-findings + manual-test (5 rows per feature):** `"2"`, `"3+4"`, `"5-mt"`, `"5"` (`advance-to 5 7`), `"8"`.
+- **With-findings, no manual-test (5 rows per feature):** `"2"`, `"3+4"`, `"5"` (`advance 5`), `"6"` (`advance-to 6 7`), `"8"`.
+- **With-findings + manual-test (6 rows per feature):** `"2"`, `"3+4"`, `"5-mt"`, `"5"` (`advance 5`), `"6"` (`advance-to 6 7`), `"8"`.
 
-Records are appended in chronological order; consumers can group by `feature` to slice per-feature totals, or stay at cycle granularity by ignoring `feature` and summing across all rows.
+Multiple `"5-mt"` rows for the same feature are valid (e.g., a `--seed-only` re-trigger after observation edits, or a `--finalize-skipped` after pause). Records are appended in chronological order; consumers can group by `feature` to slice per-feature totals, or stay at cycle granularity by ignoring `feature` and summing across all rows.
 
 **Tokens vs. context — the distinction.** `tokens` measures throughput (cumulative bytes through the model — proxy for cost). `context.main` and `context.sub[].context_size` measure occupancy (how full the context window was at the moment of stage advance — proxy for "session budget remaining"). Both matter; they answer different questions. A stage that re-uses heavily cached context can have very high `tokens.cache_read` (throughput) but a stable `context.main` (occupancy).
 
@@ -235,8 +247,13 @@ Spawn the `claude-code-guide` agent to confirm:
 
 Also re-verify (no agent needed — read this repo's source):
 
-- The full set of stage-transition commands listed in the Hook section's trigger table — `quest.sh start`, `progress.sh init / reorder / activate / advance / advance-to / finish`. Cross-check against `scripts/progress.sh` and `scripts/quest.sh` to confirm command names and arg shapes haven't drifted.
+- The full set of stage-transition commands listed in the Hook section's trigger table — `quest.sh start`, `progress.sh init / reorder / activate / advance / advance-to / finish / set`. Cross-check against `scripts/progress.sh` and `scripts/quest.sh` to confirm command names and arg shapes haven't drifted.
 - That `progress.sh advance-to 3 5` is the only path that collapses two stages into one transition (so `"3+4"` is the only multi-stage label the hook needs to handle).
+- The manual-test `progress.sh set` command shapes used by `/mo-manual-test-plan` and `/mo-manual-test-run`:
+  - `progress.sh set sub-flow=manual-testing manual-test-state=running` — entry to manual-test sub-flow (anchor-only).
+  - `progress.sh set sub-flow=none manual-test-state=complete` — exit (row-writing, label `"5-mt"`).
+  - `progress.sh set manual-test-state=skipped manual-test-failure-policy=none` — phase declined (silent no-op).
+  - `progress.sh set manual-test-failure-policy=auto-seed` / `manual` — intra-flow policy promotion (silent no-op; not a stage transition).
 
 This step is fast and makes the rest of the implementation accurate.
 
@@ -248,14 +265,18 @@ This step is fast and makes the rest of the implementation accurate.
 2. **Classify the trigger** as either anchor-only or row-writing (per the Hook section's tables):
    - `quest.sh start` → anchor; no row written.
    - `progress.sh activate <feature>` → anchor; update sidecar `current_feature`; no row written.
+   - `progress.sh set sub-flow=manual-testing manual-test-state=running` → anchor; update sidecar `current_stage` to `"5-mt"`; no row written. (Pattern: regex-match the command for both `sub-flow=manual-testing` and `manual-test-state=running` field-value pairs in any order.)
+   - `progress.sh set manual-test-state=skipped manual-test-failure-policy=none` → silent no-op; no row written and no anchor change. The phase was declined; no manual-test work happened.
    - `progress.sh init` → row, stage `"1"`, feature `null`.
    - `progress.sh reorder` → row, stage `"1.5"`, feature `null`.
    - `progress.sh advance 2` → row, stage `"2"`, feature = `active.feature`.
    - `progress.sh advance-to 3 5` → row, stage `"3+4"` (collapsed), feature = `active.feature`.
-   - `progress.sh advance 5` → row, stage `"5"` (with-findings path), feature = `active.feature`.
-   - `progress.sh advance-to 5 7` → row, stage `"5"` (no-findings path; stage 7 reached but never labeled), feature = `active.feature`.
+   - `progress.sh set sub-flow=none manual-test-state=complete` → row, stage `"5-mt"` (manual-test sub-flow finalized), feature = `active.feature`. (Pattern: regex-match the command for both `sub-flow=none` and `manual-test-state=complete` field-value pairs in any order.) Multiple `"5-mt"` rows per feature are valid (re-runs via `--seed-only` or `--finalize-skipped`); each finalize emits a row.
+   - `progress.sh advance 5` → row, stage `"5"` (with-findings path), feature = `active.feature`. **When a `"5-mt"` row preceded this in the same feature's window**, the `"5"` row captures only post-manual-test tokens (findings authoring + Overseer Handler).
+   - `progress.sh advance-to 5 7` → row, stage `"5"` (no-findings path; stage 7 reached but never labeled), feature = `active.feature`. Same post-manual-test-tokens semantics as above when `"5-mt"` preceded.
    - `progress.sh advance-to 6 7` → row, stage `"6"` (review-completed path), feature = `active.feature`.
    - `progress.sh finish` → row, stage `"8"`, feature = `completed[-1]` (post-state read, since `finish` cleared `active`).
+   - Other `progress.sh set ...` invocations (e.g., `progress.sh set base-commit=...`, `progress.sh set manual-test-failure-policy=auto-seed`) → silent no-op; intra-stage state writes don't move the stage cursor.
 3. Resolve the active cycle's quest dir via `quest.sh dir`. (This works during stages 1/1.5/2-onward as long as the cycle folder exists.)
 4. Read or initialize `quest/<slug>/.stage-tokens.json`.
 5. Locate the current Claude Code session transcript. Parse from the last recorded `last_advance_at` timestamp forward (or from session start if first stage).
@@ -433,6 +454,16 @@ Stages 1 and 1.5 fire BEFORE any feature is activated — `progress.sh activate`
 
 The hook never emits a `"stage": "4"` row — stages 3 and 4 are merged into a single `"3+4"` row, written when `progress.sh advance-to 3 5` fires. Consumers (`jq` queries, future report generators) must accept `"3+4"` as a valid stage label. This matches `progress.md`'s own behavior: `current-stage` is never `4` either. If finer-grained attribution becomes necessary later, it requires explicit logical markers in the Resume Handler — out of scope for this plan.
 
+### Manual-test sub-flow rows (`"5-mt"`)
+
+Per `docs/manual-testing/plan.md`, stage 5 is widened to "overseer evaluation": an optional manual-test sub-flow runs before findings authoring. The hook records the sub-flow as a `"5-mt"` row, written when `progress.sh set sub-flow=none manual-test-state=complete` fires (the LAST mutation of `/mo-manual-test-run`'s auto-seed loop / Branch B finalization / Branch C `--finalize-skipped` finalization). The entry mutation `progress.sh set sub-flow=manual-testing manual-test-state=running` is anchor-only — it updates the sidecar's `current_stage` to `"5-mt"` so the status line reflects the active sub-flow, but does not write a row. Tokens between the entry anchor and the exit row are attributed to `"5-mt"`.
+
+A single feature may legitimately fire `"5-mt"` multiple times — `/mo-manual-test-run --seed-only` re-trigger after observation edits, `--finalize-skipped` after pause, or post-crash recovery (`state=complete && sub-flow=manual-testing`) re-firing the finalization mutation. Each finalization emits its own row. Per-feature totals must sum across all `"5-mt"` rows in the feature's window. The status line shows the most recent.
+
+The skipped-phase path (overseer answered `n` to "generate plan?" or used `--discard-existing`) writes NO `"5-mt"` row — `progress.sh set manual-test-state=skipped manual-test-failure-policy=none` is treated as a silent no-op by the hook because no manual-test work happened. The eventual stage-5 row absorbs the small planning-prompt tokens normally.
+
+When a manual-test phase ran, the subsequent `"5"` row captures only the *post-manual-test* findings-authoring + Overseer Handler tokens. This is meaningful: a stage-5 row that says `200k tokens` means very different things depending on whether a `"5-mt"` row precedes it. Consumers should treat `"5-mt" + "5"` as a coupled pair when reporting "stage 5 cost".
+
 ### `finish` clears active before the post-hook reads it
 
 `progress.sh finish` atomically clears `active` to null and appends the just-finished feature to `completed`. By the time PostToolUse fires, `active` is gone — so the hook reads `completed[-1]` from `progress.md` for the stage-8 row's `feature` field. (If `completed` is unexpectedly empty, the row is written with `feature: null` and `feature_lookup_failed: true`.) Pre-hook capture (PreToolUse companion) is NOT needed — `completed[-1]` is the post-state authority.
@@ -458,6 +489,8 @@ After implementation, exercise:
 11. **Stage 1 / 1.5 cycle-level rows.** After `/mo-run` + the two `/mo-continue` taps in stage 1.5, verify the log has exactly two records with `"feature": null` (one for stage 1, one for stage 1.5). The first feature-level row (`"stage":"2"`) should appear after `progress.sh activate` fires.
 12. **Stage 3+4 collapse.** Run a cycle through the Resume Handler. Verify exactly one record with `"stage":"3+4"` is appended (no separate `"3"` and `"4"` records). Confirm `progress.md`'s `current-stage` jumps from 3 to 5 (never 4) at the same moment.
 13. **Finish post-state read.** Run a cycle through `/mo-complete-workflow`. Verify the stage-8 record's `feature` matches the cycle's `completed[-1]` entry (read directly from the archived `progress.md`).
+14. **Manual-test sub-flow `"5-mt"` row.** Run a cycle in which the overseer answers `y` to the stage-5 hand-off "generate manual-test plan?" prompt and runs the test through to completion. Verify exactly one `"5-mt"` record is appended when `progress.sh set sub-flow=none manual-test-state=complete` fires (`/mo-manual-test-run` step 4 — the LAST mutation of the auto-seed loop). Verify the subsequent `"5"` record's tokens reflect ONLY post-manual-test work (findings authoring + Overseer Handler — substantially less than a manual-test-included row would be). Confirm the status line shows `stage 5-mt ✓` while the sub-flow is active and switches to `stage 5 ✓` after the eventual stage-5 finalization. Sibling: declined-phase path — the overseer answers `n` at the stage-5 prompt; verify NO `"5-mt"` record exists; the `"5"` record absorbs the planning-prompt tokens; status line shows `stage 5` directly. Sibling: re-trigger via `/mo-manual-test-run --seed-only` after observation edits — verify a SECOND `"5-mt"` record appends.
+15. **Manual-test entry anchor.** Set up a cycle just past `progress.sh set sub-flow=manual-testing manual-test-state=running`. Verify the sidecar's `current_stage` is `"5-mt"` even though no row has been appended yet (`stages[]` does not contain a `"5-mt"` entry). The status line should show `stage 5-mt` (in progress) rather than the prior stage's label.
 
 ## Risks
 
@@ -481,7 +514,7 @@ After implementation, exercise:
 Roughly a day of focused work:
 
 - Step 1 (verify hook + transcript contracts, sub-agent transcript shape, full trigger list): 1 hour.
-- Step 2 (hook — stdin parsing, full trigger detection incl. `init`/`reorder`/`activate`/`finish`, feature attribution, stage 3+4 collapse, sidecar + usage log + sub-context discovery): 4.5 hours.
+- Step 2 (hook — stdin parsing, full trigger detection incl. `init`/`reorder`/`activate`/`finish` + manual-test `set` patterns for `"5-mt"` row and entry anchor, feature attribution, stage 3+4 collapse, sidecar + usage log + sub-context discovery): 5 hours.
 - Step 3 (status line): 1 hour.
 - Step 4 (settings.json wiring): 15 minutes.
 - Step 5 (test on a real cycle — multi-feature, including log + sub-context + feature-attribution verification): 2 hours.

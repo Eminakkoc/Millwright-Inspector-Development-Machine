@@ -98,6 +98,33 @@ $CLAUDE_PLUGIN_ROOT/scripts/quest.sh init-pointer
 
 If the folder already exists with content, do **not** touch anything inside it — just report "already initialized". `quest.sh init-pointer` is idempotent: it only writes `quest/active.md` when that file is absent, so existing per-cycle subfolders and an in-flight active pointer are preserved untouched.
 
+### Step 5.5 — Offer the info-bar status-line opt-in
+
+The plugin ships a per-cycle token-tracking hook automatically (registered in `hooks/hooks.json`), so token tracking starts working as soon as the plugin is installed — no user action required. The hook writes a per-cycle sidecar at `quest/<active-slug>/.stage-tokens.json` and an append-only audit log at `quest/<active-slug>/usage.log` for retrospective analysis.
+
+The optional **info-bar status line** displays the per-stage token totals on Claude Code's bottom bar. Per Claude Code's plugin reference, `statusLine` is a per-user `.claude/settings.json` setting and is NOT distributable through plugin manifests — so the plugin cannot wire it automatically. Offer the opt-in here:
+
+```
+Optional: enable the bottom-bar info-bar that shows per-stage token usage in real time?
+
+  Adds:
+    "statusLine": {
+      "type": "command",
+      "command": "$CLAUDE_PLUGIN_ROOT/scripts/info-bar.sh"
+    }
+  to your user-level .claude/settings.json. Renders as:
+    mo · cycle <slug> · feature <X> · stage <S> ✓ │ up to that point: 247k │ current stage: 52k
+
+  The token-tracking hook itself runs regardless — declining only affects the bottom-bar
+  display, not the data collection. You can opt in later by re-running /mo-init.
+
+  Add it now? (y/n)
+```
+
+On `y`, invoke the `update-config` skill (with the user's confirmed consent) to write the `statusLine` block into `~/.claude/settings.json`. On `n`, mention the data is still being collected and they can opt in later. If `~/.claude/settings.json` already has a `statusLine` set to a different command, do NOT overwrite — print the conflict and ask the user to resolve manually.
+
+If `update-config` is not installed (the skill is part of the Claude Code SDK distribution), fall back to printing the JSON snippet above and asking the user to paste it manually.
+
 ### Step 6 — Report and hand off
 
 Print the ready-state followed by a full walkthrough of what the overseer does next — including **when `/mo-continue` is typed** (twice per feature). Keep the output as-is; this is the canonical handoff text for first-time users:
