@@ -37,12 +37,17 @@ fi
 # shellcheck disable=SC1091
 source "${plugin_root}/scripts/internal/common.sh"
 
-# Extract tool_name + tool_input.command + transcript_path + session_id from
-# the hook input JSON. Claude Code passes:
+# Extract tool_name + tool_input.command + transcript_path + session_id + cwd
+# from the hook input JSON. Claude Code passes:
 #   tool_name        : "Bash" (filtered by the manifest matcher, but we double-check)
 #   tool_input.command : the literal command string
 #   transcript_path  : absolute path to the main session's JSONL transcript
 #   session_id       : main-session UUID
+#   cwd              : the main session's working directory at the time of the
+#                      tool call. CRITICAL — Claude Code does NOT inherit $PWD
+#                      into hook subprocesses; without this field, mo_data_root
+#                      resolves wrong and the hook silently exits because
+#                      quest/active.md isn't found at $PWD/millwright-overseer.
 hook_fields="$(printf '%s' "$hook_input" | python3 -c '
 import sys, json
 try:
@@ -54,15 +59,27 @@ print(d.get("tool_name") or "")
 print(ti.get("command") or "")
 print(d.get("transcript_path") or "")
 print(d.get("session_id") or "")
+print(d.get("cwd") or "")
 ' 2>/dev/null || true)"
 
-# IFS-safe parse of the four newline-separated fields.
-{ IFS= read -r tool_name; IFS= read -r command; IFS= read -r transcript_path; IFS= read -r session_id; } <<< "$hook_fields" || true
+# IFS-safe parse of the five newline-separated fields.
+{ IFS= read -r tool_name; IFS= read -r command; IFS= read -r transcript_path; IFS= read -r session_id; IFS= read -r session_cwd; } <<< "$hook_fields" || true
 
 # Defensive: only act on Bash tool calls. The matcher should filter, but a
 # manual test invocation might not.
 [[ "$tool_name" == "Bash" ]] || exit 0
 [[ -n "$command" ]] || exit 0
+
+# Anchor the hook's working directory to the user's session, NOT whatever
+# Claude Code launched the hook with. mo_data_root reads $PWD; without this
+# cd, the hook resolves data_root to a stale location (the plugin install
+# dir, $HOME, or whatever Claude Code's hook subprocess inherits) and then
+# silently exits because quest/active.md isn't there. Falls back to whatever
+# $PWD already is if `cwd` is missing from the payload — back-compat for
+# older Claude Code versions that may not include it.
+if [[ -n "$session_cwd" && -d "$session_cwd" ]]; then
+  cd "$session_cwd" || exit 0
+fi
 
 # ------------------------------------------------------------------------
 # Trigger classification.
