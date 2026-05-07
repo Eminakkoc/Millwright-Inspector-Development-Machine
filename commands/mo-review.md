@@ -103,6 +103,41 @@ Then fill the body via `Edit`, following the template's section guide:
 
   Brainstorming sub-agents reading `review-context.md` get the manual-test signal in their first read with up-to-date IR citations, without main needing to re-narrate.
 
+- **`## Decisions`** — folded from `$data_root/workflow-stream/$active_feature/decisions.md` (per `docs/clear-points/plan.md` §5.2 mo-review section, §10 step 4b). Per-iteration review sub-agents read `review-context.md` as their primary context source — this fold-in is the **only path** by which feature-scoped decisions reach them. Without it, a `stage-5-to-6` clear (or any decision written between stages 5 and 6) would silently strand decisions outside the sub-agents' view.
+
+  Same body extraction recipe as `mo-plan-implementation` Step 3.5:
+
+  ```bash
+  decisions_file="$data_root/workflow-stream/$active_feature/decisions.md"
+  decisions_body="$(python3 - "$decisions_file" <<'PYEOF'
+import sys, os, re
+path = sys.argv[1]
+if not os.path.isfile(path):
+    sys.exit(0)
+with open(path) as f:
+    content = f.read()
+m = re.match(r'^---\n.*?\n---\n(.*)$', content, re.DOTALL)
+if not m:
+    sys.exit(0)
+body = m.group(1)
+sections = re.split(r'(?m)^(?=## )', body)
+out = []
+for sec in sections:
+    if not sec.strip().startswith('## '):
+        continue
+    cleaned = re.sub(r'<!--.*?-->', '', sec, flags=re.DOTALL)
+    cleaned = re.sub(r'\n{3,}', '\n\n', cleaned).rstrip() + '\n'
+    if re.search(r'(?m)^- ', cleaned):
+        out.append(cleaned)
+print('\n'.join(out).rstrip())
+PYEOF
+)"
+  ```
+
+  If `decisions_body` is non-empty, replace the `_(none recorded)_` line in the rendered review-context's `## Decisions` section with the extracted body via `Edit`. If `decisions.md` is absent OR every section is placeholder-only, leave `_(none recorded)_` untouched. **Do NOT delete the `## Decisions` heading itself** — the sub-agent prompt template references it positionally, and an absent heading is a different signal than "heading present, no decisions."
+
+  This fold-in **always runs** at Step 2.5, regardless of whether the `stage-5-to-6` clear-point gate (§3.3 of the clear-points plan) is shipped — it is independently useful as soon as `decisions.md` exists, because any decision written between stages 5 and 6 (with or without a clear) needs to reach the sub-agents.
+
 The `## On-demand canonical files` section is template-emitted and does not need editing. No `schemas/review-context.schema.yaml` change is required for the manual-test addition (the schema validates frontmatter only).
 
 ### Step 2.6 — Ask the overseer to pick a review mode

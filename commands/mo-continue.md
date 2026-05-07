@@ -331,9 +331,91 @@ esac
 
 The default mode is correct here: `primer.md` is written at stage 3 by `/mo-plan-implementation` Step 3.5, so it does not exist yet at the stage-2 approve gate. Stage-3+ callers (`/mo-update-blueprint`, the Stage-4 drift probe, `/mo-complete-workflow` before completion rotation) use `--require-primer` to also validate the primer.
 
-### Approve Step 2 — Auto-fire `/mo-plan-implementation`
+### Approve Step 2 — Clear-point gate (`stage-2-to-3`)
 
-`/mo-plan-implementation` handles its own preconditions: branch validation against `config.md`'s `## GIT BRANCH`, todo promotion (PENDING → IMPLEMENTING), `base-commit` capture, primer composition, planning-mode prompt, and chain launch.
+Per `docs/clear-points/plan.md` §3.1 / §5.2, this step offers the overseer a `/clear` between stage-2 blueprint approval and stage-3 implementation entry. The gate fires at most once per feature: on first entry it prints the recommendation and halts; on re-entry (whether the overseer cleared or skipped) it proceeds.
+
+```bash
+data_root="$($CLAUDE_PLUGIN_ROOT/scripts/data-root.sh)"
+
+if "$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" has-clear-recommendation stage-2-to-3; then
+  gate_already_fired=1
+else
+  gate_already_fired=0
+fi
+```
+
+#### Step 2a — `decisions.md` write-check (always runs)
+
+Before the gate decides, ensure any verbal scope decisions from the recent stage-2 Q&A have been persisted to `decisions.md`. This is mandatory: if the overseer cleared on the strength of the recommendation (Step 2b), anything not in `decisions.md` is **lost** — the file is the only thing that survives the clear (per `docs/clear-points/plan.md` §4 prerequisites).
+
+Review the last several turns of the conversation. If they contain instructions, scope decisions, or constraints that are NOT captured verbatim in `requirements.md` / `config.md` / `overseer-review.md`, summarize them as bullets in `$data_root/workflow-stream/$active_feature/decisions.md` under the `## Stage 2 — Blueprint approval` section.
+
+```bash
+decisions_file="$data_root/workflow-stream/$active_feature/decisions.md"
+if [[ ! -f "$decisions_file" ]]; then
+  # File doesn't exist yet — initialize it on first use.
+  $CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh init decisions "$decisions_file" \
+    "FEATURE=$active_feature"
+fi
+# Then use Edit to append bullets to the `## Stage 2 — Blueprint approval`
+# section if any new decisions surfaced. Format per templates/decisions.md.tmpl:
+#   - **YYYY-MM-DD** — <decision>. Reason: <why>.
+# Skip the write entirely if the recent turns contain no spec-relevant
+# decisions — the placeholder comment can stay.
+```
+
+If the gate has already fired (`gate_already_fired=1`), the write-check still runs — late-stage decisions caught between offer and resume should still land. Only the ledger appends and the recommendation print differ between branches.
+
+#### Step 2b — Branch on `gate_already_fired`
+
+**If `gate_already_fired=0` (first entry — print recommendation + halt):**
+
+```bash
+$CLAUDE_PLUGIN_ROOT/scripts/progress.sh add-clear-recommendation stage-2-to-3
+$CLAUDE_PLUGIN_ROOT/scripts/ledger.sh append \
+  "2" "/mo-continue" "clear-offer-recommendation" "small" "main" \
+  "stage-2-to-3 clear offered" || true
+```
+
+Then print the recommendation block to the overseer and **halt** — do NOT auto-fire `/mo-plan-implementation` in this branch:
+
+> "Blueprint for `$active_feature` approved. **Recommended:** type `/clear`, then `/mo-continue` to enter stage 3 with a fresh main context.
+>
+> What gets carried across the clear:
+> - `progress.md` (workflow state)
+> - `blueprints/current/{requirements,config}.md` (the blueprint you just approved)
+> - `decisions.md` (any verbal decisions captured above — folded into `primer.md` when stage 3 starts)
+>
+> What gets discarded by the clear: the back-and-forth conversation that led to this point. The blueprint is the canonical record; the chat history is not.
+>
+> Skip the clear (just type `/mo-continue` without clearing) if you have unsaved verbal context you specifically want to carry forward."
+
+Then exit. The overseer's next `/mo-continue` re-enters this handler with `gate_already_fired=1`.
+
+**If `gate_already_fired=1` (re-entry — offer was already shown; proceed):**
+
+```bash
+$CLAUDE_PLUGIN_ROOT/scripts/ledger.sh append \
+  "2" "/mo-continue" "post-offer-resume" "small" "main" \
+  "stage-2-to-3 Approve Handler resumed" || true
+
+# Rehydration row — record the file set the dispatcher reads to remember
+# workflow state post-clear. The handler does NOT itself read these here
+# (mo-plan-implementation reads what it needs), but the ledger row attributes
+# the read class to the gate transition for analytics.
+$CLAUDE_PLUGIN_ROOT/scripts/ledger.sh append \
+  "2" "/mo-continue" "progress.md, summary.md, requirements.md, config.md" \
+  "medium" "main" "stage-2-to-3 rehydration" || true
+```
+
+Fall through to Step 3.
+
+We **cannot** distinguish "took the clear" from "skipped the clear" — both produce the same persisted state (the `clear-recommendations` array contains `stage-2-to-3` either way). Per `docs/clear-points/plan.md` §6.5 and §5.4, this is fine functionally; telemetry honestly records `clear-offered` and `post-offer-resume` only, never a fake `clear-taken`.
+
+### Approve Step 3 — Auto-fire `/mo-plan-implementation`
+
+`/mo-plan-implementation` handles its own preconditions: branch validation against `config.md`'s `## GIT BRANCH`, todo promotion (PENDING → IMPLEMENTING), `base-commit` capture, primer composition (which folds in `decisions.md` per Step 3.5 — see `docs/clear-points/plan.md` §9.3), planning-mode prompt, and chain launch.
 
 ```bash
 /mo-plan-implementation

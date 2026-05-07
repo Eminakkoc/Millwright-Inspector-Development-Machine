@@ -293,12 +293,41 @@ todo_count="$($CLAUDE_PLUGIN_ROOT/scripts/todo.sh list TODO 2>/dev/null | sed '/
 
   Stop here; nothing else to do.
 
-If `remaining` is non-empty, the first line is the next feature (soft announce-and-continue):
+If `remaining` is non-empty, the first line is the next feature:
 
 ```bash
 next="$(printf '%s\n' "$remaining" | head -1)"
 ```
 
-> "Workflow for $active_feature complete. Next in queue: $next. Proceeding automatically — interrupt now or run `/mo-abort-workflow` to pause."
+#### Step 7.1 — Final `decisions.md` write-check on the just-finished feature
 
-Then, without waiting for a further overseer reply, auto-invoke `/mo-apply-impact`. It will call `progress.sh activate` internally, which pops `$next` into the `active` block and starts stage 2 for it. If the overseer interrupts with a non-affirmative message before or during stage 2 execution, defer to their instruction. Manual `/mo-apply-impact` invocation remains available.
+Per `docs/clear-points/plan.md` §3.2 and §5.2 (mo-complete-workflow section), this is the **last chance** to capture verbal decisions about feature `$active_feature` before main context gets cleared at the gate (Step 7.2 below). The file itself stays at `workflow-stream/$active_feature/decisions.md` permanently per §9.2 — it's NOT rotated into history — but anything not yet WRITTEN to it before the clear is gone.
+
+Review the last several turns of conversation for instructions, scope decisions, or constraints about feature `$active_feature` that aren't captured verbatim in its blueprint or `overseer-review.md`. Append them as bullets to the relevant `## Stage <N>` section of `$data_root/workflow-stream/$active_feature/decisions.md`. If the file doesn't exist (no decisions ever recorded for this feature), skip — there's nothing to capture and creating an empty file adds noise.
+
+#### Step 7.2 — Clear-point gate (`stage-8-to-2`)
+
+Per `docs/clear-points/plan.md` §3.2, recommend a `/clear` between feature A's completion and feature B's activation. Unlike the `stage-2-to-3` and `stage-5-to-6` gates, this one needs **no persistence flag** — the post-clear state (`active=null`, queue non-empty) only happens once per feature transition by construction (`mo-apply-impact` immediately repopulates `active`), so the dispatcher cannot accidentally re-prompt.
+
+```bash
+$CLAUDE_PLUGIN_ROOT/scripts/ledger.sh append \
+  "8" "/mo-complete-workflow" "clear-offer-recommendation" "small" "main" \
+  "stage-8-to-2 clear offered (${active_feature} -> ${next})" || true
+```
+
+Then print the recommendation block to the overseer and **halt** — do NOT auto-fire `/mo-apply-impact`:
+
+> "Workflow for `$active_feature` complete. Queue continues with `$next`.
+>
+> **Recommended:** type `/clear`, then `/mo-continue` to start `$next` with a fresh main context. Nothing from `$active_feature` is needed for `$next`:
+> - `$active_feature`'s blueprint history is preserved at `workflow-stream/$active_feature/blueprints/history/v[N+1]/`.
+> - `$active_feature`'s decisions log persists at `workflow-stream/$active_feature/decisions.md` (feature-scoped, never archived).
+> - `$next`'s `workflow-stream/$next/` will be created fresh by `mo-apply-impact` after the clear.
+>
+> Skip the clear (just type `/mo-continue` without clearing) if you want to carry verbal context across — rare; the feature boundary is usually the cleanest moment to clear in the entire cycle."
+
+Then exit. The overseer's next `/mo-continue` re-enters the dispatcher with `active=null` and `queue` non-empty, which Row A in the dispatch table matches and auto-fires `/mo-apply-impact` for `queue[0]`. Row A's path is unchanged by this gate — it doesn't know about clear-recommendations and doesn't need to (the gate fired exactly once, before halt; re-entry just continues the existing Row A path).
+
+**Why no `post-offer-resume` ledger row for this gate:** the dispatcher's Row A path is a generic "between features" handler that fires on every queue advance, including initial-cycle entry after `/mo-run` where there was no prior offer. Writing an unconditional `post-offer-resume` here would produce noise; writing a conditional one (only when the previous ledger row was a `clear-offered stage-8-to-2`) couples mo-apply-impact to ledger introspection. For analytics, pair `clear-offered stage-8-to-2` with the next feature's stage-2 rows — row order alone is enough.
+
+If the overseer interrupts with a non-affirmative message before or during the next feature's stage 2 execution, defer to their instruction. Manual `/mo-apply-impact` invocation remains available.

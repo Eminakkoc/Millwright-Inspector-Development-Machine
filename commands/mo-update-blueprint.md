@@ -365,6 +365,8 @@ Then write the body using `Edit`. Three sections, in this order:
 
 3. **`## Non-goals (out of scope)`** — **copy verbatim** from the previous `requirements.md`. The implementation can't tell you what was deliberately excluded. Skip the section entirely if the previous file didn't have one.
 
+   **Then fold in scope-exclusion decisions from `decisions.md`** (per `docs/clear-points/plan.md` §9.6). Read `$data_root/workflow-stream/$active_feature/decisions.md` (if exists), use the same body extraction as `mo-plan-implementation` Step 3.5 (Python helper that strips HTML-comment placeholder blocks and keeps only stage sections with real bullet entries), and append any bullets that read as scope exclusions — e.g., "treat `<module>` as out-of-scope", "don't touch `<area>`", "exclude `<concern>` from this cycle" — as additional Non-goal bullets. Preserve the source attribution: prefix each appended bullet with `(decisions.md, Stage <N>):`. Bullets that aren't scope-exclusion-shaped (instruction-shaped, seam-pick-shaped) belong in `config.md` `## Overseer Additions` instead — see Step 4d. The original entries remain untouched in `decisions.md` (it is excluded from history rotation per §9.2).
+
 The frontmatter `commits` array stays empty — `mo-complete-workflow` populates it at stage 8.
 
 #### Step 4c — Write the new `config.md`
@@ -394,6 +396,43 @@ $CLAUDE_PLUGIN_ROOT/scripts/blueprints.sh preserve-overseer-sections "$active_fe
 ```
 
 This reads `## GIT BRANCH` and `## Overseer Additions` bodies from `history/v[<version>]/config.md` and splices them into the matching headings in the new `current/config.md`. Headings stay; only the bodies are replaced. If those sections were empty in the previous file, the new file's matching sections are left as-is (template-empty).
+
+**Then — and ONLY after `preserve-overseer-sections` runs — fold in instruction/constraint decisions from `decisions.md`.** Critical ordering point (per `docs/clear-points/plan.md` §10 step 4a): a fold-in placed *before* the preserve step would be silently overwritten when `preserve-overseer-sections` splices the historical body in. The correct sequence is: (1) `preserve-overseer-sections` restores the prior `## Overseer Additions` from history; (2) the fold-in then APPENDS decision-derived bullets after the preserved content.
+
+```bash
+decisions_file="$data_root/workflow-stream/$active_feature/decisions.md"
+if [[ -f "$decisions_file" ]]; then
+  # Same body extraction as mo-plan-implementation Step 3.5 — strips HTML-
+  # comment placeholders, keeps only stage sections with real bullets.
+  decisions_body="$(python3 - "$decisions_file" <<'PYEOF'
+import sys, os, re
+path = sys.argv[1]
+if not os.path.isfile(path):
+    sys.exit(0)
+with open(path) as f:
+    content = f.read()
+m = re.match(r'^---\n.*?\n---\n(.*)$', content, re.DOTALL)
+if not m:
+    sys.exit(0)
+body = m.group(1)
+sections = re.split(r'(?m)^(?=## )', body)
+out = []
+for sec in sections:
+    if not sec.strip().startswith('## '):
+        continue
+    cleaned = re.sub(r'<!--.*?-->', '', sec, flags=re.DOTALL)
+    cleaned = re.sub(r'\n{3,}', '\n\n', cleaned).rstrip() + '\n'
+    if re.search(r'(?m)^- ', cleaned):
+        out.append(cleaned)
+print('\n'.join(out).rstrip())
+PYEOF
+)"
+fi
+```
+
+If `decisions_body` is non-empty, use `Edit` against `$new_cfg` to append the instruction/constraint-shaped bullets to `## Overseer Additions` (after whatever `preserve-overseer-sections` restored). Apply the same routing rule as Step 4b: bullets that read as instructions / constraints / seam picks (e.g., "use fixture Z", "land G3 in `refresh.ts`", "always call `helper()` before `commit()`") go here; bullets that are pure scope exclusions stay in requirements.md Non-goals (Step 4b). Prefix each appended bullet with `(decisions.md, Stage <N>):` for source attribution. The original entries remain in `decisions.md` unchanged.
+
+If `decisions_body` is empty (no decisions or all-placeholder), skip the fold-in entirely. `## Overseer Additions` is left exactly as `preserve-overseer-sections` restored it.
 
 #### Step 4e — Regenerate diagrams
 
@@ -452,6 +491,7 @@ Then write each section per the same guide as `mo-plan-implementation` Step 3.5:
 - `## Goals (this cycle)` — 5–20 line excerpt from the new `requirements.md` `## Goals (this cycle)` (re-derived from the implementation in Step 4b).
 - `## Journal context (active feature)` — 5–20 line digest from the active cycle's `summary.md` `## Feature: <active_feature>` plus relevant `## Cross-cutting constraints`.
 - `## Likely-relevant skills & rules` — ≤ 5 entries from the new `config.md` auto-block (Step 4c).
+- **`## Decisions`** — apply the same fold-in as `mo-plan-implementation` Step 3.5: read `decisions.md` (if exists), extract real-bullet stage sections via the Python helper, replace the `_(none recorded)_` placeholder line in the rendered primer's `## Decisions` section with the extracted body. If `decisions.md` is absent or every section is placeholder-only, leave `_(none recorded)_` untouched. **Do NOT delete the `## Decisions` heading itself.** Mandatory — same rationale as Step 3.5 (the chain inherits decisions only through primer.md).
 
 The `## On-demand canonical files` section is template-emitted and does not need editing.
 

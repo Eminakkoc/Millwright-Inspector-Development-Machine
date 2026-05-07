@@ -1,0 +1,49 @@
+---
+id: {{UUID}}
+feature: {{FEATURE}}
+---
+
+# Decisions — {{FEATURE}}
+
+Verbal decisions, scope adjustments, and constraints captured during overseer ↔ millwright Q&A that aren't reflected in `requirements.md`, `config.md`, or `overseer-review.md`. Append-only across stages — survives blueprint regenerations (per `docs/clear-points/plan.md` §9.2, this file is excluded from history rotation).
+
+<!-- Generated artifact — initialized by the millwright on first decision write,
+     appended to throughout the feature lifetime. Lives at
+     workflow-stream/<feature>/decisions.md (root, NOT inside blueprints/current/).
+     Read by:
+       - mo-plan-implementation Step 3.5 — folds entries into primer.md
+         (### 9.3 of docs/clear-points/plan.md)
+       - /mo-review Step 2.5 — folds entries into review-context.md
+         (### 5.2 mo-review section of docs/clear-points/plan.md)
+       - /mo-update-blueprint regen — folds scope/constraint entries into
+         requirements.md Non-goals and config.md Overseer Additions, AFTER
+         blueprints.sh preserve-overseer-sections runs (### 9.6)
+     Never modified by consumers — they read, fold derivative content
+     elsewhere, and leave this file alone.
+
+     Section format: `## Stage <N> — <short label>`. Stage numbers match
+     the workflow stages where the decision was captured (typically 2 for
+     blueprint Q&A, 5 for findings canonicalization). Multiple decisions
+     in one stage stack as bullets under that stage's heading; the stage
+     section is appended once and reused. -->
+
+## Stage 2 — Blueprint approval
+
+<!-- Bulleted decisions captured during stage-2 blueprint Q&A. Each bullet
+     leads with an absolute date (YYYY-MM-DD), then the decision in plain
+     prose, then a `Reason:` clause if the rationale is non-obvious.
+
+     - **YYYY-MM-DD** — Treat <module> as out-of-scope for this feature
+       even though `summary.md` cross-references it. Reason: <why>.
+     - **YYYY-MM-DD** — <Goal/seam decision that overrides the default
+       in `requirements.md` or `config.md`>. Reason: <why>.
+
+     Skip the section entirely (delete this heading and the placeholder)
+     if no stage-2 decisions are recorded. -->
+
+## Stage 5 — Findings canonicalization
+
+<!-- Same format as Stage 2. Captures decisions made during overseer
+     review canonicalization or findings dispatch — e.g., "skip the
+     legacy module Y while addressing IR-003 even though the finding
+     touches it." Skip the section entirely if empty. -->

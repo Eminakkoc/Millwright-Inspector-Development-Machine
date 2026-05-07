@@ -279,6 +279,26 @@ properties:
               base-commit on first stage-3 entry; preserved across re-entries
               (the re-entry guard skips Step 3 entirely). /mo-abort-workflow's
               reset intentionally drops this field.
+          clear-recommendations:
+            type: array
+            items:
+              type: string
+              enum: [stage-2-to-3, stage-5-to-6]
+            uniqueItems: true
+            description: >
+              Within-feature stage-transition identifiers the millwright has
+              already suggested a `/clear` for in this cycle's active feature.
+              Optional — missing/empty means "no clears recommended yet."
+              Read by `progress.sh has-clear-recommendation` to decide whether
+              the corresponding gate has already fired (so it doesn't re-prompt
+              on overseer re-entry). Mutated by `progress.sh
+              add-clear-recommendation` (idempotent — adding an already-present
+              identifier is a no-op). The feature-boundary gate
+              (`stage-8-to-2`) does NOT use this field — its non-replaying
+              behavior is structural (`active=null` + queue non-empty happens
+              once per transition by construction). /mo-abort-workflow drops
+              this field as part of its reset, so the next stage-3 entry on
+              the same feature re-fires the gate.
           worktree-path:
             type: string
             minLength: 1

@@ -208,6 +208,50 @@ Then write each section per the template's guide:
 
   Quantitative budget: **≤ 5 entries inline**. If `config.md`'s `## Skills` and `## Rules` sections together carry ≤ 10 entries, pass them inline as bullets. If more than 10, pick the most-likely-relevant five for the primer and reference `config.md` itself by path for the rest.
 
+- **`## Decisions`** — folded from `$data_root/workflow-stream/$active_feature/decisions.md` if it exists. Extract only stage sections that contain real entries (bullets), skipping sections that still hold their template HTML-comment placeholder:
+
+  ```bash
+  decisions_file="$data_root/workflow-stream/$active_feature/decisions.md"
+  decisions_body="$(python3 - "$decisions_file" <<'PYEOF'
+import sys, os, re
+path = sys.argv[1]
+if not os.path.isfile(path):
+    sys.exit(0)  # absent file → empty output, leave placeholder
+with open(path) as f:
+    content = f.read()
+m = re.match(r'^---\n.*?\n---\n(.*)$', content, re.DOTALL)
+if not m:
+    sys.exit(0)  # malformed → empty output (validate-on-write will block writes anyway)
+body = m.group(1)
+
+# Split body into sections by top-level "## " headings.
+sections = re.split(r'(?m)^(?=## )', body)
+
+# Strip HTML comment blocks from each section, then keep only sections that
+# still have a bullet line (`- ...`) — i.e., real entries rather than just a
+# heading + placeholder comment.
+out = []
+for sec in sections:
+    if not sec.strip().startswith('## '):
+        continue  # leading prose before the first stage heading — drop
+    # Remove any <!-- ... --> blocks (multi-line, non-greedy).
+    cleaned = re.sub(r'<!--.*?-->', '', sec, flags=re.DOTALL)
+    # Trim whitespace-only trailing lines but keep internal structure.
+    cleaned = re.sub(r'\n{3,}', '\n\n', cleaned).rstrip() + '\n'
+    # Keep section only if it has at least one bullet entry.
+    if re.search(r'(?m)^- ', cleaned):
+        out.append(cleaned)
+print('\n'.join(out).rstrip())
+PYEOF
+)"
+  ```
+
+  If `decisions_body` is non-empty, replace the `_(none recorded)_` placeholder line inside the rendered primer's `## Decisions` section with the extracted body (which preserves stage section headings and their bullet entries verbatim). Use `Edit` against the just-rendered primer file.
+
+  If `decisions.md` is absent OR every stage section is still placeholder-only (no real bullets), leave the `_(none recorded)_` placeholder untouched. **Do NOT delete the `## Decisions` heading itself** — the chain reads it positionally; an absent heading would be a different signal than "heading present, no decisions."
+
+  This fold-in is **mandatory**, not optional: it is the only path by which verbal scope decisions reach the brainstorming chain (and `direct` mode), because `decisions.md` is intentionally excluded from the post-clear rehydration set (per `docs/clear-points/plan.md` §5.3, §9.3). Skipping the fold-in silently strands those decisions.
+
 The `## Execution-mode hints` section is template-emitted (Phase 5.3) and does not need editing — it carries the concrete thresholds for `subagent-driven-development` and `direct` mode that the chain reads when deciding execution.
 
 The `## On-demand canonical files` section is template-emitted and does not need editing — it lists the files the chain should consult when the primer falls short.

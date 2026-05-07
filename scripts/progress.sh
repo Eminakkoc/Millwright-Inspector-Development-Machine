@@ -49,6 +49,21 @@
 #                                            # pipeline as `set`: validate → temp file → schema validate
 #                                            # → atomic rename.
 #
+#   progress.sh add-clear-recommendation <id>
+#                                            # idempotent append to active.clear-recommendations.
+#                                            # <id> must be a within-feature gate identifier
+#                                            # (stage-2-to-3 | stage-5-to-6); the schema enum
+#                                            # gate rejects others. No-op when <id> is already
+#                                            # present. Goes through the same set pipeline
+#                                            # (worktree guard → temp file → schema validate →
+#                                            # atomic rename) so a sibling worktree cannot write
+#                                            # the field. Errors if active is null.
+#   progress.sh has-clear-recommendation <id>
+#                                            # exit 0 if <id> is present in
+#                                            # active.clear-recommendations; exit 1 otherwise.
+#                                            # No-op-style read; missing/null array is treated as
+#                                            # empty (returns 1 for any <id>). Errors if active is null.
+#
 #   progress.sh check-worktree               # pre-flight: errors if the current working tree is
 #                                            # not the one that activated the cycle. No-op when
 #                                            # active is null or the fingerprint isn't recorded
@@ -514,6 +529,77 @@ PYEOF
     fi
     mv "$tmp" "$dest"
     trap - EXIT
+    ;;
+
+  add-clear-recommendation)
+    id="${1:?clear-recommendation id required (stage-2-to-3 | stage-5-to-6)}"
+    dest="$(progress_file)"
+    require_file "$dest"
+    require_active "$dest"
+    mo_assert_worktree_match
+    # Idempotent append to active.clear-recommendations. Goes through the same
+    # set pipeline as `set`: read → mutate → temp file → schema validate →
+    # atomic rename. The schema's enum on items rejects unknown ids.
+    tmp="$(mktemp "$(dirname "$dest")/progress.md.XXXXXX")"
+    trap 'rm -f "$tmp"' EXIT
+    if ! python3 - "$dest" "$tmp" "$id" <<'PYEOF'; then
+import sys, re, yaml
+path, tmp, new_id = sys.argv[1], sys.argv[2], sys.argv[3]
+with open(path) as f:
+    content = f.read()
+m = re.match(r'^---\n(.*?)\n---\n(.*)$', content, re.DOTALL)
+if not m:
+    sys.stderr.write(f"error: progress.sh add-clear-recommendation: {path} has no frontmatter block\n")
+    sys.exit(1)
+fm = yaml.safe_load(m.group(1)) or {}
+if fm.get('active') is None:
+    sys.stderr.write("error: progress.sh add-clear-recommendation: active is null\n")
+    sys.exit(1)
+arr = fm['active'].get('clear-recommendations') or []
+if new_id in arr:
+    # Idempotent — re-emit unchanged content so the temp+rename pipeline still
+    # runs validation and atomic-replaces the file (cheap and consistent with
+    # the other set-style mutators).
+    pass
+else:
+    arr.append(new_id)
+    fm['active']['clear-recommendations'] = arr
+with open(tmp, 'w') as f:
+    f.write('---\n')
+    f.write(yaml.safe_dump(fm, default_flow_style=False, sort_keys=False))
+    f.write('---\n')
+    f.write(m.group(2))
+PYEOF
+      exit 1
+    fi
+    if ! "${MO_PLUGIN_ROOT}/scripts/frontmatter.sh" validate "$tmp" progress >/dev/null; then
+      mo_die "progress.sh add-clear-recommendation: candidate state failed schema validation; original file unchanged"
+    fi
+    mv "$tmp" "$dest"
+    trap - EXIT
+    ;;
+
+  has-clear-recommendation)
+    id="${1:?clear-recommendation id required (stage-2-to-3 | stage-5-to-6)}"
+    dest="$(progress_file)"
+    require_file "$dest"
+    require_active "$dest"
+    # Pure read — no worktree guard (matches `get`'s pattern; siblings are
+    # allowed to read state).
+    python3 - "$dest" "$id" <<'PYEOF'
+import sys, re, yaml
+path, query_id = sys.argv[1], sys.argv[2]
+with open(path) as f:
+    content = f.read()
+m = re.match(r'^---\n(.*?)\n---\n(.*)$', content, re.DOTALL)
+if not m:
+    sys.stderr.write(f"error: progress.sh has-clear-recommendation: {path} has no frontmatter block\n")
+    sys.exit(2)
+fm = yaml.safe_load(m.group(1)) or {}
+active = fm.get('active') or {}
+arr = active.get('clear-recommendations') or []
+sys.exit(0 if query_id in arr else 1)
+PYEOF
     ;;
 
   advance)
