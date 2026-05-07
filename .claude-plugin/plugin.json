@@ -1,6 +1,6 @@
 {
   "name": "millwright-overseer-development-machine",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "description": "Millwright-Overseer agentic workflow system — delegates coding to an AI 'millwright' while the human acts as 'overseer' who reviews generated specs, plans, implementations, and diagrams at each stage.",
   "author": {
     "name": "Emin Akkoc",
@@ -16,7 +16,6 @@
     "brainstorming"
   ],
   "commands": "./commands/",
-  "agents": "./agents/",
   "mcpServers": {
     "plantuml": {
       "command": "plantuml-mcp-server",
