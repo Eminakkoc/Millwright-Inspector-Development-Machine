@@ -98,6 +98,24 @@ $CLAUDE_PLUGIN_ROOT/scripts/quest.sh init-pointer
 
 If the folder already exists with content, do **not** touch anything inside it — just report "already initialized". `quest.sh init-pointer` is idempotent: it only writes `quest/active.md` when that file is absent, so existing per-cycle subfolders and an in-flight active pointer are preserved untouched.
 
+### Step 5.5 — Offer to wire the status line
+
+Ask the overseer once whether to wire the bottom-bar status line:
+
+```
+Wire the mo-workflow status line now? (y/n)
+  Shows: mo-workflow · <feature> · Stage <N> · <stage-name>
+  Refreshes automatically — no hook, no token tracking.
+  Writes a wrapper to .claude/mo-stage-info-bar.sh and a statusLine entry
+  to .claude/settings.local.json (machine-local; not committed).
+  Skipped if you say n; you can run /mo-init-status-bar anytime later.
+```
+
+- **`y`** — invoke `/mo-init-status-bar` (no flags — uses the machine-local default). All wrapper-resolution and overwrite-on-conflict prompting lives inside that command; do not duplicate it here. After it returns, continue to Step 6.
+- **`n`** — skip silently. The Step 6 footer mentions `/mo-init-status-bar` so re-running is discoverable.
+
+This prompt is intentionally separate from the Step 3 dependency batch — `statusLine` wiring is per-machine config, not a dependency, and mixing it into the same y/n would conflate "install software" with "edit my settings".
+
 ### Step 6 — Report and hand off
 
 Print the ready-state followed by a full walkthrough of what the overseer does next — including **when `/mo-continue` is typed** (twice per feature). Keep the output as-is; this is the canonical handoff text for first-time users:
@@ -209,6 +227,11 @@ Optional companions (detected but never required):
                        your journal will only ever contain .md and .txt.)
 If any are missing, see /mo-doctor for install hints. The workflow
 runs identically without them.
+
+Status line (opt-in, per-machine):
+  /mo-init-status-bar     wire a one-line workflow indicator into Claude Code's
+                          bottom bar. Run any time on any machine — the
+                          /mo-init wizard offers to do this automatically.
 ```
 
 ## Notes
