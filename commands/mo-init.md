@@ -98,36 +98,6 @@ $CLAUDE_PLUGIN_ROOT/scripts/quest.sh init-pointer
 
 If the folder already exists with content, do **not** touch anything inside it — just report "already initialized". `quest.sh init-pointer` is idempotent: it only writes `quest/active.md` when that file is absent, so existing per-cycle subfolders and an in-flight active pointer are preserved untouched.
 
-### Step 5.5 — Offer the info-bar status-line opt-in
-
-The plugin ships a per-cycle token-tracking hook automatically (registered in `hooks/hooks.json`), so token tracking starts working as soon as the plugin is installed — no user action required. The hook writes a per-cycle sidecar at `quest/<active-slug>/.stage-tokens.json` and an append-only audit log at `quest/<active-slug>/usage.log` for retrospective analysis.
-
-The optional **info-bar status line** displays the per-stage token totals on Claude Code's bottom bar. Per Claude Code's plugin reference, `statusLine` is a per-user `.claude/settings.json` setting and is NOT distributable through plugin manifests — so the plugin cannot wire it automatically. Offer the opt-in here:
-
-```
-Optional: enable the bottom-bar info-bar that shows per-stage token usage in real time?
-
-  Installs a small launcher at ~/.claude/mo-info-bar.sh that auto-resolves the
-  latest installed plugin version, then sets statusLine in ~/.claude/settings.json
-  to point at that launcher. Renders as:
-    mo · cycle <slug> · feature <X> · stage <S> ✓ │ up to that point: 247k │ current stage: 52k
-
-  The launcher is version-stable across plugin upgrades — no settings.json edits
-  needed when you upgrade. The token-tracking hook itself runs regardless, so
-  declining only affects the bottom-bar display, not the data collection. You
-  can opt in or refresh later by running /mo-info-bar.
-
-  IMPORTANT: Claude Code reads statusLine at session start. After this writes
-  settings.json you must FULLY RESTART Claude Code (close the window/tab and
-  reopen, or /exit + new session) for the bar to appear. /clear is not enough.
-
-  Add it now? (y/n)
-```
-
-On `y`, **auto-invoke `/mo-info-bar`** to handle the actual install. That command writes the wrapper at `~/.claude/mo-info-bar.sh`, smoke-tests it, updates `~/.claude/settings.json` with the wrapper's absolute path (NOT a `$CLAUDE_PLUGIN_ROOT/...` template — Claude Code does not expand env vars in `statusLine.command`), and prints the restart instruction. The canonical install logic lives in `/mo-info-bar` so plugin upgrades and cache cleanups can refresh the wiring by running it standalone.
-
-On `n`, mention the data is still being collected and the overseer can opt in later by running `/mo-info-bar` directly (no need to re-run `/mo-init`). If `~/.claude/settings.json` already has a `statusLine` set to a non-mo command, do NOT overwrite — print the conflict and ask the user to resolve manually before proceeding.
-
 ### Step 6 — Report and hand off
 
 Print the ready-state followed by a full walkthrough of what the overseer does next — including **when `/mo-continue` is typed** (twice per feature). Keep the output as-is; this is the canonical handoff text for first-time users:
