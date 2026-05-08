@@ -1096,7 +1096,17 @@ open_ids="$($CLAUDE_PLUGIN_ROOT/scripts/review.sh list-open "$active_feature")"
 
 ### Overseer Step 3a — No findings
 
-If `open_ids` is empty:
+If `open_ids` is empty, **prompt the overseer to confirm before completing the stage**. This guard exists because the no-findings path auto-fires `/mo-complete-workflow` immediately — once it runs, the workflow archives blueprints and advances the queue, which is non-trivial to undo. The confirmation gives the overseer one explicit beat to add findings instead.
+
+> "`overseer-review.md` has no open findings. Confirming will complete the overseer-review stage and auto-fire `/mo-complete-workflow`. Continue?
+>
+>   - `y` — finalize the overseer-review stage and proceed.
+>   - `n` — stop here. Add findings to `overseer-review.md`, then re-run `/mo-continue` when ready.
+>
+> (y/n)"
+
+- **On `n`** — stop. Do **not** advance the stage. State stays at `current-stage=5`, so the next `/mo-continue` re-enters this handler (idempotent: if findings were added, it routes to Step 3b instead; if still empty, it re-prompts).
+- **On `y`** — proceed with the atomic advance below.
 
 ```bash
 $CLAUDE_PLUGIN_ROOT/scripts/progress.sh advance-to 5 7 \
@@ -1142,7 +1152,17 @@ This handler exists because stage 6's brainstorming review session runs **isolat
 remaining_open="$($CLAUDE_PLUGIN_ROOT/scripts/review.sh list-open "$active_feature")"
 ```
 
-If `remaining_open` is empty, fall through to Step 2 (advance and finalize).
+If `remaining_open` is empty, **prompt the overseer to confirm before completing the stage**. This guard mirrors Overseer Step 3a: once finalize fires, `/mo-complete-workflow` archives blueprints and advances the queue, so the overseer gets one explicit beat to re-launch the review session or add new findings instead.
+
+> "All findings have been resolved (no open findings remain in `overseer-review.md`). Confirming will complete the overseer-review stage and auto-fire `/mo-complete-workflow`. Continue?
+>
+>   - `y` — finalize the overseer-review stage and proceed (continues to the diagram-refresh prompt and atomic finalize).
+>   - `n` — stop here. Re-launch `/mo-review` if more findings need to be addressed, or re-run `/mo-continue` when ready.
+>
+> (y/n)"
+
+- **On `n`** — stop. Do **not** advance past stage 6. State stays at `current-stage=6, sub-flow=reviewing`, so the next `/mo-continue` re-enters this handler (idempotent: re-runs `review.sh list-open` and re-prompts if still empty, or routes to the non-empty branch below if findings were reopened).
+- **On `y`** — fall through to Step 2 (advance and finalize).
 
 If `remaining_open` is non-empty, the review session ended without resolving every finding — the same ambiguity as the stage-3 abandoned-chain case. The session may have exited cleanly with intentionally-deferred findings, or it may have been interrupted mid-loop. The three replies below are NOT auto-defaulted; the overseer must pick deliberately, because the choice has different downstream consequences. Prompt the overseer:
 
