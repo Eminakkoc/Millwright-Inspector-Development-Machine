@@ -813,24 +813,44 @@ When `drift_prompt_required==1`, prompt the overseer:
 > "Stage-4 drift check: did anything in the requirements change during brainstorming? Reply:
 >
 >   - `<short reason>` — I'll run `/mo-update-blueprint --reason-kind=spec-update <reason>` to rotate `blueprints/current/` into history and regenerate `requirements.md` / `config.md` / `diagrams/` from the **implementation** (codebase + `base-commit..HEAD` diff) plus the just-rotated history version. The previous blueprint's `todo-item-ids`, `## Planned`, `## Non-goals`, `## GIT BRANCH`, and `## Overseer Additions` are preserved verbatim. The active quest cycle's `todo-list.md` and `summary.md` (under `quest/<slug>/`) and `journal/` are NOT consulted.
+>   - `auto` — I'll analyze `blueprints/current/requirements.md` against the implementation (`base-commit..HEAD` diff + current code) to detect drift myself. If I find meaningful divergence (added requirements, dropped scope, shifted boundaries), I'll generate a one-line reason summary and run `/mo-update-blueprint --reason-kind=spec-update <auto-detected reason>`. If I don't find drift, I'll skip the rotation and mark drift-check complete.
 >   - `continue` — proceed without updating the blueprint. Any drift will surface as findings during overseer review.
 >
 > Skipping is fine — the review loop catches drift via `re-spec` / `re-plan` findings if needed."
 
+#### Auto-detect analysis (only when `drift_reply == "auto"`)
+
+The LLM performs the analysis before the dispatch block runs and assigns the result to `$auto_reason`:
+
+- **Inputs:** `blueprints/current/requirements.md` (the spec narrative — intent, scope, what was promised), `git diff base-commit..HEAD` (what was actually built), and any code files needed to disambiguate the diff.
+- **What counts as drift:** divergence between the spec's intent and the implementation that won't be self-corrected by regeneration. Specifically — requirements added during brainstorming that the spec doesn't mention, scope dropped from the spec that wasn't built, or a meaningful shape/seam change (e.g., spec says "REST endpoint", implementation landed a WebSocket). A pure re-derivation that would produce the same Goals does NOT count — `/mo-update-blueprint` already re-derives Goals from the implementation, so cosmetic-only deltas are wasted rotation.
+- **Output contract:**
+  - Drift found → set `$auto_reason` to a one-line summary describing the divergence (this becomes the `summary` field of `history/v[N+1]/reason.md`).
+  - No drift → set `$auto_reason` to the empty string. The dispatch will skip the rotation and only persist the marker.
+
 ```bash
 if [[ "${drift_prompt_required:-0}" == "1" ]]; then
   # Wait for the overseer's reply, captured into $drift_reply by the LLM.
-  if [[ "$drift_reply" != "continue" && -n "$drift_reply" ]]; then
+  # When $drift_reply == "auto", the LLM also performs the auto-detect analysis
+  # described above and assigns the result to $auto_reason (non-empty if drift,
+  # empty if no drift).
+  if [[ "$drift_reply" == "auto" ]]; then
+    if [[ -n "${auto_reason:-}" ]]; then
+      # Auto-detect found drift — same side effect as the reason path.
+      /mo-update-blueprint --reason-kind=spec-update "$auto_reason"
+    fi
+    # No-drift branch: fall through to the marker write below, no rotation.
+  elif [[ "$drift_reply" != "continue" && -n "$drift_reply" ]]; then
     # Drift side effect: invoke /mo-update-blueprint with --reason-kind=spec-update.
     # The --reason-kind=spec-update tag is what makes the Step 0 probe detect this
     # cycle's drift on retry (it walks history versions K > history-baseline-version
     # for kind=spec-update).
     /mo-update-blueprint --reason-kind=spec-update "$drift_reply"
   fi
-  # Split marker write — runs whether the overseer continued or supplied a reason.
-  # Splitting it from the side effect closes F1 (a session break between
-  # /mo-update-blueprint's return and this line is recovered by the Step 0 probe
-  # on the next /mo-continue).
+  # Split marker write — runs whether the overseer continued, supplied a reason,
+  # or chose auto (drift or no-drift). Splitting it from the side effect closes F1
+  # (a session break between /mo-update-blueprint's return and this line is
+  # recovered by the Step 0 probe on the next /mo-continue).
   $CLAUDE_PLUGIN_ROOT/scripts/progress.sh set "drift-check-completed=true"
 fi
 ```
