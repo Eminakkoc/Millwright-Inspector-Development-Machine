@@ -76,6 +76,7 @@ mo_feature_dir()           { echo "$(mo_stream_dir)/$1"; }
 mo_blueprints_current(){ echo "$(mo_feature_dir "$1")/blueprints/current"; }
 mo_blueprints_history(){ echo "$(mo_feature_dir "$1")/blueprints/history"; }
 mo_impl_dir()          { echo "$(mo_feature_dir "$1")/implementation"; }
+mo_test_dir()          { echo "$(mo_feature_dir "$1")/test"; }
 
 # Active-quest helpers — resolve through quest/active.md.
 #

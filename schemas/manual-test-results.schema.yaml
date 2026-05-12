@@ -1,6 +1,6 @@
 $schema: "http://json-schema.org/draft-07/schema#"
 $id: millwright-overseer-development-machine/manual-test-results.schema.yaml
-title: workflow-stream/<feature>/implementation/manual-test-results.md frontmatter
+title: workflow-stream/<feature>/test/manual-test-results.md frontmatter
 description: >
   Per-scenario verdict log written by /mo-manual-test-run as scenarios are
   evaluated. Body holds one canonical `### <SCENARIO_ID> — <VERDICT>` block
@@ -17,6 +17,7 @@ required:
   - feature
   - plan-id
   - seed-family-id
+  - generated-in-activation
   - state
   - current-scenario
   - total
@@ -48,6 +49,21 @@ properties:
       Copied from the plan's `seed-family-id` (which is preserved across
       `--force` regeneration). Identifies the seeded IR family this run's
       auto-seed loop will upsert into.
+  generated-in-activation:
+    type: string
+    pattern: "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"
+    description: >
+      UUIDv4 of the activation that started this run. Copied from the
+      plan's `generated-in-activation` at results-render time — NOT
+      re-read from progress.md. This preserves the "this run belongs to
+      the plan it was rendered against" invariant even if the
+      activation was re-minted between plan render and results render
+      (e.g., abort-retry crashed between the two). The cross-cycle
+      rotation guard at /mo-manual-test-plan Step 1 and
+      /mo-manual-test-run Branch A pre-normalization compares this
+      value against `progress.md.active.activation-id` — mismatch means
+      "results belong to a prior activation, rotate them." See
+      docs/manual-testing-folder/plan.md § 4.3.
   state:
     type: string
     enum: [in-progress, complete]

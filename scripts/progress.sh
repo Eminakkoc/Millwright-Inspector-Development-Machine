@@ -137,9 +137,10 @@ PYEOF
     wt_path="$PWD"
     git_common_dir="$(cd "$(git rev-parse --git-common-dir)" && pwd)"
     git_worktree_dir="$(cd "$(git rev-parse --git-dir)" && pwd)"
-    python3 - "$dest" "$wt_path" "$git_common_dir" "$git_worktree_dir" <<'PYEOF'
+    activation_id="$("${MO_PLUGIN_ROOT}/scripts/uuid.sh")"
+    python3 - "$dest" "$wt_path" "$git_common_dir" "$git_worktree_dir" "$activation_id" <<'PYEOF'
 import sys, re, yaml
-path, wt_path, git_common_dir, git_worktree_dir = sys.argv[1:]
+path, wt_path, git_common_dir, git_worktree_dir, activation_id = sys.argv[1:]
 with open(path) as f:
     content = f.read()
 m = re.match(r'^---\n(.*?)\n---\n(.*)$', content, re.DOTALL)
@@ -171,6 +172,7 @@ fm['active'] = {
     'worktree-path': wt_path,
     'git-common-dir': git_common_dir,
     'git-worktree-dir': git_worktree_dir,
+    'activation-id': activation_id,
 }
 with open(path, 'w') as f:
     f.write('---\n')
@@ -283,9 +285,10 @@ PYEOF
     require_file "$dest"
     require_active "$dest"
     mo_assert_worktree_match
-    python3 - "$dest" <<'PYEOF'
+    activation_id="$("${MO_PLUGIN_ROOT}/scripts/uuid.sh")"
+    python3 - "$dest" "$activation_id" <<'PYEOF'
 import sys, re, yaml
-path = sys.argv[1]
+path, activation_id = sys.argv[1], sys.argv[2]
 with open(path) as f:
     content = f.read()
 m = re.match(r'^---\n(.*?)\n---\n(.*)$', content, re.DOTALL)
@@ -311,6 +314,7 @@ fm['active'] = {
     'worktree-path': old.get('worktree-path'),
     'git-common-dir': old.get('git-common-dir'),
     'git-worktree-dir': old.get('git-worktree-dir'),
+    'activation-id': activation_id,
 }
 with open(path, 'w') as f:
     f.write('---\n')
@@ -484,26 +488,12 @@ path, tmp = sys.argv[1], sys.argv[2]
 kvs = sys.argv[3:]
 
 IMMUTABLE = {'worktree-path', 'git-common-dir', 'git-worktree-dir'}
-seen = set()
-parsed_kvs = []
-for kv in kvs:
-    if '=' not in kv:
-        sys.stderr.write(f"error: progress.sh set: invalid field=value: {kv!r}\n")
-        sys.exit(1)
-    field, value = kv.split('=', 1)
-    if field in IMMUTABLE:
-        sys.stderr.write(f"error: progress.sh set: {field} is immutable after activate (captured at stage 2)\n")
-        sys.exit(1)
-    if field in seen:
-        sys.stderr.write(f"error: progress.sh set: duplicate field {field!r} in args\n")
-        sys.exit(1)
-    seen.add(field)
-    try:
-        parsed_value = yaml.safe_load(value)
-    except yaml.YAMLError:
-        parsed_value = value
-    parsed_kvs.append((field, parsed_value))
+# `activation-id` is immutable after activate, BUT a missing→set transition
+# is allowed exactly once (the backfill path for cycles activated before the
+# field existed — see docs/manual-testing-folder/plan.md § 4.3).
+CONDITIONALLY_IMMUTABLE = {'activation-id'}
 
+# Read existing state first so the conditional-immutability check can see it.
 with open(path) as f:
     content = f.read()
 m = re.match(r'^---\n(.*?)\n---\n(.*)$', content, re.DOTALL)
@@ -514,6 +504,32 @@ fm = yaml.safe_load(m.group(1)) or {}
 if fm.get('active') is None:
     sys.stderr.write("error: progress.sh set: active is null (require_active should have caught this)\n")
     sys.exit(1)
+
+seen = set()
+parsed_kvs = []
+for kv in kvs:
+    if '=' not in kv:
+        sys.stderr.write(f"error: progress.sh set: invalid field=value: {kv!r}\n")
+        sys.exit(1)
+    field, value = kv.split('=', 1)
+    if field in IMMUTABLE:
+        sys.stderr.write(f"error: progress.sh set: {field} is immutable after activate (captured at stage 2)\n")
+        sys.exit(1)
+    if field in CONDITIONALLY_IMMUTABLE:
+        existing = fm['active'].get(field)
+        if existing is not None:
+            sys.stderr.write(f"error: progress.sh set: {field} is immutable after activate (already set; missing→set backfill exception does not apply)\n")
+            sys.exit(1)
+    if field in seen:
+        sys.stderr.write(f"error: progress.sh set: duplicate field {field!r} in args\n")
+        sys.exit(1)
+    seen.add(field)
+    try:
+        parsed_value = yaml.safe_load(value)
+    except yaml.YAMLError:
+        parsed_value = value
+    parsed_kvs.append((field, parsed_value))
+
 for field, parsed_value in parsed_kvs:
     fm['active'][field] = parsed_value
 with open(tmp, 'w') as f:
@@ -684,6 +700,19 @@ expected = int(expected_str)
 target = int(target_str)
 
 IMMUTABLE = {'worktree-path', 'git-common-dir', 'git-worktree-dir'}
+CONDITIONALLY_IMMUTABLE = {'activation-id'}
+
+with open(path) as f:
+    content = f.read()
+m = re.match(r'^---\n(.*?)\n---\n(.*)$', content, re.DOTALL)
+if not m:
+    sys.stderr.write(f"error: advance-to: {path} has no frontmatter block\n")
+    sys.exit(1)
+fm = yaml.safe_load(m.group(1)) or {}
+if fm.get('active') is None:
+    sys.stderr.write("error: advance-to: active is null (require_active should have caught this)\n")
+    sys.exit(1)
+
 seen = set()
 parsed_kvs = []
 for kv in kvs:
@@ -697,6 +726,11 @@ for kv in kvs:
     if field in IMMUTABLE:
         sys.stderr.write(f"error: advance-to: {field} is immutable after activate (captured at stage 2)\n")
         sys.exit(1)
+    if field in CONDITIONALLY_IMMUTABLE:
+        existing = fm['active'].get(field)
+        if existing is not None:
+            sys.stderr.write(f"error: advance-to: {field} is immutable after activate (already set; missing→set backfill exception does not apply)\n")
+            sys.exit(1)
     if field in seen:
         sys.stderr.write(f"error: advance-to: duplicate --set field {field!r}\n")
         sys.exit(1)
@@ -706,17 +740,6 @@ for kv in kvs:
     except yaml.YAMLError:
         parsed_value = value
     parsed_kvs.append((field, parsed_value))
-
-with open(path) as f:
-    content = f.read()
-m = re.match(r'^---\n(.*?)\n---\n(.*)$', content, re.DOTALL)
-if not m:
-    sys.stderr.write(f"error: advance-to: {path} has no frontmatter block\n")
-    sys.exit(1)
-fm = yaml.safe_load(m.group(1)) or {}
-if fm.get('active') is None:
-    sys.stderr.write("error: advance-to: active is null (require_active should have caught this)\n")
-    sys.exit(1)
 current = fm['active'].get('current-stage')
 if current != expected:
     sys.stderr.write(f"error: advance-to: stage mismatch — active.current-stage={current}, expected {expected}\n")

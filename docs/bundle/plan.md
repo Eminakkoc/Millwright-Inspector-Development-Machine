@@ -98,10 +98,13 @@ These are the rules `bundle.sh` follows when composing every section:
      - Known workflow-generated implementation records:
        `implementation/grounding-report.md`,
        `implementation/change-summary.md`,
-       `implementation/manual-test-plan.md`,
-       `implementation/manual-test-results.md`,
        `implementation/review-context.md`, and
        `implementation/overseer-review.md`.
+     - Manual-test artifacts under the feature-permanent `test/` folder:
+       `test/manual-test-plan.md` and `test/manual-test-results.md`.
+       (Legacy `implementation/manual-test-*` paths still match the
+       implementation/ entry above for backwards compatibility with
+       archived bundles referencing pre-relocation history.)
      - Bare workflow .md filenames matching the canonical list in §8.2
        (`progress.md`, `requirements.md`, `config.md`, etc.).
 
@@ -630,13 +633,13 @@ v2 candidate.
 
 ### 5.15 Tests run / manual checks (stage 5+, if `manual-test-*.md` exist)
 
-If `implementation/manual-test-plan.md` exists: emit a "Planned
-manual checks:" subsection with each scenario as a bullet (description
-verbatim, scenario id dropped if present).
+If `test/manual-test-plan.md` exists: emit a "Planned manual checks:"
+subsection with each scenario as a bullet (description verbatim,
+scenario id dropped if present).
 
-If `implementation/manual-test-results.md` exists: emit a "Results:"
-subsection with each scenario's verdict (pass / fail / skipped) and
-the recorded note. Each verdict-and-note pair becomes one bullet.
+If `test/manual-test-results.md` exists: emit a "Results:" subsection
+with each scenario's verdict (pass / fail / skipped) and the recorded
+note. Each verdict-and-note pair becomes one bullet.
 
 Either may be present without the other.
 

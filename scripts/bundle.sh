@@ -103,8 +103,8 @@ config_md="$data_root/workflow-stream/$feature/blueprints/current/config.md"
 decisions_md="$data_root/workflow-stream/$feature/decisions.md"
 grounding_md="$data_root/workflow-stream/$feature/implementation/grounding-report.md"
 change_summary_md="$data_root/workflow-stream/$feature/implementation/change-summary.md"
-manual_plan_md="$data_root/workflow-stream/$feature/implementation/manual-test-plan.md"
-manual_results_md="$data_root/workflow-stream/$feature/implementation/manual-test-results.md"
+manual_plan_md="$data_root/workflow-stream/$feature/test/manual-test-plan.md"
+manual_results_md="$data_root/workflow-stream/$feature/test/manual-test-results.md"
 overseer_review_md="$data_root/workflow-stream/$feature/implementation/overseer-review.md"
 summary_md="$slug_dir/summary.md"
 todo_list_md="$slug_dir/todo-list.md"
@@ -245,6 +245,12 @@ BODY_SCRUB_TABLE = [
         r"\bimplementation/(?:grounding-report|change-summary|"
         r"manual-test-plan|manual-test-results|review-context|"
         r"overseer-review)\.md\b"
+    ),                                                                "<an internal record>"),
+    # Manual-test artifacts under their new feature-permanent test/ prefix
+    # (the implementation/ entry above stays so legacy bundles referencing
+    # archived-history paths still scrub correctly).
+    (re.compile(
+        r"\btest/(?:manual-test-plan|manual-test-results)\.md\b"
     ),                                                                "<an internal record>"),
     # Bare workflow .md filenames anywhere — catches references without a
     # recognized prefix (e.g., a decision bullet that says "see decisions.md").

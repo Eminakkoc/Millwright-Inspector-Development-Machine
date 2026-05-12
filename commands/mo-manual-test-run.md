@@ -75,14 +75,37 @@ fi
 ### Branch A — preconditions
 
 - Common preconditions above.
-- `workflow-stream/<feature>/implementation/manual-test-plan.md` exists.
+- `workflow-stream/<feature>/test/manual-test-plan.md` exists.
 - `manual-test-state` ∈ {`none`, `running`} (never run, OR paused mid-run). On `complete` or `skipped`, refuse: `"Manual test already terminal (state=<X>). Re-run with /mo-manual-test-plan --force to start over, or pass --seed-only to re-trigger only the auto-seed loop."`
 
 ### Branch A — pre-normalization results-file read
 
-Before any progress.md mutation, read and validate `manual-test-results.md` if it exists, then dispatch on its `state`:
+**Step 0 — Cross-activation auto-rotation (§4.1 fallback).** Before any other check, apply the triple-AND prior-activation guard from `docs/manual-testing-folder/plan.md` § 4.1 in case the runner was reached without `/mo-manual-test-plan` having fired first:
 
-- **Results file absent:** continue to workflow-state normalization. Genuine deferred-plan / first-run case.
+```bash
+plan_path="$($CLAUDE_PLUGIN_ROOT/scripts/blueprints.sh manual-test-plan-path "$active_feature")"
+results_path="$($CLAUDE_PLUGIN_ROOT/scripts/blueprints.sh manual-test-results-path "$active_feature")"
+if [[ -f "$plan_path" && -f "$results_path" ]]; then
+  plan_id="$($CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get "$plan_path" id)"
+  results_plan_id="$($CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get "$results_path" plan-id)"
+  current_activation="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get activation-id 2>/dev/null || echo "")"
+  results_activation="$($CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get "$results_path" generated-in-activation 2>/dev/null || echo "")"
+  # State-agnostic guard — both state: complete (prior cycle's
+  # finalized run) and state: in-progress (prior cycle's paused or
+  # aborted run) are rotated when activation differs.
+  if [[ "$results_plan_id" == "$plan_id" \
+        && -n "$current_activation" \
+        && ( -z "$results_activation" || "$results_activation" != "$current_activation" ) ]]; then
+    $CLAUDE_PLUGIN_ROOT/scripts/blueprints.sh manual-test-results-rotate-only "$active_feature" >&2
+  fi
+fi
+```
+
+Same-activation branches (where `results_activation == current_activation`) still fire as today: `state: complete` → `--seed-only` refusal, `state: in-progress` → paused-resume.
+
+**Step 1 — dispatch on results state.** Read and validate `manual-test-results.md` if it (still) exists, then dispatch on its `state`:
+
+- **Results file absent:** continue to workflow-state normalization. Genuine deferred-plan / first-run case (or just-rotated by Step 0 above).
 - **Results file present but frontmatter unreadable, invalid, or not owned by the active plan.** Refusal triggers:
   - YAML parse error
   - Missing required keys (`feature`, `state`, `current-scenario`, `plan-id`, `seed-family-id`, counts)
@@ -119,7 +142,7 @@ case (sub-flow, manual-test-state):
 
 #### Step 1 — Resolve the results file
 
-Render from `templates/manual-test-results.md.tmpl` if absent. The template includes `feature`, `plan-id` (copied from the current plan's `id`), `seed-family-id` (copied from the current plan's stable `seed-family-id`), `state: in-progress`, `current-scenario: null`, counts, `started-at: <timestamp>`, `finished-at: null`. If present, read its frontmatter — it tells us where to resume.
+Render from `templates/manual-test-results.md.tmpl` if absent. The template includes `feature`, `plan-id` (copied from the current plan's `id`), `seed-family-id` (copied from the current plan's stable `seed-family-id`), `generated-in-activation` (copied from the current plan's `generated-in-activation`, NOT re-read from `progress.md` — preserves the "this run belongs to the plan it was rendered against" invariant; see `docs/manual-testing-folder/plan.md` § 4.3), `state: in-progress`, `current-scenario: null`, counts, `started-at: <timestamp>`, `finished-at: null`. If present, read its frontmatter — it tells us where to resume.
 
 #### Step 2 — Local-environment-up phase
 
@@ -317,8 +340,8 @@ canonicalize pass on the next /mo-continue.
 ### Branch B — preconditions
 
 - Common preconditions (including `current-stage == 5`).
-- `workflow-stream/<feature>/implementation/manual-test-plan.md` exists.
-- `workflow-stream/<feature>/implementation/manual-test-results.md` exists.
+- `workflow-stream/<feature>/test/manual-test-plan.md` exists.
+- `workflow-stream/<feature>/test/manual-test-results.md` exists.
 - **Same corruption + active-plan ownership validation as Branch A.** YAML must parse; required keys present; `state` value in `[in-progress, complete]`; `results.feature` / `results.plan-id` / `results.seed-family-id` must match the active feature and current plan; state-specific invariants enforced.
 - Results frontmatter `state: complete`.
 - `manual-test-state` ∈ {`complete` (post-run), `running` (post-run-with-mid-seed-crash), OR `none` AND `sub-flow=none` AND results-file `state=complete` (recoverable stale-progress)}. Refuse on `skipped` (phase declined). Refuse on `none` AND `sub-flow=manual-testing` (genuinely inconsistent — `"Inconsistent: manual-test-state=none but sub-flow=manual-testing. Run /mo-resume-workflow."`).
@@ -371,8 +394,8 @@ Rare-path bulk-skip-and-finalize escape hatch. Branch C is **not** part of Branc
 
 In addition to the common preconditions:
 
-- `workflow-stream/<feature>/implementation/manual-test-plan.md` exists.
-- `workflow-stream/<feature>/implementation/manual-test-results.md` exists.
+- `workflow-stream/<feature>/test/manual-test-plan.md` exists.
+- `workflow-stream/<feature>/test/manual-test-results.md` exists.
 - **Results frontmatter passes the same corruption + active-plan ownership validation as Branches A and B.** YAML must parse; required keys present; `state` value in `[in-progress, complete]`; `current-scenario` (if non-null) is a scenario id present in the active plan; AND `results.feature == <active-feature>`, `results.plan-id == <current plan id>`, `results.seed-family-id == <current plan seed-family-id>`. Refuse on any failure with the same diagnostic shape as Branches A/B. **No mutation on refusal.**
 - `sub-flow == manual-testing`
 - `manual-test-state == running`

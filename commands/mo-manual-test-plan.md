@@ -5,7 +5,9 @@ argument-hint: "[--from-resume] [--force [--new-seed-family]] [--discard-existin
 
 # mo-manual-test-plan
 
-Stage-5 manual-test plan generator. Reads the active feature's blueprint + change-summary + a codebase scan, renders `workflow-stream/<feature>/implementation/manual-test-plan.md`, then offers to start the per-scenario run via `/mo-manual-test-run`. Auto-fired by `/mo-continue`'s Resume Step 7 when the overseer answers `y` to the stage-5 hand-off prompt; also invocable directly during stage 5 if the overseer wants to (re)generate.
+Stage-5 manual-test plan generator. Reads the active feature's blueprint + change-summary + a codebase scan, renders `workflow-stream/<feature>/test/manual-test-plan.md`, then offers to start the per-scenario run via `/mo-manual-test-run`. Auto-fired by `/mo-continue`'s Resume Step 7 when the overseer answers `y` to the stage-5 hand-off prompt; also invocable directly during stage 5 if the overseer wants to (re)generate.
+
+The plan + results files live under a feature-permanent `test/` folder — they survive `/mo-complete-workflow` and `/mo-abort-workflow` so the next cycle on the same feature can reuse them. See `docs/manual-testing-folder/plan.md` for the lifecycle.
 
 The manual-test phase is a **sub-flow on stage 5** (sub-flow value `manual-testing`), not a new stage number — see `docs/manual-testing/plan.md` § 1 for the rationale.
 
@@ -35,11 +37,28 @@ Implementation note: parse flags before evaluating `manual-test-state`. An imple
 
 ## Execution
 
-The flow is ordered so that **every read-only gate fires before the first `progress.md` mutation**. Steps 1–3 are read-only (existing-plan probe, prompt branching, RUN_ROOT resolution, change-summary freshness gate). The first step that mutates `progress.md` is step 3.5, gated on `--force`; everything earlier either writes to `progress.md` only on a clean stop (`--discard-existing` and direct `n` paths in step 2) or doesn't write at all. This is what makes "stale change-summary refuses with `progress.md` unchanged" hold even when `--force` was passed.
+The flow is ordered so that **every read-only gate fires before the first `progress.md` mutation**. Steps 1–3 are read-only (existing-plan probe, §4.1 results auto-rotation, §4.2 freshness gate, prompt branching, RUN_ROOT resolution, change-summary freshness gate). The first step that mutates `progress.md` is step 3.5, gated on `--force`; everything earlier either writes to `progress.md` only on a clean stop (`--discard-existing` and direct `n` paths in step 2) or doesn't write at all. This is what makes "stale change-summary refuses with `progress.md` unchanged" hold even when `--force` was passed.
 
-### Step 1 — Resolve any existing plan before prompting
+The §4.1 auto-rotation is a **filesystem mutation** but not a `progress.md` mutation — it moves a stale `manual-test-results.md` into `test/manual-test-results.history/<timestamp>/` so the gate-ordering contract is preserved: every gate that aborts ends with `progress.md` byte-identical.
 
-Check `workflow-stream/<feature>/implementation/manual-test-plan.md`:
+### Step 1 — Resolve any existing plan + cross-cycle results auto-rotation
+
+**Step 1.0 — Activation-id backfill (one-shot for in-flight cycles).**
+Cycles activated before `progress.md.active.activation-id` was introduced
+have a missing field. Read it; if missing, mint and store one. The
+`set` helper allows the missing → set transition exactly once (see
+`docs/manual-testing-folder/plan.md` § 4.3 "compatibility").
+
+```bash
+activation_id="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get activation-id 2>/dev/null || echo "")"
+if [[ -z "$activation_id" || "$activation_id" == "null" ]]; then
+  activation_id="$($CLAUDE_PLUGIN_ROOT/scripts/uuid.sh)"
+  $CLAUDE_PLUGIN_ROOT/scripts/progress.sh set activation-id="$activation_id"
+fi
+```
+
+**Step 1.1 — Existing-plan probe.**
+Check `workflow-stream/<feature>/test/manual-test-plan.md`:
 
 ```bash
 plan_path="$($CLAUDE_PLUGIN_ROOT/scripts/blueprints.sh manual-test-plan-path "$active_feature")"
@@ -53,7 +72,38 @@ fi
 
 This read happens before any y/n prompt so the skill never marks the phase `skipped` while silently leaving an old plan file behind.
 
-If `--discard-existing` was passed AND the file exists:
+**Step 1.2 — Cross-cycle results auto-rotation (§4.1).**
+The `test/` folder is feature-permanent now — completion no longer
+archives it. If a prior activation's `manual-test-results.md` survived
+into this activation, the runner's `state: complete` refusal (or
+`state: in-progress` paused-resume path) would silently misroute. Auto-rotate
+on the triple-AND prior-activation guard:
+
+```bash
+results_path="$($CLAUDE_PLUGIN_ROOT/scripts/blueprints.sh manual-test-results-path "$active_feature")"
+if [[ -f "$plan_path" && -f "$results_path" ]]; then
+  plan_id="$($CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get "$plan_path" id)"
+  results_plan_id="$($CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get "$results_path" plan-id)"
+  results_activation="$($CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get "$results_path" generated-in-activation 2>/dev/null || echo "")"
+  # Triple-AND guard: results match the plan AND belong to a prior activation.
+  # Missing generated-in-activation on the results file counts as non-matching
+  # (in-flight cycles without the field cannot be proven to belong to this
+  # activation — rotate is the safe default).
+  if [[ "$results_plan_id" == "$plan_id" \
+        && ( -z "$results_activation" || "$results_activation" != "$activation_id" ) ]]; then
+    $CLAUDE_PLUGIN_ROOT/scripts/blueprints.sh manual-test-results-rotate-only "$active_feature" >&2
+  fi
+fi
+```
+
+The guard is **state-agnostic** — both `state: complete` and
+`state: in-progress` are rotated when activation differs, because both
+can leak across activations under the new permanence model
+(`/mo-abort-workflow` no longer deletes the test/ folder; see §4.1
+of the plan).
+
+**Step 1.3 — `--discard-existing` shortcut.**
+If `--discard-existing` was passed AND the plan file exists:
 
 ```bash
 $CLAUDE_PLUGIN_ROOT/scripts/blueprints.sh manual-test-plan-rotate "$active_feature"
@@ -63,6 +113,35 @@ exit 0
 ```
 
 If `--discard-existing` was passed with no existing plan, treat it like a normal direct `n` below (mark phase skipped without rotating anything).
+
+### Step 1.5 — Plan-freshness gate (cross-activation, read-only)
+
+If `plan_path` does NOT exist, skip this step entirely (nothing to be stale about). Otherwise compute the freshness mismatch on `requirements-id` AND `generated-from-base-commit`:
+
+```bash
+plan_req_id="$($CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get "$plan_path" requirements-id)"
+plan_base_commit="$($CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get "$plan_path" generated-from-base-commit)"
+req_path="$data_root/workflow-stream/$active_feature/blueprints/current/requirements.md"
+current_req_id="$($CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get "$req_path" id)"
+current_base_commit="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get base-commit)"
+
+mismatch=0
+[[ "$plan_req_id" != "$current_req_id" || "$plan_base_commit" != "$current_base_commit" ]] && mismatch=1
+```
+
+Branch on `(--from-resume, --force, mismatch)`:
+
+- **`--force` set:** no prompt — `--force` already signals regeneration. Set `freshness_forced_regen=false` (the regen is driven by `--force`, not by this gate). Continue to Step 2.
+- **No `--force`, no mismatch:** no prompt. Set `freshness_forced_regen=false`. Continue to Step 2.
+- **No `--force`, mismatch detected (with OR without `--from-resume`):**
+
+  Prompt: `"Existing manual-test plan was generated against requirements <plan_req_id> / base-commit <plan_base_commit>; current cycle is <current_req_id> / <current_base_commit>. Regenerate? (y to rotate + regenerate, n to use the stale plan anyway, c to cancel.)"` Default to `c` on Ctrl-D.
+
+  - On `y`: set `freshness_forced_regen=true` (downstream branches treat as if `--force` had been passed — Steps 3.5, 4, 5, 6 run; no extra Step 2 prompt for the same regenerate decision).
+  - On `n`: set `freshness_forced_regen=false`. Fall through to Step 2 unchanged; the user-typed `n` here is them explicitly opting into the stale plan.
+  - On `c`: exit 0 with `progress.md` byte-identical. (No filesystem rotation either — the gate is read-only against the plan.)
+
+This gate is placed at Step 1.5 (not Step 3) because Step 2's "Existing plan present, `--from-resume` without `--force`" branch (below) jumps directly to Step 7, bypassing Steps 3–6. A gate placed at Step 3 would never fire on that branch — the very path most likely to encounter a stale plan from a prior activation. See `docs/manual-testing-folder/plan.md` § 4.2 for the full rationale.
 
 ### Step 2 — Prompt the overseer (y/n)
 
@@ -86,9 +165,11 @@ Branch on `(plan_exists, --from-resume, --force)`:
   - On `n`: do **not** set `manual-test-state=skipped`; print `"Existing plan left in place. Run /mo-manual-test-run when ready, or write findings into overseer-review.md and type /mo-continue to proceed without running it."` Stop with state unchanged.
   - On `y`: continue to step 3 (regeneration).
 
-- **Existing plan present, `--from-resume` without `--force`:** do **not** prompt and do **not** rotate/regenerate silently. Print `"Existing manual-test plan found; using it unchanged."` Skip steps 3–6 and jump to step 7's "perform now?" prompt. The stage-5 hand-off answer means "make a plan available," not "destroy and replace an existing plan without asking."
+- **Existing plan present, `--from-resume` without `--force`, no `freshness_forced_regen`:** do **not** prompt and do **not** rotate/regenerate silently. Print `"Existing manual-test plan found; using it unchanged."` Skip steps 3–6 and jump to step 7's "perform now?" prompt. The stage-5 hand-off answer means "make a plan available," not "destroy and replace an existing plan without asking."
 
-- **Existing plan present, `--force` (with or without `--from-resume`):** `--force` is the explicit regeneration signal. Continue to step 3 without prompting.
+- **Existing plan present, `--from-resume` without `--force`, `freshness_forced_regen=true`:** the Step 1.5 gate already asked the regenerate decision and the overseer answered `y`. Do not re-prompt; continue to Step 3 (regeneration path).
+
+- **Existing plan present, `--force` (with or without `--from-resume`), or `freshness_forced_regen=true`:** explicit regeneration signal — either an overseer-typed `--force` or a Step 1.5 `y` answer. Continue to Step 3 without prompting.
 
 ### Step 3 — Resolve RUN_ROOT and read inputs (read-only gates)
 
@@ -127,26 +208,26 @@ No mutation on refusal — `manual-test-state` is unchanged, no plan rotation.
 
 - `workflow-stream/<feature>/blueprints/current/requirements.md` — goals, planned, non-goals.
 - `workflow-stream/<feature>/blueprints/current/config.md` — services, env vars, runtime topology.
-- `workflow-stream/<feature>/implementation/change-summary.md` — files touched, areas affected (gated fresh by the check above).
+- `workflow-stream/<feature>/implementation/change-summary.md` — files touched, areas affected (gated fresh by the check above). (Lives under `implementation/`, not `test/` — `change-summary.md` is a stage-4 artifact that gets archived at stage 8.)
 - `quest/<active-slug>/summary.md` — feature scope (cycle-scoped — read for cross-cutting context only).
 
 **Codebase search (run from RUN_ROOT):** grep the changed paths from `change-summary.md` for env-var references, docker-compose service names, GraphQL operations / REST routes, error-code constants, UI route paths. These ground the Prerequisites and Test scenarios sections in real symbols, not invented ones.
 
 This is the last read-only step. Any refusal up to this point — invalid existing-plan frontmatter, declined regeneration, RUN_ROOT unresolvable, stale/missing change-summary — leaves `progress.md` byte-identical.
 
-### Step 3.5 — Force-state reset (only when `--force` is present)
+### Step 3.5 — Force-state reset (only when `--force` or `freshness_forced_regen` is set)
 
-Only when `--force` was passed AND we're proceeding to render (i.e., not the `--from-resume` "use existing plan unchanged" path that jumped to step 7):
+Only when `--force` was passed OR Step 1.5 set `freshness_forced_regen=true`, AND we're proceeding to render:
 
 ```bash
 $CLAUDE_PLUGIN_ROOT/scripts/progress.sh set manual-test-state=none manual-test-failure-policy=none
 ```
 
-This is the FIRST `progress.md` mutation in the `--force` branch. It runs AFTER all read-only gates above so any earlier refusal aborts cleanly without changing state. Skip this step entirely on non-`--force` invocations. The prior `manual-test-results.md` is rotated alongside the plan in step 4; this step only touches `progress.md`.
+This is the FIRST `progress.md` mutation in the regeneration branch. It runs AFTER all read-only gates above so any earlier refusal aborts cleanly without changing state. Skip this step entirely on non-`--force` invocations that didn't trigger the freshness regen. The prior `manual-test-results.md` is rotated alongside the plan in step 4; this step only touches `progress.md`.
 
 ### Step 4 — Rotate any existing plan into history
 
-If an existing plan was found and we're regenerating (direct `y`, `--force`, or `--discard-existing`):
+If an existing plan was found and we're regenerating (direct `y`, `--force`, `freshness_forced_regen=true`, or `--discard-existing`):
 
 ```bash
 $CLAUDE_PLUGIN_ROOT/scripts/blueprints.sh manual-test-plan-rotate "$active_feature"
@@ -156,7 +237,7 @@ The `seed-family-id` to preserve was already captured in step 1. Preserving `see
 
 ### Step 5 — Render the plan
 
-Render `workflow-stream/<feature>/implementation/manual-test-plan.md` from `templates/manual-test-plan.md.tmpl`. Generate a fresh plan `id` (UUIDv4) every time, but reuse `preserved_seed_family_id` from step 1 when present; otherwise create a new UUIDv4 `seed-family-id`.
+Render `workflow-stream/<feature>/test/manual-test-plan.md` from `templates/manual-test-plan.md.tmpl`. Generate a fresh plan `id` (UUIDv4) every time, but reuse `preserved_seed_family_id` from step 1 when present; otherwise create a new UUIDv4 `seed-family-id`. Populate `{{ACTIVATION_ID}}` with the value from `progress.sh get activation-id` (already backfilled in Step 1.0 for in-flight cycles).
 
 The body has three top-level sections:
 
@@ -179,7 +260,7 @@ The body has three top-level sections:
 
 Always asked (regardless of `--from-resume`):
 
-Prompt: `"Plan available at workflow-stream/<feature>/implementation/manual-test-plan.md. Perform the manual test now? y to start with the local-environment-up phase; n to defer — you can resume later by typing /mo-manual-test-run, or proceed directly to findings authoring."`
+Prompt: `"Plan available at workflow-stream/<feature>/test/manual-test-plan.md. Perform the manual test now? y to start with the local-environment-up phase; n to defer — you can resume later by typing /mo-manual-test-run, or proceed directly to findings authoring."`
 
 - On `n`: print `"Deferred. Run /mo-manual-test-run when ready, or write findings into overseer-review.md and type /mo-continue to proceed without manual testing. The plan file stays available."` Stop. State stays `none`.
 - On `y`:

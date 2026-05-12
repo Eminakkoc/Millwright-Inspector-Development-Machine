@@ -345,6 +345,9 @@ check_repo_file "schemas/manual-test-results.schema.yaml" "schemas/manual-test-r
 check_progress_schema_field "schema:sub-flow=manual-testing"   "manual-testing"             true
 check_progress_schema_field "schema:manual-test-state"          "^          manual-test-state:"          true
 check_progress_schema_field "schema:manual-test-failure-policy" "^          manual-test-failure-policy:" true
+# activation-id field on active block — cross-activation discriminator for the
+# stage-5 manual-test results-rotation guard (docs/manual-testing-folder/plan.md § 4.3).
+check_progress_schema_field "schema:activation-id"              "^          activation-id:"              true
 
 # Verify review.sh has the new subcommands and the FIELD_RE extension.
 check_review_sh_subcommand upsert-manual-test-failure true
@@ -353,7 +356,7 @@ check_review_sh_subcommand find-by-seed-id-family     true
 check_review_sh_field_re
 
 # Verify blueprints.sh has the manual-test path resolvers and rotate.
-for sub in manual-test-plan-path manual-test-results-path manual-test-plan-rotate; do
+for sub in manual-test-plan-path manual-test-results-path manual-test-plan-rotate manual-test-results-rotate-only; do
   if grep -qE "^  ${sub}\\)" "${MO_PLUGIN_ROOT}/scripts/blueprints.sh" 2>/dev/null; then
     record "blueprints.sh:${sub}" env true true "scripts/blueprints.sh" '{}'
   else

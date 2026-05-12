@@ -112,6 +112,19 @@ Rationale for not duplicating scenario-level state into `progress.md`: scenario-
 
 ### 1.4 Artifact location — feature-scoped, not cycle-scoped
 
+> **AMENDMENT (post-v1):** The artifact location moved from
+> `workflow-stream/<feature>/implementation/` to a sibling
+> feature-permanent `workflow-stream/<feature>/test/` folder so the
+> manual-test plan and per-run history survive stage 8 and abort,
+> enabling cross-cycle reuse. The historical content of this section is
+> kept below for design-history continuity; all live paths should be
+> read as `test/...` instead of `implementation/...`. See
+> `docs/manual-testing-folder/plan.md` for the relocation design (new
+> §4.1 cross-activation results auto-rotation, §4.2 freshness gate,
+> §4.3 activation-id mechanism). Section §3.4 below describing the
+> abort-time rm list is similarly superseded — `/mo-abort-workflow` no
+> longer deletes the test/ artifacts.
+
 **Files live under `workflow-stream/<feature>/implementation/`**, alongside `overseer-review.md`, `review-context.md`, and `change-summary.md`:
 
 - `workflow-stream/<feature>/implementation/manual-test-plan.md`.

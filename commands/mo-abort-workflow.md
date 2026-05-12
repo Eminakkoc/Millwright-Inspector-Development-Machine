@@ -47,6 +47,7 @@ echo "This will:"
 echo "  - revert IMPLEMENTING todos for the active feature back to PENDING"
 [[ "$drop_mode" == "requeue" ]] && echo "  - move '$active_feature' to the end of progress.md.queue"
 echo "  - delete implementation/ (overseer-review.md, review-context.md, change-summary.md, grounding-report.md, diagrams/)"
+echo "  - preserve test/ (manual-test-plan.md, manual-test-results.md, manual-test-plan.history/) — feature-permanent across cycles"
 [[ "$drop_mode" == "" ]]        && echo "  - reset progress.md to a fresh stage-2 state (active.feature + active.branch preserved for retry)"
 echo "  - keep blueprints/current/ intact"
 echo "  - keep the active quest cycle's subfolder under quest/<active-slug>/ intact (cycle stays open — abort only resets the active feature)"
@@ -73,10 +74,9 @@ rm -f "$impl_dir"/overseer-review.md
 rm -f "$impl_dir"/review-context.md
 rm -f "$impl_dir"/change-summary.md
 rm -f "$impl_dir"/grounding-report.md
-rm -f "$impl_dir"/manual-test-plan.md
-rm -f "$impl_dir"/manual-test-results.md
-rm -rf "$impl_dir"/manual-test-plan.history
 ```
+
+**`test/` is intentionally NOT deleted.** `workflow-stream/$active_feature/test/` (manual-test-plan.md, manual-test-results.md, manual-test-plan.history/, manual-test-results.history/) is feature-permanent per `docs/manual-testing-folder/plan.md`. The next cycle on the same feature inherits the prior plan and runs the §4.1 cross-activation results auto-rotation on the next `/mo-manual-test-plan` invocation — that's the abort-retry-without-new-commits safety path, and it depends on the `test/` folder surviving abort.
 
 ### Step 5 — Update progress.md based on `drop_mode`
 

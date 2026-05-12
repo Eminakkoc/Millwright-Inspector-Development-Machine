@@ -533,12 +533,12 @@ PYEOF
 
   manual-test-plan-path)
     feature="${1:?feature required}"
-    echo "$(mo_impl_dir "$feature")/manual-test-plan.md"
+    echo "$(mo_test_dir "$feature")/manual-test-plan.md"
     ;;
 
   manual-test-results-path)
     feature="${1:?feature required}"
-    echo "$(mo_impl_dir "$feature")/manual-test-results.md"
+    echo "$(mo_test_dir "$feature")/manual-test-results.md"
     ;;
 
   manual-test-plan-rotate)
@@ -549,12 +549,16 @@ PYEOF
     # plan's `seed-family-id` BEFORE invoking this helper unless --new-seed-family
     # was explicitly requested.
     feature="${1:?feature required}"
-    impl_dir="$(mo_impl_dir "$feature")"
-    plan_file="$impl_dir/manual-test-plan.md"
-    results_file="$impl_dir/manual-test-results.md"
-    history_dir="$impl_dir/manual-test-plan.history"
+    test_dir="$(mo_test_dir "$feature")"
+    # mkdir -p makes the rotate safe even when test/ has not been created yet
+    # (e.g., rotate is the first subcommand to touch the folder after a fresh
+    # feature activation). The plan.history directory is created on demand below.
+    mkdir -p "$test_dir"
+    plan_file="$test_dir/manual-test-plan.md"
+    results_file="$test_dir/manual-test-results.md"
+    history_dir="$test_dir/manual-test-plan.history"
     if [[ ! -f "$plan_file" && ! -f "$results_file" ]]; then
-      mo_die "manual-test-plan-rotate: no manual-test-plan.md or manual-test-results.md to rotate at $impl_dir"
+      mo_die "manual-test-plan-rotate: no manual-test-plan.md or manual-test-results.md to rotate at $test_dir"
     fi
     timestamp="$(date -u +%Y-%m-%dT%H-%M-%SZ)"
     target="$history_dir/$timestamp"
@@ -569,8 +573,32 @@ PYEOF
     echo "$target"
     ;;
 
+  manual-test-results-rotate-only)
+    # Move ONLY the current manual-test-results.md into
+    # manual-test-results.history/<UTC-timestamp>/manual-test-results.md.
+    # Leaves manual-test-plan.md and manual-test-plan.history/ untouched.
+    # Used by /mo-manual-test-plan Step 1 and /mo-manual-test-run Branch A
+    # to auto-rotate a prior-activation results file out of the way at the
+    # start of a new cycle (see docs/manual-testing-folder/plan.md § 4.1).
+    # Non-fatal when the file is absent (prints info to stderr, exits 0).
+    feature="${1:?feature required}"
+    test_dir="$(mo_test_dir "$feature")"
+    results_file="$test_dir/manual-test-results.md"
+    if [[ ! -f "$results_file" ]]; then
+      mo_info "no manual-test-results.md to rotate at $test_dir"
+      exit 0
+    fi
+    history_dir="$test_dir/manual-test-results.history"
+    timestamp="$(date -u +%Y-%m-%dT%H-%M-%SZ)"
+    target="$history_dir/$timestamp"
+    mkdir -p "$target"
+    mv "$results_file" "$target/manual-test-results.md"
+    mo_info "rotated manual-test-results.md → $target"
+    echo "$target"
+    ;;
+
   *)
-    echo "usage: blueprints.sh {ensure-current|rotate|resume-partial|preserve-overseer-sections|check-current|branch-status|manual-test-plan-path|manual-test-results-path|manual-test-plan-rotate} ..." >&2
+    echo "usage: blueprints.sh {ensure-current|rotate|resume-partial|preserve-overseer-sections|check-current|branch-status|manual-test-plan-path|manual-test-results-path|manual-test-plan-rotate|manual-test-results-rotate-only} ..." >&2
     exit 2
     ;;
 esac

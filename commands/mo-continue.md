@@ -891,7 +891,7 @@ skipped="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get implementation-diagrams-s
 >
 > Before reviewing the implementation, would you like a manual test plan generated for this feature? (`y`/`n`)
 >
->   - `y` — I'll generate `workflow-stream/<active_feature>/implementation/manual-test-plan.md` based on the blueprint + implementation diff + a codebase scan. After generation I'll offer to run it interactively. Failures can auto-seed as findings.
+>   - `y` — I'll generate `workflow-stream/<active_feature>/test/manual-test-plan.md` based on the blueprint + implementation diff + a codebase scan. After generation I'll offer to run it interactively. Failures can auto-seed as findings.
 >   - `n` — skip manual testing; go directly to findings authoring (write into `implementation/overseer-review.md`, or leave empty to approve).
 >
 > Reply `y` or `n`."
@@ -963,7 +963,7 @@ Runs after the overseer has reviewed the implementation and either filled `overs
 
 ### Overseer Step 0 — Manual-test summary line (read-only)
 
-If `workflow-stream/<active_feature>/implementation/manual-test-results.md` exists, surface a one-line summary in the entry log:
+If `workflow-stream/<active_feature>/test/manual-test-results.md` exists, surface a one-line summary in the entry log:
 
 ```bash
 results_path="$($CLAUDE_PLUGIN_ROOT/scripts/blueprints.sh manual-test-results-path "$active_feature")"

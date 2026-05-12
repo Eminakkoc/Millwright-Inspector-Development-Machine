@@ -207,6 +207,8 @@ fi
 
 Stage 4 rotated `blueprints/current/` into `blueprints/history/v${version}/`. The just-finished implementation artifacts (`overseer-review.md`, `review-context.md`, `change-summary.md`, `grounding-report.md`, and `diagrams/`) are part of the same audit record, so move them into a sibling `implementation/` subfolder under the new history version. This preserves every finding (including any `status: open` ones the overseer chose to defer), the stage-2 grounding report, and the diagrams of `base-commit..HEAD` for posterity. The live `implementation/` folder is then empty and the next feature's stage-2 launcher re-creates children there.
 
+**Manual-test artifacts are NOT archived here.** Per `docs/manual-testing-folder/plan.md`, `workflow-stream/<feature>/test/` is **feature-permanent** — it survives stage 8 alongside `decisions.md` so the next cycle on the same feature can reuse the prior plan and inherit its `seed-family-id` for cross-cycle seed idempotency. The `test/` folder is intentionally absent from the archive loop below.
+
 ```bash
 if [[ "${branch_route:-III}" == "III" || "${branch_route:-}" == "0a" || "${branch_route:-}" == "II" ]]; then
   impl_dir="$data_root/workflow-stream/$active_feature/implementation"
@@ -224,17 +226,20 @@ if [[ "${branch_route:-III}" == "III" || "${branch_route:-}" == "0a" || "${branc
   # noise. The live counterparts were validated when written; if a post-write
   # tampering happened before rotation, that's a different problem from
   # archival. Do not add explicit `frontmatter.sh validate` calls here.
-  for artifact in overseer-review.md review-context.md change-summary.md grounding-report.md \
-                  manual-test-plan.md manual-test-results.md; do
+  #
+  # Manual-test artifacts (manual-test-plan.md, manual-test-results.md,
+  # manual-test-plan.history/, manual-test-results.history/) live under
+  # the sibling `test/` folder, which is feature-permanent and NOT
+  # archived here. See docs/manual-testing-folder/plan.md.
+  for artifact in overseer-review.md review-context.md change-summary.md grounding-report.md; do
     [[ -e "$impl_dir/$artifact" ]] && mv -n "$impl_dir/$artifact" "$archive_dir/$artifact"
   done
   [[ -d "$impl_dir/diagrams" ]] && mv -n "$impl_dir/diagrams" "$archive_dir/diagrams"
-  [[ -d "$impl_dir/manual-test-plan.history" ]] && mv -n "$impl_dir/manual-test-plan.history" "$archive_dir/manual-test-plan.history"
   # Leave the implementation/ folder itself in place (empty) — next workflow re-creates children.
 fi
 ```
 
-The historical snapshot is then complete: `blueprints/history/v${version}/` carries the rotated `requirements.md`, `config.md`, `diagrams/`, `primer.md`, `reason.md`, AND `implementation/` (review file, review-context, change-summary, grounding-report, implementation diagrams, plus any manual-test plan/results and rotated `manual-test-plan.history/` from the stage-5 sub-flow). PMs querying past cycles can read the full audit trail from this single folder per feature-version.
+The historical snapshot is then complete: `blueprints/history/v${version}/` carries the rotated `requirements.md`, `config.md`, `diagrams/`, `primer.md`, `reason.md`, AND `implementation/` (review file, review-context, change-summary, grounding-report, implementation diagrams). PMs querying past cycles can read the full audit trail from this single folder per feature-version. The feature's manual-test history lives separately under `workflow-stream/<feature>/test/` and persists across cycles.
 
 ### Step 6 — Finish the active feature
 

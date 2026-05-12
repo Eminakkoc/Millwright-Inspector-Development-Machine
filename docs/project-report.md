@@ -392,6 +392,8 @@ Per-feature folders that hold the actual design + implementation artifacts. One 
 
 workflow-stream/<feature>/
 
+├── decisions.md # feature-scoped append-only decision log (NOT rotated)
+
 ├── blueprints/
 
 │ ├── current/
@@ -426,6 +428,14 @@ workflow-stream/<feature>/
 
 ├── change-summary.md # cached analysis of base-commit..HEAD (cache-keyed reuse)
 
+├── grounding-report.md # stage-2 codebase-grounding snapshot (seam-classification etc.)
+
+├── manual-test-plan.md # stage-5 manual-testing plan (optional sub-flow)
+
+├── manual-test-results.md # stage-5 manual-testing run results (optional sub-flow)
+
+├── manual-test-plan.history/ # rotated prior plans (--force / --discard-existing)
+
 └── diagrams/ # render of the implementation, with shaded "existing system" framing
 
 ```
@@ -438,7 +448,9 @@ Two regions:
 
 1. **`blueprints/`** — *permanent with history*. `current/` holds the live blueprint for the active feature. Every refresh rotates `current/*` into `history/v[N+1]/` with a `reason.md` recording why (`completion`, `manual`, `re-spec-cascade`, `re-plan-cascade`, `spec-update`). On `completion` rotations (stage 8), the entire live `implementation/` folder is also archived alongside as `history/v[N+1]/implementation/` so the rotated version contains: `requirements.md`, `config.md`, `diagrams/`, `primer.md`, `reason.md`, AND `implementation/` (`overseer-review.md`, `review-context.md`, `change-summary.md`, `diagrams/`).
 
-2. **`implementation/`** — *temporary in `current/`, permanent in `history/`*. Holds findings and implementation-side artifacts during the cycle. At stage 8 the live folder is archived (moved) into `history/v[N+1]/implementation/`, not deleted — so every finding (including any deferred `status: open` ones), the review-context snapshot, the change-summary, and the implementation diagrams survive as a permanent audit record. PMs querying past cycles can read the full audit trail from a single folder per feature-version. `mo-abort-workflow` still clears the live `implementation/` (an aborted cycle has no committed work to archive).
+2. **`implementation/`** — *temporary in `current/`, permanent in `history/`*. Holds findings and implementation-side artifacts during the cycle: `overseer-review.md`, `review-context.md`, `change-summary.md`, `grounding-report.md` (stage-2 codebase-grounding snapshot written by the `codebase-grounder` sub-agent), `diagrams/`, and — when the manual-testing sub-flow runs at stage 5 — `manual-test-plan.md`, `manual-test-results.md`, and `manual-test-plan.history/<timestamp>/` for rotated prior plans. At stage 8 the live folder is archived (moved) into `history/v[N+1]/implementation/`, not deleted — so every finding (including any deferred `status: open` ones), the review-context snapshot, the change-summary, the grounding-report, the manual-test artifacts, and the implementation diagrams survive as a permanent audit record. PMs querying past cycles can read the full audit trail from a single folder per feature-version. `mo-abort-workflow` still clears the live `implementation/` (an aborted cycle has no committed work to archive).
+
+3. **`decisions.md`** at the **feature root** (not inside `blueprints/current/`) — *permanent across rotations*. A feature-scoped, append-only decision log written under stage-named H2s (`## Stage 2 — Blueprint approval`, `## Stage 5 — Findings canonicalization`, etc.). Excluded from blueprint history rotation by design: it persists across blueprint regenerations and across the feature's whole lifetime. Writers: `mo-continue` Approve Handler (stage-2→3 clear gate), Overseer Handler, and `mo-complete-workflow` housekeeping. Read-only consumers fold it into stage primers (`primer.md`, `review-context.md`) and into mid-cycle blueprint regen.
 
   
 
@@ -470,7 +482,7 @@ branch: feat/payments/webhook # null until stage 3
 
 current-stage: 5 # 2..8; stage 4 is conceptual and never persisted (3→5 atomic via advance-to)
 
-sub-flow: none # none | chain-in-progress | resuming | reviewing
+sub-flow: none # none | chain-in-progress | resuming | reviewing | manual-testing
 
 base-commit: a1b2c3d # null until stage 3
 
@@ -487,6 +499,12 @@ overseer-review-completed: false
 drift-check-completed: true # optional — true once stage-4 drift prompt has been answered (probe + drift-gate split markers)
 
 history-baseline-version: 0 # optional — highest finalized blueprints/history/v[N] index for active.feature at stage-3 entry; null/missing means "unknown" (probe disables itself for that invocation)
+
+manual-test-state: none # none | running | complete | skipped — stage-5 manual-testing sub-flow
+
+manual-test-failure-policy: none # none | auto-seed | manual — how /mo-manual-test-run handles a failed scenario
+
+clear-recommendations: [] # array of clear-point identifiers already crossed (e.g. stage-2-to-3, stage-5-to-6) so gates don't re-prompt
 
 worktree-path: /Users/me/repo # immutable after activate; state-mutating subcommands refuse on mismatch
 
@@ -602,6 +620,14 @@ This table summarizes who interacts with which plugin surface, for which purpose
 
 | Overseer | `/mo-update-todo-list <subcmd> <args>` | Manual todo edits — `add` (TODO/IMPLEMENTING/CANCELED only), `cancel`, `set-state`. Refuses PENDING / IMPLEMENTED writes. | any | Reminds overseer to follow up with `/mo-update-blueprint` if scope shifts. |
 
+| Overseer | `/mo-manual-test-plan` | Generates `test/manual-test-plan.md` (manual-testing sub-flow at stage 5). Auto-fired by Resume Step 7 when overseer answers `y`; manually invokable while `current-stage=5`. | 5 | Refuses outside stage 5. Rotates an existing plan into `test/manual-test-plan.history/<timestamp>/` on `--force`/`--discard-existing`. Auto-rotates prior-activation results into `test/manual-test-results.history/<timestamp>/` (cross-activation guard, see `docs/manual-testing-folder/plan.md` § 4.1). |
+
+| Overseer | `/mo-manual-test-run` | Walks the plan, captures pass/fail per scenario into `manual-test-results.md`, and (on failure-policy=`auto-seed`) seeds `### IR-NNN` findings into `overseer-review.md` via `review.sh upsert-manual-test-failure` with deterministic `seed-id: manual-test:<seed-family-id>:<scenario-id>`. | 5 | Single owner of manual-test → review-file mutations. `--seed-only` is the recovery shape used by the Manual-Test-Resume Handler when results exist but seeding never completed. |
+
+| Overseer | `/mo-export-bundle` | Extracts a single self-contained markdown bundle of the active feature's current state (requirements, scope, decisions, codebase-context audit, implementation summary, changed-files, manual-test results, open findings) into `tmp/bundles/<feature>-stage<N>-<timestamp>.md`. Refuses if no active cycle / no active feature / worktree fingerprint mismatch. | any active | For pasting into a fresh agent that lacks plugin/data access. Excludes diagrams, diffs, prose synthesis. `tmp/bundles/.gitignore` is auto-written. |
+
+| Overseer | `/mo-init-status-bar [--user|--project-shared] [--plugin-root <abs>]` | One-shot wiring: writes `.claude/mo-stage-info-bar.sh` (a generated wrapper with the plugin's absolute path baked in, because Claude Code does NOT expand `$CLAUDE_PLUGIN_ROOT` inside `statusLine.command`) and a `statusLine.command` block in settings.json (default: project-local). | once | The renderer (`scripts/info-bar.sh`) is **pull-only** — not a hook; not a writer. Reads stdin JSON, parses `quest/active.md` + `progress.md` once, prints one line, exits 0. |
+
 | **PostToolUse hook** | `hooks/validate-on-write.sh` | Auto-validates YAML frontmatter against schemas on every Write/Edit to a workflow `.md` file. Blocks the turn on failure. | always | No-op outside the data root. |
 
 | **MCP server** | `plantuml-mcp-server` | Renders `.puml` sources to images for use-case / sequence / class diagrams. | 2, Resume Handler | Configured automatically via `plugin.json`. |
@@ -640,7 +666,7 @@ Each stage has a precise entry condition, work list, and exit condition. `progre
 
 | 4 | Implementation resumed (conceptual; **never persisted**) | Millwright via `/mo-continue` Resume Handler | Overseer typed `/mo-continue` after chain/direct returned. | `implementation-completed=true`, drift probe + (optional) drift fire complete, diagrams rendered, `overseer-review.md` skeleton created. The handler's final write is an atomic `advance-to 3 5` — `current-stage` skips 4 entirely. |
 
-| 5 | Presented for overseer review | Overseer | Stage-4 handoff message printed. | Overseer types `/mo-continue`; `overseer-review.md` exists (empty or populated). |
+| 5 | Presented for overseer evaluation (optional manual test, then findings) | Overseer | Stage-4 handoff message printed. Resume Step 7 asks `y/n` to launch the manual-testing sub-flow; on `y`, auto-fires `/mo-manual-test-plan` then `/mo-manual-test-run` under `sub-flow=manual-testing`. | Overseer types `/mo-continue`; `overseer-review.md` exists (empty or populated). Failed manual-test scenarios may have already seeded findings via `auto-seed` policy. |
 
 | 6 | Overseer review session | Overseer + chain/millwright via `/mo-review` | Stage-5 `/mo-continue` found open findings. | Review session exits (overseer types `approve`); overseer types `/mo-continue` again. |
 
@@ -722,7 +748,7 @@ Stage 4 is conceptual — the Resume Handler runs the work attributed to it but 
 
 2.5. **Abandoned-chain check.** Locates plan files added/modified in `base-commit..HEAD` under `docs/superpowers/plans/` plus any uncommitted plans newer than `base-commit`. Counts `- [x]` / `- [ ]` checkboxes; if a candidate has open items, prompts the overseer with `completed | abandoned <N>` choices. On `abandoned`, re-invokes the `brainstorming` Skill with a resume primer pointing at the existing plan + spec + commit log (read-only access to `docs/superpowers/` is the single exception to the "mo-workflow does not read chain artefacts" rule).
 
-3. **Drift prompt — skipped when Step 0 set the marker.** Otherwise prompts the overseer for a blueprint-drift reason. If supplied, invokes `/mo-update-blueprint --reason-kind=spec-update "<reason>"` (which rotates the blueprint to history, regenerates from implementation reality, and runs its own marker-write).
+3. **Drift prompt — skipped when Step 0 set the marker.** Otherwise prompts the overseer for a blueprint-drift reason. Three valid replies: a `<short reason>` (invokes `/mo-update-blueprint --reason-kind=spec-update "<reason>"`); `auto` (millwright analyzes `requirements.md` against `git diff base-commit..HEAD` and current code — if meaningful divergence is found, derives an `$auto_reason` and invokes `/mo-update-blueprint --reason-kind=spec-update "$auto_reason"`; if no divergence, skips rotation and only writes the `drift-check-completed=true` marker — cosmetic-only deltas don't trigger rotation because `/mo-update-blueprint` already re-derives Goals); or `continue` (proceed without updating; drift surfaces as findings later).
 
 4. **Drift side effect.** Persists `drift-check-completed=true` (split marker write so the probe can detect a successful rotation even if the drift gate's own marker write is the one lost to a session break).
 
@@ -734,7 +760,17 @@ Stage 4 is conceptual — the Resume Handler runs the work attributed to it but 
 
   
 
-**Stage 5 — Presented for overseer review (Overseer Handler in `/mo-continue`).**
+**Stage 5 — Presented for overseer evaluation (Overseer Handler in `/mo-continue`).**
+
+Stage 5's role widens from "findings only" to "optional manual test, then findings." The Resume Handler offers a manual-testing sub-flow via Step 7 before stage 5 ever takes its overseer-typed `/mo-continue`:
+
+- **Resume Step 7 (manual-testing offer).** Asks `y/n`. On `y`, auto-fires `/mo-manual-test-plan --from-resume`, then `/mo-manual-test-run`, all under `sub-flow=manual-testing`. New active-block fields `manual-test-state ∈ {none, running, complete, skipped}` and `manual-test-failure-policy ∈ {none, auto-seed, manual}` carry the run state. Failed scenarios under `auto-seed` policy are converted into `### IR-NNN` findings via `review.sh upsert-manual-test-failure` (deterministic `seed-id: manual-test:<seed-family-id>:<scenario-id>`).
+
+- **Manual-Test-Resume Handler** (`current-stage=5, sub-flow=manual-testing`). Routed inside `/mo-continue` ABOVE the catch-all `5 | (any)` row. Dispatches on (plan exists, results exists, results state) and re-fires `/mo-manual-test-run` (Branch A) or `--seed-only` (Branch B) for crash recovery; refuses with diagnostic on genuinely-inconsistent shapes.
+
+The plain Overseer Handler runs after the manual-testing sub-flow exits (or if the overseer skipped the offer):
+
+0. **Manual-test summary line** (read-only). Prints a one-line summary if `manual-test-state ∈ {complete, skipped}`.
 
 1. Verify `overseer-review.md` exists (offer to recreate if missing).
 
@@ -742,7 +778,7 @@ Stage 4 is conceptual — the Resume Handler runs the work attributed to it but 
 
 3. `review.sh list-open <feature>`:
 
-- If empty: atomic `progress.sh advance-to 5 7 --set sub-flow=none --set overseer-review-completed=true` (skip stage 6 — no review session needed), auto-fire `/mo-complete-workflow`.
+- If empty: prompt the overseer with a y/n confirmation (`overseer-review.md has no open findings. Confirming will complete the overseer-review stage and auto-fire /mo-complete-workflow. Continue? (y/n)`). On `y`, atomic `progress.sh advance-to 5 7 --set sub-flow=none --set overseer-review-completed=true` (skip stage 6 — no review session needed), auto-fire `/mo-complete-workflow`. On `n`, stop without advancing — `current-stage` stays at 5 so the next `/mo-continue` re-prompts (or routes to Step 3b if findings were added in the meantime). The confirmation gate exists because once `/mo-complete-workflow` fires it archives blueprints and advances the queue.
 
 - If non-empty: auto-fire `/mo-review`. Stop after that — the second `/mo-continue` does NOT auto-fire `/mo-complete-workflow`.
 
@@ -768,7 +804,7 @@ Pure launcher:
 
 **Stage 7 — Review completed (Review-Resume Handler).**
 
-1. Check for open findings. If any remain, prompt the overseer to either proceed with deferred findings (they are archived in the stage-8 implementation snapshot), re-launch `/mo-review`, or abort.
+1. Check for open findings. If any remain, prompt the overseer to either proceed with deferred findings (they are archived in the stage-8 implementation snapshot), re-launch `/mo-review`, or abort. If none remain, prompt with the same y/n confirmation as the no-findings stage-5 path (`overseer-review.md has no open findings. Confirming will complete the overseer-review stage and auto-fire /mo-complete-workflow. Continue? (y/n)`). On `n`, stop without advancing — `current-stage=6, sub-flow=reviewing` stays in place so the next `/mo-continue` re-prompts.
 
 2. Keep `sub-flow=reviewing` in place while the refresh decision is pending so the prompt is re-fireable on retry.
 
@@ -906,9 +942,9 @@ All commands live under `commands/` as Markdown files with YAML frontmatter (`de
 
 #### `/mo-review` (auto-fired)
 
-- **Invocation**: auto-fired by `/mo-continue` Overseer Step 3b. Manually invokable.
+- **Invocation**: auto-fired by `/mo-continue` Overseer Step 3b. Manually invokable. Re-entry after a clear-point also lands here, not on `/mo-continue`.
 
-- **Behavior**: pure launcher. Composes `review-context.md` (compact stage-6 review primer); sets `sub-flow=reviewing`; advances 5 → 6; asks overseer for `review-mode`. Brainstorming mode invokes the `brainstorming` skill with `review-context.md` + `overseer-review.md` as required first reads. Direct mode keeps the loop in the main session. Mo-review does NOT advance past 6 and does NOT auto-fire `mo-complete-workflow` — that's the Review-Resume Handler's job.
+- **Behavior**: pure launcher. **Step 0 — clear-point gate (`stage-5-to-6`)**, fired at the very top before any state mutation; recommends `/clear` and records the identifier in `progress.md.active.clear-recommendations`. Then composes `review-context.md` (compact stage-6 review primer; folds `decisions.md` content + the `review-mode-suggestion` if present); sets `sub-flow=reviewing`; advances 5 → 6; asks overseer for `review-mode`. Brainstorming mode invokes the `review-iteration-runner` sub-agent (which has the `Skill` tool and chains into `brainstorming` / `writing-plans` for `re-spec` / `re-plan` cascades). Direct mode keeps the loop in the main session. Mo-review does NOT advance past 6 and does NOT auto-fire `mo-complete-workflow` — that's the Review-Resume Handler's job.
 
   
 
@@ -928,7 +964,55 @@ All commands live under `commands/` as Markdown files with YAML frontmatter (`de
 
   - **Branch III — normal forward path.** Falls through to Step 1; before Step 4's rotate, runs `blueprints.sh check-current --require-primer "$active_feature"` and requires `0` (the completion rotation must never archive a `current/` tree missing the stage-3 primer; Item 9 of the v11 plan).
 
-  Steps (when reached): Step 1 resolves inputs (active feature, base-commit, etc.); Step 2 IMPLEMENTING → IMPLEMENTED via `todo.sh bulk-transition --feature` (CANCELED items left alone; skipped on Branch I — the prior invocation already ran this); Step 3 populates `commits:` in `requirements.md` via `commits.sh populate-requirements`; Step 4 rotates `blueprints/current/` into `history/v[N+1]/` via `blueprints.sh rotate --reason-kind completion`; Step 5 **archives the live `implementation/` folder** into `history/v[N+1]/implementation/` (overseer-review.md, review-context.md, change-summary.md, diagrams/ all preserved as a permanent audit record — not deleted); Step 6 `progress.sh finish` (active.feature → completed; active = null); Step 7 housekeeping — if queue non-empty, auto-fires `/mo-apply-impact`; else if active cycle's `todo-list.md` still has `[ ] TODO` items, asks the overseer to mark the next batch and type `/mo-continue`; else `quest.sh end` archives the pointer and recommends `/mo-run`.
+  Steps (when reached): Step 1 resolves inputs (active feature, base-commit, etc.); Step 2 IMPLEMENTING → IMPLEMENTED via `todo.sh bulk-transition --feature` (CANCELED items left alone; skipped on Branch I — the prior invocation already ran this); Step 3 populates `commits:` in `requirements.md` via `commits.sh populate-requirements`; Step 4 rotates `blueprints/current/` into `history/v[N+1]/` via `blueprints.sh rotate --reason-kind completion`; Step 5 **archives the live `implementation/` folder** into `history/v[N+1]/implementation/` (overseer-review.md, review-context.md, change-summary.md, grounding-report.md, manual-test-plan.md, manual-test-results.md, manual-test-plan.history/, diagrams/ all preserved as a permanent audit record — not deleted; `decisions.md` lives at the feature root and is not rotated); Step 6 `progress.sh finish` (active.feature → completed; active = null); Step 7 housekeeping — when the queue is non-empty, the **feature-A→feature-B clear-point gate** fires here: recommends `/clear` to the overseer and halts before auto-firing `/mo-apply-impact` for the next feature (this gate is one-shot and uses no tracking flag); else if active cycle's `todo-list.md` still has `[ ] TODO` items, asks the overseer to mark the next batch and type `/mo-continue`; else `quest.sh end` archives the pointer and recommends `/mo-run`.
+
+  
+
+#### `/mo-manual-test-plan [--from-resume] [--force | --discard-existing]`
+
+- **Invocation**: auto-fired by `/mo-continue` Resume Step 7 when the overseer answers `y` to the manual-testing offer; manually invokable while `current-stage=5`. Refuses outside stage 5.
+
+- **Behavior**: generates `workflow-stream/<feature>/test/manual-test-plan.md` (schema `manual-test-plan`), enumerating overseer-runnable scenarios derived from `requirements.md` Goals + `change-summary.md` + open todos. On `--force` or `--discard-existing`, rotates the existing plan into `test/manual-test-plan.history/<timestamp>/` so prior plans survive as audit artifacts. Auto-rotates prior-activation results into `test/manual-test-results.history/<timestamp>/` at Step 1 (cross-activation guard — see `docs/manual-testing-folder/plan.md` § 4.1). Sets `sub-flow=manual-testing`. Does not run the plan — that is `/mo-manual-test-run`'s job.
+
+  
+
+#### `/mo-manual-test-run [--seed-only]`
+
+- **Invocation**: auto-fired by Resume Step 7 immediately after `/mo-manual-test-plan` succeeds; auto-fired by the Manual-Test-Resume Handler on re-entry; manually invokable. The single owner of mutations to `overseer-review.md` from manual-test results.
+
+- **Behavior**: walks the plan's scenarios, captures per-scenario outcomes into `manual-test-results.md` (schema `manual-test-results`, with `state ∈ {in-progress, complete}`, `current-scenario` cursor, `plan-id`, `seed-family-id`, counts). On a failure under `failure-policy=auto-seed`, calls `review.sh upsert-manual-test-failure` to seed an `### IR-NNN` finding with deterministic `seed-id: manual-test:<seed-family-id>:<scenario-id>` (idempotent across re-runs); under `manual` policy, prints the failure and lets the overseer hand-author the finding. `--seed-only` is the recovery shape used when results exist but seeding never completed (Manual-Test-Resume Handler Branch B). Helpers: `review.sh find-by-seed-id`, `find-by-seed-id-family`, `add` extension, plus `FIELD_RE` canonical ordering.
+
+  
+
+#### `/mo-export-bundle`
+
+- **Invocation**: overseer, any time an active cycle + active feature exists.
+
+- **Behavior**: extracts (does NOT synthesize) the active feature's current state into a single self-contained markdown file at `tmp/bundles/<feature>-stage<N>-<timestamp>.md`. Sections: requirements, scope, custom project instructions, project constraints, feature background, decisions, codebase-context audit, implementation summary, changed-files index, manual-test results, open review findings. Strips frontmatter / HTML scaffolding / template placeholders / workflow file paths. Excludes diagrams, diffs, prose synthesis. Pre-flight refusals (in order): no active cycle / no active feature / worktree fingerprint mismatch — must precede any `mkdir -p tmp/bundles`. Auto-writes `tmp/bundles/.gitignore` so bundles stay out of source control. Engine: `scripts/bundle.sh export` (the only subcommand in v1).
+
+  
+
+#### `/mo-init-status-bar [--user|--project-shared] [--plugin-root <abs>]`
+
+- **Invocation**: overseer, once per workspace (or whenever the wiring is lost). Idempotent.
+
+- **Behavior**: writes a generated wrapper at `.claude/mo-stage-info-bar.sh` with the plugin's absolute path baked in (necessary because Claude Code does NOT expand `$CLAUDE_PLUGIN_ROOT` inside `statusLine.command`), then writes the matching `statusLine.command` block to settings.json. Default target: `.claude/settings.local.json` (project-local). `--user` writes to `~/.claude/settings.json`; `--project-shared` writes to `.claude/settings.json` (warns and requires confirmation because it's committed to source). The renderer itself (`scripts/info-bar.sh`) is **pull-only** — Claude Code calls it on its own status-line cadence; it reads stdin JSON, anchors to `workspace.project_dir`, parses `quest/active.md` + `progress.md` once via a single `python3 -S -I` invocation, prints one line, and exits 0. No state, no writes, no logs, no hooks. Hot-path target ≤100 ms. Always exits 0 (Claude Code surfaces stderr from a failing statusLine, which would visually break the prompt).
+
+  
+
+  Display:
+
+  - Active feature, stages 2–7: `mo-workflow · <feature> · Stage <N> · <stage-name>`.
+
+  - No active feature (`active=null`), cycle present: `mo-workflow · cycle <slug> · Stage 1 · quest generated`.
+
+  - No active cycle: `mo-workflow · idle`.
+
+  - Outside an mo-workspace: empty output.
+
+  
+
+  Note: an earlier "status-bar" feature (PostToolUse hook + JSON sidecar + NDJSON usage log for token tracking) was removed in v0.7.4 and replaced by the pull-only renderer in v0.7.5.
 
   
 
@@ -964,13 +1048,15 @@ The single touchpoint at every overseer gate. Reads `progress.md` and dispatches
 
 | --- | --- | --- |
 
-| 2 | any | **Approve Handler** — require default-mode `blueprints.sh check-current "$active_feature" == 0`, auto-fire `/mo-plan-implementation` |
+| 2 | any | **Approve Handler** — Step 1 sanity-check (require default-mode `blueprints.sh check-current "$active_feature" == 0`); Step 2 **clear-point gate (`stage-2-to-3`)** — recommends `/clear` to the overseer (Claude Code does not let agents invoke `/clear` programmatically); records the identifier in `progress.md.active.clear-recommendations` so re-entry doesn't re-prompt; Step 3 auto-fire `/mo-plan-implementation` |
 
-| 3 | any | **Resume Handler** — Step 0 drift-completion probe (skipped when `drift-check-completed=true`); Step 1 verify commits in `base-commit..HEAD` (zero-commit branch offers `retry-launch` / `direct-empty` / `abort`); Step 2 idempotent flag writes (`sub-flow=resuming`, `implementation-completed=true`); Step 2.5 abandoned-chain recovery (read-only inspection of `docs/superpowers/plans/`); Step 3 drift prompt (skipped when probe set the marker); Step 4 drift side effect (auto-fires `/mo-update-blueprint --reason-kind=spec-update <reason>`); Step 5 auto-fire `/mo-draw-diagrams`; Step 6 init `overseer-review.md` skeleton; Step 7 atomic `progress.sh advance-to 3 5 --set sub-flow=none`. Stage 4 is **not** persisted — the transition is atomic 3→5 |
+| 3 | any | **Resume Handler** — Step 0 drift-completion probe (skipped when `drift-check-completed=true`); Step 1 verify commits in `base-commit..HEAD` (zero-commit branch offers `retry-launch` / `direct-empty` / `abort`); Step 2 idempotent flag writes (`sub-flow=resuming`, `implementation-completed=true`); Step 2.5 abandoned-chain recovery (read-only inspection of `docs/superpowers/plans/`); Step 3 drift prompt (skipped when probe set the marker; accepts `<reason>` / `auto` / `continue`); Step 4 drift side effect (auto-fires `/mo-update-blueprint --reason-kind=spec-update <reason>`); Step 5 auto-fire `/mo-draw-diagrams`; Step 6 init `overseer-review.md` skeleton; Step 7 manual-testing offer (y/n — `y` auto-fires `/mo-manual-test-plan --from-resume` then `/mo-manual-test-run` under `sub-flow=manual-testing`); finally atomic `progress.sh advance-to 3 5 --set sub-flow=none`. Stage 4 is **not** persisted — the transition is atomic 3→5 |
 
-| 5 | any | **Overseer Handler** — canonicalize free-form findings, list-open. If empty, atomic `advance-to 5 7 --set sub-flow=none --set overseer-review-completed=true` and auto-fire `/mo-complete-workflow`. If non-empty, auto-fire `/mo-review` and stop |
+| 5 | manual-testing | **Manual-Test-Resume Handler** — placed ABOVE the catch-all `5 | (any)` row. Dispatches on (plan exists, results exists, results state); Branch A re-fires `/mo-manual-test-run`; Branch B re-fires `/mo-manual-test-run --seed-only` (results exist but seeding never completed); diagnostic + refuse on genuinely-inconsistent shapes |
 
-| 6 | reviewing | **Review-Resume Handler** — check/defer open findings, offer a diagram refresh when review-loop commits exist before advancing, then atomic `advance-to 6 7 --set sub-flow=none --set overseer-review-completed=true` and auto-fire `/mo-complete-workflow` |
+| 5 | any | **Overseer Handler** — Step 0 manual-test summary line (read-only); Step 1.5 canonicalize free-form findings; Step 1.6 persist `review-mode-suggestion`; list-open. If empty, **prompt y/n confirmation** before auto-firing `/mo-complete-workflow`; on `y`, atomic `advance-to 5 7 --set sub-flow=none --set overseer-review-completed=true` and auto-fire. If non-empty, auto-fire `/mo-review` and stop |
+
+| 6 | reviewing | **Review-Resume Handler** — check/defer open findings (with the same y/n completion confirmation as the no-findings stage-5 path), offer a diagram refresh when review-loop commits exist before advancing, then atomic `advance-to 6 7 --set sub-flow=none --set overseer-review-completed=true` and auto-fire `/mo-complete-workflow` |
 
 | 7 | any | Stage-7 finalize — auto-fire `/mo-complete-workflow` (idempotent via Branch II when re-entered after a partial finalize) |
 
@@ -1030,7 +1116,7 @@ The single touchpoint at every overseer gate. Reads `progress.md` and dispatches
 
   
 
-### 7.1 Plugin descriptor (`plugin.json`)
+### 7.1 Plugin descriptor (`.claude-plugin/plugin.json`)
 
   
 
@@ -1040,7 +1126,7 @@ The single touchpoint at every overseer gate. Reads `progress.md` and dispatches
 
 "name": "millwright-overseer-development-machine",
 
-"version": "0.2.1",
+"version": "0.8.2",
 
 "commands": "./commands/",
 
@@ -1080,7 +1166,7 @@ A single `PostToolUse` hook matched on `Write|Edit`. Reads the tool-call JSON on
 
 Coverage policy:
 
-- **Validated**: `quest/active.md` (active-quest schema), `quest/<active-slug>/{progress, todo-list, summary, queue-rationale}.md`, `blueprints/current/{requirements, config, primer}.md`, `blueprints/current/diagrams/README.md` (diagrams-readme-blueprint schema), `implementation/{overseer-review, review-context, change-summary}.md`, `implementation/diagrams/README.md` (diagrams-readme-implementation schema), `blueprints/history/v*/reason.md`.
+- **Validated**: `quest/active.md` (active-quest schema), `quest/<active-slug>/{progress, todo-list, summary, queue-rationale, context-ledger}.md`, `workflow-stream/<feature>/decisions.md`, `blueprints/current/{requirements, config, primer}.md`, `blueprints/current/diagrams/README.md` (diagrams-readme-blueprint schema), `implementation/{overseer-review, review-context, change-summary, grounding-report, manual-test-plan, manual-test-results}.md`, `implementation/diagrams/README.md` (diagrams-readme-implementation schema), `blueprints/history/v*/reason.md`.
 
 - **Skipped (audit archive)**: other files under `blueprints/history/v*/` (including `history/v*/implementation/*` archived at stage 8) and older `quest/<old-slug>/*` subfolders — they were already validated when live and are immutable post-rotation/archival.
 
@@ -1102,9 +1188,19 @@ change-summary.schema.yaml
 
 config.schema.yaml
 
+context-ledger.schema.yaml
+
+decisions.schema.yaml
+
 diagrams-readme-blueprint.schema.yaml
 
 diagrams-readme-implementation.schema.yaml
+
+grounding-report.schema.yaml
+
+manual-test-plan.schema.yaml
+
+manual-test-results.schema.yaml
 
 primer.schema.yaml
 
@@ -1130,7 +1226,17 @@ todo-list.schema.yaml
 
 Notes on the per-schema surface:
 
-- **`progress.schema.yaml`** — the `active` block carries two optional fields used by the Resume Handler's drift-completion probe: `drift-check-completed` (boolean — true once the stage-4 drift prompt has been answered, persisted so a session break can't re-fire the prompt) and `history-baseline-version` (integer — highest finalized `blueprints/history/v[N]` index for `active.feature` at stage-3 entry; used to distinguish this-cycle drift rotations from prior-cycle ones). `active` also carries the immutable worktree-fingerprint trio `worktree-path` / `git-common-dir` / `git-worktree-dir` captured at activation; state-mutating subcommands of `progress.sh` refuse on mismatch.
+- **`progress.schema.yaml`** — the `active` block carries optional fields used by the Resume Handler's drift-completion probe and the manual-testing sub-flow: `drift-check-completed` (boolean — true once the stage-4 drift prompt has been answered, persisted so a session break can't re-fire the prompt); `history-baseline-version` (integer — highest finalized `blueprints/history/v[N]` index for `active.feature` at stage-3 entry; used to distinguish this-cycle drift rotations from prior-cycle ones); `manual-test-state` (`none | running | complete | skipped`); `manual-test-failure-policy` (`none | auto-seed | manual`); `clear-recommendations` (array of clear-point identifiers already crossed, e.g. `stage-2-to-3`, `stage-5-to-6`, so gates don't re-prompt on re-entry — the feature-A→feature-B gate is one-shot and uses no flag). `active.sub-flow` admits a fifth value, `manual-testing`, while a stage-5 manual-test run is in progress. `active` also carries the immutable worktree-fingerprint trio `worktree-path` / `git-common-dir` / `git-worktree-dir` captured at activation; state-mutating subcommands of `progress.sh` refuse on mismatch.
+
+- **`grounding-report.schema.yaml`** — frontmatter contract for `workflow-stream/<feature>/implementation/grounding-report.md`. Required: `id` (UUID v1–v8), `feature` (kebab-case), `seam-classification` (`backend | frontend | mixed | infra`). Optional: `contributors[]`, `date`. Written by the `codebase-grounder` sub-agent during `mo-apply-impact` Step A / Phase 2.1 before the `requirements.md` body is composed. `seam-classification` drives Step C's optional structural-diagram decision. Lifecycle matches the rest of `implementation/`: archived alongside at stage 8, deleted on `/mo-abort-workflow`.
+
+- **`decisions.schema.yaml`** — frontmatter contract for `workflow-stream/<feature>/decisions.md`. Required: `id` (UUIDv4 only — pattern is stricter than the other schemas), `feature`. Lives at the **feature root** (not inside `blueprints/current/`); excluded from blueprint history rotation by design so it persists across blueprint regenerations and across the feature's whole lifetime. Body is a markdown log under stage-named H2s (`## Stage 2 — Blueprint approval`, `## Stage 5 — Findings canonicalization`, etc.). Writers: `mo-continue` Approve Handler (stage-2→3 clear gate) and Overseer Handler; `mo-complete-workflow` housekeeping. Read-only consumers fold it into `primer.md` (stage 3), `review-context.md` (stage 6), and `requirements.md` Non-goals + `config.md` Overseer Additions during mid-cycle blueprint regen.
+
+- **`context-ledger.schema.yaml`** — frontmatter contract for `quest/<active-slug>/context-ledger.md`. Required: `id` (UUID v1–v8), `cycle-slug`. Per-cycle telemetry artifact (Phase 6.4 of context-optimization). Body has an `## Events` table with rows `stage | command | files | class | location | artifact` where `class ∈ {small, medium, large}` (under 2k / 2k–20k / over 20k tokens) and `location ∈ {main, sub-agent, fork}` so a `large + main` row signals a budget regression. Written by any command/script that does a context-heavy read via `scripts/ledger.sh append`. Append failures warn but do NOT block parent commands. Persists permanently with the cycle archive.
+
+- **`manual-test-plan.schema.yaml`** — frontmatter contract for `test/manual-test-plan.md`. Enumerates overseer-runnable scenarios derived from `requirements.md` Goals + `change-summary.md` + open todos. Carries `generated-in-activation` (UUIDv4 of the activation that rendered the plan — cross-activation discriminator).
+
+- **`manual-test-results.schema.yaml`** — frontmatter contract for `test/manual-test-results.md`. Carries `state ∈ {in-progress, complete}`, `current-scenario` cursor, `plan-id` (back-reference to the plan), `seed-family-id` (used in the deterministic finding `seed-id`), `generated-in-activation` (copied from the plan; cross-activation discriminator), and counts.
 
 - **`queue-rationale.schema.yaml`** — supports a multi-batch shape: optional top-level `status: draft | confirmed` and `batch: integer` (≥ 1) describe the LATEST batch only; older batches' statuses live in the body audit trail. `features:` is the cumulative ordered list across all confirmed batches (and the proposed order for the latest batch when status: draft). The dispatcher's between-features Row A relies on `features − progress.completed` equalling `progress.queue` exactly. Both fields are optional for back-compat with single-batch v10-and-earlier files.
 
@@ -1156,6 +1262,16 @@ change-summary.md.tmpl
 
 config.md.tmpl
 
+context-ledger.md.tmpl
+
+decisions.md.tmpl
+
+grounding-report.md.tmpl
+
+manual-test-plan.md.tmpl
+
+manual-test-results.md.tmpl
+
 overseer-review.md.tmpl
 
 primer.md.tmpl
@@ -1169,6 +1285,8 @@ reason.md.tmpl
 requirements.md.tmpl
 
 review-context.md.tmpl
+
+sub-agent-return.md.tmpl
 
 summary.md.tmpl
 
@@ -1202,9 +1320,15 @@ todo-list.md.tmpl
 
 | `migrate-diagrams-readme.sh` | One-shot helper that back-fills `requirements-id` (and an `id` UUID, when missing) into legacy `blueprints/current/diagrams/README.md` files. Idempotent; `--dry-run` mode supported; refuses to rewrite hand-supplied identifiers. |
 
-| `review.sh` | Manage `overseer-review.md`. Subcommands: `init`, `add`, `set-status`, `iterate`, `list-open`, `sync-refs`, `canonicalize` (returns TSV of free-form spans), `strip-freeform`. IDs are `IR-NNN`, monotonically incremented. |
+| `review.sh` | Manage `overseer-review.md`. Subcommands: `init`, `add`, `set-status`, `iterate`, `list-open`, `sync-refs`, `canonicalize` (returns TSV of free-form spans), `strip-freeform`, `find-by-seed-id`, `find-by-seed-id-family`, `upsert-manual-test-failure` (the single owner of manual-test → review-file mutations; uses deterministic `seed-id: manual-test:<seed-family-id>:<scenario-id>` so re-runs are idempotent). IDs are `IR-NNN`, monotonically incremented. |
 
 | `commits.sh` | Query and format `base-commit..HEAD`. Subcommands: `list`, `yaml`, `populate-requirements`, `changed-files`, `change-summary-fresh` (cache-keyed by `(base-commit, head)` — exit 0 fresh / 1 stale / 2 missing). |
+
+| `bundle.sh` | Engine for `/mo-export-bundle`. Subcommands: `export` (the only subcommand in v1) — extracts the active feature's current state into `tmp/bundles/<feature>-stage<N>-<timestamp>.md`. Anything else: `usage: bundle.sh export` and exit 2. |
+
+| `info-bar.sh` | Pull-only Claude Code `statusLine` renderer (NOT a hook). Reads stdin JSON from Claude Code, anchors to `workspace.project_dir`, parses `quest/active.md` + `progress.md` once via a single `python3 -S -I` invocation, prints one line, exits 0. No state, no writes, no logs. Hot-path target ≤100 ms. Always exits 0 so Claude Code's status line never visually breaks. |
+
+| `ledger.sh` | Manage `quest/<active-slug>/context-ledger.md`. Two subcommands: `init` (idempotent skeleton write via `frontmatter.sh init context-ledger ... CYCLE_SLUG=<slug>`; refuses with info, exit 0, if the file already exists) and `append <stage> <command> <files> <class> <location> <artifact>` (appends one row to the `## Events` table; auto-runs `init` if missing; sanitizes `\|` characters; inserts before a `## Cycle summary` heading if present, otherwise at EOF; validates `class` and `location` enums). Anything else: `usage: ledger.sh {init\|append} ...` exit 2. |
 
 | `ingest.sh` | Convert non-text journal files to sibling `.md`. Routes by extension (docling for documents, stub for images / short PDFs). |
 
@@ -1404,69 +1528,35 @@ Properties:
 
   
 
-### 7.13 Sub-agent delegation (optional, bounded)
+### 7.13 Sub-agent profiles (`agents/`)
 
   
 
-The millwright may delegate to sub-agents (via `Task` / `Agent` tools) only when delegation actually reduces total context use. Approved delegation points:
+As of v0.6.0 the previous "ad-hoc Task spawn" delegation policy is replaced by **first-class agent profiles** under `agents/`. Each profile is a Markdown file with YAML frontmatter (`name`, `description`, `model`, `effort`, `tools`); commands invoke them by name through the `Task` tool. Every profile returns per `docs/sub-agent-return-contract.md` with a ≤ 1k-token return body. Detailed evidence belongs in artifact files, not the return.
 
   
 
-- Stage 1 — per-file journal summarization for files exceeding size thresholds.
+| Profile | Model / effort | Spawned by | Inputs | Output |
 
-- Stage 1.5 — codebase dependency inspection for ≥ 3 features.
+| --- | --- | --- | --- | --- |
 
-- Stage 2 — skill/rule relevance filtering when `.claude/skills/` + `.claude/rules/` together exceed ~30 entries.
+| `journal-file-digester` | haiku / low | `mo-run` Step 2.5 Tier 1 | one oversized journal file (>100 KB) | digest in return body — read-only, no file writes |
 
-- Stage 4 — `change-summary.md` writing for diffs touching many areas.
+| `journal-folder-digester` | haiku / medium | `mo-run` Step 2.5 Tier 2 | one journal subfolder (>5 files AND >40 KB total) | writes `<data_root>/quest/<active-slug>/.scratch/folder-digest-<folder>.md` |
 
-- Stage 6 — finding-cluster grouping for >5 open findings (one sub-agent per cluster, disjoint write scopes).
+| `dependency-mapper` | sonnet / medium | `mo-continue` Pre-flight Step 4c (stage 1.5) | queue of features (≥ 2) | 2–3 sentence ordering proposal in the return body — does NOT write files; main composes `queue-rationale.md` from the return |
 
-  
+| `codebase-grounder` | sonnet / high | `mo-apply-impact` Step A / Phase 2.1 (stage 2) | in-scope todo IDs, folder allowlist, cycle-flavor rule order | writes `implementation/grounding-report.md` and sets `seam-classification` via `frontmatter.sh set`. ≤ 5 files inspected per todo |
 
-Sub-agents return a **≤ 20-line routing slip**:
+| `blueprint-diagrammer` | sonnet / high | `mo-apply-impact` Step C (stage 2) | `requirements.md` Goals + the just-written grounding-report | writes `.puml` sources into `blueprints/current/diagrams/` (never `.svg`/`.png` — has the PlantUML MCP tools) |
 
-  
+| `implementation-analyst` | opus / high | `mo-generate-implementation-diagrams` Phase 3.1 (Resume Handler / `/mo-draw-diagrams`) | `base-commit..HEAD` diff, `blueprints/current/diagrams/` as seed | writes `implementation/change-summary.md` and re-renders `implementation/diagrams/`; only re-renders changed subjects |
 
-```
-
-## Scope
-
-<one short paragraph: what was inspected>
+| `review-iteration-runner` | opus / high | `mo-review` Step 3a, per iteration (stage 6 brainstorming mode) | open findings, scope-cascade rules | calls `review.sh set-status`. Has the `Skill` tool and chains into the `brainstorming` / `writing-plans` Skills for `re-spec` / `re-plan` cascades. Does NOT mutate `progress.md` |
 
   
 
-## Findings
-
-- <short, source-linked bullet>
-
-  
-
-## Decisions / Assumptions
-
-- <assumption with confidence>
-
-  
-
-## Artifacts Written
-
-- <path>
-
-  
-
-## Main-Agent Action Needed
-
-- <one concrete next step, or "none">
-
-```
-
-  
-
-Detailed evidence belongs in artifact files, not the chat reply.
-
-  
-
-**Do NOT delegate**: workflow state mutations (`progress.sh`, `todo.sh`, `blueprints.sh`, `review.sh set-status`), stage transitions, command dispatch, final approvals, anything that fits in the millwright's working context.
+**Do NOT delegate** (these stay with main): workflow state mutations (`progress.sh`, `todo.sh`, `blueprints.sh`, `review.sh set-status` outside `review-iteration-runner`), stage transitions, command dispatch, final approvals, the y/n confirmation gates, any context-budget gating decisions.
 
   
 
@@ -1548,11 +1638,13 @@ Commits land on feat/auth/jwt.
 
 [Millwright] Resume Handler: verifies commits exist; sets implementation-completed=true;
 
-asks for blueprint-drift reason. Overseer types: continue.
+asks for blueprint-drift reason (reply: <reason> | auto | continue). Overseer types: continue.
 
 Auto-fires /mo-draw-diagrams (renders implementation diagrams).
 
-Initializes overseer-review.md skeleton. Advances to stage 5.
+Initializes overseer-review.md skeleton. Asks: "Run manual testing now? (y/n)". Overseer types: n.
+
+Advances to stage 5.
 
 [Overseer] Reviews implementation/diagrams/ + the diff. Edits overseer-review.md:
 
@@ -1588,7 +1680,11 @@ commits. review.sh set-status IR-001 fixed. Asks overseer for approval.
 
 [Millwright] Review-Resume Handler: list-open is empty;
 
-offers diagram refresh before advancing.
+prompts y/n to confirm completing the overseer-review stage.
+
+[Overseer] Types: y
+
+[Millwright] Offers diagram refresh before advancing.
 
 [Overseer] Types: y
 
@@ -1624,11 +1720,11 @@ preserved permanently as part of the task archive).
 
   
 
-What the overseer typed end-to-end: `/mo-init`, `/mo-run auth-meeting`, edit todo-list, `/mo-continue`, `/mo-continue`, edit config, `/mo-continue`, `brainstorming`, drove the chain, `/mo-continue`, `continue` (drift skip), edit overseer-review.md, `/mo-continue`, `brainstorming`, drove the review session, `approve`, `/mo-continue`, `y` (diagram refresh).
+What the overseer typed end-to-end: `/mo-init`, `/mo-run auth-meeting`, edit todo-list, `/mo-continue`, `/mo-continue`, edit config, `/mo-continue`, `brainstorming`, drove the chain, `/mo-continue`, `continue` (drift skip), `n` (manual-test skip), edit overseer-review.md, `/mo-continue`, `brainstorming`, drove the review session, `approve`, `/mo-continue`, `y` (completion confirmation), `y` (diagram refresh).
 
   
 
-What the millwright did automatically: `mo-apply-impact`, `mo-plan-implementation`, `mo-draw-diagrams`, `mo-review`, `mo-draw-diagrams` (refresh), `mo-complete-workflow`, plus all script invocations.
+What the millwright did automatically: `mo-apply-impact`, `mo-plan-implementation`, `mo-draw-diagrams`, `mo-review`, `mo-draw-diagrams` (refresh), `mo-complete-workflow`, plus all script invocations. Clear-point recommendations fire at stage-2→3, stage-5→6, and feature-A→feature-B (the overseer is asked to type `/clear` themselves — Claude Code does not let agents invoke `/clear` programmatically).
 
   
 
@@ -1690,7 +1786,23 @@ What the millwright did automatically: `mo-apply-impact`, `mo-plan-implementatio
 
 - **Stage** — one of 0–8 in the canonical workflow. Stage 4 is conceptual — the Resume Handler runs "stage 4" work but `current-stage` never persists 4 (the handler ends with an atomic `advance-to 3 5`).
 
-- **Sub-flow** — `none | chain-in-progress | resuming | reviewing` — secondary state dimension on top of `current-stage`.
+- **Sub-flow** — `none | chain-in-progress | resuming | reviewing | manual-testing` — secondary state dimension on top of `current-stage`. `manual-testing` is set by `/mo-manual-test-plan` while a stage-5 manual-test run is in progress.
+
+- **Manual-testing sub-flow** — optional stage-5 sub-flow that lets the overseer run a generated test plan against the implemented surface before authoring findings. Two commands: `/mo-manual-test-plan` (generator) and `/mo-manual-test-run` (executor + auto-seeder). Two `progress.md.active` fields: `manual-test-state ∈ {none, running, complete, skipped}` and `manual-test-failure-policy ∈ {none, auto-seed, manual}`. Failed scenarios under `auto-seed` policy become `### IR-NNN` findings via deterministic `seed-id: manual-test:<seed-family-id>:<scenario-id>`. Implemented as a sub-flow rather than a new stage 4.5.
+
+- **Clear-point** — a recommendation by the millwright to type `/clear` (start a fresh Claude Code session) at a high-context-payoff transition. Three points fire: `stage-2-to-3` (Approve Handler Step 2), `stage-5-to-6` (top of `/mo-review`), and feature-A→feature-B (`/mo-complete-workflow` Step 7 housekeeping when the queue is non-empty). The first two record the identifier in `progress.md.active.clear-recommendations` so re-entry doesn't re-prompt; the third is one-shot. Claude Code does NOT let agents invoke `/clear` programmatically — these are recommendations only.
+
+- **Decisions log (`decisions.md`)** — feature-scoped, append-only markdown file at `workflow-stream/<feature>/decisions.md`. Lives at the feature root, NOT inside `blueprints/current/`; excluded from blueprint history rotation by design so it persists across blueprint regenerations and across the feature's whole lifetime. Body is organized under stage-named H2 headings.
+
+- **Context ledger (`context-ledger.md`)** — per-cycle telemetry artifact at `quest/<active-slug>/context-ledger.md`. Body has an `## Events` table whose rows record the size class (`small | medium | large`) and location (`main | sub-agent | fork`) of every context-heavy read so a `large + main` row visibly signals a budget regression. Written via `scripts/ledger.sh append`; append failures warn but don't block.
+
+- **Grounding report (`grounding-report.md`)** — stage-2 codebase-grounding snapshot at `implementation/grounding-report.md`. Written by the `codebase-grounder` sub-agent during `mo-apply-impact` Step A / Phase 2.1 before the `requirements.md` body is composed. Carries per-item seam findings and an overall `seam-classification` (`backend | frontend | mixed | infra`) that drives the optional structural-diagram decision in Step C. Archived alongside the rest of `implementation/` at stage 8.
+
+- **Stage info-bar** — pull-only Claude Code `statusLine` renderer at `scripts/info-bar.sh`. Wired by `/mo-init-status-bar` (which writes `.claude/mo-stage-info-bar.sh` and a `statusLine.command` block in settings.json). NOT a hook; reads stdin JSON, prints one line, exits 0. The earlier "status-bar" feature (PostToolUse hook + JSON sidecar + NDJSON usage log) was removed in v0.7.4 and replaced by this pull-only renderer in v0.7.5.
+
+- **Export bundle** — single self-contained markdown file produced by `/mo-export-bundle` at `tmp/bundles/<feature>-stage<N>-<timestamp>.md` for pasting into a fresh agent that lacks plugin/data access. Extraction-only, no synthesis. Engine: `scripts/bundle.sh export`.
+
+- **Sub-agent profiles** — first-class agent definitions under `agents/` (introduced v0.6.0). Seven profiles: `journal-file-digester`, `journal-folder-digester`, `dependency-mapper`, `codebase-grounder`, `blueprint-diagrammer`, `implementation-analyst`, `review-iteration-runner`. See §7.13 for the full table.
 
 - **Workflow stream** — the per-feature folder tree under `workflow-stream/<feature>/`.
 
