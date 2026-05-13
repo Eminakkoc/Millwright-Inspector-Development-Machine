@@ -21,6 +21,28 @@ For any other workflow state, this command falls through to `/mo-resume-workflow
 
 ### Step 1 — Read state
 
+#### Step 1a — Sanity-check the plugin runtime (load-bearing)
+
+Before reading any state, verify `$CLAUDE_PLUGIN_ROOT` is set and the dispatcher's scripts are actually on disk. This guard must run **first**: the state-read fallbacks in Step 1b (`2>/dev/null || echo 'null'`) cannot distinguish "no active workflow" from "scripts unreachable" — without this check, an empty `$CLAUDE_PLUGIN_ROOT` (seen after `/clear` when the env var doesn't propagate into the Bash subshell) would expand `$CLAUDE_PLUGIN_ROOT/scripts/progress.sh` to `/scripts/progress.sh`, silently fail with "command not found", and route the dispatcher to the pre-flight catch-all → `/mo-resume-workflow`, making it look like there's no active workflow when in fact the runtime is broken.
+
+```bash
+if [[ -z "${CLAUDE_PLUGIN_ROOT:-}" ]]; then
+  echo "error: \$CLAUDE_PLUGIN_ROOT is not set in this shell — plugin scripts cannot be located." >&2
+  echo "       This usually means the env var didn't propagate into the Bash subshell (commonly seen after /clear)." >&2
+  echo "       Retry /mo-continue; if it persists, resolve the plugin root explicitly before re-running." >&2
+  exit 1
+fi
+if [[ ! -x "$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" ]]; then
+  echo "error: $CLAUDE_PLUGIN_ROOT/scripts/progress.sh is missing or not executable — plugin runtime is not usable." >&2
+  echo "       Do NOT interpret the next state read as workflow state; this is a runtime fault, not a workflow fault." >&2
+  exit 1
+fi
+```
+
+If either guard fires, **stop**. Do not fall through to Step 1b, do not delegate to `/mo-resume-workflow`, do not print a state snapshot — the failure is environmental, not stateful, and any state-shaped output would mislead the overseer into debugging their workflow when the runtime is the problem.
+
+#### Step 1b — Read workflow state
+
 ```bash
 active_feature="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get-active 2>/dev/null || echo 'null')"
 queue_count="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh queue-remaining 2>/dev/null | sed '/^$/d' | wc -l | tr -d ' ')"
@@ -28,6 +50,8 @@ queue_count="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh queue-remaining 2>/dev/nu
 quest_dir="$($CLAUDE_PLUGIN_ROOT/scripts/quest.sh dir 2>/dev/null || echo "")"
 todo_file="$quest_dir/todo-list.md"
 ```
+
+With Step 1a's guard in place, the `2>/dev/null || echo 'null'` fallbacks here only ever fire for legitimate state-missing conditions (no `progress.md` yet, no active cycle), never for runtime faults.
 
 If `progress.md` (or `quest/active.md` / the active cycle subfolder) is missing, the calls fail — surface the error and stop (no recovery here; the overseer should run `/mo-run` first).
 
