@@ -55,8 +55,13 @@ Each mo-workflow command that delegates work via a fresh sub-agent embeds the co
 | `commands/mo-generate-implementation-diagrams.md` | 4 | Implementation diagram generation |
 | `commands/mo-apply-impact.md` | 2 | Blueprint diagram generation (same per-event prompt as stage 4) |
 | `commands/mo-draw-diagrams.md` | manual | Overseer-invokable wrapper for stage-4 diagram generation |
+| `commands/mo-sidequest.md` | any | Mid-workflow Q&A or small-fix sub-agent (read-only `sidequest-reader`, or writable `sidequest-writer` under `--write`). Uses the side-quest variant of the contract — see below. |
 
 When adding a new delegated stage, copy the "Required return shape" block from `templates/sub-agent-return.md.tmpl` verbatim into the new prompt. Do not paraphrase — the literal shape is what trains consistent sub-agent behavior across the workflow.
+
+## Side-quest variant
+
+The `/mo-sidequest` slash command spawns one of two side-quest sub-agents (`agents/sidequest-reader.md`, `agents/sidequest-writer.md`) and uses a slight extension of the contract: two extra blocks (`Answer:` and `Continuity summary:`) at the top of the return, plus two distinct first-line sentinels (`NEEDS_ESCALATION:` for tier escalation, `WRITE_REQUIRED:` reader-only). The standard fields below the extras are unchanged — `Artifacts changed:` and `Commits:` still appear with empty bullet lists where applicable. The canonical definition lives in the "Side-quest additions" section of `templates/sub-agent-return.md.tmpl`; the side-quest design plan is `docs/side-quest/plan.md`.
 
 ## Quick checklist for prompt authors
 

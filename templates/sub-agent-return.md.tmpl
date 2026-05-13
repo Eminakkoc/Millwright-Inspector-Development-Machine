@@ -68,3 +68,34 @@ Each delegated-stage prompt template (in the corresponding `commands/*.md` file)
 - `commands/mo-run.md` Step 2.5 (per-folder summarization — Phase 5.2; existing per-file summarization should also adopt this contract)
 
 When adding a new delegated-stage prompt to mo-workflow, copy the "Required return shape" block from this template verbatim and add it to the new prompt. Do not paraphrase — the literal shape is what trains consistent sub-agent behavior.
+
+## Side-quest additions (only for `sidequest-reader` / `sidequest-writer`)
+
+The `/mo-sidequest` slash command (`commands/mo-sidequest.md`) spawns one of two side-quest sub-agents that follow the contract above with two extra blocks. The blocks are emitted at the **top** of the return, before `Result:`. The standard fields below them are unchanged — `Artifacts changed:` and `Commits:` MUST still appear (with empty bullet lists where applicable), per the canonical shape.
+
+```
+Answer:
+<free-form response shown verbatim to the overseer; markdown is fine>
+
+Continuity summary:
+<one line, ≤ 20 words, suitable for retention in main's context — what was asked and the gist of the answer>
+
+Result: success | partial | blocked
+Artifacts changed:
+- <path>: <one-line note on what changed>     (empty for sidequest-reader; populated for sidequest-writer when edits land)
+Commits:
+(empty for both side-quest agents — neither commits; the next /mo-continue picks up edits via the drift check)
+Findings / risks:
+- <short bullet, optional>
+Main should read:
+- <path>: <reason>                              (usually empty for a side-quest)
+```
+
+### First-line sentinels (mutually exclusive with the rest of the shape)
+
+Two first-line sentinels can replace the entire return. When emitted, the sentinel MUST be the first non-blank line and the sub-agent emits nothing else:
+
+- `NEEDS_ESCALATION: <one-sentence reason>` — the sub-agent's tier budget (read caps, answer length) was too tight for the question. The `/mo-sidequest` orchestrator re-spawns at the next tier (`quick → standard → deep`). Reader and writer both use this.
+- `WRITE_REQUIRED: <one-sentence reason>` — reader-only. The question cannot be answered without source edits. The orchestrator surfaces this to the overseer rather than auto-promoting to the writer; write-mode is always an explicit overseer decision. Do NOT use `NEEDS_ESCALATION` for this case — it would trigger the tier-escalation handler and re-run the question at a higher budget instead.
+
+Both sentinels share the "first non-blank line, nothing else" shape; they are distinguished by token, not by structure.

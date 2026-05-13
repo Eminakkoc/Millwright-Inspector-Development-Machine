@@ -53,6 +53,12 @@ The command writes a small wrapper at `.claude/mo-stage-info-bar.sh` (with the p
 
 `/mo-init` offers to wire this automatically at the end of the wizard. Re-run the standalone command on other machines, after resetting your settings, or after a marketplace plugin upgrade if the wrapper's fallback scan can't find the new install. Flags: `--user` writes to `~/.claude/`; `--project-shared` writes to the committed `.claude/settings.json` (warned — the wrapper's baked-in path is machine-specific).
 
+### Side-quest sub-agent (mid-workflow Q&A)
+
+`/mo-sidequest "<question>"` runs a mid-workflow question or small ask in an isolated sub-agent context so the question does not leak into the main orchestrator's context. The sub-agent reads workflow state from `progress.md` at spawn, classifies the question into one of three effort budgets (`quick` / `standard` / `deep`), and returns a focused answer plus a one-line continuity summary that main retains. Add `--write` to invoke the writable variant if the side-quest needs to edit source files — workflow artifacts under the resolved `data_root` remain read-only regardless. Refuses outside an active workflow.
+
+Use this when you'd otherwise ask a multi-file question or request a small fix mid-stage and don't want the exploration footprint to accumulate in main's context for the rest of the cycle. Complements the clear-point gates (which flush context at stage boundaries) by handling the *between-gate* exploration cost. See [`docs/side-quest/plan.md`](./docs/side-quest/plan.md) for the design.
+
 ## How to use
 
 In the happy path, the overseer types just **three** slash commands across the entire workflow:
@@ -92,6 +98,7 @@ These exist for non-happy-path situations; you don't need them in the normal flo
 | `/mo-resume-workflow` | Diagnostic — reads `progress.md` and recommends the next command. |
 | `/mo-update-blueprint <reason>` | Mid-cycle blueprint refresh from implementation reality. |
 | `/mo-update-todo-list <subcmd>` | Manual edits to `todo-list.md` (add / cancel / set-state). |
+| `/mo-sidequest [--quick/--standard/--deep] [--write] "<question>"` | Run a mid-workflow question or small ask in an isolated sub-agent. Refuses outside an active workflow. |
 
 ### Stages at a glance
 
@@ -149,6 +156,7 @@ See `docs/workflow-spec.md` for the full stage-by-stage reference.
 | `/mo-resume-workflow`        | overseer   | Diagnostic dispatcher: reads state and recommends next command.            |
 | `/mo-update-blueprint`       | overseer   | Manually rotate + regenerate `blueprints/current/` with a reason.           |
 | `/mo-update-todo-list`       | overseer   | Add / cancel / change state on todo items (state-machine safe).            |
+| `/mo-sidequest`              | overseer   | Mid-workflow Q&A or small fix via an isolated side-quest sub-agent; `--write` for source edits. |
 
 Commands marked **auto** are fired by the millwright on the preceding overseer gate (see the Quickstart). They remain invokable manually for recovery.
 
