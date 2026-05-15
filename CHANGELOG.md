@@ -1,5 +1,33 @@
 # Changelog
 
+## 1.1.0 — Folder linking: journal ↔ quest ↔ workflow-stream
+
+ID-based links now tie the three workflow folder trees together, so a quest
+cycle can always be traced back to the journal folders it grew from and
+forward to the feature folders it produced — even after a folder is renamed
+or moved.
+
+### What changed
+
+- **`id.md` folder markers.** Each `journal/<topic>/` and
+  `workflow-stream/<feature>/` folder gets an `id.md` carrying a stable UUID
+  (frontmatter `id`) that identifies the *folder*. Minted lazily on first use.
+- **`reference.md` link table.** Each quest cycle subfolder gets a
+  `reference.md` (validated by the new `reference` schema). Its `journal-refs`
+  frontmatter array links the cycle to its source journal folders; its
+  `feature-refs` array links it to the feature folders it produces.
+  `/mi-run` writes `journal-refs` at stage 1; `blueprints.sh ensure-current`
+  appends `feature-refs` at stage 2.
+- **`scripts/folder-id.sh`.** New script managing `id.md` and `reference.md`:
+  `ensure`, `get`, `resolve <id>`, `list`, `init-reference`, `link-feature`.
+- **Schemas + validation.** New `folder-id` and `reference` schemas; the
+  PostToolUse hook validates `journal/*/id.md`, `workflow-stream/*/id.md`,
+  and `quest/*/reference.md`.
+
+Existing workspaces are not migrated: journal folders get an `id.md` the next
+time `/mi-run` reads them, and already-finished quest cycles get no
+`reference.md`. New cycles get the full treatment.
+
 ## 1.0.0 — Rename: "overseer" → "inspector"
 
 **Breaking.** The plugin has been renamed throughout. The reviewer role is now

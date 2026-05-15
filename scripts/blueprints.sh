@@ -2,7 +2,9 @@
 # blueprints.sh — manage workflow-stream/<feature>/blueprints/.
 #
 # Usage:
-#   blueprints.sh ensure-current <feature>       # create blueprints/current/ + diagrams/
+#   blueprints.sh ensure-current <feature>       # create blueprints/current/ + diagrams/,
+#                                                # mint the feature folder's id.md, and link
+#                                                # it into the active quest's reference.md
 #   blueprints.sh rotate <feature> \
 #     --reason-kind <kind> \
 #     --reason-summary <text>                    # move current/ into history/v[N+1]/;
@@ -79,6 +81,12 @@ case "$cmd" in
     feature="${1:?feature required}"
     current="$(mi_blueprints_current "$feature")"
     mkdir -p "$current/diagrams"
+    # Mint the feature folder's id.md (if missing) and link its ID into the
+    # active quest's reference.md. Best-effort: a folder-id failure must not
+    # block blueprint scaffolding, and link-feature is idempotent so the
+    # repeated ensure-current calls across a feature's lifecycle are safe.
+    "${MI_PLUGIN_ROOT}/scripts/folder-id.sh" link-feature "$feature" \
+      || mi_info "folder-id link-feature failed for $feature (continuing)"
     mi_info "ensured $current and $current/diagrams"
     ;;
 

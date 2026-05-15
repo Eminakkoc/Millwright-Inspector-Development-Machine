@@ -9,7 +9,7 @@
       "name": "millwright-inspector-development-machine",
       "source": "./",
       "description": "Millwright-Inspector agentic workflow system — delegates coding to an AI 'millwright' while the human acts as 'inspector' who reviews generated specs, plans, implementations, and diagrams at each stage.",
-      "version": "1.0.0",
+      "version": "1.1.0",
       "author": {
         "name": "Emin Akkoc",
         "email": "emin.akkoc@gmail.com"

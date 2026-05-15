@@ -68,6 +68,9 @@ case "$file_path" in
   */quest/*/todo-list.md)                schema="todo-list" ;;
   */quest/*/summary.md)                  schema="summary" ;;
   */quest/*/queue-rationale.md)          schema="queue-rationale" ;;
+  */quest/*/reference.md)                schema="reference" ;;
+  */journal/*/id.md)                     schema="folder-id" ;;
+  */workflow-stream/*/id.md)             schema="folder-id" ;;
   */blueprints/current/requirements.md)  schema="requirements" ;;
   */blueprints/current/config.md)        schema="config" ;;
   */blueprints/current/primer.md)        schema="primer" ;;

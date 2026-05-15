@@ -328,6 +328,16 @@ echo "Opened cycle subfolder: $quest_dir"
 
 The slug format is `YYYY-MM-DD-<journal-slugs-joined-with-+>`, with a 3-char hash suffix appended automatically if a same-day collision exists. This is purely identifying — never edit the slug or rename the subfolder by hand.
 
+### Step 2.7 — Record folder links in `reference.md`
+
+Write the cycle's `reference.md`, which links this quest folder back to the `journal/` folders it was built from (and, later, forward to the `workflow-stream/` feature folders it produces). One call does everything — it mints an `id.md` in each journal folder if one doesn't exist yet, then writes `reference.md` with those IDs:
+
+```bash
+$CLAUDE_PLUGIN_ROOT/scripts/folder-id.sh init-reference "${journal_folders[@]}"
+```
+
+This creates `$quest_dir/reference.md` with the `journal-refs` frontmatter array populated and `feature-refs` left empty — the feature links are appended automatically at stage 2, when each feature's blueprint folder is created (`blueprints.sh ensure-current` calls `folder-id.sh link-feature`). The `id.md` files identify the *folders*, so the links survive a folder being renamed or moved; resolve any ID back to its folder with `folder-id.sh resolve <id>`.
+
 ### Step 3 — Generate the cycle's `todo-list.md` (AI work)
 
 Create `$quest_dir/todo-list.md` using the template. Analyze **only the content from the specified journal folders** and write todo items grouped by feature/module. Each item must have a stable `item-id` (e.g., `PAY-001`, `AUD-002`) and start in `TODO` state.

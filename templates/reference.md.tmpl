@@ -1,0 +1,24 @@
+---
+id: {{UUID}}
+journal-refs: [{{JOURNAL_REFS}}]
+feature-refs: []
+---
+
+# Reference
+
+Link table for this quest cycle. Connects the cycle to the folders it touches: the `journal/` topic folders it was built from, and the `workflow-stream/` feature folders it produces.
+
+The frontmatter arrays are the machine-readable link table — `journal-refs` and `feature-refs` each hold the UUID from a folder's `id.md`. The body bullets below carry the folder names as a human-readable hint. Folder names can change; the IDs do not. Resolve an ID back to its current folder with `scripts/folder-id.sh resolve <id>`.
+
+## Journal sources
+
+<!-- One bullet per journal folder this cycle was built from. Each ID matches a
+     journal/<folder>/id.md. Written by /mi-run at stage 1. -->
+
+{{JOURNAL_BULLETS}}
+
+## Workflow-stream features
+
+<!-- One bullet per feature folder this cycle produces. Each ID matches a
+     workflow-stream/<feature>/id.md. Appended by blueprints.sh as each
+     feature's blueprint folder is created at stage 2. Empty until then. -->

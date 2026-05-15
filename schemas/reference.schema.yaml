@@ -1,0 +1,41 @@
+$schema: "http://json-schema.org/draft-07/schema#"
+$id: millwright-inspector-development-machine/reference.schema.yaml
+title: quest/<active-slug>/reference.md frontmatter
+description: >
+  Link table for a quest cycle. Connects the cycle to the journal/ topic
+  folders it was built from (journal-refs) and the workflow-stream/ feature
+  folders it produces (feature-refs). Each entry is the UUID from a folder's
+  id.md. journal-refs is written by /mi-run at stage 1; feature-refs is
+  extended by blueprints.sh ensure-current as each feature's blueprint folder
+  is created at stage 2. The reference.md file's own id identifies this quest
+  cycle.
+
+type: object
+additionalProperties: false
+required:
+  - id
+  - journal-refs
+  - feature-refs
+
+properties:
+  id:
+    type: string
+    pattern: "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"
+    description: UUID v4 identifying this quest cycle.
+  journal-refs:
+    type: array
+    minItems: 1
+    items:
+      type: string
+      pattern: "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"
+    description: >
+      id.md UUIDs of the journal/ topic folders this cycle was built from.
+      At least one — /mi-run always seeds a cycle from one or more folders.
+  feature-refs:
+    type: array
+    items:
+      type: string
+      pattern: "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"
+    description: >
+      id.md UUIDs of the workflow-stream/ feature folders this cycle produces.
+      Empty until stage 2 begins materializing feature folders.

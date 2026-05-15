@@ -1,0 +1,21 @@
+$schema: "http://json-schema.org/draft-07/schema#"
+$id: millwright-inspector-development-machine/folder-id.schema.yaml
+title: journal/<folder>/id.md and workflow-stream/<feature>/id.md frontmatter
+description: >
+  Folder-identity marker. One id.md sits in each journal topic folder and in
+  each workflow-stream feature folder. It carries a single stable UUID that
+  identifies the folder itself (not any file inside it), so links survive the
+  folder being renamed or moved. A quest cycle's reference.md records these
+  IDs to connect journal -> quest -> workflow-stream. Minted by
+  scripts/folder-id.sh; never hand-edited.
+
+type: object
+additionalProperties: false
+required:
+  - id
+
+properties:
+  id:
+    type: string
+    pattern: "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"
+    description: UUID v4 identifying this folder.
