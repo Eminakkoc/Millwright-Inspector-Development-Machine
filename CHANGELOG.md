@@ -46,8 +46,8 @@ and will reject malformed files.
 
 Status-bar users re-run `/mi-init-status-bar` after upgrading.
 
-### Not changed
+### New home
 
-The GitHub repository URL still carries the old name; it is renamed in a
-separate follow-up. The `marketplace.json` `homepage` field points at the old
-URL until then.
+The plugin now lives at a new repository:
+https://github.com/Eminakkoc/Millwright-Inspector-Development-Machine
+The `marketplace.json` `homepage` field points there.

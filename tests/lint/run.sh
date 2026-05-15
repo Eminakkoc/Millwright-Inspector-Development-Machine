@@ -9,8 +9,6 @@
 #   docs/rename-inspector/  — the rename plan itself quotes the old names
 #   CHANGELOG.md            — the breaking-change entry names the old plugin
 #   tests/lint/             — this guard necessarily contains the old tokens
-#   .claude-plugin/marketplace.json "homepage" line — the GitHub repo URL is
-#                             renamed in a separate follow-up PR (plan §8)
 #   hooks/validate-on-write.sh legacy-path branch — the hook deliberately
 #                             pattern-matches the old review-file name in
 #                             order to hard-reject writes to it
@@ -37,7 +35,6 @@ report() {
 # --- overseer -> inspector -------------------------------------------------
 old="over""seer"
 m=$(git grep -in "$old" -- "${EXCLUDES[@]}" \
-  | grep -vE '^\.claude-plugin/marketplace\.json:[0-9]+:[[:space:]]*"homepage":' \
   | grep -vE "^hooks/validate-on-write\.sh:[0-9]+:.*${old}-review\.md" || true)
 report "no stale '$old' references" "$m"
 
