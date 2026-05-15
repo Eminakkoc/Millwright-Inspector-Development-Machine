@@ -190,9 +190,21 @@ When uncertain whether something is relevant: prefer `## Load on demand` over `#
 requirements_id="$($CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get \
   "$dest" id)"
 config_dest="$data_root/workflow-stream/$active_feature/blueprints/current/config.md"
+# Resolve the cumulative lessons-learned file (written by /mo-analyze-review's
+# apply step). config.md references it by path so the planning/implementation
+# chains read it before writing code. When the file does not exist yet, the
+# section records "(none yet)" so the structure stays stable.
+lessons_path="$($CLAUDE_PLUGIN_ROOT/scripts/lessons.sh path)"
+if [[ -f "$lessons_path" ]]; then lessons_token="$lessons_path"; else lessons_token="(none yet)"; fi
 $CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh init config "$config_dest" \
-  "REQUIREMENTS_ID=$requirements_id"
+  "REQUIREMENTS_ID=$requirements_id" \
+  "LESSONS_LEARNED_PATH=$lessons_token"
 ```
+
+The `LESSONS_LEARNED_PATH` token fills the template's `## Lessons learned`
+section — a single fixed pointer outside the auto-block entry budget. The
+planning and implementation chains read that file (when its path is real) to
+avoid repeating mistakes flagged in earlier PR reviews.
 
 Then, using Edit, replace the auto-section placeholder with the real skill/rule summaries. If `config.md` already exists from a prior run (e.g., the overseer aborted and restarted `mo-apply-impact` for the same feature without rotating), preserve content below the `## GIT BRANCH` heading AND below the `## Overseer Additions` heading — only the auto block is overwritten. (This is a same-cycle re-run case. For mid-cycle preservation across rotations, see `commands/mo-update-blueprint.md` Step 4d, which calls `blueprints.sh preserve-overseer-sections`.)
 

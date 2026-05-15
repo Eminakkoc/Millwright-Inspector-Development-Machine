@@ -78,6 +78,8 @@ case "$file_path" in
   */implementation/change-summary.md)    schema="change-summary" ;;
   */implementation/diagrams/README.md)   schema="diagrams-readme-implementation" ;;
   */blueprints/history/v*/reason.md)     schema="reason" ;;
+  */pr-reviews/*/report.md)              schema="pr-review-report" ;;
+  */lessons-learned.md)                  schema="lessons-learned" ;;
   *) exit 0 ;;  # unknown / archived mo file → skip per coverage policy
 esac
 

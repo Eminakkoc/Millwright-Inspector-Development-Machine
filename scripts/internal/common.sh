@@ -299,6 +299,17 @@ for kv in kvs:
             replacement = yaml_scalar(val)
         fm = fm[:idx] + replacement + fm[idx + len(placeholder):]
 
+# Fail loudly on any unsubstituted {{TOKEN}} placeholder — a leaked
+# placeholder means a caller forgot a KEY=VAL pair, and downstream readers
+# would treat the literal `{{...}}` as real content.
+leftover = sorted(set(re.findall(r'\{\{[A-Z][A-Z0-9_]*\}\}', fm + body)))
+if leftover:
+    sys.stderr.write(
+        f"error: {dest_path} still has unsubstituted template placeholders: "
+        f"{', '.join(leftover)}\n"
+    )
+    sys.exit(1)
+
 with open(dest_path, 'w') as f:
     f.write(fm + body)
 PYEOF

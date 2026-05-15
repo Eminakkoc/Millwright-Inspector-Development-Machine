@@ -66,6 +66,7 @@ Required — MISSING:
 Optional — missing:
   ⚠ ajv-cli (falls back to python jsonschema)
   ⚠ python-jsonschema (falls back to yq structural check)
+  ⚠ gh (GitHub CLI — required only for /mo-analyze-review PR-review analysis)
 
 Skills (optional — at least one source required):
   ✓ brainstorming (local: .claude/skills/brainstorming)

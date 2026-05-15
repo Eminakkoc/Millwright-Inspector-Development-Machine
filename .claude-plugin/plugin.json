@@ -1,6 +1,6 @@
 {
   "name": "millwright-overseer-development-machine",
-  "version": "0.9.0",
+  "version": "0.10.0",
   "description": "Millwright-Overseer agentic workflow system — delegates coding to an AI 'millwright' while the human acts as 'overseer' who reviews generated specs, plans, implementations, and diagrams at each stage.",
   "author": {
     "name": "Emin Akkoc",

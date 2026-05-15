@@ -297,6 +297,19 @@ hints_git() {
 JSON
 }
 
+hints_gh() {
+  cat <<'JSON'
+{
+  "darwin": "brew install gh",
+  "linux-apt": "sudo apt install gh",
+  "linux-pacman": "sudo pacman -S github-cli",
+  "linux-dnf": "sudo dnf install gh",
+  "any": "https://cli.github.com/  — then run `gh auth login`",
+  "note": "optional — required only for /mo-analyze-review (PR-review analysis). After installing, authenticate with `gh auth login`."
+}
+JSON
+}
+
 # ---------- Run checks ----------------------------------------------------
 
 # REQUIRED
@@ -315,6 +328,11 @@ fi
 # OPTIONAL
 check_cli ajv false      "$(hints_ajv)"
 check_pymod jsonschema false "$(hints_jsonschema)"
+
+# OPTIONAL — gh (GitHub CLI) powers /mo-analyze-review (PR-review analysis).
+# Not needed for the core 8-stage workflow; safe to omit if you never analyze
+# PR reviews. /mo-analyze-review does its own gh preflight + auth check.
+check_cli gh false "$(hints_gh)"
 
 # OPTIONAL companions — token-reduction tools that our commands auto-detect and use
 # when present. Never required; missing = normal operation.

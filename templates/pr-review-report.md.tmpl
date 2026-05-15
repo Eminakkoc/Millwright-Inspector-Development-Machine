@@ -1,0 +1,55 @@
+---
+id: {{UUID}}
+pr-url: {{PR_URL}}
+repo: {{REPO}}
+pr-number: {{PR_NUMBER}}
+pr-branch: {{PR_BRANCH}}
+status: awaiting-marks
+---
+
+# PR review analysis — {{REPO}} #{{PR_NUMBER}}
+
+One block per review comment. The millwright analyzed each comment against the
+codebase and proposed either a **fix** (the comment is valid) or a **reply**
+(the comment is not valid). For each block:
+
+- Flip `[ ]` → `[x]` in the `### PR-NNN` heading to act on it.
+  - `action: fix` → the marked fix is applied to the PR branch by `/mo-continue`.
+  - `action: reply` → the drafted reply is posted to GitHub (after you confirm).
+- Leave `[ ]` to skip the comment entirely — no fix, no reply.
+- You may edit `verdict` / `action` if you disagree with the millwright, and add
+  free text under `overseer-notes`. `action` is what the apply step obeys.
+- When done marking, run `/mo-continue`.
+
+If a run leaves blocks stuck (`reply-failed`, `reply-declined`, `fix-failed`,
+`fix-blocked`), the report stays `partial` and `/mo-continue` retries the marked
+ones; un-mark a block to drop it.
+
+<!-- Block shape — the millwright fills these in; PR-NNN ids are assigned by
+     `pr-review.sh canonicalize` in document order:
+
+### PR-NNN — [ ] <one-line summary of the comment>
+- comment-url:        <github comment url>
+- comment-kind:       review-comment        # review-comment | review-summary | issue-comment
+- source-comment-id:  <databaseId of the comment the URL/fetch points at>
+- reply-target-id:    <databaseId of the thread's top-level review comment; review-comment only>
+- comment-author:     <@login>
+- location:           <path:line>           # blank for review-summary / issue-comment
+- thread-state:       unresolved            # review-comment only; else n/a
+- verdict:            valid                 # valid | invalid | needs-discussion
+- action:             fix                   # fix | reply
+- comment: |
+    <original review comment, verbatim>
+- analysis: |
+    <millwright's reasoning for the verdict>
+- proposed-fix: |                            # present when action: fix
+    <what the millwright will change, and which files>
+- proposed-reply: |                          # present when action: reply
+    <drafted reply text to post on GitHub>
+- overseer-notes: |                          # overseer fills in; optional
+- status:             open                   # open → applied | replied | skipped
+                                              #      | reply-failed | reply-declined
+                                              #      | fix-failed | fix-blocked
+-->
+
+## Comments

@@ -490,9 +490,22 @@ When the agent files are added in a subsequent feature cycle, the migration is m
 - **No main-session model switching.** The stage-3 suggestion only addresses *effort*, not model class. Switching `sonnet → opus` mid-session has different cost/cache implications and is left to the overseer's session-launch decision.
 - **No agent profile for the manual-test-plan generator.** `commands/mo-manual-test-plan.md` Step 3 reads `requirements.md` + `config.md` + `change-summary.md` + `summary.md` and runs a codebase grep (env-var references, docker-compose service names, GraphQL/REST routes, error-code constants, UI route paths) in main, then renders `manual-test-plan.md`. The workload shape mirrors `codebase-grounder`: read codebase, classify against a fixed schema, write a structured document. A future cycle should consider promoting it to a spawn site with a dedicated `manual-test-planner` profile (likely `sonnet / high`, tools `[Read, Write, Edit, Bash, Grep]`). The companion `mo-manual-test-run` command is NOT a delegation candidate — it is an interactive per-scenario driver that prompts the overseer between every step. Both stay in main for now.
 
+## Addendum — PR-review sub-agents (added by a later cycle)
+
+The PR-review analysis feature (`/mo-analyze-review`; design in
+`docs/user-reviews/plan.md`) added two profiles beyond the seven catalogued
+above. They follow the same conventions — plugin-namespaced `subagent_type`,
+the return contract, narrow read discipline:
+
+| Agent | Model / effort | Tools | Spawn site | Workload |
+| --- | --- | --- | --- | --- |
+| `review-comment-analyst` | sonnet / high | `Read, Edit, Bash, Grep` | `commands/mo-analyze-review.md` Step 6 | Judge each fetched PR review comment against the codebase; append one `PR-NNN` block (proposed fix or reply) per comment to `report.md`. Read-only on source. |
+| `pr-review-fixer` | sonnet / high | `Read, Edit, Write, Bash, Grep` | `commands/mo-continue.md` PR-Review Apply Handler, Apply Step 5 | Apply the overseer-marked fix blocks to the checked-out PR branch, commit cleanly-applied fixes, distill a lesson per valid fix into `lessons-learned.md`. Enforces a clean-worktree invariant on failure. |
+
 ## References
 
 - `docs/sub-agent-return-contract.md` — return-shape contract every spawn site embeds (unchanged by this plan)
+- `docs/user-reviews/plan.md` — design of the PR-review feature and its two sub-agents
 - `docs/workflow-spec.md` § "Main-read budget gates by stage" — table of which stages delegate
 - `docs/workflow-spec.md` § "Delegation guidance" — the doc's own guidance on tier selection
 - `commands/mo-manual-test-plan.md` + `commands/mo-manual-test-run.md` — stage-5 manual-testing sub-flow, recorded under "What this plan does NOT do" as a future delegation candidate

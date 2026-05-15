@@ -374,8 +374,14 @@ The frontmatter `commits` array stays empty — `mo-complete-workflow` populates
 ```bash
 new_cfg="$data_root/workflow-stream/$active_feature/blueprints/current/config.md"
 new_req_id="$($CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get "$new_req" id)"
+# Resolve the cumulative lessons-learned file (see docs/blueprint-regeneration.md
+# Step B). The config template's `## Lessons learned` section needs this token —
+# omitting it would render a literal {{LESSONS_LEARNED_PATH}} placeholder.
+lessons_path="$($CLAUDE_PLUGIN_ROOT/scripts/lessons.sh path)"
+if [[ -f "$lessons_path" ]]; then lessons_token="$lessons_path"; else lessons_token="(none yet)"; fi
 $CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh init config "$new_cfg" \
-  "REQUIREMENTS_ID=$new_req_id"
+  "REQUIREMENTS_ID=$new_req_id" \
+  "LESSONS_LEARNED_PATH=$lessons_token"
 ```
 
 Then, using `Edit`, fill the auto-section (between `<!-- auto:start -->` and `<!-- auto:end -->`) with summaries of the relevant skills and rules from `.claude/skills/` + `.claude/rules/`.

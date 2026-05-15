@@ -1,0 +1,41 @@
+$schema: "http://json-schema.org/draft-07/schema#"
+$id: millwright-overseer-development-machine/pr-review-report.schema.yaml
+title: pr-reviews/<slug>/<ts>/report.md frontmatter
+description: >-
+  Schema for a PR-review analysis report produced by /mo-analyze-review. The
+  PR-NNN comment blocks in the body are validated structurally by
+  scripts/pr-review.sh canonicalize rather than by this JSON Schema.
+
+type: object
+additionalProperties: false
+required:
+  - id
+  - pr-url
+  - repo
+  - pr-number
+  - status
+
+properties:
+  id:
+    type: string
+    pattern: "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"
+    description: UUID v4.
+  pr-url:
+    type: string
+    pattern: "^https?://github\\.com/.+/pull/[0-9]+"
+  repo:
+    type: string
+    pattern: "^[^/]+/[^/]+$"
+    description: GitHub owner/repo slug.
+  pr-number:
+    type: integer
+    minimum: 1
+  pr-branch:
+    type: string
+    description: The PR head branch. May be empty until the fetch resolves it.
+  status:
+    type: string
+    enum:
+      - awaiting-marks
+      - partial
+      - applied

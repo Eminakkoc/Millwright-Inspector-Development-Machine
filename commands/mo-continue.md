@@ -57,6 +57,28 @@ If `progress.md` (or `quest/active.md` / the active cycle subfolder) is missing,
 
 ### Step 2 — Dispatch
 
+#### Step 2.0 — PR-review pre-dispatch check (runs before the workflow router)
+
+`/mo-analyze-review` produces PR-review reports that have no active quest, so they are routed here, **before** the workflow dispatch table below. Scan for any report awaiting the overseer:
+
+```bash
+pr_awaiting="$($CLAUDE_PLUGIN_ROOT/scripts/pr-review.sh find-awaiting 2>/dev/null || true)"
+pr_report_count="$(printf '%s' "$pr_awaiting" | sed '/^$/d' | wc -l | tr -d ' ')"
+```
+
+`find-awaiting` is a no-op when `pr-reviews/` does not exist (it exits 0 with no output), and emits one TSV row — `<status>\t<pr-number>\t<report-path>` — per report whose frontmatter `status` is `awaiting-marks` or `partial`. An empty result must fall through cleanly to the workflow dispatch; it never aborts the command.
+
+Branch on the count and on whether a workflow is active (`active_feature` from Step 1b). The four cases are **mutually exclusive** — evaluate them in this order so the active-workflow case is never shadowed by the multi-report case:
+
+1. **`pr_report_count == 0`** → fall through to the workflow dispatch unchanged.
+2. **`active_feature != "null"` and `pr_report_count >= 1`** (active workflow *and* one-or-more PR-review reports) → ambiguous intent. `/mo-continue` never guesses. Print all candidates as a numbered list — the active feature/stage on one line, each PR-review report (status + PR number + path) on its own line — and ask the overseer to reply **in chat** (`workflow`, or a report's number). The command pauses for the reply, then routes: `workflow` → fall through to the dispatch table; a report → PR-Review Apply Handler with that report.
+3. **`active_feature == "null"` and `pr_report_count == 1`** → route to the **PR-Review Apply Handler** with that report path.
+4. **`active_feature == "null"` and `pr_report_count > 1`** → list the reports (status + PR number + path) as a numbered menu and ask the overseer to reply with a choice **in chat**; the command pauses for the reply, then routes the chosen report to the PR-Review Apply Handler.
+
+The chat-reply pause is the same mid-command pause the Resume Handler's drift prompt uses — no new argument parsing on `/mo-continue` is needed.
+
+#### Step 2 dispatch table
+
 The dispatcher picks a handler based on whether a feature is active and, when active, on `current-stage` + `sub-flow`. Pre-flight cases (no active feature) live above the table:
 
 **Pre-flight cases (`active_feature == "null"`):**
@@ -1263,6 +1285,125 @@ $CLAUDE_PLUGIN_ROOT/scripts/progress.sh advance-to 6 7 \
 Tell the overseer: "Overseer-review session approved. Auto-finalizing via `/mo-complete-workflow`."
 
 Then auto-invoke `/mo-complete-workflow` immediately. Do not wait for a further overseer signal — the third `/mo-continue` is itself the trigger.
+
+---
+
+## PR-Review Apply Handler (routed from Step 2.0)
+
+Runs when Step 2.0 routed a PR-review `report.md` here — the overseer ran `/mo-analyze-review`, marked blocks, and typed `/mo-continue`. `$report` is the report path Step 2.0 selected. See `docs/user-reviews/plan.md` § 6.2 for the design.
+
+### Apply Step 1 — Canonicalize
+
+```bash
+$CLAUDE_PLUGIN_ROOT/scripts/pr-review.sh canonicalize "$report"
+```
+
+`canonicalize` renumbers the `PR-NNN` ids and validates every block has an `action` and `status` line (exit 3 on a structural error — if it fails, read the offending block, fix it with Edit, and re-run).
+
+### Apply Step 2 — Guard, normalize, collect actionable blocks
+
+1. **Guard a fresh report.** Count marked blocks **before** normalizing:
+   ```bash
+   report_status="$($CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get "$report" status)"
+   marked_count="$($CLAUDE_PLUGIN_ROOT/scripts/pr-review.sh count-marked "$report")"
+   ```
+   If `report_status == "awaiting-marks"` and `marked_count == 0`, print and stop — leaving the report **unchanged**:
+
+   > "No blocks marked. Open `<report>`, flip `[ ]` → `[x]` on the blocks you want acted on, then re-run `/mo-continue`."
+
+   The guard is scoped to `awaiting-marks`; a `partial` report continues into normalization (un-marking a stuck block is the intended way to retire it).
+2. **Normalize.** `pr-review.sh normalize "$report"` — every unmarked (`[ ]`) block in a non-terminal status (`open`, `reply-failed`, `reply-declined`, `fix-failed`, `fix-blocked`) becomes `skipped`.
+3. **Collect.** `pr-review.sh list-actionable "$report"` — TSV rows `<PR-NNN>\t<action>\t<comment-kind>\t<status>` for every **marked, non-terminal** block. Terminal blocks (`applied`/`replied`/`skipped`) are excluded even if still `[x]`, so a `partial` re-run never re-applies a fix, re-posts a reply, or re-appends a lesson.
+4. If the actionable set is empty, skip Steps 3–7 and go straight to **Apply Step 8** (finalize) — normalization above may have cleared the last stuck block, so the report can still legitimately transition `partial → applied`. Print "No blocks to apply" first.
+
+### Apply Step 3 — Split by action
+
+Partition the actionable rows into **fix blocks** (`action: fix`) and **reply blocks** (`action: reply`). Steps 4–5 (fixes) and Step 6 (replies) run independently — a reply-only run must never be blocked by fix-only worktree concerns.
+
+### Apply Step 4 — gh preflight, repo guard (always), checkout (fix blocks only)
+
+```bash
+repo="$($CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get "$report" repo)"
+pr_number="$($CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get "$report" pr-number)"
+```
+
+- **gh preflight (always, first).** Before the repo guard, verify `gh` is usable: `command -v gh` and `gh auth status`. If `gh` is missing, stop with the install hint; if it is installed but not authenticated, stop with `gh auth login`. This must run **first** — without it a missing/unauthenticated `gh` makes `gh repo view` print nothing, and the empty result would surface as a misleading "wrong checkout" error instead of the real auth problem.
+- **Repo guard (always).** With `gh` confirmed usable:
+  ```bash
+  cwd_repo="$(gh repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null || echo '')"
+  ```
+  If `cwd_repo` is empty or `!= repo`, refuse — `/mo-continue` is running in the wrong checkout. Relay the mismatch and stop.
+- **Only when fix blocks exist:**
+  - Refuse if the working tree is dirty (`git status --porcelain` non-empty) — ask the overseer to stash or commit first.
+  - `gh pr checkout "$pr_number"` to land fixes on the PR's head branch. If `gh pr checkout` produces a detached HEAD or a fork-tracking branch, surface that to the overseer rather than committing blindly. If the PR is merged or closed, warn and ask the overseer to confirm a target branch before proceeding.
+- **Reply-only run:** skip this checkout bullet entirely — posting replies needs only GitHub API access, not a clean tree or a checkout.
+
+### Apply Step 5 — Apply fixes (skipped when there are no fix blocks)
+
+Spawn the fixer with `subagent_type: millwright-overseer-development-machine:pr-review-fixer`. Spawn prompt:
+
+```
+You are a fresh sub-agent invoked from /mo-continue's PR-Review Apply Handler.
+Apply the overseer-marked fix blocks from a PR-review report.
+
+Report:          <report>
+Fix block ids:   <space-separated PR-NNN list of action:fix actionable blocks>
+PR URL:          <pr-url from report frontmatter>
+Plugin scripts:  <absolute path to $CLAUDE_PLUGIN_ROOT/scripts>
+
+The working directory is already on the PR's head branch. For each fix block:
+read its proposed-fix + overseer-notes (overseer-notes overrides on conflict),
+apply the change, commit (do NOT push), and set the block status via
+`<plugin-scripts>/pr-review.sh set-status <report> PR-NNN applied`.
+
+Clean-worktree invariant: a fix-failed / fix-blocked block must leave NO
+uncommitted changes — revert that block's partial edits before returning the
+failure, and set the block status to fix-failed or fix-blocked accordingly. If a
+clean working tree cannot be restored, STOP, return Result: blocked, and list
+the dirty files — do not process further blocks.
+
+For each block you set to `applied` whose verdict is `valid`, distill one
+concrete lesson and append it:
+  echo "<lesson>" | <plugin-scripts>/lessons.sh append --source "<pr-url> · PR-NNN" --title "<title>"
+
+Follow agents/pr-review-fixer.md for the full contract and return shape. Return
+a per-block outcome line, commit shas, and an explicit `Worktree: clean|dirty`
+line. Total return ≤ 1k tokens. Return only the contract structure.
+```
+
+If the fixer returns `Result: blocked` with a dirty worktree, **stop the handler** — relay the dirty files to the overseer and do not run Steps 6–8. The overseer resolves the worktree, then re-runs `/mo-continue`.
+
+### Apply Step 6 — Post replies (skipped when there are no reply blocks)
+
+For each **actionable reply block** (marked `[x]` and non-terminal — never a terminal `replied` block), read its `proposed-reply`, `comment-url`, and `comment-kind`, and show the overseer exactly what will be posted and where:
+
+```
+PR-NNN → <comment-kind> reply to <comment-url>:
+<proposed-reply text>
+```
+
+Posting to GitHub is an external, visible write — ask for one explicit confirmation covering all reply blocks (`yes` / `no` / `select`). Then, per block:
+
+- **Confirmed** → `pr-review.sh post-reply "$report" PR-NNN`. The script posts via the endpoint for the `comment-kind` (`review-comment` → threaded reply; `review-summary` / `issue-comment` → a new PR conversation comment quoting the original) and sets the block status to `replied` on success. If `post-reply` exits non-zero, set the block status to `reply-failed` with `pr-review.sh set-status` and report the failure.
+- **Declined** → `pr-review.sh set-status "$report" PR-NNN reply-declined`. The block stays marked for a future retry.
+
+### Apply Step 7 — Lessons
+
+Lessons are appended by the fixer sub-agent in Step 5 (one per applied `valid` fix), not here. If the fixer's return named `lessons-learned.md` under `Artifacts changed`, mention in the summary that lessons were recorded — do not re-read the file.
+
+### Apply Step 8 — Finalize from all blocks
+
+```bash
+new_status="$($CLAUDE_PLUGIN_ROOT/scripts/pr-review.sh report-status "$report")"
+```
+
+`report-status` scans **every** block, sets the report frontmatter `status` to `applied` (all blocks terminal) or `partial` (any block still non-terminal), and prints the result. Then summarize for the overseer:
+
+- Counts: fixes applied / failed / blocked, replies posted / declined / failed.
+- If `partial`: name the non-terminal blocks and tell the overseer they can re-run `/mo-continue` to retry, or un-mark a block to drop it.
+- If `applied`: confirm the report is complete. Remind the overseer that fix commits are **on the PR branch but not pushed** — pushing is their call.
+
+The PR-Review Apply Handler does not auto-fire any other command.
 
 ## Notes
 
