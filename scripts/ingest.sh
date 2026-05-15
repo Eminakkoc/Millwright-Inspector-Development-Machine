@@ -28,7 +28,7 @@
 # In --file mode the same dispatch applies to a single file.
 #
 # In --stub mode the file gets a stub .md regardless of extension. This
-# is the path /mo-run uses when the overseer chose "native read" for a
+# is the path /mi-run uses when the inspector chose "native read" for a
 # small PDF (Claude Code's Read tool parses PDFs ≤ 20 pages natively,
 # so docling preprocessing is optional).
 #
@@ -36,7 +36,7 @@
 # on the generated .md so stage-1 validation passes.
 #
 # Enumeration excludes *.images/ subfolders so figures docling extracted
-# from a PDF can't be mistaken for overseer-supplied inputs on re-runs.
+# from a PDF can't be mistaken for inspector-supplied inputs on re-runs.
 #
 # Idempotency: an up-to-date sibling .md is skipped unless --force is
 # passed. When --force re-processes a document, its <stem>.images/
@@ -58,13 +58,13 @@ while [[ $# -gt 0 ]]; do
     --file)
       mode="file"
       single_file="${2:-}"
-      [[ -n "$single_file" ]] || mo_die "--file requires a path argument"
+      [[ -n "$single_file" ]] || mi_die "--file requires a path argument"
       shift 2
       ;;
     --stub)
       mode="stub"
       single_file="${2:-}"
-      [[ -n "$single_file" ]] || mo_die "--stub requires a path argument"
+      [[ -n "$single_file" ]] || mi_die "--stub requires a path argument"
       shift 2
       ;;
     -h|--help)
@@ -72,18 +72,18 @@ while [[ $# -gt 0 ]]; do
       exit 0
       ;;
     --*)
-      mo_die "unknown flag: $1"
+      mi_die "unknown flag: $1"
       ;;
     *)
-      [[ -z "$folder_arg" ]] || mo_die "only one subfolder argument is supported"
+      [[ -z "$folder_arg" ]] || mi_die "only one subfolder argument is supported"
       folder_arg="$1"
       shift
       ;;
   esac
 done
 
-journal_root="$(mo_journal_dir)"
-[[ -d "$journal_root" ]] || mo_die "journal directory not found: $journal_root. Run /mo-init first."
+journal_root="$(mi_journal_dir)"
+[[ -d "$journal_root" ]] || mi_die "journal directory not found: $journal_root. Run /mi-init first."
 
 # Extension groups. Case-insensitive matching is applied when we enumerate.
 doc_exts=(pdf docx pptx xlsx html)
@@ -125,7 +125,7 @@ frontmatter_block() {
 ingest_document() {
   # Run docling with referenced-image export; move images into a
   # <stem>.images/ subfolder; rewrite refs in the .md to match.
-  command -v docling >/dev/null 2>&1 || mo_die "docling not found on PATH. Install via \`pipx install docling\` or \`python3 -m pip install --user docling\`, then re-run. See /mo-doctor for details."
+  command -v docling >/dev/null 2>&1 || mi_die "docling not found on PATH. Install via \`pipx install docling\` or \`python3 -m pip install --user docling\`, then re-run. See /mi-doctor for details."
 
   local src="$1"
   local stem="${src%.*}"
@@ -137,23 +137,23 @@ ingest_document() {
 
   if should_skip_existing "$src" "$dst"; then
     skipped=$((skipped + 1))
-    mo_info "skip (up-to-date): $rel"
+    mi_info "skip (up-to-date): $rel"
     return 0
   fi
 
   if (( dry_run )); then
-    mo_info "would convert (doc): $rel  ->  ${dst#"$journal_root"/}"
+    mi_info "would convert (doc): $rel  ->  ${dst#"$journal_root"/}"
     return 0
   fi
 
-  mo_info "converting (doc): $rel"
+  mi_info "converting (doc): $rel"
 
   local tmpdir
   tmpdir="$(mktemp -d)"
 
   if ! docling --to md --image-export-mode referenced --output "$tmpdir" "$src" >/dev/null 2>"$tmpdir/.err"; then
-    mo_info "error: docling failed on $rel"
-    mo_info "$(head -3 "$tmpdir/.err" 2>/dev/null || true)"
+    mi_info "error: docling failed on $rel"
+    mi_info "$(head -3 "$tmpdir/.err" 2>/dev/null || true)"
     rm -rf "$tmpdir"
     failed=$((failed + 1))
     failed_paths+=("$rel")
@@ -166,7 +166,7 @@ ingest_document() {
     produced="$(find "$tmpdir" -maxdepth 2 -type f -name '*.md' | head -1)"
   fi
   if [[ -z "$produced" || ! -f "$produced" ]]; then
-    mo_info "error: docling produced no .md for $rel"
+    mi_info "error: docling produced no .md for $rel"
     rm -rf "$tmpdir"
     failed=$((failed + 1))
     failed_paths+=("$rel")
@@ -216,7 +216,7 @@ PYEOF
   rm -rf "$tmpdir"
   converted=$((converted + 1))
   if (( images_moved > 0 )); then
-    mo_info "  extracted $images_moved image(s) into $(basename "$images_dir")/"
+    mi_info "  extracted $images_moved image(s) into $(basename "$images_dir")/"
   fi
   return 0
 }
@@ -235,16 +235,16 @@ write_stub() {
 
   if should_skip_existing "$src" "$dst"; then
     skipped=$((skipped + 1))
-    mo_info "skip (up-to-date): $rel"
+    mi_info "skip (up-to-date): $rel"
     return 0
   fi
 
   if (( dry_run )); then
-    mo_info "would stub: $rel  ->  ${dst#"$journal_root"/}"
+    mi_info "would stub: $rel  ->  ${dst#"$journal_root"/}"
     return 0
   fi
 
-  mo_info "stub: $rel"
+  mi_info "stub: $rel"
 
   # Tailor the stub body to what the millwright should do with the file.
   case "$ext" in
@@ -275,7 +275,7 @@ STUB
 # Document resource: \`$src_basename\`
 
 Claude Code's \`Read\` tool parses this PDF natively (up to 20 pages per
-call). The overseer chose native reading over docling ingestion for
+call). The inspector chose native reading over docling ingestion for
 this file — appropriate for short text-heavy PDFs where docling's
 preprocessing overhead isn't justified.
 
@@ -286,7 +286,7 @@ millwright should open \`$src_basename\` directly via the \`Read\` tool
 and extract whatever is relevant to the active feature. For PDFs over
 20 pages, use the \`pages\` parameter to chunk (\`pages: "1-20"\`,
 \`"21-40"\`, …). If any page range fails to parse, fall back to
-\`/mo-ingest --file <path>\` to run docling and regenerate this
+\`/mi-ingest --file <path>\` to run docling and regenerate this
 companion.
 STUB
       } > "$dst"
@@ -297,10 +297,10 @@ STUB
         cat <<STUB
 # Document resource: \`$src_basename\`
 
-The overseer chose native reading over docling ingestion for this
+The inspector chose native reading over docling ingestion for this
 file. NOTE: Claude Code's \`Read\` tool does NOT support \`.docx\`,
 \`.pptx\`, or \`.xlsx\` — if \`$src_basename\` is one of those formats,
-this stub is a dead end. Re-run \`/mo-ingest --file <path>\` on it to
+this stub is a dead end. Re-run \`/mi-ingest --file <path>\` on it to
 process via docling, or remove the file from the journal folder.
 
 Original file: \`$src_basename\`
@@ -321,13 +321,13 @@ dispatch_by_extension() {
   case "$ext" in
     pdf|docx|pptx|xlsx|html)    ingest_document "$src" || return 1 ;;
     png|jpg|jpeg|webp|tiff|tif) write_stub "$src" || return 1 ;;
-    *) mo_info "skip (unsupported): ${src#"$journal_root"/}" ;;
+    *) mi_info "skip (unsupported): ${src#"$journal_root"/}" ;;
   esac
 }
 
 # ---------- single-file modes ----------
 if [[ "$mode" == "file" || "$mode" == "stub" ]]; then
-  [[ -f "$single_file" ]] || mo_die "file not found: $single_file"
+  [[ -f "$single_file" ]] || mi_die "file not found: $single_file"
   # Accept either an absolute path (assumed under journal_root) or a
   # relative path resolved against the CWD.
   if [[ "$single_file" != /* ]]; then
@@ -348,7 +348,7 @@ fi
 folders=()
 if [[ -n "$folder_arg" ]]; then
   target="$journal_root/$folder_arg"
-  [[ -d "$target" ]] || mo_die "journal subfolder not found: $target"
+  [[ -d "$target" ]] || mi_die "journal subfolder not found: $target"
   folders+=("$target")
 else
   while IFS= read -r -d '' d; do
@@ -356,7 +356,7 @@ else
   done < <(find "$journal_root" -mindepth 1 -maxdepth 1 -type d -print0)
 fi
 
-[[ ${#folders[@]} -gt 0 ]] || mo_die "no journal subfolders to process (journal/ is empty)"
+[[ ${#folders[@]} -gt 0 ]] || mi_die "no journal subfolders to process (journal/ is empty)"
 
 sources=()
 for folder in "${folders[@]}"; do

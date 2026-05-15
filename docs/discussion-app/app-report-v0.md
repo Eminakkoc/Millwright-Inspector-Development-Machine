@@ -1,4 +1,4 @@
-# `/mo-discuss` Plugin — Feasibility & Security Report (v0)
+# `/mi-discuss` Plugin — Feasibility & Security Report (v0)
 
 **Date:** 2026-04-30
 **Status:** Pre-implementation. Decisions still open — see §9.
@@ -8,7 +8,7 @@
 
 ## 1. Summary
 
-The proposed `/mo-discuss` skill launches a local web app where a user has a live, voice-enabled discussion with an AI agent about a document — including reading the document aloud, pausing on demand, asking for explanations, **editing the document live during the discussion**, **generating diagrams**, and **running web searches / investigations on demand**. The plugin will be published to a public Claude Code marketplace.
+The proposed `/mi-discuss` skill launches a local web app where a user has a live, voice-enabled discussion with an AI agent about a document — including reading the document aloud, pausing on demand, asking for explanations, **editing the document live during the discussion**, **generating diagrams**, and **running web searches / investigations on demand**. The plugin will be published to a public Claude Code marketplace.
 
 Headline findings:
 
@@ -59,7 +59,7 @@ Sessions persist as JSONL under `~/.claude/projects/`. Multiple parallel session
 
 ```
 ┌──────────────────┐    spawn      ┌──────────────────────┐
-│  /mo-discuss     │──────────────>│  Bun server          │
+│  /mi-discuss     │──────────────>│  Bun server          │
 │  skill           │               │  127.0.0.1:RANDOM    │
 │  (markdown cmd)  │               │  Host/Origin/Token   │
 └──────────────────┘               │  validation          │
@@ -82,7 +82,7 @@ Sessions persist as JSONL under `~/.claude/projects/`. Multiple parallel session
 
 ### 3.2 Lifecycle
 
-1. User runs `/mo-discuss <path-to-doc>`.
+1. User runs `/mi-discuss <path-to-doc>`.
 2. Skill picks an ephemeral port, generates a 32-byte random token, makes a temp working directory, and spawns the Bun server.
 3. Skill opens browser to `http://127.0.0.1:PORT/?token=XXX`.
 4. Browser HTML strips the token from the URL via `history.replaceState`, stores it in `sessionStorage`, then upgrades to a WebSocket sending the token in `Authorization: Bearer XXX`.
@@ -305,7 +305,7 @@ Adding security boundaries one feature at a time means each layer can be reviewe
 
 ### Phase 1 — Read-only discussion
 
-- `/mo-discuss <doc>` opens the browser app.
+- `/mi-discuss <doc>` opens the browser app.
 - AI reads the document aloud (TTS), answers questions, explains.
 - **Zero tools.** Document content passed inline as user message. `--disallowedTools "*"`.
 - All localhost-server hardening in place from day 1: bind 127.0.0.1, random port, Host/Origin/token validation.

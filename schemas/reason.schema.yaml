@@ -1,11 +1,11 @@
 $schema: "http://json-schema.org/draft-07/schema#"
-$id: millwright-overseer-development-machine/reason.schema.yaml
+$id: millwright-inspector-development-machine/reason.schema.yaml
 title: workflow-stream/<feature>/blueprints/history/v[N]/reason.md frontmatter
 description: >
   Explains why a blueprint rotation produced this history version. Written by
   blueprints.sh rotate on every rotation, including stage-8 completion, the
   three auto-trigger paths (spec-update, re-spec-cascade, re-plan-cascade), and
-  manual /mo-update-blueprint invocations.
+  manual /mi-update-blueprint invocations.
 
 type: object
 additionalProperties: false
@@ -25,8 +25,8 @@ properties:
       - manual
     description: >
       Why the rotation fired. `completion` is stage 8. `spec-update` is the
-      /mo-continue post-chain drift trigger. `re-spec-cascade` / `re-plan-cascade`
-      are review-loop auto-triggers. `manual` is /mo-update-blueprint.
+      /mi-continue post-chain drift trigger. `re-spec-cascade` / `re-plan-cascade`
+      are review-loop auto-triggers. `manual` is /mi-update-blueprint.
   triggered-at:
     type: string
     pattern: "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(Z|[+-][0-9]{2}:[0-9]{2})$"

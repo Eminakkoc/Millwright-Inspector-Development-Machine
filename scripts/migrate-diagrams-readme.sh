@@ -40,12 +40,12 @@ while [[ $# -gt 0 ]]; do
       sed -n '2,/^$/p' "$0" >&2
       exit 0
       ;;
-    *) mo_die "unknown argument: $1" ;;
+    *) mi_die "unknown argument: $1" ;;
   esac
 done
 
-stream_dir="$(mo_stream_dir)"
-[[ -d "$stream_dir" ]] || mo_die "workflow-stream directory not found: $stream_dir"
+stream_dir="$(mi_stream_dir)"
+[[ -d "$stream_dir" ]] || mi_die "workflow-stream directory not found: $stream_dir"
 
 # Permissive UUID pattern (RFC 4122 v1-v8, valid variant nibble).
 uuid_re='^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$'
@@ -68,7 +68,7 @@ while IFS= read -r -d '' readme; do
   # Note: bash 3.2 chokes on heredocs inside $(...) so we run the command
   # directly and capture only the exit code via $?.
   set +e
-  python3 - "$readme" "$req" "$uuid_re" "$dry_run" "$MO_PLUGIN_ROOT" <<'PYEOF'
+  python3 - "$readme" "$req" "$uuid_re" "$dry_run" "$MI_PLUGIN_ROOT" <<'PYEOF'
 import os, re, subprocess, sys, yaml, uuid
 
 readme, req, uuid_re, dry_run_str, plugin_root = sys.argv[1:6]
@@ -178,11 +178,11 @@ PYEOF
     0) migrated=$((migrated + 1)) ;;
     1) already_valid=$((already_valid + 1)) ;;
     2) skipped_paths[${#skipped_paths[@]}]="$readme" ;;
-    *) mo_die "infrastructure error processing $readme (exit $rc)" ;;
+    *) mi_die "infrastructure error processing $readme (exit $rc)" ;;
   esac
 done < <(find "$stream_dir" -type f -path '*/blueprints/current/diagrams/README.md' -print0 2>/dev/null)
 
-mo_info "migration summary: ${migrated} migrated, ${already_valid} already valid, ${#skipped_paths[@]} skipped"
+mi_info "migration summary: ${migrated} migrated, ${already_valid} already valid, ${#skipped_paths[@]} skipped"
 if [[ ${#skipped_paths[@]} -gt 0 ]]; then
   echo "Skipped (manual repair required):" >&2
   for p in "${skipped_paths[@]}"; do

@@ -1,10 +1,10 @@
 # Blueprint regeneration
 
-Runbook for first-time blueprint generation by **`mo-apply-impact`** at stage 2. Generates the content of `workflow-stream/<feature>/blueprints/current/` — specifically `requirements.md`, `config.md`, and `diagrams/` — from the **active cycle's quest data** (the journal digest captured at stage 1, living under `quest/<active-slug>/`) plus the codebase, scoped to PENDING items for the active feature.
+Runbook for first-time blueprint generation by **`mi-apply-impact`** at stage 2. Generates the content of `workflow-stream/<feature>/blueprints/current/` — specifically `requirements.md`, `config.md`, and `diagrams/` — from the **active cycle's quest data** (the journal digest captured at stage 1, living under `quest/<active-slug>/`) plus the codebase, scoped to PENDING items for the active feature.
 
-**Journal is NOT a stage-2 input.** The active cycle's `summary.md` (under `quest/<active-slug>/`; the slug is recorded in `quest/active.md`) is the authoritative digest of the journal, written by `/mo-run` at stage 1; stage 2 relies on it instead of re-reading `journal/`. This keeps the data flow one-way (`journal → quest cycle → blueprint → implementation`) and aligns with the design principle restated in `commands/mo-update-blueprint.md` ("journal and quest are intake artifacts that don't drift after stage 1.5"). If the cycle's `summary.md` is missing context this cycle needs, that is a stage-1 quality issue — surface it to the overseer rather than backfilling by re-reading the journal at stage 2.
+**Journal is NOT a stage-2 input.** The active cycle's `summary.md` (under `quest/<active-slug>/`; the slug is recorded in `quest/active.md`) is the authoritative digest of the journal, written by `/mi-run` at stage 1; stage 2 relies on it instead of re-reading `journal/`. This keeps the data flow one-way (`journal → quest cycle → blueprint → implementation`) and aligns with the design principle restated in `commands/mi-update-blueprint.md` ("journal and quest are intake artifacts that don't drift after stage 1.5"). If the cycle's `summary.md` is missing context this cycle needs, that is a stage-1 quality issue — surface it to the inspector rather than backfilling by re-reading the journal at stage 2.
 
-This runbook is **not** used for mid-cycle blueprint refreshes. After stage 3, the implementation exists and is the source of truth for what the blueprint should reflect; mid-cycle refreshes are handled by `/mo-update-blueprint`, which has its own inline regeneration logic (see `commands/mo-update-blueprint.md` Step 4) that reads from the codebase + previous blueprint instead of quest data.
+This runbook is **not** used for mid-cycle blueprint refreshes. After stage 3, the implementation exists and is the source of truth for what the blueprint should reflect; mid-cycle refreshes are handled by `/mi-update-blueprint`, which has its own inline regeneration logic (see `commands/mi-update-blueprint.md` Step 4) that reads from the codebase + previous blueprint instead of quest data.
 
 ## Caller contract
 
@@ -52,7 +52,7 @@ The schema requires `todo-item-ids` to be a non-empty array of strings. Each ite
 
 Before writing the requirements body, do a **bounded codebase pass** scoped to the active feature's PENDING todo items. The goal is to anchor each requirement item to the **existing seam** where the change lands (a service folder, a module, a layer, a hook point), so Goals describe a high-level solution sketch rather than a pure restatement of intent. This pass also gives Step C the inputs it needs to render existing-vs-new diagrams.
 
-**Delegate this pass to a fresh sub-agent.** The grounding pass involves reading 5+ candidate files per todo item — those reads, if done in main, accumulate in main context for the rest of the workflow (stages 2 through 8). Instead, spawn a fresh sub-agent (`Agent` invocation with `subagent_type: millwright-overseer-development-machine:codebase-grounder` — explicitly NOT a fork) whose context is disposable. The sub-agent walks the seam, classifies, and writes a structured `grounding-report.md`; main reads that report (small, ~2–4 KB) instead of the seam (large, ~60k tokens).
+**Delegate this pass to a fresh sub-agent.** The grounding pass involves reading 5+ candidate files per todo item — those reads, if done in main, accumulate in main context for the rest of the workflow (stages 2 through 8). Instead, spawn a fresh sub-agent (`Agent` invocation with `subagent_type: millwright-inspector-development-machine:codebase-grounder` — explicitly NOT a fork) whose context is disposable. The sub-agent walks the seam, classifies, and writes a structured `grounding-report.md`; main reads that report (small, ~2–4 KB) instead of the seam (large, ~60k tokens).
 
 **Initialize the report.** Before invoking the sub-agent, create the destination file with valid frontmatter so it's writable when the sub-agent fills the body. The sub-agent will overwrite frontmatter fields (notably `seam-classification`) at write time; we just need the skeleton in place:
 
@@ -67,12 +67,12 @@ $CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh init grounding-report "$report_dest" 
 
 `SEAM_CLASSIFICATION=mixed` is a placeholder; the sub-agent recomputes and overwrites it via `frontmatter.sh set` after analyzing the seam.
 
-**Spawn the sub-agent.** Invoke `Agent` with `subagent_type: millwright-overseer-development-machine:codebase-grounder`. Compose the prompt from the template below. Substitute `<placeholder>` literals with concrete values from the caller context.
+**Spawn the sub-agent.** Invoke `Agent` with `subagent_type: millwright-inspector-development-machine:codebase-grounder`. Compose the prompt from the template below. Substitute `<placeholder>` literals with concrete values from the caller context.
 
 Sub-agent prompt template:
 
 ```
-You are a fresh sub-agent invoked from `mo-apply-impact` Step A to do the stage-2 codebase-grounding pass for the "<active_feature>" feature. Your context is isolated from the main session — main does not see your tool calls, only your final return summary.
+You are a fresh sub-agent invoked from `mi-apply-impact` Step A to do the stage-2 codebase-grounding pass for the "<active_feature>" feature. Your context is isolated from the main session — main does not see your tool calls, only your final return summary.
 
 **Required first reads:**
 
@@ -99,7 +99,7 @@ You are a fresh sub-agent invoked from `mo-apply-impact` Step A to do the stage-
 **Bounding rules** (this is a stage-2 pass, not a full read of the project):
 
 - Diff hunks aren't available yet — let the todo description and feature folder structure drive your reads.
-- ≤ 5 files per todo item; skip generated/vendor/lock/build artefacts. If you needed to read more than that to identify the seam, surface that as a finding/risk in your return summary — main will flag it to the overseer.
+- ≤ 5 files per todo item; skip generated/vendor/lock/build artefacts. If you needed to read more than that to identify the seam, surface that as a finding/risk in your return summary — main will flag it to the inspector.
 
 **Greenfield case.** If the project is empty or has no relevant existing seams (first-cycle bootstrap), the per-item finding has empty `Pre-existing components` and flavor `greenfield` — that's correct, there's nothing to anchor to. Do not fabricate seams that don't exist yet.
 
@@ -144,7 +144,7 @@ Then write the requirements body with **three clearly-labeled scope sections**:
 
    This is the primary deliverable.
 
-   **Altitude rule (applies to all three flavors).** Name the seam, sketch the integration, describe behaviour at the input/output level; do **not** prescribe code-level details. "Add a service in `services/`" / "change `CartService.addItem` to reject quantity 0" / "extend `CartService.addItem` to accept bulk arrays" are the right altitude. "Add `CartService.addItem(itemId, quantity)` returning `{ ok, cartId }`" is too low — that belongs in the brainstorming spec at stage 3. The seam-naming is a hint, not a contract; the chain may pick a different approach during brainstorming, in which case the stage-4 drift check + `/mo-update-blueprint` flow rotates the blueprint to match.
+   **Altitude rule (applies to all three flavors).** Name the seam, sketch the integration, describe behaviour at the input/output level; do **not** prescribe code-level details. "Add a service in `services/`" / "change `CartService.addItem` to reject quantity 0" / "extend `CartService.addItem` to accept bulk arrays" are the right altitude. "Add `CartService.addItem(itemId, quantity)` returning `{ ok, cartId }`" is too low — that belongs in the brainstorming spec at stage 3. The seam-naming is a hint, not a contract; the chain may pick a different approach during brainstorming, in which case the stage-4 drift check + `/mi-update-blueprint` flow rotates the blueprint to match.
 
 2. **`## Planned (future cycles)`** — list each unselected TODO item (`$planned_ids`) from the same feature with a short line that names the item id, what it delivers, and **what architectural seam the current implementation needs to leave open for it**. Example:
 
@@ -162,11 +162,11 @@ Then write the requirements body with **three clearly-labeled scope sections**:
 
    Skip this section entirely if `$planned_ids` is empty.
 
-3. **`## Non-goals (out of scope)`** — reserved for things **explicitly excluded from the feature's roadmap** — captured at stage 1 in the cycle's `summary.md` (any journal-sourced exclusions are already digested there; under `quest/<active-slug>/`), or in `config.md`'s `## Overseer Additions`, or via overseer statements in chat. These are NOT on the TODO list. If there are none, omit the section.
+3. **`## Non-goals (out of scope)`** — reserved for things **explicitly excluded from the feature's roadmap** — captured at stage 1 in the cycle's `summary.md` (any journal-sourced exclusions are already digested there; under `quest/<active-slug>/`), or in `config.md`'s `## Inspector Additions`, or via inspector statements in chat. These are NOT on the TODO list. If there are none, omit the section.
 
 **Critical distinction:** "Planned (future cycles)" items WILL be implemented — just later. The design of this cycle must accommodate them. "Non-goals" items are truly out of scope and can be assumed away.
 
-**Note on scope of `todo-item-ids`.** The array captures the items that *initiated* the current cycle — not every concern discovered during brainstorming. Scope expansions that surface mid-cycle land in the requirements body but do not retroactively invent new todo ids; manage those via `/mo-update-todo-list add ... IMPLEMENTING`.
+**Note on scope of `todo-item-ids`.** The array captures the items that *initiated* the current cycle — not every concern discovered during brainstorming. Scope expansions that surface mid-cycle land in the requirements body but do not retroactively invent new todo ids; manage those via `/mi-update-todo-list add ... IMPLEMENTING`.
 
 ## Step B — Generate `config.md` (auto + manual sections)
 
@@ -190,7 +190,7 @@ When uncertain whether something is relevant: prefer `## Load on demand` over `#
 requirements_id="$($CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get \
   "$dest" id)"
 config_dest="$data_root/workflow-stream/$active_feature/blueprints/current/config.md"
-# Resolve the cumulative lessons-learned file (written by /mo-analyze-review's
+# Resolve the cumulative lessons-learned file (written by /mi-analyze-review's
 # apply step). config.md references it by path so the planning/implementation
 # chains read it before writing code. When the file does not exist yet, the
 # section records "(none yet)" so the structure stays stable.
@@ -206,7 +206,7 @@ section — a single fixed pointer outside the auto-block entry budget. The
 planning and implementation chains read that file (when its path is real) to
 avoid repeating mistakes flagged in earlier PR reviews.
 
-Then, using Edit, replace the auto-section placeholder with the real skill/rule summaries. If `config.md` already exists from a prior run (e.g., the overseer aborted and restarted `mo-apply-impact` for the same feature without rotating), preserve content below the `## GIT BRANCH` heading AND below the `## Overseer Additions` heading — only the auto block is overwritten. (This is a same-cycle re-run case. For mid-cycle preservation across rotations, see `commands/mo-update-blueprint.md` Step 4d, which calls `blueprints.sh preserve-overseer-sections`.)
+Then, using Edit, replace the auto-section placeholder with the real skill/rule summaries. If `config.md` already exists from a prior run (e.g., the inspector aborted and restarted `mi-apply-impact` for the same feature without rotating), preserve content below the `## GIT BRANCH` heading AND below the `## Inspector Additions` heading — only the auto block is overwritten. (This is a same-cycle re-run case. For mid-cycle preservation across rotations, see `commands/mi-update-blueprint.md` Step 4d, which calls `blueprints.sh preserve-inspector-sections`.)
 
 **Pre-fill `## GIT BRANCH` if possible.** Immediately after writing the auto block, check the current HEAD:
 
@@ -214,9 +214,9 @@ Then, using Edit, replace the auto-section placeholder with the real skill/rule 
 head_branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")"
 ```
 
-If `head_branch` is non-empty and is NOT `main`, `master`, or `HEAD` (detached) — AND the overseer hasn't already filled the `## GIT BRANCH` section (e.g., from a prior run) — write `head_branch` as the bare line under the heading, above the commented placeholder. This is a convenience default; the overseer can edit it before advancing to stage 3.
+If `head_branch` is non-empty and is NOT `main`, `master`, or `HEAD` (detached) — AND the inspector hasn't already filled the `## GIT BRANCH` section (e.g., from a prior run) — write `head_branch` as the bare line under the heading, above the commented placeholder. This is a convenience default; the inspector can edit it before advancing to stage 3.
 
-If HEAD is `main`/`master`/detached, leave the section unfilled — `/mo-plan-implementation` will prompt the overseer at stage 3.
+If HEAD is `main`/`master`/detached, leave the section unfilled — `/mi-plan-implementation` will prompt the inspector at stage 3.
 
 ## Step C — Generate requirement-level diagrams (AI work)
 
@@ -228,15 +228,15 @@ Read the diagram-prompt setting:
 diagram_prompt="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get diagram-prompt 2>/dev/null || echo 'prompt')"
 ```
 
-If `diagram_prompt=auto`, skip the prompt and proceed directly to Step C.1 (diagram generation). The overseer opted into auto-generation earlier in this feature's workflow.
+If `diagram_prompt=auto`, skip the prompt and proceed directly to Step C.1 (diagram generation). The inspector opted into auto-generation earlier in this feature's workflow.
 
-If `diagram_prompt=prompt`, ask the overseer:
+If `diagram_prompt=prompt`, ask the inspector:
 
 > "Stage 2 is about to generate blueprint diagrams for `<active_feature>`. Stage-2 approval requires diagrams (use-case + supporting set), so this step is mandatory. Reply:
 >   - `y` — generate `.puml` source files now (delegated to a fresh sub-agent; ~30s).
 >   - `auto` — generate, and don't ask again for diagrams during the rest of this feature's workflow (resets when the next feature activates)."
 
-The `n` option is intentionally absent. Stage-2 approval requires the blueprint diagram set (`scripts/blueprints.sh check-current` enforces this), so silently allowing `n` would strand the workflow. If the overseer wants to defer, they should run `/mo-abort-workflow` rather than land a partial blueprint.
+The `n` option is intentionally absent. Stage-2 approval requires the blueprint diagram set (`scripts/blueprints.sh check-current` enforces this), so silently allowing `n` would strand the workflow. If the inspector wants to defer, they should run `/mi-abort-workflow` rather than land a partial blueprint.
 
 Wait for the reply. Branch:
 
@@ -250,12 +250,12 @@ Wait for the reply. Branch:
 
 **Delegate the diagram framing + render pass to a fresh sub-agent.** Same context-isolation rationale as Step A: framing the stage-2 diagram set requires reading the cycle's `requirements.md` Goals, the per-item findings in `grounding-report.md`, and a minimal HEAD codebase scan to identify pre-existing system elements. Doing those reads in main accumulates them across the rest of the workflow; doing them inside a fresh sub-agent keeps the reads disposable and main only sees the return summary.
 
-**Spawn the sub-agent.** Invoke `Agent` with `subagent_type: millwright-overseer-development-machine:blueprint-diagrammer`. Compose the prompt from the template below. Substitute `<placeholder>` literals with concrete values from the caller context (`<active_feature>`, `<requirements_path>`, `<grounding_report_path>`, `<diagrams_dir>`, `<diagram_rendering>`).
+**Spawn the sub-agent.** Invoke `Agent` with `subagent_type: millwright-inspector-development-machine:blueprint-diagrammer`. Compose the prompt from the template below. Substitute `<placeholder>` literals with concrete values from the caller context (`<active_feature>`, `<requirements_path>`, `<grounding_report_path>`, `<diagrams_dir>`, `<diagram_rendering>`).
 
 Sub-agent prompt template:
 
 ```
-You are a fresh sub-agent invoked from `mo-apply-impact` Step C to frame and render the stage-2 blueprint diagram set for the "<active_feature>" feature. Your context is isolated from the main session — main does not see your tool calls, only your final return summary.
+You are a fresh sub-agent invoked from `mi-apply-impact` Step C to frame and render the stage-2 blueprint diagram set for the "<active_feature>" feature. Your context is isolated from the main session — main does not see your tool calls, only your final return summary.
 
 **Required first reads:**
 
@@ -306,9 +306,9 @@ Main should read:
 Total return must fit under ~1k tokens.
 ```
 
-**Receive the sub-agent return.** Main now resumes Step C.1's downstream work: validate that `<diagrams_dir>` contains the expected `.puml` files (at minimum the mandatory `use-case-<feature>.puml`) and proceed to write the README below. If the sub-agent returned `Result: blocked` or the expected files are missing, surface the failure to the overseer and stop — do not silently advance.
+**Receive the sub-agent return.** Main now resumes Step C.1's downstream work: validate that `<diagrams_dir>` contains the expected `.puml` files (at minimum the mandatory `use-case-<feature>.puml`) and proceed to write the README below. If the sub-agent returned `Result: blocked` or the expected files are missing, surface the failure to the inspector and stop — do not silently advance.
 
-**Cross-stage convention reference.** The blue/green visual rules are identical to stage 4's; the canonical PlantUML snippets live in `commands/mo-generate-implementation-diagrams.md` § "Existing-vs-new convention". Stage-2 and stage-4 share the convention so the overseer diffs equivalent diagrams with one visual vocabulary — the green set in the stage-2 diagram is what was planned, the green set in the matching stage-4 diagram is what was actually built; matching subjects (same `<type>-<subject>.puml` filename) make the comparison direct.
+**Cross-stage convention reference.** The blue/green visual rules are identical to stage 4's; the canonical PlantUML snippets live in `commands/mi-generate-implementation-diagrams.md` § "Existing-vs-new convention". Stage-2 and stage-4 share the convention so the inspector diffs equivalent diagrams with one visual vocabulary — the green set in the stage-2 diagram is what was planned, the green set in the matching stage-4 diagram is what was actually built; matching subjects (same `<type>-<subject>.puml` filename) make the comparison direct.
 
 **Step C.2 — Write `diagrams/README.md` (main).** With the `.puml` files in place, write a `diagrams/README.md` with the `requirements-id` back-reference and a listing of all diagrams. Generate a fresh `id:` UUID for the README via `scripts/uuid.sh` and write it alongside `requirements-id`:
 

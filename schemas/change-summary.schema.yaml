@@ -1,13 +1,13 @@
 $schema: "http://json-schema.org/draft-07/schema#"
-$id: millwright-overseer-development-machine/change-summary.schema.yaml
+$id: millwright-inspector-development-machine/change-summary.schema.yaml
 title: workflow-stream/<feature>/implementation/change-summary.md frontmatter
 description: >
   Cached analysis of the commit range base-commit..HEAD for an active feature.
-  Written once per range and shared by mo-generate-implementation-diagrams and
-  /mo-update-blueprint. The (base-commit, head) pair is the cache key —
+  Written once per range and shared by mi-generate-implementation-diagrams and
+  /mi-update-blueprint. The (base-commit, head) pair is the cache key —
   `commits.sh change-summary-fresh` compares it against the live progress.md
   base-commit and current HEAD before allowing reuse. Cleaned up by
-  /mo-complete-workflow and /mo-abort-workflow alongside the rest of
+  /mi-complete-workflow and /mi-abort-workflow alongside the rest of
   implementation/.
 
 type: object

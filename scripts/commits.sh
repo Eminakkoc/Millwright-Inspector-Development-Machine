@@ -14,7 +14,7 @@
 #     Call sites must branch on all three exits. Treating exit !=0 as a
 #     single "regenerate" path is acceptable IF the regeneration logic
 #     handles both stale (overwrite) and missing (initialize from template)
-#     correctly. See `commands/mo-generate-implementation-diagrams.md`
+#     correctly. See `commands/mi-generate-implementation-diagrams.md`
 #     Step 2 / Step 2a for the canonical caller.
 #
 #   diagrams-fresh <feature>
@@ -27,8 +27,8 @@
 #     Cache key: (base-commit, latest-commit-touching-implementation/diagrams/).
 #     Call sites must handle all four enum values. Forgetting one — e.g.,
 #     treating `skipped` as `missing` — silently breaks the skip-recovery
-#     contract. See `commands/mo-generate-implementation-diagrams.md`
-#     Step 1.5 and `commands/mo-continue.md` Review-Resume Step 2.5 for
+#     contract. See `commands/mi-generate-implementation-diagrams.md`
+#     Step 1.5 and `commands/mi-continue.md` Review-Resume Step 2.5 for
 #     canonical four-way switches.
 #
 # Discipline rule: no new cache may be added to this script without an
@@ -47,8 +47,8 @@
 #                                            # Renamed/copied paths normalize numstat brace syntax
 #                                            # (`dir/{old => new}/file`) back to the post-rename path
 #                                            # so renamed text files carry valid line stats. Used by
-#                                            # mo-generate-implementation-diagrams and
-#                                            # /mo-update-blueprint to bound their codebase reads.
+#                                            # mi-generate-implementation-diagrams and
+#                                            # /mi-update-blueprint to bound their codebase reads.
 #   commits.sh change-summary-fresh <feature>
 #                                            # exit 0 if implementation/change-summary.md exists with
 #                                            #   frontmatter base-commit + head matching the current
@@ -84,8 +84,8 @@ cmd="${1:-}"; shift || true
 
 get_range() {
   local base
-  base="$(mo_fm_get "$(mo_progress_file)" '.active.base-commit')"
-  [[ -n "$base" && "$base" != "null" ]] || mo_die "base-commit not set in progress.md (no active feature, or stage < 3)"
+  base="$(mi_fm_get "$(mi_progress_file)" '.active.base-commit')"
+  [[ -n "$base" && "$base" != "null" ]] || mi_die "base-commit not set in progress.md (no active feature, or stage < 3)"
   echo "${base}..HEAD"
 }
 
@@ -118,8 +118,8 @@ PYEOF
 
   populate-requirements)
     feature="${1:?feature required}"
-    requirements_file="$(mo_blueprints_current "$feature")/requirements.md"
-    [[ -f "$requirements_file" ]] || mo_die "requirements.md not found"
+    requirements_file="$(mi_blueprints_current "$feature")/requirements.md"
+    [[ -f "$requirements_file" ]] || mi_die "requirements.md not found"
     range="$(get_range)"
     python3 - "$requirements_file" "$range" <<'PYEOF'
 import sys, subprocess, re, yaml
@@ -140,9 +140,9 @@ with open(path, 'w') as f:
     f.write(yaml.safe_dump(fm, default_flow_style=False, sort_keys=False))
     f.write('---\n')
     f.write(m.group(2))
-print(f'mo: populated {len(commits)} commits into {path}', file=sys.stderr)
+print(f'mi: populated {len(commits)} commits into {path}', file=sys.stderr)
 PYEOF
-    "${MO_PLUGIN_ROOT}/scripts/frontmatter.sh" validate "$requirements_file" requirements >/dev/null
+    "${MI_PLUGIN_ROOT}/scripts/frontmatter.sh" validate "$requirements_file" requirements >/dev/null
     ;;
 
   changed-files)
@@ -213,14 +213,14 @@ PYEOF
 
   change-summary-fresh)
     feature="${1:?feature required}"
-    summary_file="$(mo_impl_dir "$feature")/change-summary.md"
+    summary_file="$(mi_impl_dir "$feature")/change-summary.md"
     if [[ ! -f "$summary_file" ]]; then
       exit 2
     fi
-    cur_base="$(mo_fm_get "$(mo_progress_file)" '.active.base-commit')"
+    cur_base="$(mi_fm_get "$(mi_progress_file)" '.active.base-commit')"
     cur_head="$(git rev-parse HEAD)"
-    cached_base="$(mo_fm_get "$summary_file" base-commit 2>/dev/null || echo "")"
-    cached_head="$(mo_fm_get "$summary_file" head 2>/dev/null || echo "")"
+    cached_base="$(mi_fm_get "$summary_file" base-commit 2>/dev/null || echo "")"
+    cached_head="$(mi_fm_get "$summary_file" head 2>/dev/null || echo "")"
     if [[ "$cur_base" == "$cached_base" && "$cur_head" == "$cached_head" ]]; then
       exit 0
     fi
@@ -242,7 +242,7 @@ PYEOF
     # first. A stale or missing summary surfaces as exit 2 (so it can't be
     # silently confused with a fresh empty index).
     feature="${1:?feature required}"
-    summary_file="$(mo_impl_dir "$feature")/change-summary.md"
+    summary_file="$(mi_impl_dir "$feature")/change-summary.md"
     if [[ ! -f "$summary_file" ]]; then
       echo "changed-files-only: $summary_file not found (run change-summary-fresh first to gate)" >&2
       exit 2
@@ -272,17 +272,17 @@ PYEOF
     # See `docs/context optimization/recommendations.md` § "Cache Key
     # Specifications" → `diagrams-fresh` for the canonical contract.
     feature="${1:?feature required}"
-    diagrams_dir="$(mo_impl_dir "$feature")/diagrams"
-    skipped="$(mo_fm_get "$(mo_progress_file)" '.active.implementation-diagrams-skipped' 2>/dev/null || echo 'false')"
+    diagrams_dir="$(mi_impl_dir "$feature")/diagrams"
+    skipped="$(mi_fm_get "$(mi_progress_file)" '.active.implementation-diagrams-skipped' 2>/dev/null || echo 'false')"
 
     if [[ "$skipped" == "true" ]]; then
-      # Invariant: when skipped=true the directory must NOT exist. /mo-draw-diagrams
+      # Invariant: when skipped=true the directory must NOT exist. /mi-draw-diagrams
       # removes the directory FIRST, then sets the marker, so a crash in between
       # leaves skipped=false (default) AND no directory → falls into the missing
       # branch below. Surface a diagnostic if both are true (invariant violation).
       if [[ -d "$diagrams_dir" ]] && [[ -n "$(find "$diagrams_dir" -maxdepth 1 -name '*.puml' -print -quit 2>/dev/null)" ]]; then
         echo "missing"
-        echo "diagrams-fresh: invariant violation — implementation-diagrams-skipped=true but $diagrams_dir contains .puml files. Recover via /mo-draw-diagrams (will offer regeneration)." >&2
+        echo "diagrams-fresh: invariant violation — implementation-diagrams-skipped=true but $diagrams_dir contains .puml files. Recover via /mi-draw-diagrams (will offer regeneration)." >&2
         exit 1
       fi
       echo "skipped"
@@ -297,7 +297,7 @@ PYEOF
 
     # Directory exists with .puml files. Compute freshness against the most
     # recent commit that touched the diagrams directory.
-    base_commit="$(mo_fm_get "$(mo_progress_file)" '.active.base-commit' 2>/dev/null || echo '')"
+    base_commit="$(mi_fm_get "$(mi_progress_file)" '.active.base-commit' 2>/dev/null || echo '')"
     if [[ -z "$base_commit" || "$base_commit" == "null" ]]; then
       # No base-commit yet (pre-stage-3) — can't compute freshness; treat as stale.
       echo "stale"

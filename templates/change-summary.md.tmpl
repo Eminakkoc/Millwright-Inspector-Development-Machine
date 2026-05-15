@@ -8,7 +8,7 @@ head: "{{HEAD}}"
 
 # Change summary — {{FEATURE}}
 
-Cached analysis of `{{BASE_COMMIT}}..{{HEAD}}`. Shared by `mo-generate-implementation-diagrams` and `/mo-update-blueprint` so the bounded codebase reads only happen once per commit-range. The `base-commit` + `head` pair in frontmatter is the cache key — consumers call `commits.sh change-summary-fresh <feature>` to check it before reusing.
+Cached analysis of `{{BASE_COMMIT}}..{{HEAD}}`. Shared by `mi-generate-implementation-diagrams` and `/mi-update-blueprint` so the bounded codebase reads only happen once per commit-range. The `base-commit` + `head` pair in frontmatter is the cache key — consumers call `commits.sh change-summary-fresh <feature>` to check it before reusing.
 
 <!-- Generated artifact — written by whichever consumer first runs against this commit
      range, refreshed when the range changes. Treat the diff (`git diff base..HEAD`)

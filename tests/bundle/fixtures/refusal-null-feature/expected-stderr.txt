@@ -1,1 +1,1 @@
-Refused: no active feature. Advance to stage 2 first (run /mo-continue or /mo-apply-impact).
+Refused: no active feature. Advance to stage 2 first (run /mi-continue or /mi-apply-impact).

@@ -27,8 +27,8 @@
 # Usage:
 #   scripts/migrate-test-folder.sh [--data-root /path/to/data]
 #
-# Without --data-root, resolves via scripts/data-root.sh (MO_DATA_ROOT
-# env / CLAUDE_PLUGIN_USER_CONFIG_data_root / ./millwright-overseer).
+# Without --data-root, resolves via scripts/data-root.sh (MI_DATA_ROOT
+# env / CLAUDE_PLUGIN_USER_CONFIG_data_root / ./millwright-inspector).
 
 set -euo pipefail
 

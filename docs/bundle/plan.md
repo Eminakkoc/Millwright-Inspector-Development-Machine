@@ -1,6 +1,6 @@
 # Context-bundle export — implementation plan
 
-A new overseer-invokable command, `/mo-export-bundle`, that produces a
+A new inspector-invokable command, `/mi-export-bundle`, that produces a
 single markdown file describing the active feature's state, intended
 for a fresh agent session that may not have access to this plugin's
 data tree or this codebase. The bundle is **self-sufficient for
@@ -8,7 +8,7 @@ context** (every fact the receiving agent needs to reason about scope,
 requirements, history, and open findings is inlined). It is **not**
 free of workflow-internal vocabulary: workflow file paths and
 `.md` filenames are mechanically scrubbed (§2.3, §8.2), but role and
-tool words (`mo-workflow`, `millwright`, `overseer`, `seam`,
+tool words (`mi-workflow`, `millwright`, `inspector`, `seam`,
 `cycle flavor`, finding ids like `IR-NNN`) may still appear in body
 text where they were authored by humans or sub-agents in the source
 files. The §5.1 prompt block tells the receiving agent to treat such
@@ -18,7 +18,7 @@ The bundle is **derived** and **disposable**. It reads canonical
 workflow artifacts (`requirements.md`, `config.md`, `decisions.md`,
 `grounding-report.md`, `summary.md`, `todo-list.md`,
 `change-summary.md`, `manual-test-*.md`, `review-context.md`,
-`overseer-review.md`) and emits a standalone document. The canonical
+`inspector-review.md`) and emits a standalone document. The canonical
 files remain the source of truth.
 
 ## Design history
@@ -48,8 +48,8 @@ within v3 (see §13 for round-by-round traceability):
 
 ## 1. Goal
 
-When the overseer says "export the context" (or types
-`/mo-export-bundle`), produce a single `.md` file at:
+When the inspector says "export the context" (or types
+`/mi-export-bundle`), produce a single `.md` file at:
 
 ```
 tmp/bundles/<feature>-stage<N>-<YYYYMMDD-HHMMSS>.md
@@ -64,10 +64,10 @@ document this is and what caveats to apply.
 
 What the bundle **does not** promise: removal of every
 workflow-flavored word from body text. The receiver must treat
-unfamiliar role / tool / domain terms (`mo-workflow`, `millwright`,
-`overseer`, `seam`, `cycle flavor`, finding ids) as opaque labels.
+unfamiliar role / tool / domain terms (`mi-workflow`, `millwright`,
+`inspector`, `seam`, `cycle flavor`, finding ids) as opaque labels.
 The prompt block restates this; the §1 paragraph above tells the
-overseer the same thing before the bundle is even generated.
+inspector the same thing before the bundle is even generated.
 
 ## 2. Principles
 
@@ -86,7 +86,7 @@ These are the rules `bundle.sh` follows when composing every section:
 
    - **Chrome stripping** (always): frontmatter blocks, HTML comments,
      snapshot caveats addressed to internal consumers, sync-marker
-     lines (`<!-- mo:sync-marker — … -->`), and template placeholder
+     lines (`<!-- mi:sync-marker — … -->`), and template placeholder
      strings are removed entirely.
    - **Targeted body scrubbing** (always): inside extracted body
      text, the bundler does **deterministic regex substitutions** using
@@ -99,7 +99,7 @@ These are the rules `bundle.sh` follows when composing every section:
        `implementation/grounding-report.md`,
        `implementation/change-summary.md`,
        `implementation/review-context.md`, and
-       `implementation/overseer-review.md`.
+       `implementation/inspector-review.md`.
      - Manual-test artifacts under the feature-permanent `test/` folder:
        `test/manual-test-plan.md` and `test/manual-test-results.md`.
        (Legacy `implementation/manual-test-*` paths still match the
@@ -112,9 +112,9 @@ These are the rules `bundle.sh` follows when composing every section:
      Regex matches are replaced with either `<internal path>` or
      `<an internal record>`, as specified in that table.
    - **Not scrubbed**: workflow role / tool / system words such as
-     `mo-workflow`, `millwright`, `overseer`, `seam`, `cycle flavor`,
+     `mi-workflow`, `millwright`, `inspector`, `seam`, `cycle flavor`,
      `IR-NNN`. Removing these mechanically risks distorting
-     human-authored sentences (e.g., "the overseer chose X" cannot
+     human-authored sentences (e.g., "the inspector chose X" cannot
      be safely rewritten without changing meaning). The prompt block
      (§5.1) acknowledges these may appear and tells the receiving
      agent to read charitably.
@@ -133,7 +133,7 @@ These are the rules `bundle.sh` follows when composing every section:
    passed through unchanged **except for chrome stripping (Principle
    §2.3 first pass) and `scrub_body_paths` (Principle §2.3 second
    pass)**. Workflow-flavored role/tool words ("seam", "cycle
-   flavor", `mo-workflow`, `millwright`, `overseer`) are deliberately
+   flavor", `mi-workflow`, `millwright`, `inspector`) are deliberately
    not scrubbed and may appear; the prompt block (§5.1) tells the
    receiving agent to read the brief charitably.
 6. **Fail honestly when content isn't there.** Stage-4+ artifacts may
@@ -156,7 +156,7 @@ These are the rules `bundle.sh` follows when composing every section:
   feature**; other features in the same cycle each need their own
   export.
 - **No automatic regeneration on stage advance.** The bundle is a
-  point-in-time snapshot; the overseer runs the command again for a
+  point-in-time snapshot; the inspector runs the command again for a
   fresh copy.
 - **No persistence inside the canonical tree.** Output goes to
   `tmp/bundles/`, never to `quest/<slug>/` or
@@ -253,9 +253,9 @@ for acronym-heavy slugs (`oauth-pkce → Oauth Pkce`,
 the Sources footer (§5.18), and avoids guessing capitalization the
 bundler cannot get right deterministically.
 
-### 5.2 Custom project instructions (review fix: include `config.md → Overseer Additions`)
+### 5.2 Custom project instructions (review fix: include `config.md → Inspector Additions`)
 
-Extracted from `blueprints/current/config.md → ## Overseer Additions`
+Extracted from `blueprints/current/config.md → ## Inspector Additions`
 — a section explicitly designated by the workflow as "preserved
 verbatim" for human-authored project-specific prompts and
 instructions. If the section's body is non-empty after stripping HTML
@@ -264,10 +264,10 @@ comments, it is included as:
 ```markdown
 ## Custom project instructions
 
-<verbatim body of the Overseer Additions section, comments stripped>
+<verbatim body of the Inspector Additions section, comments stripped>
 ```
 
-The heading "Overseer Additions" is replaced with "Custom project
+The heading "Inspector Additions" is replaced with "Custom project
 instructions" — the bundle controls the header. Body is passed
 through subject only to the two universal passes from Principle
 §2.3: chrome stripping and `scrub_body_paths`. No other rewriting
@@ -359,16 +359,16 @@ the script does not synthesize one.
 
 Earlier drafts filtered `todo-list.md` rows by `IMPLEMENTING`, which
 silently empties at stage 2 (items are still `PENDING` until
-`/mo-plan-implementation` flips them at stage 3 — see
+`/mi-plan-implementation` flips them at stage 3 — see
 `docs/workflow-spec.md:518`). The previous revision of this plan
 fixed that by sourcing scope from `requirements.md → todo-item-ids`
 alone. **That single source is also wrong**: per
 `docs/blueprint-regeneration.md:169`, `todo-item-ids` captures the
 items that *initiated* the cycle and is not retroactively updated
-when an overseer adds a new item mid-cycle via
-`/mo-update-todo-list add … IMPLEMENTING`.
-`/mo-update-blueprint` likewise preserves the previous list as-is
-(`commands/mo-update-blueprint.md:345`). So a single-source design
+when an inspector adds a new item mid-cycle via
+`/mi-update-todo-list add … IMPLEMENTING`.
+`/mi-update-blueprint` likewise preserves the previous list as-is
+(`commands/mi-update-blueprint.md:345`). So a single-source design
 either misses stage-2 PENDING items or misses stage-3+ mid-cycle
 additions.
 
@@ -381,7 +381,7 @@ by id:
    `PENDING`) and the canonical record of the cycle's planned scope.
 2. **Active-feature rows in `todo-list.md` whose state is
    `IMPLEMENTING`** — captures items pulled into scope mid-cycle by
-   `/mo-update-todo-list add … IMPLEMENTING` after `requirements.md`
+   `/mi-update-todo-list add … IMPLEMENTING` after `requirements.md`
    was written. The active feature is `progress.md → active.feature`.
 
 For every candidate id from either source, resolve the current row in
@@ -429,7 +429,7 @@ This dual-source design is **stage-independent (works at any stage
 from 2 onward) and mid-cycle-resilient (survives todo additions and
 cancellations)**: every committed non-canceled item appears in scope
 regardless of the workflow stage and regardless of whether it was
-selected at stage 1.5 or added later via `/mo-update-todo-list`.
+selected at stage 1.5 or added later via `/mi-update-todo-list`.
 Cancellation (a state filter) is the one exception by design — see
 the second-to-last edge case above.
 
@@ -643,15 +643,15 @@ note. Each verdict-and-note pair becomes one bullet.
 
 Either may be present without the other.
 
-### 5.16 Open review findings (stage-independent — emitted whenever `overseer-review.md` has content; review fixes: gate on structured OR freeform, in-bundle legend)
+### 5.16 Open review findings (stage-independent — emitted whenever `inspector-review.md` has content; review fixes: gate on structured OR freeform, in-bundle legend)
 
-`overseer-review.md` mixes overseer instructions for typing findings,
+`inspector-review.md` mixes inspector instructions for typing findings,
 plain-sentence findings, and structured `### IR-NNN` blocks. The
 script:
 
 1. Strips the entire pre-amble (the "Plain sentences (easiest)" /
    "Structured blocks (precise)" / "Scope guide" / "How the loop
-   works" instructional text — all addressed to the overseer, not to
+   works" instructional text — all addressed to the inspector, not to
    a stranger reviewer).
 2. Strips the `## Implementation Review` heading.
 3. For each `### IR-NNN — <summary>` block whose `status:` is `open`,
@@ -665,7 +665,7 @@ script:
    - **<summary>** (<severity>): <details body> — Recommended action: <scope>.
    ```
 
-   If the source block has no `scope:` line (the overseer-review
+   If the source block has no `scope:` line (the inspector-review
    template allows omitting it), emit
    `Recommended action: not specified.` so the receiver still sees
    the structural cue.
@@ -710,13 +710,13 @@ content is present (structured bullets only, freeform bullets only,
 or both).
 
 **Stage independence (round-8 review fix).** Earlier drafts labeled
-the section "stage 6+" because that's when `mo-review` typically
-runs. But `overseer-review.md` exists from stage 5 onward (the
-overseer can write findings during stage-5 review even before
-`/mo-continue` canonicalizes them — see `docs/workflow-spec.md:716`),
+the section "stage 6+" because that's when `mi-review` typically
+runs. But `inspector-review.md` exists from stage 5 onward (the
+inspector can write findings during stage-5 review even before
+`/mi-continue` canonicalizes them — see `docs/workflow-spec.md:716`),
 and per Principle §2.6 inclusion is driven by file existence, not by
 stage. The section heading and §12 fixtures now reflect that:
-emit whenever `overseer-review.md` has meaningful content, regardless
+emit whenever `inspector-review.md` has meaningful content, regardless
 of stage.
 
 ### 5.17 What the next agent should do
@@ -754,7 +754,7 @@ vocabulary:
 
 **Phase label (round-8 review fix).** Earlier drafts emitted "at
 stage **<N>**", but stage numbers (3, 6, etc.) are workflow-internal
-and meaningless to a receiver who doesn't know the mo-workflow
+and meaningless to a receiver who doesn't know the mi-workflow
 state machine. The bundler now derives a receiver-friendly phase
 label from `current-stage`:
 
@@ -771,8 +771,8 @@ The label replaces the numeric stage entirely in the footer; the
 filename keeps `stage<N>` because filenames are local-disk
 bookkeeping, not bundle content the receiver reads.
 
-Strings explicitly NOT permitted in the footer: `mo-workflow`,
-`millwright`, `overseer`, file paths beginning with `workflow-stream/`
+Strings explicitly NOT permitted in the footer: `mi-workflow`,
+`millwright`, `inspector`, file paths beginning with `workflow-stream/`
 or `quest/`, and the literal substring `stage ` followed by a digit
 (the round-8 phase-label fix has to leave the footer numeric-free).
 The §13 acceptance grep enforces this.
@@ -787,14 +787,14 @@ data_root="$($CLAUDE_PLUGIN_ROOT/scripts/data-root.sh)"
 
 # 1. Active cycle?
 "$CLAUDE_PLUGIN_ROOT/scripts/quest.sh" current >/dev/null || {
-  echo "Refused: no active cycle. Run /mo-init and /mo-run first." >&2
+  echo "Refused: no active cycle. Run /mi-init and /mi-run first." >&2
   exit 2
 }
 
 # 2. Active feature?
 feature="$("$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" get-active)"
 if [[ -z "$feature" || "$feature" == "null" ]]; then
-  echo "Refused: no active feature. Advance to stage 2 first (run /mo-continue or /mo-apply-impact)." >&2
+  echo "Refused: no active feature. Advance to stage 2 first (run /mi-continue or /mi-apply-impact)." >&2
   exit 2
 fi
 
@@ -817,7 +817,7 @@ first, which calls `require_active` and would error before the
 `get-active` null check ever ran (see `scripts/progress.sh:459`).
 
 **Worktree pinning (round-7 review fix).** Step 3 invokes the
-worktree-fingerprint guard (`mo_assert_worktree_match`, exposed via
+worktree-fingerprint guard (`mi_assert_worktree_match`, exposed via
 `progress.sh check-worktree`; see `docs/workflow-spec.md:1042`). All
 subsequent file-system operations — `mkdir -p tmp/bundles`,
 `git rev-parse HEAD`, the bundle file write — must run **inside**
@@ -839,8 +839,8 @@ Two invocation paths exist. Only one is contractually supported.
 
 ### 7.1 Slash-command trigger (primary, always works)
 
-Overseer types `/mo-export-bundle` directly. Claude Code loads
-`commands/mo-export-bundle.md` and runs the documented steps. No
+Inspector types `/mi-export-bundle` directly. Claude Code loads
+`commands/mi-export-bundle.md` and runs the documented steps. No
 arguments in v1.
 
 This is the supported path. Documentation, error messages, and
@@ -853,9 +853,9 @@ phrasing will reliably invoke the command. Whether it does depends on
 the harness's available command-discovery mechanism, which varies
 across Claude Code versions and plugin packaging:
 
-- **In the current packaging**, every `commands/mo-*.md` file in this
+- **In the current packaging**, every `commands/mi-*.md` file in this
   plugin is surfaced to the millwright as an entry in the
-  available-skills list (`millwright-overseer-development-machine:mo-*`
+  available-skills list (`millwright-inspector-development-machine:mi-*`
   prefix). When this surface is present, the millwright can match a
   natural-language request against the command's `description`
   frontmatter and invoke via the `Skill` tool.
@@ -864,7 +864,7 @@ across Claude Code versions and plugin packaging:
   mechanism. It is not always present in the harness; when it is, it
   is the more durable path.
 - **Fallback**: when neither path is available, the millwright should
-  tell the overseer to type `/mo-export-bundle` directly.
+  tell the inspector to type `/mi-export-bundle` directly.
 
 Practically this means:
 
@@ -875,19 +875,19 @@ Practically this means:
   chance of matching.
 - v1 acceptance criteria do **not** test the natural-language path —
   it is best-effort. Only the slash-command path is asserted.
-- Documentation visible to the overseer should mention the slash
+- Documentation visible to the inspector should mention the slash
   form first, with the natural-language phrasing as "you can also
   ask in plain English; if that doesn't work, use the slash form."
 
 ## 8. Implementation
 
-### 8.1 New file: `commands/mo-export-bundle.md`
+### 8.1 New file: `commands/mi-export-bundle.md`
 
 Frontmatter:
 
 ```yaml
 ---
-description: Export a self-contained agent-handoff brief for the active feature. Extracts (does not synthesize) requirements, scope, custom project instructions, project-wide constraints, decisions, codebase-context audit, implementation summary, changed-files index, manual-test results, and open review findings into a single markdown file under tmp/bundles/, with workflow scaffolding stripped and task-neutral section headers. Run when the overseer asks to "export the context", "export the bundle", "build a context bundle", or "create a prompt for another session". The slash form is the supported invocation; natural-language matching is best-effort and harness-dependent.
+description: Export a self-contained agent-handoff brief for the active feature. Extracts (does not synthesize) requirements, scope, custom project instructions, project-wide constraints, decisions, codebase-context audit, implementation summary, changed-files index, manual-test results, and open review findings into a single markdown file under tmp/bundles/, with workflow scaffolding stripped and task-neutral section headers. Run when the inspector asks to "export the context", "export the bundle", "build a context bundle", or "create a prompt for another session". The slash form is the supported invocation; natural-language matching is best-effort and harness-dependent.
 ---
 ```
 
@@ -895,7 +895,7 @@ Body sections:
 
 1. **Why this command exists.** One paragraph: the brief is for
    sessions that lack workflow context.
-2. **Invocation.** `/mo-export-bundle` (no arguments).
+2. **Invocation.** `/mi-export-bundle` (no arguments).
 3. **Refusals.** Mirror §6.
 4. **Execution.** A single shell snippet that calls
    `scripts/bundle.sh export`. The command markdown does not
@@ -988,7 +988,7 @@ Behavior:
      BODY_SCRUB_TABLE = [
        # Unambiguous workflow path prefixes (no overlap with typical
        # project layouts — these directory names are exclusive to
-       # the mo-workflow data tree).
+       # the mi-workflow data tree).
        (r'\bworkflow-stream/[A-Za-z0-9_./-]+',           '<internal path>'),
        (r'\bquest/[A-Za-z0-9_./-]+',                     '<internal path>'),
        (r'\bblueprints/current/[A-Za-z0-9_./-]+',        '<internal path>'),
@@ -998,12 +998,12 @@ Behavior:
        # implementation/" to the known workflow filenames only — so
        # legitimate project files like `implementation/CartService.ts`
        # or `implementation/MyProjectDoc.md` are NOT scrubbed.
-       (r'\bimplementation/(?:grounding-report|change-summary|manual-test-plan|manual-test-results|review-context|overseer-review)\.md\b',
+       (r'\bimplementation/(?:grounding-report|change-summary|manual-test-plan|manual-test-results|review-context|inspector-review)\.md\b',
         '<an internal record>'),
        # Bare workflow .md filenames anywhere — catches references
        # without a recognized prefix (e.g., a decision bullet that
        # says "see decisions.md" verbatim).
-       (r'\b(?:progress|requirements|config|decisions|summary|todo-list|change-summary|grounding-report|overseer-review|review-context|primer|manual-test-plan|manual-test-results)\.md\b',
+       (r'\b(?:progress|requirements|config|decisions|summary|todo-list|change-summary|grounding-report|inspector-review|review-context|primer|manual-test-plan|manual-test-results)\.md\b',
         '<an internal record>'),
      ]
      ```
@@ -1050,7 +1050,7 @@ gains nothing; no other helper depends on `bundle.sh`.
 - No new schema entries (the bundle is not a canonical artifact).
 - No changes to `progress.sh`, `quest.sh`, `frontmatter.sh`, `todo.sh`,
   `commits.sh`, or any other helper.
-- No changes to `mo-init` / `mo-doctor` — the new command is additive
+- No changes to `mi-init` / `mi-doctor` — the new command is additive
   and works the moment its file lands in `commands/`.
 
 ### 8.4 Golden-fixture tests (new for v3 — extractive correctness)
@@ -1081,7 +1081,7 @@ fixtures.
 - **Frontmatter and HTML comments.** Stripped from every source file
   before any parsing. The receiving session never sees `id:`,
   `requirements-id:`, `<!-- Generated artifact … -->`, or
-  `<!-- mo:sync-marker — … -->` markers.
+  `<!-- mi:sync-marker — … -->` markers.
 - **Template scaffolding leaking through.** If a human never populated
   a file (e.g., `requirements.md` body left empty), the corresponding
   section ends up empty after stripping and is omitted (§2 rule 6).
@@ -1099,7 +1099,7 @@ fixtures.
 - **Missing `grounding-report.md` at stage 4+.** Possible if the
   feature was created via an unusual path. The §5.12 section is simply
   omitted; the rest of the bundle still emits.
-- **`config.md → ## Overseer Additions` empty.** §5.2 is omitted.
+- **`config.md → ## Inspector Additions` empty.** §5.2 is omitted.
 - **`summary.md → ## Cross-cutting constraints` empty.** §5.3 is
   omitted.
 
@@ -1129,7 +1129,7 @@ fixtures.
   `<an internal record>` per §2 Principle 3's scrub table (canonical
   list in §8.2). Workflow paths are absent from the Sources footer
   by design (§5.18 forbids them in chrome). Workflow role/tool words
-  (`mo-workflow`, `millwright`, `overseer`, `seam`, etc.) are **not**
+  (`mi-workflow`, `millwright`, `inspector`, `seam`, etc.) are **not**
   scrubbed and may appear in body text — see §11 for the reasoning
   and the v2 follow-up.
 - **Raw frontmatter UUIDs / template scaffolding.** §2 rule 3.
@@ -1138,7 +1138,7 @@ The earlier "drop summary.md / drop config.md" framing was rejected
 across multiple review rounds because both files carry load-bearing
 content that isn't guaranteed to appear elsewhere: cross-cutting
 constraints and per-feature journal context in `summary.md`;
-Overseer Additions and Rules in `config.md`. §5.2 (Overseer
+Inspector Additions and Rules in `config.md`. §5.2 (Inspector
 Additions), §5.3 (cross-cutting), §5.4 (active-feature journal),
 and §5.5 (Rules) fix that.
 
@@ -1161,7 +1161,7 @@ known limitations:
   inlines bounded excerpts using the same ≤ 50/file, ≤ 500 total
   bound that `change-summary.md` already enforces.
 - **Hand-curated extras.** A future
-  `workflow-stream/<feature>/bundle-extras.md` could let the overseer
+  `workflow-stream/<feature>/bundle-extras.md` could let the inspector
   pin extra paths or exclude default sections.
 - **Stage-targeted exports.** A flag like `--as-of-stage <N>`.
 - **Compression.** A `--compact` mode for very large stage-7+ briefs.
@@ -1208,8 +1208,8 @@ guarantee splits into two pieces:
   are guaranteed absent from body — they are mechanically replaced
   with placeholders before the body is written. This is testable
   against body too.
-- **Workflow role / tool / system words** (`mo-workflow`,
-  `millwright`, `overseer`, `seam`, `cycle flavor`, item ids) may
+- **Workflow role / tool / system words** (`mi-workflow`,
+  `millwright`, `inspector`, `seam`, `cycle flavor`, item ids) may
   appear in body. The bundler does not rewrite them.
 
 **Two-level forbidden-string contract:**
@@ -1236,7 +1236,7 @@ guarantees were inconsistent across §2, §10, §12).
      `## Planned (future cycles)` (with at least one item),
      `## Non-goals (out of scope)`, and a non-empty `todo-item-ids`
      frontmatter list.
-   - `config.md` with non-empty `## Overseer Additions` and at least
+   - `config.md` with non-empty `## Inspector Additions` and at least
      one real entry under `## Rules`.
    - `summary.md` with non-empty `## Cross-cutting constraints` and
      a non-empty `## Feature: <active_feature>` section for the
@@ -1245,7 +1245,7 @@ guarantees were inconsistent across §2, §10, §12).
    - `implementation/grounding-report.md` populated for one or more
      items.
 
-   Run `/mo-export-bundle`. Verify:
+   Run `/mi-export-bundle`. Verify:
    - File lands at `tmp/bundles/<feature>-stage3-<timestamp>.md`.
    - `tmp/bundles/.gitignore` exists with content `*\n!.gitignore\n`.
    - **Sections present** (in order): Top prompt block, Custom project
@@ -1262,8 +1262,8 @@ guarantees were inconsistent across §2, §10, §12).
      each must match 0 times in the chrome slice):
      - `IR-NNN`
      - `IMPLEMENTING|PENDING|CANCELED`
-     - `progress\.md|requirements\.md|decisions\.md|grounding-report\.md|config\.md|summary\.md|todo-list\.md|change-summary\.md|overseer-review\.md|review-context\.md|primer\.md|manual-test`
-     - `mo-workflow|millwright|overseer`
+     - `progress\.md|requirements\.md|decisions\.md|grounding-report\.md|config\.md|summary\.md|todo-list\.md|change-summary\.md|inspector-review\.md|review-context\.md|primer\.md|manual-test`
+     - `mi-workflow|millwright|inspector`
      - `Active scope`
      - `Cross-cutting constraints` (the workflow heading)
      - `Feature: ` (the workflow per-feature heading prefix; the
@@ -1272,7 +1272,7 @@ guarantees were inconsistent across §2, §10, §12).
      - `Non-goals \(out of scope\)`
      - `Planned \(future cycles\)`
      - `Implementation Review`
-     - `mo:sync-marker`
+     - `mi:sync-marker`
      - `<!--`
      - `workflow-stream/|^quest/`
    - **Body-scoped forbidden patterns** — path-only subset (per §12.1;
@@ -1282,8 +1282,8 @@ guarantees were inconsistent across §2, §10, §12).
      - `\bquest/[A-Za-z0-9_./-]+`
      - `\bblueprints/current/[A-Za-z0-9_./-]+`
      - `\bblueprints/history/v\d+/[A-Za-z0-9_./-]+`
-     - `\bimplementation/(grounding-report|change-summary|manual-test-plan|manual-test-results|review-context|overseer-review)\.md\b`
-     - `\b(progress|requirements|config|decisions|summary|todo-list|change-summary|grounding-report|overseer-review|review-context|primer|manual-test-plan|manual-test-results)\.md\b`
+     - `\bimplementation/(grounding-report|change-summary|manual-test-plan|manual-test-results|review-context|inspector-review)\.md\b`
+     - `\b(progress|requirements|config|decisions|summary|todo-list|change-summary|grounding-report|inspector-review|review-context|primer|manual-test-plan|manual-test-results)\.md\b`
    - **Section-content checks** (against extracted body):
      - Scope in this session section is non-empty (catches the
        round-4 stage-2-PENDING regression — at stage 3 items are
@@ -1318,10 +1318,10 @@ guarantees were inconsistent across §2, §10, §12).
        `<internal path>` in the bundle output, validating that
        `scrub_body_paths` is wired up and not a no-op.
 2. **Stage 2 fixture (review fix: PENDING-state scope).** Cycle just
-   ran `/mo-apply-impact`; items are still `PENDING`, requirements
+   ran `/mi-apply-impact`; items are still `PENDING`, requirements
    and config and grounding-report are written, but
-   `/mo-plan-implementation` has not yet flipped any todo to
-   `IMPLEMENTING`. Run `/mo-export-bundle`. Verify:
+   `/mi-plan-implementation` has not yet flipped any todo to
+   `IMPLEMENTING`. Run `/mi-export-bundle`. Verify:
    - Scope in this session section is **non-empty** — its bullets are
      derived from `requirements.md → todo-item-ids` and exist even
      though no row is in state `IMPLEMENTING`. This is the direct
@@ -1333,13 +1333,13 @@ guarantees were inconsistent across §2, §10, §12).
      review findings.
 3. **Stage 3+ with mid-cycle scope changes.** Start from a feature
    whose `requirements.md → todo-item-ids` contains at least two ids.
-   After stage 3 promotion, use `/mo-update-todo-list` to:
+   After stage 3 promotion, use `/mi-update-todo-list` to:
    - cancel one original id (`set-state <id> CANCELED` or
      `cancel <id>`), and
    - add a new active-feature item directly as `IMPLEMENTING` whose
      id does **not** appear in `todo-item-ids`.
 
-   Run `/mo-export-bundle`. Verify:
+   Run `/mi-export-bundle`. Verify:
    - Scope in this session includes the non-canceled `todo-item-ids`
      entries first, preserving frontmatter order.
    - The added `IMPLEMENTING` item appears after those entries,
@@ -1350,7 +1350,7 @@ guarantees were inconsistent across §2, §10, §12).
      `IMPLEMENTED`) appear in the emitted scope bullets.
 4. **Stage 4 with stale change-summary.** Advance to stage 4, then
    commit something so `git rev-parse HEAD` differs from
-   `change-summary.md`'s frontmatter `head`. Run `/mo-export-bundle`.
+   `change-summary.md`'s frontmatter `head`. Run `/mi-export-bundle`.
    Verify:
    - Implementation summary and Changed areas sections appear.
    - The Changed areas section is preceded by the staleness warning
@@ -1361,7 +1361,7 @@ guarantees were inconsistent across §2, §10, §12).
      without appear under the "Changed but purpose not annotated"
      sub-bullet group with the explicit caveat.
 5. **Stage 6 — structured findings only.** Cycle has at least one open
-   `### IR-NNN` block in `overseer-review.md` with a non-empty
+   `### IR-NNN` block in `inspector-review.md` with a non-empty
    `scope:` field, plus at least one open block whose `scope:` is
    omitted. **No** freeform paragraphs. Verify:
    - Open review findings section is present.
@@ -1386,13 +1386,13 @@ guarantees were inconsistent across §2, §10, §12).
 8. **Stage 6 — completely empty review file.** No structured open
    findings, no freeform paragraphs. Verify the section is omitted
    entirely.
-9. **Stage 5 — populated `overseer-review.md` (round-8 review fix:
+9. **Stage 5 — populated `inspector-review.md` (round-8 review fix:
    stage independence).** Advance the cycle to stage 5 and write
-   findings into `overseer-review.md` (mix of one structured
+   findings into `inspector-review.md` (mix of one structured
    `### IR-NNN` block with `status: open` and one freeform
-   paragraph) **before** running `/mo-continue` to canonicalize.
+   paragraph) **before** running `/mi-continue` to canonicalize.
    `progress.md → active.current-stage` is `5`, not `6`. Run
-   `/mo-export-bundle`. Verify:
+   `/mi-export-bundle`. Verify:
    - **Open review findings section is present** despite the stage
      being 5. This catches a regression where the section is gated on
      `stage >= 6` rather than on file content (the §5.16 contract is
@@ -1412,8 +1412,8 @@ guarantees were inconsistent across §2, §10, §12).
     - **Worktree mismatch (round-8 review fix).** From a sibling
       worktree of the same repo (one whose path differs from the
       `worktree-path` field recorded in `progress.md.active`), or
-      from any directory that fails the `mo_assert_worktree_match`
-      fingerprint, invoke `/mo-export-bundle`. Verify the command
+      from any directory that fails the `mi_assert_worktree_match`
+      fingerprint, invoke `/mi-export-bundle`. Verify the command
       exits non-zero with the §6 worktree-mismatch refusal message
       and that `tmp/bundles/` in the wrong worktree contains **no
       bundle file** (the refusal must precede any `mkdir -p`). This
@@ -1428,7 +1428,7 @@ guarantees were inconsistent across §2, §10, §12).
     `tests/bundle/fixtures/<scenario>/expected.md` round-trip to
     bytewise equality with the bundler output (after timestamp
     normalization).
-13. **Slash-form invocation.** `/mo-export-bundle` works when typed.
+13. **Slash-form invocation.** `/mi-export-bundle` works when typed.
     The natural-language path is **not** part of acceptance — see §7.2.
 
 ## 13. Mapping of review findings to plan changes
@@ -1451,9 +1451,9 @@ For traceability against the review rounds applied to v3.
 | Finding | Severity | Resolved in |
 | --- | --- | --- |
 | Deterministic implementation cannot do semantic translation | Major | Design history pivot to v3 ("strict extractive rewriting"); §1, §2 principle 1, §3 first non-goal, §5.6/§5.12/§5.13 downgraded from synthesis to extraction; §8.4 adds golden-fixture tests; §11 lists v2 agent-composition mode as a candidate follow-up. |
-| `summary.md` cross-cutting and `config.md` Overseer Additions are load-bearing and were dropped | Major | §5.2 ("Custom project instructions") includes Overseer Additions; §5.3 ("Project-wide constraints") includes cross-cutting; §10 updated to clarify what's still dropped (Skills, Load on demand, GIT BRANCH, sibling-feature sections) and why. |
+| `summary.md` cross-cutting and `config.md` Inspector Additions are load-bearing and were dropped | Major | §5.2 ("Custom project instructions") includes Inspector Additions; §5.3 ("Project-wide constraints") includes cross-cutting; §10 updated to clarify what's still dropped (Skills, Load on demand, GIT BRANCH, sibling-feature sections) and why. |
 | Skill / available-skills mechanism is plugin-specific, not Claude Code's official slash-invocation surface | Major | §7.2 rewritten: slash form is contractually supported; natural-language is best-effort and harness-dependent; v1 acceptance does not test the natural-language path; description still phrased to overlap with NL triggers for whichever discovery surface is active. |
-| Sources footer violated own grep test by saying "mo-workflow" | Medium | §5.18 reworded to "project planning and review records"; §12.2 check 1 grep list includes `mo-workflow`. |
+| Sources footer violated own grep test by saying "mi-workflow" | Medium | §5.18 reworded to "project planning and review records"; §12.2 check 1 grep list includes `mi-workflow`. |
 | `change-summary.md` staleness behavior was contradictory between §5.10 and §9 | Medium | Resolved unilaterally in §5.14 (use with visible warning, comparing frontmatter against `progress.md` + live `git rev-parse HEAD`); §9 edge-case entry now references §5.14 with no competing policy. |
 | Changed areas could emit bare paths without role/purpose | Medium | §5.14 splits into annotated / "purpose not annotated" groups, the second carrying an explicit caveat sub-header. |
 
@@ -1472,15 +1472,15 @@ For traceability against the review rounds applied to v3.
 | Finding | Severity | Resolved in |
 | --- | --- | --- |
 | Stage-2 exports could omit "Scope in this session" because items are still in `PENDING` (the IMPLEMENTING flip happens at stage 3 per `docs/workflow-spec.md:518`) | Major | §5.7 includes `requirements.md → todo-item-ids` as source (1), cross-referenced with `todo-list.md` for descriptions. State-independent for stage 2. §12.2 check 2 is a dedicated stage-2 fixture asserting the section is non-empty when items are PENDING. |
-| Workflow-coupling guarantee was inconsistent across §2 (passthrough), §10 (paths stripped), and §12 (body exempt) — bundle could leak workflow paths/file names and still pass acceptance | Major | §2 Principle 3 rewritten to specify a deterministic path-scrub pass (the only mechanical body-side substitution); §8.2 adds `scrub_body_paths` with a closed regex/replacement table; §10 narrowed to match exactly what `scrub_body_paths` does; §12.1 introduces a two-level forbidden-string contract — full list against chrome, path-only subset against body — so leaked workflow paths or .md filenames in body fail acceptance. Role/tool words (`mo-workflow`, `millwright`, `overseer`, `seam`) remain unscrubbed by design and are documented honestly in the prompt block (§5.1). §12.2 check 1 adds a body-scrubbing positive-control assertion. |
+| Workflow-coupling guarantee was inconsistent across §2 (passthrough), §10 (paths stripped), and §12 (body exempt) — bundle could leak workflow paths/file names and still pass acceptance | Major | §2 Principle 3 rewritten to specify a deterministic path-scrub pass (the only mechanical body-side substitution); §8.2 adds `scrub_body_paths` with a closed regex/replacement table; §10 narrowed to match exactly what `scrub_body_paths` does; §12.1 introduces a two-level forbidden-string contract — full list against chrome, path-only subset against body — so leaked workflow paths or .md filenames in body fail acceptance. Role/tool words (`mi-workflow`, `millwright`, `inspector`, `seam`) remain unscrubbed by design and are documented honestly in the prompt block (§5.1). §12.2 check 1 adds a body-scrubbing positive-control assertion. |
 
 ### Round-5 findings (resolved in this revision of the plan)
 
 | Finding | Severity | Resolved in |
 | --- | --- | --- |
-| `todo-item-ids` does not retroactively grow for mid-cycle scope expansions; `/mo-update-blueprint` preserves the previous IDs (per `docs/blueprint-regeneration.md:169` and `commands/mo-update-blueprint.md:345`), so a later `/mo-update-todo-list add … IMPLEMENTING` item could still be omitted from "Scope in this session" | Major | §5.7 reworked to a **dual-source contract**: union of (1) `requirements.md → todo-item-ids` and (2) active-feature rows in state `IMPLEMENTING` from `todo-list.md`, deduplicated by id. This combines stage-2 PENDING coverage (round-4 fix) with mid-cycle-additions coverage. §8.2's `extract_in_scope_items` signature and behavior updated to match. |
-| Body-scrub contract was internally inconsistent: §8.2 says `scrub_body_paths` runs on every extracted body section, but §5.2 said Overseer Additions body is "passed through unchanged" and §2.5 said body is passed through "as-is after stripping" | Medium | §2 Principle 5 reworded to "passed through unchanged **except for chrome stripping and `scrub_body_paths`**"; §5.2 reworded to clarify body is "passed through subject only to the two universal passes from Principle §2.3"; new §5 opener establishes a single "universal body contract" that downstream sections inherit, so future passthrough/verbatim claims do not need per-section caveats. |
-| `scrub_body_paths` could destructively scrub legitimate project paths: the prior table included broad `implementation/<file>.md` (would scrub project-authored .md files under `implementation/`) and `.claude/(skills\|rules\|commands)/...` (would scrub project-authored rules) | Medium | §8.2 scrub table tightened: dropped the broad `implementation/` and `.claude/...` patterns; replaced with a workflow-known-files-only `implementation/(grounding-report\|change-summary\|manual-test-plan\|manual-test-results\|review-context\|overseer-review)\.md` pattern. Bare-filename pattern (which already catches workflow .md files regardless of prefix) covers the rest. The change is documented inline in §8.2 with the rationale for each removed pattern. §5.14 (Changed areas) explicitly notes the new behavior — project paths under `src/`, `lib/`, `migrations/`, etc. pass through verbatim — and acknowledges two residual edge cases (rare workflow-name collisions in projects, and the bundler running in this plugin's own repo). §11 lists "context-aware scrubbing" as a v2 follow-up if perfectly faithful changed-files paths ever become a hard requirement. |
+| `todo-item-ids` does not retroactively grow for mid-cycle scope expansions; `/mi-update-blueprint` preserves the previous IDs (per `docs/blueprint-regeneration.md:169` and `commands/mi-update-blueprint.md:345`), so a later `/mi-update-todo-list add … IMPLEMENTING` item could still be omitted from "Scope in this session" | Major | §5.7 reworked to a **dual-source contract**: union of (1) `requirements.md → todo-item-ids` and (2) active-feature rows in state `IMPLEMENTING` from `todo-list.md`, deduplicated by id. This combines stage-2 PENDING coverage (round-4 fix) with mid-cycle-additions coverage. §8.2's `extract_in_scope_items` signature and behavior updated to match. |
+| Body-scrub contract was internally inconsistent: §8.2 says `scrub_body_paths` runs on every extracted body section, but §5.2 said Inspector Additions body is "passed through unchanged" and §2.5 said body is passed through "as-is after stripping" | Medium | §2 Principle 5 reworded to "passed through unchanged **except for chrome stripping and `scrub_body_paths`**"; §5.2 reworded to clarify body is "passed through subject only to the two universal passes from Principle §2.3"; new §5 opener establishes a single "universal body contract" that downstream sections inherit, so future passthrough/verbatim claims do not need per-section caveats. |
+| `scrub_body_paths` could destructively scrub legitimate project paths: the prior table included broad `implementation/<file>.md` (would scrub project-authored .md files under `implementation/`) and `.claude/(skills\|rules\|commands)/...` (would scrub project-authored rules) | Medium | §8.2 scrub table tightened: dropped the broad `implementation/` and `.claude/...` patterns; replaced with a workflow-known-files-only `implementation/(grounding-report\|change-summary\|manual-test-plan\|manual-test-results\|review-context\|inspector-review)\.md` pattern. Bare-filename pattern (which already catches workflow .md files regardless of prefix) covers the rest. The change is documented inline in §8.2 with the rationale for each removed pattern. §5.14 (Changed areas) explicitly notes the new behavior — project paths under `src/`, `lib/`, `migrations/`, etc. pass through verbatim — and acknowledges two residual edge cases (rare workflow-name collisions in projects, and the bundler running in this plugin's own repo). §11 lists "context-aware scrubbing" as a v2 follow-up if perfectly faithful changed-files paths ever become a hard requirement. |
 
 ### Round-6 — round-5 follow-on tightenings (applied alongside the round-5 fixes)
 
@@ -1505,7 +1505,7 @@ addressed together.
 | `## Constraints` / `## Acceptance criteria` extraction is fictional — the workflow does not generate those headings (per `docs/blueprint-regeneration.md:139` constraints/acceptance live as per-goal notes inside Goals bullets, not as separate top-level sections) | Major | §5.8 rewritten to extract only `## Goals (this cycle)` and to explicitly call out why constraints/acceptance criteria are not separate sections. The `Constraints:` / `Acceptance:` prefixed sub-bullets the prior draft promised would never have appeared. |
 | `git rev-parse HEAD` and `tmp/bundles/` were not anchored to the active worktree — invocation from a sibling worktree or shifted cwd would write to the wrong repo and stale-check the wrong HEAD | Major | §6 adds a fourth pre-flight step that calls `progress.sh check-worktree` (the worktree-fingerprint guard, `docs/workflow-spec.md:1042`); §8.2 step 3 `cd "$worktree_path"` before any file-system or `git` operation. All relative paths and `git` calls run inside the recorded worktree. |
 | Bundle drops active-feature journal context — `summary.md → ## Feature: <active_feature>` carries feature rationale, dependencies, and acceptance hints that primers and review-context already treat as active context (`templates/primer.md.tmpl:29`, `docs/workflow-spec.md:646`); excluding it strands the receiving agent without that distillation | Major | New §5.4 "Feature background" extracts `summary.md → ## Feature: <active_feature>` verbatim. §5.3 (Project-wide constraints) keeps the `## Cross-cutting constraints` slice as before. §10 (drops list) updated: `summary.md`'s sibling-feature sections remain dropped, but the active-feature section now crosses into the bundle. §12.2 fixture-1 acceptance lists Feature background among the present sections. |
-| Open review findings discarded `scope:`, even though `templates/overseer-review.md.tmpl:25-44` defines `fix \| re-implement \| re-plan \| re-spec` as the canonical "how to act" hint — a standalone agent loses the recommended-action signal | Medium | §5.16 updated to keep `scope:` and emit it as "Recommended action: <scope>" appended to each finding bullet. The four scope values are passed through verbatim and explained inline in §5.16 so the receiver can read the escalation ladder without workflow context. §8.2's `extract_open_findings` docstring updated. Missing `scope:` becomes "Recommended action: not specified." |
+| Open review findings discarded `scope:`, even though `templates/inspector-review.md.tmpl:25-44` defines `fix \| re-implement \| re-plan \| re-spec` as the canonical "how to act" hint — a standalone agent loses the recommended-action signal | Medium | §5.16 updated to keep `scope:` and emit it as "Recommended action: <scope>" appended to each finding bullet. The four scope values are passed through verbatim and explained inline in §5.16 so the receiver can read the escalation ladder without workflow context. §8.2's `extract_open_findings` docstring updated. Missing `scope:` becomes "Recommended action: not specified." |
 | Round-6 entries were self-introduced cleanup, not a separate external review pass; listing them as "round 6" misrepresented the audit history | Medium | §13 round-6 heading now explicitly labels the entries as round-5 follow-on tightenings. The table contents are unchanged; only the framing was clarified. |
 | §5.1 title-casing the slug (`auth-jwt → "Auth Jwt"`) produced poor results for acronym-heavy slugs (`oauth-pkce`, `api-rate-limiter`) | Medium | §5.1 now uses the slug verbatim in the heading (`# auth-jwt — agent handoff brief`). Honest, matches the Sources footer, and avoids guessing capitalization deterministically. |
 | §5.7 closing claim "stage-independent" was technically correct but misleading after the round-6 CANCELED filter was added — the section is also state-filtered now | Medium | §5.7 closing reworded: "stage-independent (works at any stage from 2 onward) and mid-cycle-resilient (survives todo additions and cancellations)" with an explicit note that cancellation is the deliberate state-filter exception. |
@@ -1517,8 +1517,8 @@ addressed together.
 
 | Finding | Severity | Resolved in |
 | --- | --- | --- |
-| The doc opener and §1 promised "no plugin / no codebase / no mo-workflow knowledge" but body text deliberately retained workflow vocabulary (`mo-workflow`, `millwright`, `overseer`, `IR-NNN`, `cycle flavor`, `seam`), and acceptance did not test those in body — overclaiming the guarantee | Major | Doc opener and §1 reworded to "self-sufficient for context, not free of workflow-internal vocabulary"; the §1 paragraph now lists the role/tool/domain words that may appear in body and points the receiver at the §5.1 prompt block for guidance. The acceptance contract was not weakened (chrome cleanliness is still asserted; body remains exempt from role/tool word checks per §12.1). |
+| The doc opener and §1 promised "no plugin / no codebase / no mi-workflow knowledge" but body text deliberately retained workflow vocabulary (`mi-workflow`, `millwright`, `inspector`, `IR-NNN`, `cycle flavor`, `seam`), and acceptance did not test those in body — overclaiming the guarantee | Major | Doc opener and §1 reworded to "self-sufficient for context, not free of workflow-internal vocabulary"; the §1 paragraph now lists the role/tool/domain words that may appear in body and points the receiver at the §5.1 prompt block for guidance. The acceptance contract was not weakened (chrome cleanliness is still asserted; body remains exempt from role/tool word checks per §12.1). |
 | §5.18 Sources footer exposed `at stage **<N>**` — internal stage numbers are not meaningful outside the workflow | Medium | §5.18 reworded to use a receiver-friendly phase label (`during planning` / `during implementation` / `post-implementation, before review` / `during review` / `review complete, finalizing`) derived from `current-stage`. The numeric `stage<N>` remains in the filename only, which is local-disk bookkeeping, not bundle content. Footer-forbidden strings now include `stage \d+` to assert the numeric stage never reaches the footer. |
 | Open review findings emitted "Recommended action: <scope>" without explaining what the scope values mean — the receiving agent could not act on the recommendation without external context | Medium | §5.16 step 5 adds an in-bundle "Action labels" legend, emitted as a small bundler-authored block at the end of the section when at least one structured finding carried a real `scope:` value. Plain-English glosses for `fix` / `re-implement` / `re-plan` / `re-spec`. Suppressed for freeform-only sections. The legend is chrome (bundler-authored), not extracted source; §12.1 chrome contract covers it implicitly. |
-| §5.16 was labeled "stage 6+" even though `overseer-review.md` can have meaningful content at stage 5 (overseer types findings before `/mo-continue` canonicalizes); per Principle §2.6 inclusion is file-content-driven, not stage-driven | Medium | §5.16 heading reworded to drop the stage gate ("stage-independent — emitted whenever `overseer-review.md` has content"); §5.16's closing paragraph explains stage independence with `docs/workflow-spec.md:716` reference. §12.2 check 9 added: a stage-5 fixture with mixed structured + freeform content, asserting the section is emitted, the §5.17 action paragraph picks the stage-4-or-5 row, and the §5.18 phase label is `post-implementation, before review`. |
-| §6 introduced the worktree-fingerprint guard as a refusal but §12 acceptance only covered no-active-cycle and null-active-feature refusals — the guard could regress without being caught | Medium | §12.2 check 10 (formerly the Refusals fixture) gains a third sub-case: invocation from a sibling worktree of the same repo or any path that fails `mo_assert_worktree_match`. Asserts non-zero exit, the §6 worktree-mismatch refusal message, and that no bundle file is created in `tmp/bundles/` (the refusal must precede `mkdir -p`). Existing §13 round-1 reference to "§12.2 check 10" for gitignore self-containment renumbered to check 11. |
+| §5.16 was labeled "stage 6+" even though `inspector-review.md` can have meaningful content at stage 5 (inspector types findings before `/mi-continue` canonicalizes); per Principle §2.6 inclusion is file-content-driven, not stage-driven | Medium | §5.16 heading reworded to drop the stage gate ("stage-independent — emitted whenever `inspector-review.md` has content"); §5.16's closing paragraph explains stage independence with `docs/workflow-spec.md:716` reference. §12.2 check 9 added: a stage-5 fixture with mixed structured + freeform content, asserting the section is emitted, the §5.17 action paragraph picks the stage-4-or-5 row, and the §5.18 phase label is `post-implementation, before review`. |
+| §6 introduced the worktree-fingerprint guard as a refusal but §12 acceptance only covered no-active-cycle and null-active-feature refusals — the guard could regress without being caught | Medium | §12.2 check 10 (formerly the Refusals fixture) gains a third sub-case: invocation from a sibling worktree of the same repo or any path that fails `mi_assert_worktree_match`. Asserts non-zero exit, the §6 worktree-mismatch refusal message, and that no bundle file is created in `tmp/bundles/` (the refusal must precede `mkdir -p`). Existing §13 round-1 reference to "§12.2 check 10" for gitignore self-containment renumbered to check 11. |

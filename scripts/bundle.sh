@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # bundle.sh — export self-contained agent-handoff briefs for the active feature.
 #
-# Triggered by /mo-export-bundle. Reads the workflow's canonical files
+# Triggered by /mi-export-bundle. Reads the workflow's canonical files
 # (requirements / config / decisions / grounding-report / summary /
-# todo-list / change-summary / manual-test-* / overseer-review), strips
+# todo-list / change-summary / manual-test-* / inspector-review), strips
 # frontmatter and HTML scaffolding, mechanically scrubs workflow file
 # paths and bare workflow .md filenames out of body text, structures the
 # result under task-neutral section headers, and writes a single .md
@@ -42,31 +42,31 @@ esac
 # ---------------------------------------------------------------- preconditions
 
 # 1. Active cycle?
-if ! "$MO_PLUGIN_ROOT/scripts/quest.sh" current >/dev/null 2>&1; then
-  echo "Refused: no active cycle. Run /mo-init and /mo-run first." >&2
+if ! "$MI_PLUGIN_ROOT/scripts/quest.sh" current >/dev/null 2>&1; then
+  echo "Refused: no active cycle. Run /mi-init and /mi-run first." >&2
   exit 2
 fi
 
 # 2. Active feature?
-feature="$("$MO_PLUGIN_ROOT/scripts/progress.sh" get-active 2>/dev/null || echo "null")"
+feature="$("$MI_PLUGIN_ROOT/scripts/progress.sh" get-active 2>/dev/null || echo "null")"
 if [[ -z "$feature" || "$feature" == "null" ]]; then
-  echo "Refused: no active feature. Advance to stage 2 first (run /mo-continue or /mo-apply-impact)." >&2
+  echo "Refused: no active feature. Advance to stage 2 first (run /mi-continue or /mi-apply-impact)." >&2
   exit 2
 fi
 
 # 3. Active worktree fingerprint matches?
-if ! "$MO_PLUGIN_ROOT/scripts/progress.sh" check-worktree >/dev/null 2>&1; then
+if ! "$MI_PLUGIN_ROOT/scripts/progress.sh" check-worktree >/dev/null 2>&1; then
   echo "Refused: invoked from a different worktree than the one that owns the active feature. Switch to the recorded worktree-path and re-run." >&2
   exit 2
 fi
 
 # 4. Read everything else we need.
-data_root="$("$MO_PLUGIN_ROOT/scripts/data-root.sh")"
-stage="$("$MO_PLUGIN_ROOT/scripts/progress.sh" get current-stage)"
-branch="$("$MO_PLUGIN_ROOT/scripts/progress.sh" get branch 2>/dev/null || echo "")"
-base_commit="$("$MO_PLUGIN_ROOT/scripts/progress.sh" get base-commit 2>/dev/null || echo "")"
-worktree_path="$("$MO_PLUGIN_ROOT/scripts/progress.sh" get worktree-path)"
-slug_dir="$("$MO_PLUGIN_ROOT/scripts/quest.sh" dir)"
+data_root="$("$MI_PLUGIN_ROOT/scripts/data-root.sh")"
+stage="$("$MI_PLUGIN_ROOT/scripts/progress.sh" get current-stage)"
+branch="$("$MI_PLUGIN_ROOT/scripts/progress.sh" get branch 2>/dev/null || echo "")"
+base_commit="$("$MI_PLUGIN_ROOT/scripts/progress.sh" get base-commit 2>/dev/null || echo "")"
+worktree_path="$("$MI_PLUGIN_ROOT/scripts/progress.sh" get worktree-path)"
+slug_dir="$("$MI_PLUGIN_ROOT/scripts/quest.sh" dir)"
 
 # ------------------------------------------------------------- output anchoring
 
@@ -105,7 +105,7 @@ grounding_md="$data_root/workflow-stream/$feature/implementation/grounding-repor
 change_summary_md="$data_root/workflow-stream/$feature/implementation/change-summary.md"
 manual_plan_md="$data_root/workflow-stream/$feature/test/manual-test-plan.md"
 manual_results_md="$data_root/workflow-stream/$feature/test/manual-test-results.md"
-overseer_review_md="$data_root/workflow-stream/$feature/implementation/overseer-review.md"
+inspector_review_md="$data_root/workflow-stream/$feature/implementation/inspector-review.md"
 summary_md="$slug_dir/summary.md"
 todo_list_md="$slug_dir/todo-list.md"
 
@@ -126,7 +126,7 @@ python3 - \
   "$change_summary_md" \
   "$manual_plan_md" \
   "$manual_results_md" \
-  "$overseer_review_md" \
+  "$inspector_review_md" \
   "$summary_md" \
   "$todo_list_md" \
 <<'PYEOF'
@@ -150,7 +150,7 @@ import yaml
     CHANGE_SUMMARY_MD,
     MANUAL_PLAN_MD,
     MANUAL_RESULTS_MD,
-    OVERSEER_REVIEW_MD,
+    INSPECTOR_REVIEW_MD,
     SUMMARY_MD,
     TODO_LIST_MD,
 ) = sys.argv[1:17]
@@ -244,7 +244,7 @@ BODY_SCRUB_TABLE = [
     (re.compile(
         r"\bimplementation/(?:grounding-report|change-summary|"
         r"manual-test-plan|manual-test-results|review-context|"
-        r"overseer-review)\.md\b"
+        r"inspector-review)\.md\b"
     ),                                                                "<an internal record>"),
     # Manual-test artifacts under their new feature-permanent test/ prefix
     # (the implementation/ entry above stays so legacy bundles referencing
@@ -256,7 +256,7 @@ BODY_SCRUB_TABLE = [
     # recognized prefix (e.g., a decision bullet that says "see decisions.md").
     (re.compile(
         r"\b(?:progress|requirements|config|decisions|summary|"
-        r"todo-list|change-summary|grounding-report|overseer-review|"
+        r"todo-list|change-summary|grounding-report|inspector-review|"
         r"review-context|primer|manual-test-plan|"
         r"manual-test-results)\.md\b"
     ),                                                                "<an internal record>"),
@@ -367,9 +367,9 @@ def emit_prompt_block(feature):
 
 
 def emit_custom_instructions(config_text):
-    """§5.2 — config.md → ## Overseer Additions. Heading replaced."""
+    """§5.2 — config.md → ## Inspector Additions. Heading replaced."""
     body = extract_section(strip_html_comments(strip_frontmatter(config_text)),
-                           "Overseer Additions")
+                           "Inspector Additions")
     body = scrub_body_paths(normalize_blanks(strip_template_placeholders(body)))
     if not body.strip():
         return ""
@@ -844,7 +844,7 @@ def _freeform_paragraphs(under_review):
 
 
 def emit_open_findings(review_text):
-    """§5.16 — overseer-review.md, gate on (open IR OR freeform), keep scope:."""
+    """§5.16 — inspector-review.md, gate on (open IR OR freeform), keep scope:."""
     body = strip_html_comments(strip_frontmatter(review_text))
     under = _split_findings_block(body)
     if not under:
@@ -953,7 +953,7 @@ grounding_text = read_file(GROUNDING_MD)
 change_text = read_file(CHANGE_SUMMARY_MD)
 plan_text = read_file(MANUAL_PLAN_MD)
 results_text = read_file(MANUAL_RESULTS_MD)
-review_text = read_file(OVERSEER_REVIEW_MD)
+review_text = read_file(INSPECTOR_REVIEW_MD)
 summary_text = read_file(SUMMARY_MD)
 todo_text = read_file(TODO_LIST_MD)
 

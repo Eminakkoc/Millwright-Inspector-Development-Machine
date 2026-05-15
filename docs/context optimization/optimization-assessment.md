@@ -36,7 +36,7 @@ Recommended adjustments:
 - Keep Option 2A. Fix-only reviews do not need brainstorming chain ceremony, and the stage-5 classification is already the right time to detect this.
 - Keep Option 2D. Refreshing `review-context.md` gives each worker a compact current snapshot and reduces repeated diff discovery.
 - Keep Option 2E. A bounded `change-summary.md` helps stages 4, 6, and 8.
-- Keep the deferred-findings shortcut, but treat it as a workflow UX affordance, not a default behavior. It is useful when the overseer intentionally accepts non-blocking follow-up work.
+- Keep the deferred-findings shortcut, but treat it as a workflow UX affordance, not a default behavior. It is useful when the inspector intentionally accepts non-blocking follow-up work.
 - Be careful with "pre-classify cascades before invoking the chain": do not pre-fetch large source/spec context in main. If cascade context is needed, package only IDs, paths, and compact excerpts, then let the fresh worker read the heavier files.
 
 ### P1/P2: Stage 2 and Stage 8 blueprint work delegation
@@ -80,8 +80,8 @@ The workflow should generate or update `.puml` source when diagrams are part of 
 Recommended policy:
 
 - Generate `.puml` by default when diagram source is stale.
-- Render SVG/PNG only when the overseer asks, when CI requires it, or when a visual QA step needs it.
-- Do not ask the overseer every time. Use a persisted preference such as `diagram-rendering: never|prompt|auto`; otherwise the prompt itself adds turns and friction.
+- Render SVG/PNG only when the inspector asks, when CI requires it, or when a visual QA step needs it.
+- Do not ask the inspector every time. Use a persisted preference such as `diagram-rendering: never|prompt|auto`; otherwise the prompt itself adds turns and friction.
 - Use commit-range detection to update only diagram subjects affected by changed files.
 
 ## Reasonable Smaller Optimizations
@@ -127,7 +127,7 @@ Recommended cache key:
 
 **Assessment: reasonable, but do not oversteer the implementation chain.**
 
-The mo-workflow has limited control over the brainstorming/writing/executing chain, so these should stay as launcher and primer hints. The best additions are:
+The mi-workflow has limited control over the brainstorming/writing/executing chain, so these should stay as launcher and primer hints. The best additions are:
 
 - prefer subagent-driven-development for tasks touching more than 3 files or more than 100 LOC
 - recommend direct mode for small features under roughly 500 LOC
@@ -143,7 +143,7 @@ These hints reduce avoidable context, but they should not replace the chain's ju
 
 **Assessment: reasonable.**
 
-Stage 5 is the right place to compute this because findings are already canonicalized there. Persisting the suggestion prevents stage 6 from re-deriving the same fact and lets `/mo-review` default correctly.
+Stage 5 is the right place to compute this because findings are already canonicalized there. Persisting the suggestion prevents stage 6 from re-deriving the same fact and lets `/mi-review` default correctly.
 
 ### Stage 8 finalization mechanics
 
@@ -214,7 +214,7 @@ This prevents sub-agents from returning long narrative summaries that slowly rec
 Where possible, consume slices of large markdown artifacts through small scripts instead of reading whole files. Examples:
 
 - extract one feature section from `summary.md`
-- list only open IR IDs and summaries from `overseer-review.md`
+- list only open IR IDs and summaries from `inspector-review.md`
 - show only changed-file index from `change-summary.md`
 
 This complements sub-agent delegation and keeps main reads bounded even when artifacts grow.

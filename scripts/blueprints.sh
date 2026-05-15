@@ -23,19 +23,19 @@
 #                                                # --expected-kind. Errors on missing
 #                                                # partial, multiple partials, kind
 #                                                # mismatch, or unrecoverable shapes.
-#                                                # Used by /mo-update-blueprint and
-#                                                # /mo-complete-workflow when their
+#                                                # Used by /mi-update-blueprint and
+#                                                # /mi-complete-workflow when their
 #                                                # top-of-command branches detect a
 #                                                # resumable partial that matches the
 #                                                # caller's intent.
-#   blueprints.sh preserve-overseer-sections \
+#   blueprints.sh preserve-inspector-sections \
 #     <feature> <from-version>                   # copy ## GIT BRANCH and
-#                                                # ## Overseer Additions bodies from
+#                                                # ## Inspector Additions bodies from
 #                                                # history/v<from-version>/config.md
 #                                                # into current/config.md (headings
 #                                                # stay; only bodies are replaced).
 #                                                # Idempotent. Use after rotate +
-#                                                # regenerate to keep overseer-authored
+#                                                # regenerate to keep inspector-authored
 #                                                # sections alive across rotations.
 #   blueprints.sh check-current [--require-primer] <feature>
 #                                                # Inspect blueprints/current/<feature>/
@@ -54,7 +54,7 @@
 #                                                #       --require-primer + missing/invalid primer).
 #                                                # Sequence and structural diagrams are NOT
 #                                                # required here; the spec calls them conditional.
-#                                                # The overseer verifies flow coverage at the
+#                                                # The inspector verifies flow coverage at the
 #                                                # stage-2 review gate.
 #   blueprints.sh branch-status <feature>        # Inspect config.md's ## GIT BRANCH section.
 #                                                # Prints one of:
@@ -62,7 +62,7 @@
 #                                                #   unset  — section empty or absent
 #                                                #   trunk  — exactly one branch but it's main/master
 #                                                #   multi  — two or more candidate branches
-#                                                # Used by /mo-plan-implementation for branch
+#                                                # Used by /mi-plan-implementation for branch
 #                                                # validation; check-current does not gate on it.
 #
 # Valid --reason-kind values:
@@ -77,9 +77,9 @@ cmd="${1:-}"; shift || true
 case "$cmd" in
   ensure-current)
     feature="${1:?feature required}"
-    current="$(mo_blueprints_current "$feature")"
+    current="$(mi_blueprints_current "$feature")"
     mkdir -p "$current/diagrams"
-    mo_info "ensured $current and $current/diagrams"
+    mi_info "ensured $current and $current/diagrams"
     ;;
 
   rotate)
@@ -97,21 +97,21 @@ case "$cmd" in
           shift 2
           ;;
         *)
-          mo_die "unknown flag: $1"
+          mi_die "unknown flag: $1"
           ;;
       esac
     done
-    [[ -n "$reason_kind" ]] || mo_die "--reason-kind is required (see schemas/reason.schema.yaml for valid values)"
-    [[ -n "$reason_summary" ]] || mo_die "--reason-summary is required (one-line explanation of the rotation)"
+    [[ -n "$reason_kind" ]] || mi_die "--reason-kind is required (see schemas/reason.schema.yaml for valid values)"
+    [[ -n "$reason_summary" ]] || mi_die "--reason-summary is required (one-line explanation of the rotation)"
 
-    current="$(mo_blueprints_current "$feature")"
-    history="$(mo_blueprints_history "$feature")"
-    [[ -d "$current" ]] || mo_die "blueprints/current not found for feature=$feature"
+    current="$(mi_blueprints_current "$feature")"
+    history="$(mi_blueprints_history "$feature")"
+    [[ -d "$current" ]] || mi_die "blueprints/current not found for feature=$feature"
     mkdir -p "$history"
 
     # Preflight: scan finalized vN/ directories. Any finalized v[K] missing
     # reason.md is the old-format interrupted shape (pre-resumability); refuse
-    # to proceed until an overseer repairs it. We must not guess the reason
+    # to proceed until an inspector repairs it. We must not guess the reason
     # kind of an unidentified finalized rotation, nor count it as a safe parent.
     shopt -s nullglob
     finalized_max=0
@@ -122,7 +122,7 @@ case "$cmd" in
       [[ "$base" =~ ^[0-9]+$ ]] || continue
       if [[ ! -f "$d/reason.md" ]]; then
         shopt -u nullglob
-        mo_die "rotate: finalized history directory $d is missing reason.md (old-format interrupted rotation; manual repair required before any new rotation can proceed)"
+        mi_die "rotate: finalized history directory $d is missing reason.md (old-format interrupted rotation; manual repair required before any new rotation can proceed)"
       fi
       finalized_count=$((finalized_count + 1))
       if [[ $base -gt $finalized_max ]]; then
@@ -152,7 +152,7 @@ case "$cmd" in
   - $p"; done
       for p in "${tmp_partials[@]}"; do msg+="
   - $p"; done
-      mo_die "$msg"
+      mi_die "$msg"
     fi
 
     # Exactly one .partial: kind-matched recovery.
@@ -164,14 +164,14 @@ case "$cmd" in
         if [[ -z "$(ls -A "$partial" 2>/dev/null)" ]]; then
           # Empty + missing reason → safe to remove (no artifacts moved yet).
           rmdir "$partial"
-          mo_info "rotate: removed empty partial $partial (no reason.md, no contents)"
+          mi_info "rotate: removed empty partial $partial (no reason.md, no contents)"
         else
-          mo_die "rotate: partial directory $partial has artifacts but no reason.md (old/unknown partial; manual cleanup required)"
+          mi_die "rotate: partial directory $partial has artifacts but no reason.md (old/unknown partial; manual cleanup required)"
         fi
       else
-        partial_kind="$(mo_fm_get "$reason_file" kind 2>/dev/null || echo "")"
+        partial_kind="$(mi_fm_get "$reason_file" kind 2>/dev/null || echo "")"
         if [[ "$partial_kind" != "$reason_kind" ]]; then
-          mo_die "rotate: partial $partial has reason.kind='$partial_kind' but requested --reason-kind='$reason_kind' (different commands cannot share a partial; finish or abandon the existing partial first)"
+          mi_die "rotate: partial $partial has reason.kind='$partial_kind' but requested --reason-kind='$reason_kind' (different commands cannot share a partial; finish or abandon the existing partial first)"
         fi
         # Resume: move any remaining current/* into vK.partial/, rename → vK.
         shopt -s dotglob nullglob
@@ -181,7 +181,7 @@ case "$cmd" in
         shopt -u dotglob nullglob
         mv "$partial" "$history/v${partial_K}"
         mkdir -p "$current"
-        mo_info "rotate: resumed v${partial_K}.partial → v${partial_K} (kind=$reason_kind)"
+        mi_info "rotate: resumed v${partial_K}.partial → v${partial_K} (kind=$reason_kind)"
         echo "$partial_K"
         exit 0
       fi
@@ -195,9 +195,9 @@ case "$cmd" in
       contents="$(ls -A "$tmp_partial" 2>/dev/null)"
       if [[ -z "$contents" || "$contents" == "reason.md" ]]; then
         rm -rf "$tmp_partial"
-        mo_info "rotate: removed unpublished temp $tmp_partial (empty or reason-only)"
+        mi_info "rotate: removed unpublished temp $tmp_partial (empty or reason-only)"
       else
-        mo_die "rotate: unpublished temp $tmp_partial has unexpected contents (manual cleanup required); contents: $contents"
+        mi_die "rotate: unpublished temp $tmp_partial has unexpected contents (manual cleanup required); contents: $contents"
       fi
     fi
 
@@ -210,7 +210,7 @@ case "$cmd" in
 
     # Step 2: write + validate reason.md inside .partial.tmp.
     triggered_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-    "${MO_PLUGIN_ROOT}/scripts/frontmatter.sh" init reason "$tmp_dest/reason.md" \
+    "${MI_PLUGIN_ROOT}/scripts/frontmatter.sh" init reason "$tmp_dest/reason.md" \
       "KIND=$reason_kind" \
       "TRIGGERED_AT=$triggered_at" \
       "SUMMARY=$reason_summary" >/dev/null
@@ -233,7 +233,7 @@ case "$cmd" in
     # Step 6: recreate empty current/ (next stage's launcher fills it).
     mkdir -p "$current"
 
-    mo_info "rotated blueprints/current to history/v${next_n} (kind=$reason_kind)"
+    mi_info "rotated blueprints/current to history/v${next_n} (kind=$reason_kind)"
     echo "$next_n"
     ;;
 
@@ -247,15 +247,15 @@ case "$cmd" in
           shift 2
           ;;
         *)
-          mo_die "unknown flag: $1"
+          mi_die "unknown flag: $1"
           ;;
       esac
     done
-    [[ -n "$expected_kind" ]] || mo_die "--expected-kind is required (one of: completion, spec-update, re-spec-cascade, re-plan-cascade, manual)"
+    [[ -n "$expected_kind" ]] || mi_die "--expected-kind is required (one of: completion, spec-update, re-spec-cascade, re-plan-cascade, manual)"
 
-    current="$(mo_blueprints_current "$feature")"
-    history="$(mo_blueprints_history "$feature")"
-    [[ -d "$history" ]] || mo_die "resume-partial: history directory not found for feature=$feature"
+    current="$(mi_blueprints_current "$feature")"
+    history="$(mi_blueprints_history "$feature")"
+    [[ -d "$history" ]] || mi_die "resume-partial: history directory not found for feature=$feature"
 
     shopt -s nullglob
     partials=()
@@ -270,10 +270,10 @@ case "$cmd" in
 
     total_partials=$((${#partials[@]} + ${#tmp_partials[@]}))
     if [[ $total_partials -eq 0 ]]; then
-      mo_die "resume-partial: no partial directory found under $history"
+      mi_die "resume-partial: no partial directory found under $history"
     fi
     if [[ $total_partials -gt 1 ]]; then
-      mo_die "resume-partial: multiple partial directories under $history (count: $total_partials); manual reconciliation required"
+      mi_die "resume-partial: multiple partial directories under $history (count: $total_partials); manual reconciliation required"
     fi
 
     if [[ ${#tmp_partials[@]} -eq 1 ]]; then
@@ -281,10 +281,10 @@ case "$cmd" in
       contents="$(ls -A "$tmp_partial" 2>/dev/null)"
       if [[ -z "$contents" || "$contents" == "reason.md" ]]; then
         rm -rf "$tmp_partial"
-        mo_info "resume-partial: removed unpublished temp $tmp_partial (empty or reason-only); no published partial to resume"
+        mi_info "resume-partial: removed unpublished temp $tmp_partial (empty or reason-only); no published partial to resume"
         exit 0
       fi
-      mo_die "resume-partial: unpublished temp $tmp_partial has unexpected contents (manual cleanup required); contents: $contents"
+      mi_die "resume-partial: unpublished temp $tmp_partial has unexpected contents (manual cleanup required); contents: $contents"
     fi
 
     partial="${partials[0]}"
@@ -293,13 +293,13 @@ case "$cmd" in
     if [[ ! -f "$reason_file" ]]; then
       if [[ -z "$(ls -A "$partial" 2>/dev/null)" ]]; then
         rmdir "$partial"
-        mo_die "resume-partial: removed empty partial $partial (no reason.md); nothing to resume"
+        mi_die "resume-partial: removed empty partial $partial (no reason.md); nothing to resume"
       fi
-      mo_die "resume-partial: partial $partial has artifacts but no reason.md (old/unknown partial; manual cleanup required)"
+      mi_die "resume-partial: partial $partial has artifacts but no reason.md (old/unknown partial; manual cleanup required)"
     fi
-    partial_kind="$(mo_fm_get "$reason_file" kind 2>/dev/null || echo "")"
+    partial_kind="$(mi_fm_get "$reason_file" kind 2>/dev/null || echo "")"
     if [[ "$partial_kind" != "$expected_kind" ]]; then
-      mo_die "resume-partial: partial $partial has reason.kind='$partial_kind' but caller expected '$expected_kind' (refuse to resume; another command owns this partial)"
+      mi_die "resume-partial: partial $partial has reason.kind='$partial_kind' but caller expected '$expected_kind' (refuse to resume; another command owns this partial)"
     fi
 
     # Move any remaining current/* into vK.partial/, then atomic rename → vK.
@@ -310,17 +310,17 @@ case "$cmd" in
     shopt -u dotglob nullglob
     mv "$partial" "$history/v${partial_K}"
     mkdir -p "$current"
-    mo_info "resume-partial: v${partial_K}.partial → v${partial_K} (kind=$expected_kind)"
+    mi_info "resume-partial: v${partial_K}.partial → v${partial_K} (kind=$expected_kind)"
     echo "$partial_K"
     ;;
 
-  preserve-overseer-sections)
+  preserve-inspector-sections)
     feature="${1:?feature required}"
     from_version="${2:?from-version required (numeric, e.g. 3 for history/v3/)}"
-    src="$(mo_blueprints_history "$feature")/v${from_version}/config.md"
-    dest="$(mo_blueprints_current "$feature")/config.md"
-    [[ -f "$src" ]]  || mo_die "history config.md not found: $src"
-    [[ -f "$dest" ]] || mo_die "current config.md not found: $dest (regenerate before invoking preserve-overseer-sections)"
+    src="$(mi_blueprints_history "$feature")/v${from_version}/config.md"
+    dest="$(mi_blueprints_current "$feature")/config.md"
+    [[ -f "$src" ]]  || mi_die "history config.md not found: $src"
+    [[ -f "$dest" ]] || mi_die "current config.md not found: $dest (regenerate before invoking preserve-inspector-sections)"
 
     python3 - "$src" "$dest" <<'PYEOF'
 import sys, re
@@ -355,7 +355,7 @@ def replace_section(text, heading, new_body):
     return text[:m.end(1)] + new_body + ('\n' if not new_body.endswith('\n\n') else '') + text[m.end(2):]
 
 preserved = []
-for heading in ('## GIT BRANCH', '## Overseer Additions'):
+for heading in ('## GIT BRANCH', '## Inspector Additions'):
     body = extract_section(src, heading)
     if body is None:
         continue
@@ -377,8 +377,8 @@ PYEOF
       shift
     fi
     feature="${1:?feature required}"
-    current="$(mo_blueprints_current "$feature")"
-    python3 - "$current" "$require_primer" "$MO_PLUGIN_ROOT" <<'PYEOF'
+    current="$(mi_blueprints_current "$feature")"
+    python3 - "$current" "$require_primer" "$MI_PLUGIN_ROOT" <<'PYEOF'
 import os, re, glob, subprocess, sys, yaml
 
 current, require_primer_str, plugin_root = sys.argv[1], sys.argv[2], sys.argv[3]
@@ -495,7 +495,7 @@ PYEOF
 
   branch-status)
     feature="${1:?feature required}"
-    cfg="$(mo_blueprints_current "$feature")/config.md"
+    cfg="$(mi_blueprints_current "$feature")/config.md"
     if [[ ! -f "$cfg" ]]; then
       echo "unset"
       exit 0
@@ -533,23 +533,23 @@ PYEOF
 
   manual-test-plan-path)
     feature="${1:?feature required}"
-    echo "$(mo_test_dir "$feature")/manual-test-plan.md"
+    echo "$(mi_test_dir "$feature")/manual-test-plan.md"
     ;;
 
   manual-test-results-path)
     feature="${1:?feature required}"
-    echo "$(mo_test_dir "$feature")/manual-test-results.md"
+    echo "$(mi_test_dir "$feature")/manual-test-results.md"
     ;;
 
   manual-test-plan-rotate)
     # Move the current manual-test-plan.md (and manual-test-results.md, if present)
-    # into manual-test-plan.history/<UTC-timestamp>/. Called by /mo-manual-test-plan
+    # into manual-test-plan.history/<UTC-timestamp>/. Called by /mi-manual-test-plan
     # on regeneration (--force or direct `y` when an existing plan was found) and
     # by --discard-existing. The caller is responsible for preserving the prior
     # plan's `seed-family-id` BEFORE invoking this helper unless --new-seed-family
     # was explicitly requested.
     feature="${1:?feature required}"
-    test_dir="$(mo_test_dir "$feature")"
+    test_dir="$(mi_test_dir "$feature")"
     # mkdir -p makes the rotate safe even when test/ has not been created yet
     # (e.g., rotate is the first subcommand to touch the folder after a fresh
     # feature activation). The plan.history directory is created on demand below.
@@ -558,7 +558,7 @@ PYEOF
     results_file="$test_dir/manual-test-results.md"
     history_dir="$test_dir/manual-test-plan.history"
     if [[ ! -f "$plan_file" && ! -f "$results_file" ]]; then
-      mo_die "manual-test-plan-rotate: no manual-test-plan.md or manual-test-results.md to rotate at $test_dir"
+      mi_die "manual-test-plan-rotate: no manual-test-plan.md or manual-test-results.md to rotate at $test_dir"
     fi
     timestamp="$(date -u +%Y-%m-%dT%H-%M-%SZ)"
     target="$history_dir/$timestamp"
@@ -569,7 +569,7 @@ PYEOF
     if [[ -f "$results_file" ]]; then
       mv "$results_file" "$target/manual-test-results.md"
     fi
-    mo_info "rotated manual-test artifacts → $target"
+    mi_info "rotated manual-test artifacts → $target"
     echo "$target"
     ;;
 
@@ -577,15 +577,15 @@ PYEOF
     # Move ONLY the current manual-test-results.md into
     # manual-test-results.history/<UTC-timestamp>/manual-test-results.md.
     # Leaves manual-test-plan.md and manual-test-plan.history/ untouched.
-    # Used by /mo-manual-test-plan Step 1 and /mo-manual-test-run Branch A
+    # Used by /mi-manual-test-plan Step 1 and /mi-manual-test-run Branch A
     # to auto-rotate a prior-activation results file out of the way at the
     # start of a new cycle (see docs/manual-testing-folder/plan.md § 4.1).
     # Non-fatal when the file is absent (prints info to stderr, exits 0).
     feature="${1:?feature required}"
-    test_dir="$(mo_test_dir "$feature")"
+    test_dir="$(mi_test_dir "$feature")"
     results_file="$test_dir/manual-test-results.md"
     if [[ ! -f "$results_file" ]]; then
-      mo_info "no manual-test-results.md to rotate at $test_dir"
+      mi_info "no manual-test-results.md to rotate at $test_dir"
       exit 0
     fi
     history_dir="$test_dir/manual-test-results.history"
@@ -593,12 +593,12 @@ PYEOF
     target="$history_dir/$timestamp"
     mkdir -p "$target"
     mv "$results_file" "$target/manual-test-results.md"
-    mo_info "rotated manual-test-results.md → $target"
+    mi_info "rotated manual-test-results.md → $target"
     echo "$target"
     ;;
 
   *)
-    echo "usage: blueprints.sh {ensure-current|rotate|resume-partial|preserve-overseer-sections|check-current|branch-status|manual-test-plan-path|manual-test-results-path|manual-test-plan-rotate|manual-test-results-rotate-only} ..." >&2
+    echo "usage: blueprints.sh {ensure-current|rotate|resume-partial|preserve-inspector-sections|check-current|branch-status|manual-test-plan-path|manual-test-results-path|manual-test-plan-rotate|manual-test-results-rotate-only} ..." >&2
     exit 2
     ;;
 esac

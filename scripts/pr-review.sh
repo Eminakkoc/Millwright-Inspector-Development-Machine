@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# pr-review.sh — drive the /mo-analyze-review PR-review feature.
+# pr-review.sh — drive the /mi-analyze-review PR-review feature.
 #
 # Owns the mechanical half of the feature: GitHub URL parsing, kind-aware
 # comment fetching (GraphQL review threads + REST review bodies + REST issue
@@ -53,7 +53,7 @@
 set -euo pipefail
 source "$(dirname "$0")/internal/common.sh"
 
-pr_reviews_dir() { echo "$(mo_data_root)/pr-reviews"; }
+pr_reviews_dir() { echo "$(mi_data_root)/pr-reviews"; }
 
 # Slug for a PR session group: lowercased owner/repo, non-alnum collapsed to '-'.
 pr_slug() {
@@ -68,11 +68,11 @@ PYEOF
 
 # Validate report.md frontmatter against the pr-review-report schema. Loud on failure.
 validate_report() {
-  "${MO_PLUGIN_ROOT}/scripts/frontmatter.sh" validate "$1" pr-review-report >/dev/null
+  "${MI_PLUGIN_ROOT}/scripts/frontmatter.sh" validate "$1" pr-review-report >/dev/null
 }
 
 require_gh() {
-  command -v gh >/dev/null 2>&1 || mo_die "gh (GitHub CLI) is required — install it and run 'gh auth login'"
+  command -v gh >/dev/null 2>&1 || mi_die "gh (GitHub CLI) is required — install it and run 'gh auth login'"
 }
 
 cmd="${1:-}"; shift || true
@@ -111,10 +111,10 @@ PYEOF
     [[ -d "$dir" ]] || exit 0   # absent dir → no reports; caller falls through
     while IFS= read -r report; do
       [[ -f "$report" ]] || continue
-      status="$(mo_fm_get "$report" status 2>/dev/null || echo '')"
+      status="$(mi_fm_get "$report" status 2>/dev/null || echo '')"
       case "$status" in
         awaiting-marks|partial)
-          pr_number="$(mo_fm_get "$report" pr-number 2>/dev/null || echo '?')"
+          pr_number="$(mi_fm_get "$report" pr-number 2>/dev/null || echo '?')"
           printf '%s\t%s\t%s\n' "$status" "$pr_number" "$report"
           ;;
       esac
@@ -129,11 +129,11 @@ PYEOF
     if [[ -d "$group_dir" ]]; then
       while IFS= read -r report; do
         [[ -f "$report" ]] || continue
-        st="$(mo_fm_get "$report" status 2>/dev/null || echo '')"
+        st="$(mi_fm_get "$report" status 2>/dev/null || echo '')"
         if [[ "$st" == "awaiting-marks" || "$st" == "partial" ]]; then
-          mo_die "an in-progress PR-review report already exists for this PR (status=$st):
+          mi_die "an in-progress PR-review report already exists for this PR (status=$st):
        $report
-  Finish it (mark blocks + /mo-continue) or delete the session, then retry."
+  Finish it (mark blocks + /mi-continue) or delete the session, then retry."
         fi
       done < <(find "$group_dir" -path '*/report.md' 2>/dev/null)
     fi
@@ -351,7 +351,7 @@ PYEOF
 
   canonicalize)
     report="${1:?report.md required}"
-    [[ -f "$report" ]] || mo_die "report not found: $report"
+    [[ -f "$report" ]] || mi_die "report not found: $report"
     python3 - "$report" <<'PYEOF'
 import re, sys
 path = sys.argv[1]
@@ -425,14 +425,14 @@ if errors:
     for e in errors:
         sys.stderr.write(f"  - {e}\n")
     sys.exit(3)
-print(f"mo: canonicalized {count} PR block(s) in {path}", file=sys.stderr)
+print(f"mi: canonicalized {count} PR block(s) in {path}", file=sys.stderr)
 PYEOF
     validate_report "$report"
     ;;
 
   count-marked)
     report="${1:?report.md required}"
-    [[ -f "$report" ]] || mo_die "report not found: $report"
+    [[ -f "$report" ]] || mi_die "report not found: $report"
     python3 - "$report" <<'PYEOF'
 import re, sys
 with open(sys.argv[1]) as f:
@@ -458,7 +458,7 @@ PYEOF
 
   normalize)
     report="${1:?report.md required}"
-    [[ -f "$report" ]] || mo_die "report not found: $report"
+    [[ -f "$report" ]] || mi_die "report not found: $report"
     python3 - "$report" <<'PYEOF'
 import re, sys
 path = sys.argv[1]
@@ -510,14 +510,14 @@ while i < n:
     i += 1
 with open(path, 'w') as f:
     f.writelines(lines)
-print(f"mo: normalized {changed} unmarked non-terminal block(s) to skipped", file=sys.stderr)
+print(f"mi: normalized {changed} unmarked non-terminal block(s) to skipped", file=sys.stderr)
 PYEOF
     validate_report "$report"
     ;;
 
   list-actionable)
     report="${1:?report.md required}"
-    [[ -f "$report" ]] || mo_die "report not found: $report"
+    [[ -f "$report" ]] || mi_die "report not found: $report"
     python3 - "$report" <<'PYEOF'
 import re, sys
 path = sys.argv[1]
@@ -576,10 +576,10 @@ PYEOF
     report="${1:?report.md required}"
     block_id="${2:?PR-NNN required}"
     new_status="${3:?status required}"
-    [[ -f "$report" ]] || mo_die "report not found: $report"
+    [[ -f "$report" ]] || mi_die "report not found: $report"
     case "$new_status" in
       open|applied|replied|skipped|reply-failed|reply-declined|fix-failed|fix-blocked) ;;
-      *) mo_die "invalid block status: $new_status" ;;
+      *) mi_die "invalid block status: $new_status" ;;
     esac
     python3 - "$report" "$block_id" "$new_status" <<'PYEOF'
 import re, sys
@@ -626,7 +626,7 @@ if not done:
     sys.exit(1)
 with open(path, 'w') as f:
     f.writelines(lines)
-print(f"mo: {bid} → {new_status}", file=sys.stderr)
+print(f"mi: {bid} → {new_status}", file=sys.stderr)
 PYEOF
     validate_report "$report"
     ;;
@@ -634,11 +634,11 @@ PYEOF
   post-reply)
     report="${1:?report.md required}"
     block_id="${2:?PR-NNN required}"
-    [[ -f "$report" ]] || mo_die "report not found: $report"
+    [[ -f "$report" ]] || mi_die "report not found: $report"
     require_gh
-    repo="$(mo_fm_get "$report" repo)"
-    pr_number="$(mo_fm_get "$report" pr-number)"
-    [[ "$repo" == */* ]] || mo_die "report frontmatter 'repo' is malformed: $repo"
+    repo="$(mi_fm_get "$report" repo)"
+    pr_number="$(mi_fm_get "$report" pr-number)"
+    [[ "$repo" == */* ]] || mi_die "report frontmatter 'repo' is malformed: $repo"
 
     # Extract the block's comment-kind, reply-target-id, comment-url and the
     # proposed-reply block scalar. Output: line1=kind, line2=target, line3=url,
@@ -709,17 +709,17 @@ PYEOF
     reply_target="$(printf '%s\n' "$block_meta" | sed -n '2p')"
     comment_url="$(printf '%s\n' "$block_meta" | sed -n '3p')"
     reply_body="$(printf '%s\n' "$block_meta" | tail -n +4)"
-    [[ -n "${reply_body//[[:space:]]/}" ]] || mo_die "block $block_id has an empty proposed-reply"
+    [[ -n "${reply_body//[[:space:]]/}" ]] || mi_die "block $block_id has an empty proposed-reply"
 
     case "$comment_kind" in
       review-comment)
-        [[ "$reply_target" =~ ^[0-9]+$ ]] || mo_die "block $block_id: review-comment needs a numeric reply-target-id"
+        [[ "$reply_target" =~ ^[0-9]+$ ]] || mi_die "block $block_id: review-comment needs a numeric reply-target-id"
         if gh api "repos/$repo/pulls/$pr_number/comments/$reply_target/replies" \
              -X POST -f body="$reply_body" >/dev/null; then
           "$0" set-status "$report" "$block_id" replied
-          mo_info "posted threaded reply for $block_id"
+          mi_info "posted threaded reply for $block_id"
         else
-          mo_die "failed to post threaded reply for $block_id"
+          mi_die "failed to post threaded reply for $block_id"
         fi
         ;;
       review-summary|issue-comment)
@@ -727,20 +727,20 @@ PYEOF
         if gh api "repos/$repo/issues/$pr_number/comments" \
              -X POST -f body="$quoted" >/dev/null; then
           "$0" set-status "$report" "$block_id" replied
-          mo_info "posted PR conversation comment for $block_id"
+          mi_info "posted PR conversation comment for $block_id"
         else
-          mo_die "failed to post conversation comment for $block_id"
+          mi_die "failed to post conversation comment for $block_id"
         fi
         ;;
       *)
-        mo_die "block $block_id has an unknown comment-kind: '$comment_kind'"
+        mi_die "block $block_id has an unknown comment-kind: '$comment_kind'"
         ;;
     esac
     ;;
 
   report-status)
     report="${1:?report.md required}"
-    [[ -f "$report" ]] || mo_die "report not found: $report"
+    [[ -f "$report" ]] || mi_die "report not found: $report"
     new_status="$(python3 - "$report" <<'PYEOF'
 import re, sys
 path = sys.argv[1]
@@ -790,7 +790,7 @@ while i < n:
 print('applied' if all_terminal else 'partial')
 PYEOF
 )"
-    "${MO_PLUGIN_ROOT}/scripts/frontmatter.sh" set "$report" status "$new_status" >/dev/null
+    "${MI_PLUGIN_ROOT}/scripts/frontmatter.sh" set "$report" status "$new_status" >/dev/null
     validate_report "$report"
     echo "$new_status"
     ;;

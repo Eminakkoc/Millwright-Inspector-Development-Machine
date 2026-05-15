@@ -1,5 +1,5 @@
 $schema: "http://json-schema.org/draft-07/schema#"
-$id: millwright-overseer-development-machine/requirements.schema.yaml
+$id: millwright-inspector-development-machine/requirements.schema.yaml
 title: workflow-stream/<feature>/blueprints/current/requirements.md frontmatter
 
 type: object
@@ -26,7 +26,7 @@ properties:
     description: IDs of the PENDING todo items this requirements document covers.
   commits:
     type: array
-    description: Populated by mo-complete-workflow at stage 8.
+    description: Populated by mi-complete-workflow at stage 8.
     items:
       type: object
       required: [sha, msg]

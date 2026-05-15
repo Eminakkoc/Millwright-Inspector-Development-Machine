@@ -1,16 +1,16 @@
 # Sub-Agent Return Contract
 
-A short reference for human readers (overseers, plugin maintainers) on the standardized return shape for fresh sub-agents invoked from mo-workflow commands.
+A short reference for human readers (inspectors, plugin maintainers) on the standardized return shape for fresh sub-agents invoked from mi-workflow commands.
 
 ## Why this contract exists
 
-The mo-workflow's context-optimization design pushes large reads (codebase walks, diff analyses, per-iteration review work) into **fresh sub-agents** — `Agent` invocations with `subagent_type` set, which start with zero context and return a single summary message to the main agent. The whole point of this pattern is that the sub-agent's intermediate reads (often tens to hundreds of thousands of tokens) live in a disposable context and never accumulate in the main agent's session.
+The mi-workflow's context-optimization design pushes large reads (codebase walks, diff analyses, per-iteration review work) into **fresh sub-agents** — `Agent` invocations with `subagent_type` set, which start with zero context and return a single summary message to the main agent. The whole point of this pattern is that the sub-agent's intermediate reads (often tens to hundreds of thousands of tokens) live in a disposable context and never accumulate in the main agent's session.
 
 That benefit only holds if the return summary stays small and structured. Without a contract, sub-agent returns drift toward long prose narratives — and prose narratives slowly reintroduce the bloat the delegation was supposed to avoid. The contract caps each return at roughly 1k tokens of structured data.
 
 ## The shape
 
-Every fresh sub-agent invoked from a mo-workflow command returns exactly this structure:
+Every fresh sub-agent invoked from a mi-workflow command returns exactly this structure:
 
 ```
 Result: success | partial | blocked
@@ -36,32 +36,32 @@ Empty `Main should read` is fine when the sub-agent's work was self-contained (e
 
 It is not a place for the sub-agent to narrate what it did. Narration belongs in the sub-agent's own context, which is discarded. Findings/risks is reserved for items that **require main-side action or awareness**:
 
-- Ambiguity the sub-agent couldn't resolve and needs the overseer to clarify
-- Edge cases discovered during the work that warrant overseer review
+- Ambiguity the sub-agent couldn't resolve and needs the inspector to clarify
+- Edge cases discovered during the work that warrant inspector review
 - Risks the main agent should know about before continuing (e.g., "the implementation diverged from the plan in ways that may affect later stages")
 
 Bullets that don't fit those categories are noise and should be dropped.
 
 ## Where the contract is bound
 
-Each mo-workflow command that delegates work via a fresh sub-agent embeds the contract in its prompt template. The list:
+Each mi-workflow command that delegates work via a fresh sub-agent embeds the contract in its prompt template. The list:
 
 | Command | Stage | Sub-agent purpose |
 | --- | --- | --- |
-| `commands/mo-run.md` | 1 | Per-file or per-folder summarization for oversized journal intake |
-| `commands/mo-continue.md` (Pre-flight Step 2A) | 1.5 | Queue-rationale dependency scan (Option 1B fallback) |
-| `commands/mo-apply-impact.md` | 2 | Codebase-grounding pass for blueprint generation |
-| `commands/mo-review.md` Step 3a | 6 | Per-iteration review work in brainstorming mode |
-| `commands/mo-generate-implementation-diagrams.md` | 4 | Implementation diagram generation |
-| `commands/mo-apply-impact.md` | 2 | Blueprint diagram generation (same per-event prompt as stage 4) |
-| `commands/mo-draw-diagrams.md` | manual | Overseer-invokable wrapper for stage-4 diagram generation |
-| `commands/mo-sidequest.md` | any | Mid-workflow Q&A or small-fix sub-agent (read-only `sidequest-reader`, or writable `sidequest-writer` under `--write`). Uses the side-quest variant of the contract — see below. |
+| `commands/mi-run.md` | 1 | Per-file or per-folder summarization for oversized journal intake |
+| `commands/mi-continue.md` (Pre-flight Step 2A) | 1.5 | Queue-rationale dependency scan (Option 1B fallback) |
+| `commands/mi-apply-impact.md` | 2 | Codebase-grounding pass for blueprint generation |
+| `commands/mi-review.md` Step 3a | 6 | Per-iteration review work in brainstorming mode |
+| `commands/mi-generate-implementation-diagrams.md` | 4 | Implementation diagram generation |
+| `commands/mi-apply-impact.md` | 2 | Blueprint diagram generation (same per-event prompt as stage 4) |
+| `commands/mi-draw-diagrams.md` | manual | Inspector-invokable wrapper for stage-4 diagram generation |
+| `commands/mi-sidequest.md` | any | Mid-workflow Q&A or small-fix sub-agent (read-only `sidequest-reader`, or writable `sidequest-writer` under `--write`). Uses the side-quest variant of the contract — see below. |
 
 When adding a new delegated stage, copy the "Required return shape" block from `templates/sub-agent-return.md.tmpl` verbatim into the new prompt. Do not paraphrase — the literal shape is what trains consistent sub-agent behavior across the workflow.
 
 ## Side-quest variant
 
-The `/mo-sidequest` slash command spawns one of two side-quest sub-agents (`agents/sidequest-reader.md`, `agents/sidequest-writer.md`) and uses a slight extension of the contract: two extra blocks (`Answer:` and `Continuity summary:`) at the top of the return, plus two distinct first-line sentinels (`NEEDS_ESCALATION:` for tier escalation, `WRITE_REQUIRED:` reader-only). The standard fields below the extras are unchanged — `Artifacts changed:` and `Commits:` still appear with empty bullet lists where applicable. The canonical definition lives in the "Side-quest additions" section of `templates/sub-agent-return.md.tmpl`; the side-quest design plan is `docs/side-quest/plan.md`.
+The `/mi-sidequest` slash command spawns one of two side-quest sub-agents (`agents/sidequest-reader.md`, `agents/sidequest-writer.md`) and uses a slight extension of the contract: two extra blocks (`Answer:` and `Continuity summary:`) at the top of the return, plus two distinct first-line sentinels (`NEEDS_ESCALATION:` for tier escalation, `WRITE_REQUIRED:` reader-only). The standard fields below the extras are unchanged — `Artifacts changed:` and `Commits:` still appear with empty bullet lists where applicable. The canonical definition lives in the "Side-quest additions" section of `templates/sub-agent-return.md.tmpl`; the side-quest design plan is `docs/side-quest/plan.md`.
 
 ## Quick checklist for prompt authors
 

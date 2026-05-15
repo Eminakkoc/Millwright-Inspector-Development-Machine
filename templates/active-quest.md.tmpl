@@ -7,14 +7,14 @@ status: {{STATUS}}
 
 # Active quest pointer
 
-Top-level pointer for the millwright-overseer-development-machine quest folder. Records which per-cycle subfolder under `quest/` is currently active.
+Top-level pointer for the millwright-inspector-development-machine quest folder. Records which per-cycle subfolder under `quest/` is currently active.
 
-Each `/mo-run` creates a new subfolder named `quest/<slug>/` and writes the four cycle files (`todo-list.md`, `summary.md`, `progress.md`, `queue-rationale.md`) inside it. Historical subfolders are preserved across cycles so PMs can query past task lists, summaries, and queue rationales as a permanent record.
+Each `/mi-run` creates a new subfolder named `quest/<slug>/` and writes the four cycle files (`todo-list.md`, `summary.md`, `progress.md`, `queue-rationale.md`) inside it. Historical subfolders are preserved across cycles so PMs can query past task lists, summaries, and queue rationales as a permanent record.
 
 This file is the single mutable piece of top-level state under `quest/`:
 
 - **`slug`** — points at the active subfolder (`quest/<slug>/`). Null when no cycle is active.
-- **`status`** — `active` while a cycle is in flight, `archived` once it ends, `none` immediately after `/mo-init` (no cycle has ever started).
-- **`journal-folders`** — the list `/mo-run` was invoked with; preserved on `archived`/`none` for context.
+- **`status`** — `active` while a cycle is in flight, `archived` once it ends, `none` immediately after `/mi-init` (no cycle has ever started).
+- **`journal-folders`** — the list `/mi-run` was invoked with; preserved on `archived`/`none` for context.
 
 Path-resolution helpers (`scripts/internal/common.sh`) read this file to map `quest/todo-list.md` references to `quest/<slug>/todo-list.md` for the active cycle. Do not hand-edit; use `scripts/quest.sh` to manage the lifecycle.

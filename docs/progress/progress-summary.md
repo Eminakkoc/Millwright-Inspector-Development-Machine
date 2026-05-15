@@ -4,7 +4,7 @@
 
 This work makes the workflow safer when a session ends in the middle of a command.
 
-The main idea is simple: `progress.md` should only move forward after the important side effect has already happened, or after there is enough durable disk state to safely retry. If the overseer closes the session, the next `/mo-continue` should know exactly where to resume.
+The main idea is simple: `progress.md` should only move forward after the important side effect has already happened, or after there is enough durable disk state to safely retry. If the inspector closes the session, the next `/mi-continue` should know exactly where to resume.
 
 The work to be done is:
 
@@ -18,15 +18,15 @@ The work to be done is:
 
 ## 2. Stages
 
-The workflow is easiest to understand as a set of stages. Some stages are visible gates where the overseer reviews or confirms something; other stages are internal handoff points.
+The workflow is easiest to understand as a set of stages. Some stages are visible gates where the inspector reviews or confirms something; other stages are internal handoff points.
 
 ```text
 Stage 1      Stage 1.5          Stage 2             Stage 3
-mo-run   ->  pick queue order -> blueprint ready -> implementation launched
+mi-run   ->  pick queue order -> blueprint ready -> implementation launched
               progress queue      active feature      base-commit captured
 
 Stage 4                  Stage 5             Stage 6
-implementation returns -> overseer review -> review session running
+implementation returns -> inspector review -> review session running
 diagrams/review setup     findings or ok      only if findings exist
 
 Stage 7              Stage 8
@@ -39,28 +39,28 @@ Detailed transition view:
 ```text
 active=null
   |
-  | /mo-continue after marked TODOs
+  | /mi-continue after marked TODOs
   v
 Stage 1.5: queue proposal and confirmation
   |
-  | /mo-apply-impact
+  | /mi-apply-impact
   v
 Stage 2: blueprint review
   |
-  | /mo-continue auto-fires /mo-plan-implementation
+  | /mi-continue auto-fires /mi-plan-implementation
   v
 Stage 3: implementation chain or direct implementation
   |
-  | /mo-continue after implementation returns
+  | /mi-continue after implementation returns
   v
 Stage 4 work inside Resume Handler
   |
   | atomic advance-to 3 -> 5
   v
-Stage 5: overseer review
+Stage 5: inspector review
   |
   | no findings: atomic advance-to 5 -> 7
-  | findings: /mo-review advances to stage 6
+  | findings: /mi-review advances to stage 6
   v
 Stage 6: review session, if needed
   |
@@ -68,11 +68,11 @@ Stage 6: review session, if needed
   v
 Stage 7: finalizer should run
   |
-  | /mo-complete-workflow
+  | /mi-complete-workflow
   v
 active=null, feature completed
   |
-  | queue has more features: /mo-apply-impact
+  | queue has more features: /mi-apply-impact
   | queue empty: quest housekeeping
   v
 next feature or cycle end
@@ -89,7 +89,7 @@ Stage 1
 
 Stage 1.5
   progress.sh enqueue or reorder
-  Updates the queue after the overseer chooses feature order.
+  Updates the queue after the inspector chooses feature order.
 
 Stage 2
   progress.sh activate
@@ -104,14 +104,14 @@ Stage 4 resume
   progress.sh set implementation-completed, execution-mode, sub-flow
   progress.sh set drift-check-completed, when drift is handled
   progress.sh advance-to 3 5 --set sub-flow=none
-  Moves to overseer review only after drift, diagrams, and review setup are done.
+  Moves to inspector review only after drift, diagrams, and review setup are done.
 
 Stage 5 no-findings path
-  progress.sh advance-to 5 7 --set sub-flow=none --set overseer-review-completed=true
+  progress.sh advance-to 5 7 --set sub-flow=none --set inspector-review-completed=true
   Skips the review-session stage when there are no findings.
 
 Stage 6 review-resume path
-  progress.sh advance-to 6 7 --set sub-flow=none --set overseer-review-completed=true
+  progress.sh advance-to 6 7 --set sub-flow=none --set inspector-review-completed=true
   Moves to finalization only after optional diagram refresh is decided.
 
 Stage 8 finalizer
@@ -140,7 +140,7 @@ Before, `progress.sh set a=1 b=2 c=3` wrote each field one at a time. If the ses
 
 ### Item 1: Stage-4 Resume Handler
 
-This fixes the gap when the overseer closes the session while the workflow is resuming after implementation.
+This fixes the gap when the inspector closes the session while the workflow is resuming after implementation.
 
 Stage 4 does several things: confirms commits exist, asks about blueprint drift, maybe updates the blueprint, draws diagrams, and creates the review file. The old plan advanced too early. If the session ended afterward, the dispatcher could think the workflow was somewhere else and not know how to continue.
 
@@ -148,29 +148,29 @@ The fix keeps the stage at 3 until all Stage-4 side effects are done. Then it us
 
 It also adds `drift-check-completed` and `history-baseline-version` so the workflow can tell whether a blueprint drift update already happened before the session ended.
 
-### Item 2: `/mo-apply-impact` Re-entry
+### Item 2: `/mi-apply-impact` Re-entry
 
 This fixes the gap when the session ends while generating the first blueprint for a feature.
 
-If the active feature is already at stage 2, `/mo-apply-impact` can safely re-enter that same feature instead of failing because `active` is not null.
+If the active feature is already at stage 2, `/mi-apply-impact` can safely re-enter that same feature instead of failing because `active` is not null.
 
 It also checks whether the blueprint is already complete. If it is complete, the command does not overwrite it. If it is partial, the command stops and asks for an explicit force path.
 
-### Item 3: `/mo-plan-implementation` And Resume Partial Launch
+### Item 3: `/mi-plan-implementation` And Resume Partial Launch
 
 This fixes the gap when the session ends while launching implementation.
 
 Stage 3 captures `base-commit`, writes `primer.md`, asks for planning mode, and launches the implementation work. If the session ends after only some of that happened, the retry must not recapture `base-commit` or lose the original implementation range.
 
-The fix makes `/mo-plan-implementation` detect that it is re-entering the same stage. It preserves `base-commit`, regenerates `primer.md` only if needed, and only re-prompts for planning mode when no implementation commits exist yet.
+The fix makes `/mi-plan-implementation` detect that it is re-entering the same stage. It preserves `base-commit`, regenerates `primer.md` only if needed, and only re-prompts for planning mode when no implementation commits exist yet.
 
 The zero-commit branch also gives a safe path for direct mode when there really was nothing to change.
 
 ### Item 4: Stage-7 Dispatcher Row And Review Refresh Placement
 
-This fixes the gap when the overseer closes the session after review is approved but before finalization starts.
+This fixes the gap when the inspector closes the session after review is approved but before finalization starts.
 
-Stage 7 means review is done and `/mo-complete-workflow` should run. If the auto-fire is lost, `/mo-continue` now knows to run the finalizer.
+Stage 7 means review is done and `/mi-complete-workflow` should run. If the auto-fire is lost, `/mi-continue` now knows to run the finalizer.
 
 The plan also keeps `sub-flow=reviewing` until after the optional diagram refresh prompt. That prevents the workflow from landing in a state where it has already cleared the review sub-flow but has not asked about refreshing diagrams yet.
 
@@ -183,10 +183,10 @@ Row A handles this case:
 ```text
 Feature A finished.
 Queue still has Feature B.
-Session ended before /mo-apply-impact started Feature B.
+Session ended before /mi-apply-impact started Feature B.
 ```
 
-The next `/mo-continue` auto-fires `/mo-apply-impact`.
+The next `/mi-continue` auto-fires `/mi-apply-impact`.
 
 Row B handles this case:
 
@@ -196,7 +196,7 @@ quest.sh end did not run yet.
 Session ended before cycle housekeeping finished.
 ```
 
-The next `/mo-continue` auto-fires `/mo-complete-workflow`, which skips straight to the remaining housekeeping.
+The next `/mi-continue` auto-fires `/mi-complete-workflow`, which skips straight to the remaining housekeeping.
 
 ### Item 6: Stage-8 Finalizer Hardening
 
@@ -216,13 +216,13 @@ The finalizer also handles cases where rotation already happened, implementation
 
 This fixes the gap where queue-order decisions could live only in chat.
 
-The queue rationale file now has draft and confirmed states. A proposal is written to disk before the overseer confirms it. If the session ends, the next `/mo-continue` can replay the saved draft instead of recreating a possibly different order.
+The queue rationale file now has draft and confirmed states. A proposal is written to disk before the inspector confirms it. If the session ends, the next `/mi-continue` can replay the saved draft instead of recreating a possibly different order.
 
 For later batches in the same quest cycle, the file appends a new batch section instead of overwriting the old one.
 
 ### Item 8: Stage-1 Partial Generation Detection
 
-This fixes the gap where `/mo-run` could leave quest files half-filled.
+This fixes the gap where `/mi-run` could leave quest files half-filled.
 
 The plan adds checks for required bodies and placeholder text. If files exist but look incomplete, the workflow can offer to complete them in place instead of assuming the cycle is valid.
 
@@ -238,15 +238,15 @@ The helper returns:
 2 = partial
 ```
 
-That lets `/mo-apply-impact`, `/mo-update-blueprint`, Stage-4 recovery, and Stage-1 checks make safer decisions.
+That lets `/mi-apply-impact`, `/mi-update-blueprint`, Stage-4 recovery, and Stage-1 checks make safer decisions.
 
 The check does not require rendered images or sequence diagrams, because some valid features may only need source `.puml` files and a use-case diagram.
 
-### Item 10: `/mo-update-blueprint` Recovery
+### Item 10: `/mi-update-blueprint` Recovery
 
 This fixes the gap when the session ends during blueprint refresh.
 
-`/mo-update-blueprint` can rotate the current blueprint and then regenerate a new one. If the session ends after rotation but before regeneration, `current/` may be empty. If the session ends during regeneration, `current/` may be partial.
+`/mi-update-blueprint` can rotate the current blueprint and then regenerate a new one. If the session ends after rotation but before regeneration, `current/` may be empty. If the session ends during regeneration, `current/` may be partial.
 
 The fix makes partial state explicit:
 
@@ -255,7 +255,7 @@ The fix makes partial state explicit:
 - Empty `current/` only resumes if there is a safe manual or spec-update history version.
 - Otherwise the command stops with a diagnostic and does not modify state.
 
-### Item 11: `/mo-update-blueprint` Reason-kind Alignment
+### Item 11: `/mi-update-blueprint` Reason-kind Alignment
 
 This fixes the gap where every manual or drift-triggered blueprint update looked the same.
 

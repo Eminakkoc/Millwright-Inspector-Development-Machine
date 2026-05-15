@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# validate-on-write.sh — PostToolUse(Write|Edit) hook for millwright-overseer-development-machine.
+# validate-on-write.sh — PostToolUse(Write|Edit) hook for millwright-inspector-development-machine.
 #
 # Reads the tool-call JSON on stdin, extracts the touched file path, and —
 # if it's a workflow data file — validates its frontmatter against the matching
@@ -27,16 +27,16 @@ print(path)
 # No file path or not under workflow data root → skip silently.
 [[ -n "$file_path" ]] || exit 0
 
-# Resolve the configured data-root segment (default `millwright-overseer`,
-# but the user can override via $MO_DATA_ROOT or userConfig.data_root). The
+# Resolve the configured data-root segment (default `millwright-inspector`,
+# but the user can override via $MI_DATA_ROOT or userConfig.data_root). The
 # hook only validates files that live under that segment so workflows in a
 # custom-named data folder still get validated, and files outside any data
 # folder are silently skipped.
 if [[ -f "${CLAUDE_PLUGIN_ROOT:-}/scripts/internal/common.sh" ]]; then
   # Source common.sh in a subshell so its `set -euo pipefail` doesn't leak.
-  data_root_segment="$(bash -c "source '${CLAUDE_PLUGIN_ROOT}/scripts/internal/common.sh' && mo_data_root_segment")"
+  data_root_segment="$(bash -c "source '${CLAUDE_PLUGIN_ROOT}/scripts/internal/common.sh' && mi_data_root_segment")"
 else
-  data_root_segment="millwright-overseer"
+  data_root_segment="millwright-inspector"
 fi
 [[ "$file_path" == *"/${data_root_segment}/"* ]] || exit 0
 
@@ -48,14 +48,14 @@ fi
 # Coverage policy: this hook validates LIVE workflow artifacts only — files
 # under `quest/`, `blueprints/current/`, and `implementation/`. Files under
 # `blueprints/history/v*/` are an audit archive: they are produced by
-# `blueprints.sh rotate` and `mo-complete-workflow`'s implementation-archival
+# `blueprints.sh rotate` and `mi-complete-workflow`'s implementation-archival
 # step via shell `mv` (no Edit/Write tool call, so the hook would not fire
 # even if a case matched), and once rotated they are expected to be
 # immutable. Their content was validated when they lived in `current/` or
 # `implementation/`. The single exception is `blueprints/history/v*/reason.md`,
 # which IS written by the rotation step via `frontmatter.sh init` and
 # therefore must be schema-checked. The archived `implementation/` artifacts
-# (`overseer-review.md`, `review-context.md`, `change-summary.md`,
+# (`inspector-review.md`, `review-context.md`, `change-summary.md`,
 # `diagrams/`) under `blueprints/history/v*/implementation/` follow the same
 # "validated when live, immutable once archived" rule as the rotated
 # blueprint files. If you ever need to edit a historical artifact by hand,
@@ -73,21 +73,29 @@ case "$file_path" in
   */blueprints/current/primer.md)        schema="primer" ;;
   */blueprints/current/diagrams/README.md) schema="diagrams-readme-blueprint" ;;
   */workflow-stream/*/decisions.md)      schema="decisions" ;;
-  */implementation/overseer-review.md)   schema="review-file" ;;
+  */implementation/inspector-review.md)   schema="review-file" ;;
+  */implementation/overseer-review.md)
+    # Clean-break rename guard: the review file was renamed to
+    # inspector-review.md. Hard-reject writes to the legacy path so a stale
+    # workflow cannot silently resurrect it.
+    cat <<EOF
+{"decision": "block", "reason": "millwright-inspector-development-machine: 'overseer-review.md' was renamed to 'inspector-review.md'. Write to implementation/inspector-review.md instead."}
+EOF
+    exit 2 ;;
   */implementation/review-context.md)    schema="review-context" ;;
   */implementation/change-summary.md)    schema="change-summary" ;;
   */implementation/diagrams/README.md)   schema="diagrams-readme-implementation" ;;
   */blueprints/history/v*/reason.md)     schema="reason" ;;
   */pr-reviews/*/report.md)              schema="pr-review-report" ;;
   */lessons-learned.md)                  schema="lessons-learned" ;;
-  *) exit 0 ;;  # unknown / archived mo file → skip per coverage policy
+  *) exit 0 ;;  # unknown / archived workflow file → skip per coverage policy
 esac
 
 # Run the validator. If it fails, its stderr bubbles up and blocks the turn.
 if ! "${CLAUDE_PLUGIN_ROOT}/scripts/internal/validate-frontmatter.sh" "$file_path" "$schema" >&2; then
   # Emit a JSON response that blocks the stop and explains why.
   cat <<EOF
-{"decision": "block", "reason": "millwright-overseer-development-machine: frontmatter validation failed for $file_path (schema=$schema). Fix the frontmatter before continuing."}
+{"decision": "block", "reason": "millwright-inspector-development-machine: frontmatter validation failed for $file_path (schema=$schema). Fix the frontmatter before continuing."}
 EOF
   exit 2
 fi

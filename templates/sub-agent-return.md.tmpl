@@ -1,12 +1,12 @@
 # Sub-agent return contract
 
-This template defines the **canonical return shape** that every fresh sub-agent invoked from a mo-workflow command MUST produce. The contract exists to prevent sub-agent summaries from growing into long prose narratives that slowly recreate the main-context bloat that delegation was meant to avoid.
+This template defines the **canonical return shape** that every fresh sub-agent invoked from a mi-workflow command MUST produce. The contract exists to prevent sub-agent summaries from growing into long prose narratives that slowly recreate the main-context bloat that delegation was meant to avoid.
 
 This file is **not** rendered by `frontmatter.sh init`. It is consumed by sub-agent prompt templates (in `commands/*.md`) by inclusion-by-reference: each delegated stage's prompt ends with the literal "Required return shape" block reproduced verbatim from this template, plus the "Return only this structure. Do not narrate intermediate steps." instruction.
 
 ## Required return shape
 
-When a fresh sub-agent (any `subagent_type: general-purpose` invocation from a mo-workflow command) finishes its work, its single return message MUST follow this structure:
+When a fresh sub-agent (any `subagent_type: general-purpose` invocation from a mi-workflow command) finishes its work, its single return message MUST follow this structure:
 
 ```
 Result: success | partial | blocked
@@ -28,7 +28,7 @@ Main should read:
   - `blocked` — the sub-agent could not start or was interrupted. Findings/risks must explain.
 - **Artifacts changed** — list of files written or modified. Include the path and a one-line note describing the change. Empty list (`Artifacts changed:` followed by no bullets) is allowed when the sub-agent only read or analyzed.
 - **Commits** — list of git commits the sub-agent produced. Each line is `<short-sha>: <subject>`. Empty list is allowed when no commits were produced.
-- **Findings / risks** — optional bullets surfacing issues the sub-agent encountered but couldn't resolve (e.g., ambiguity needing overseer input, edge cases discovered, risks the main agent should be aware of). Use sparingly — this is for things main needs to act on, not narration.
+- **Findings / risks** — optional bullets surfacing issues the sub-agent encountered but couldn't resolve (e.g., ambiguity needing inspector input, edge cases discovered, risks the main agent should be aware of). Use sparingly — this is for things main needs to act on, not narration.
 - **Main should read** — list of files main agent needs to consume next (e.g., the artifact the sub-agent produced for main to act on). Each line is `<path>: <reason>`. Empty list is allowed if the sub-agent's work needs no follow-up reads in main.
 
 ## Rules
@@ -46,12 +46,12 @@ A stage-2 codebase-grounding sub-agent might return:
 ```
 Result: success
 Artifacts changed:
-- millwright-overseer/workflow-stream/payments/implementation/grounding-report.md: structured report with entrypoints, suspected flows, pre-existing classes
+- millwright-inspector/workflow-stream/payments/implementation/grounding-report.md: structured report with entrypoints, suspected flows, pre-existing classes
 Commits:
 Findings / risks:
-- Found two distinct payment-handler signatures in src/payments/legacy/ vs src/payments/v2/ — overseer should confirm which is the seam this cycle targets.
+- Found two distinct payment-handler signatures in src/payments/legacy/ vs src/payments/v2/ — inspector should confirm which is the seam this cycle targets.
 Main should read:
-- millwright-overseer/workflow-stream/payments/implementation/grounding-report.md: input for requirements.md and config.md generation
+- millwright-inspector/workflow-stream/payments/implementation/grounding-report.md: input for requirements.md and config.md generation
 ```
 
 Note: total length ~250 tokens. The actual codebase-walk reads (~65k tokens of source files) stayed in the sub-agent's context and evaporated on return.
@@ -60,22 +60,22 @@ Note: total length ~250 tokens. The actual codebase-walk reads (~65k tokens of s
 
 Each delegated-stage prompt template (in the corresponding `commands/*.md` file) includes the "Required return shape" block above and the "Return only this structure" instruction. The list of call sites that bind this contract:
 
-- `commands/mo-review.md` Step 3a (per-iteration review sub-agent — Phase 1.3 of the implementation plan)
-- `commands/mo-apply-impact.md` (codebase-grounding sub-agent — Phase 2.1)
-- `commands/mo-generate-implementation-diagrams.md` (diagram-generation sub-agent — Phase 3.1)
-- `commands/mo-draw-diagrams.md` (overseer-invokable wrapper for the same — Phase 3.1)
-- `commands/mo-continue.md` Pre-flight Step 2A (queue-rationale sub-agent fallback under Option 1B — Phase 4.3)
-- `commands/mo-run.md` Step 2.5 (per-folder summarization — Phase 5.2; existing per-file summarization should also adopt this contract)
+- `commands/mi-review.md` Step 3a (per-iteration review sub-agent — Phase 1.3 of the implementation plan)
+- `commands/mi-apply-impact.md` (codebase-grounding sub-agent — Phase 2.1)
+- `commands/mi-generate-implementation-diagrams.md` (diagram-generation sub-agent — Phase 3.1)
+- `commands/mi-draw-diagrams.md` (inspector-invokable wrapper for the same — Phase 3.1)
+- `commands/mi-continue.md` Pre-flight Step 2A (queue-rationale sub-agent fallback under Option 1B — Phase 4.3)
+- `commands/mi-run.md` Step 2.5 (per-folder summarization — Phase 5.2; existing per-file summarization should also adopt this contract)
 
-When adding a new delegated-stage prompt to mo-workflow, copy the "Required return shape" block from this template verbatim and add it to the new prompt. Do not paraphrase — the literal shape is what trains consistent sub-agent behavior.
+When adding a new delegated-stage prompt to mi-workflow, copy the "Required return shape" block from this template verbatim and add it to the new prompt. Do not paraphrase — the literal shape is what trains consistent sub-agent behavior.
 
 ## Side-quest additions (only for `sidequest-reader` / `sidequest-writer`)
 
-The `/mo-sidequest` slash command (`commands/mo-sidequest.md`) spawns one of two side-quest sub-agents that follow the contract above with two extra blocks. The blocks are emitted at the **top** of the return, before `Result:`. The standard fields below them are unchanged — `Artifacts changed:` and `Commits:` MUST still appear (with empty bullet lists where applicable), per the canonical shape.
+The `/mi-sidequest` slash command (`commands/mi-sidequest.md`) spawns one of two side-quest sub-agents that follow the contract above with two extra blocks. The blocks are emitted at the **top** of the return, before `Result:`. The standard fields below them are unchanged — `Artifacts changed:` and `Commits:` MUST still appear (with empty bullet lists where applicable), per the canonical shape.
 
 ```
 Answer:
-<free-form response shown verbatim to the overseer; markdown is fine>
+<free-form response shown verbatim to the inspector; markdown is fine>
 
 Continuity summary:
 <one line, ≤ 20 words, suitable for retention in main's context — what was asked and the gist of the answer>
@@ -84,7 +84,7 @@ Result: success | partial | blocked
 Artifacts changed:
 - <path>: <one-line note on what changed>     (empty for sidequest-reader; populated for sidequest-writer when edits land)
 Commits:
-(empty for both side-quest agents — neither commits; the next /mo-continue picks up edits via the drift check)
+(empty for both side-quest agents — neither commits; the next /mi-continue picks up edits via the drift check)
 Findings / risks:
 - <short bullet, optional>
 Main should read:
@@ -95,7 +95,7 @@ Main should read:
 
 Two first-line sentinels can replace the entire return. When emitted, the sentinel MUST be the first non-blank line and the sub-agent emits nothing else:
 
-- `NEEDS_ESCALATION: <one-sentence reason>` — the sub-agent's tier budget (read caps, answer length) was too tight for the question. The `/mo-sidequest` orchestrator re-spawns at the next tier (`quick → standard → deep`). Reader and writer both use this.
-- `WRITE_REQUIRED: <one-sentence reason>` — reader-only. The question cannot be answered without source edits. The orchestrator surfaces this to the overseer rather than auto-promoting to the writer; write-mode is always an explicit overseer decision. Do NOT use `NEEDS_ESCALATION` for this case — it would trigger the tier-escalation handler and re-run the question at a higher budget instead.
+- `NEEDS_ESCALATION: <one-sentence reason>` — the sub-agent's tier budget (read caps, answer length) was too tight for the question. The `/mi-sidequest` orchestrator re-spawns at the next tier (`quick → standard → deep`). Reader and writer both use this.
+- `WRITE_REQUIRED: <one-sentence reason>` — reader-only. The question cannot be answered without source edits. The orchestrator surfaces this to the inspector rather than auto-promoting to the writer; write-mode is always an explicit inspector decision. Do NOT use `NEEDS_ESCALATION` for this case — it would trigger the tier-escalation handler and re-run the question at a higher budget instead.
 
 Both sentinels share the "first non-blank line, nothing else" shape; they are distinguished by token, not by structure.

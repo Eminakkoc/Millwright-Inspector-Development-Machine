@@ -1,5 +1,5 @@
 @startuml workflow-sequence
-title Millwright-Overseer Workflow — Sequence (simplified, mo commands only)
+title Millwright-Inspector Workflow — Sequence (simplified, mi commands only)
 
 skinparam sequenceMessageAlign center
 skinparam maxMessageSize 280
@@ -8,30 +8,30 @@ skinparam noteBorderColor #8B7500
 skinparam participantBackgroundColor #F8F8F8
 skinparam databaseBackgroundColor #EEF7FF
 
-actor Overseer
+actor Inspector
 participant Millwright
 participant "Sub-agent\n(opt-in)" as SubAgent
 participant "Brainstorming\nChain (isolated)" as Chain
-database "Workflow Data\nmillwright-overseer/, docs/" as FS
+database "Workflow Data\nmillwright-inspector/, docs/" as FS
 database "Git" as Git
 
 note over Millwright, FS
   **Reading:** Each "Millwright" arrow folds in helpers (progress.sh, todo.sh,
   blueprints.sh, review.sh, commits.sh, frontmatter.sh, validate-on-write hook).
 
-  **Auto vs typed:** Overseer types /mo-run + /mo-continue (×2 / ×3). Millwright
-  auto-fires /mo-apply-impact, /mo-plan-implementation, /mo-review,
-  /mo-generate-implementation-diagrams, /mo-complete-workflow. Recovery:
-  /mo-abort-workflow, /mo-resume-workflow, /mo-update-blueprint, /mo-update-todo-list.
+  **Auto vs typed:** Inspector types /mi-run + /mi-continue (×2 / ×3). Millwright
+  auto-fires /mi-apply-impact, /mi-plan-implementation, /mi-review,
+  /mi-generate-implementation-diagrams, /mi-complete-workflow. Recovery:
+  /mi-abort-workflow, /mi-resume-workflow, /mi-update-blueprint, /mi-update-todo-list.
 
   **Isolation:** stage-3 chain and stage-6 review session run isolated.
-  /mo-continue is the explicit resumption signal.
+  /mi-continue is the explicit resumption signal.
 
   **Layered context (Rule 3):** primer.md and review-context.md are required first
   reads; canonical files (requirements / config / summary / todo-list) are on-demand.
 
   **Cache-keyed reuse:** implementation/change-summary.md is shared between
-  /mo-update-blueprint and /mo-generate-implementation-diagrams via
+  /mi-update-blueprint and /mi-generate-implementation-diagrams via
   `commits.sh change-summary-fresh` (key = base-commit + head).
 
   **Sub-agent delegation (opt-in):** Stage 1 large intake, Stage 1.5 multi-feature
@@ -41,22 +41,22 @@ end note
 
 == Stage 0 — Journal populated ==
 
-group Stage 0 — Journal populated (overseer intake)
-  Overseer -> FS : populate journal/<folder>/ with .md/.txt files
-  Overseer -> Overseer : signal intake done\n(no mo command — /mo-run starts the workflow)
+group Stage 0 — Journal populated (inspector intake)
+  Inspector -> FS : populate journal/<folder>/ with .md/.txt files
+  Inspector -> Inspector : signal intake done\n(no mi command — /mi-run starts the workflow)
 end
 
 == Stage 1 — Quest scaffolded ==
 
-group Stage 1 — Quest scaffolded (/mo-run)
-  Overseer -> Millwright : /mo-run <folder1> [<folder2> ...]
+group Stage 1 — Quest scaffolded (/mi-run)
+  Inspector -> Millwright : /mi-run <folder1> [<folder2> ...]
 
   group Preflight (first invocation)
     Millwright -> FS : check CLIs / Python modules / MCP / skills
     alt deps missing
-      Millwright --> Overseer : "Approve installs?"
-      Overseer -> Millwright : y
-      Millwright -> Millwright : install deps; continue same /mo-run
+      Millwright --> Inspector : "Approve installs?"
+      Inspector -> Millwright : y
+      Millwright -> Millwright : install deps; continue same /mi-run
     else all ok
     end
   end
@@ -65,8 +65,8 @@ group Stage 1 — Quest scaffolded (/mo-run)
   Millwright -> Millwright : Step 2.5 — size manifest\n(warn if any > 100KB or total > 500KB)
 
   alt large intake (over thresholds)
-    Millwright --> Overseer : "Proceed with per-file summarization?"
-    Overseer -> Millwright : proceed
+    Millwright --> Inspector : "Proceed with per-file summarization?"
+    Inspector -> Millwright : proceed
     note over Millwright, SubAgent #LightCyan
       **Delegation:** one sub-agent per oversized file.
       Tier: general reasoning, medium effort.
@@ -85,14 +85,14 @@ group Stage 1 — Quest scaffolded (/mo-run)
   Millwright -> FS : write quest/<slug>/todo-list.md\n(features grouped; `[ ] TODO — ID: ...`)
   Millwright -> FS : write quest/<slug>/summary.md\n(feature-indexed: ## Cross-cutting, ## Out-of-scope,\n## Feature: <name> ×N, ## Sources)
   Millwright -> FS : write quest/<slug>/progress.md (queue + active=null)
-  Millwright --> Overseer : "Quest ready at quest/<slug>/. Mark items with `[x] (assignee)`."
+  Millwright --> Inspector : "Quest ready at quest/<slug>/. Mark items with `[x] (assignee)`."
 end
 
 == Stage 1.5 — Selection + queue confirm ==
 
 group Stage 1.5 — Selection + queue confirm
-  Overseer -> FS : edit quest/<active-slug>/todo-list.md\n([ ] TODO → [x] (emin) TODO for selected)
-  Overseer -> Millwright : "Done. Prioritize."
+  Inspector -> FS : edit quest/<active-slug>/todo-list.md\n([ ] TODO → [x] (emin) TODO for selected)
+  Inspector -> Millwright : "Done. Prioritize."
   Millwright -> FS : promote [x] (name) TODO → PENDING\n(refuses [x] TODO without assignee)
 
   alt ≥3 features need ordering
@@ -107,29 +107,29 @@ group Stage 1.5 — Selection + queue confirm
     Millwright -> FS : analyze deps inline
   end
 
-  Millwright --> Overseer : "Proposed queue: <list>. Confirm?"
-  Overseer -> Millwright : confirm
+  Millwright --> Inspector : "Proposed queue: <list>. Confirm?"
+  Inspector -> Millwright : confirm
   Millwright -> FS : write quest/<active-slug>/queue-rationale.md\n(features, ## Order, ## Dependencies)
   Millwright -> FS : progress.sh reorder ...
 end
 
 == Stage 2 — Blueprints generated ==
 
-group Stage 2 — Blueprints (/mo-apply-impact, auto-fired)
-  Millwright -> Millwright : /mo-apply-impact
+group Stage 2 — Blueprints (/mi-apply-impact, auto-fired)
+  Millwright -> Millwright : /mi-apply-impact
   Millwright -> FS : activate queue[0] into progress.md.active
   Millwright -> FS : read summary.md (## Cross-cutting + ## Feature: <active> + ## Out-of-scope)
   Millwright -> FS : write blueprints/current/requirements.md\n(## Goals + ## Planned + ## Non-goals)
-  Millwright -> FS : write blueprints/current/config.md\n(≤10 entries / ≤2 lines; ## Skills + ## Rules + ## Load on demand;\n## GIT BRANCH pre-fill; ## Overseer Additions section)
+  Millwright -> FS : write blueprints/current/config.md\n(≤10 entries / ≤2 lines; ## Skills + ## Rules + ## Load on demand;\n## GIT BRANCH pre-fill; ## Inspector Additions section)
   Millwright -> FS : render blueprints/current/diagrams/
-  Millwright --> Overseer : "Blueprints ready. Reply `approve`."
-  Overseer -> Millwright : approve
+  Millwright --> Inspector : "Blueprints ready. Reply `approve`."
+  Inspector -> Millwright : approve
 end
 
 == Stage 3 — Chain launched ==
 
-group Stage 3 — Chain (/mo-plan-implementation, auto-fired)
-  Millwright -> Millwright : /mo-plan-implementation
+group Stage 3 — Chain (/mi-plan-implementation, auto-fired)
+  Millwright -> Millwright : /mi-plan-implementation
   Millwright -> FS : validate ## GIT BRANCH (rejects main/master; HEAD must match)
   Millwright -> FS : promote PENDING → IMPLEMENTING (active feature)
   Millwright -> Git : rev-parse HEAD → base-commit
@@ -150,34 +150,34 @@ group Stage 3 — Chain (/mo-plan-implementation, auto-fired)
     subagent-driven-development → finishing-a-development-branch.
   end note
 
-  Chain <-> Overseer : Q&A loop
+  Chain <-> Inspector : Q&A loop
   Chain -> FS : writes spec / plan under docs/superpowers/
   Chain -> Git : commits implementation
-  Chain --> Overseer : "Branch complete." (chain exits)
+  Chain --> Inspector : "Branch complete." (chain exits)
 end
 
 == Stage 4 — Chain resumed ==
 
-group Stage 4 — Chain resumed (/mo-continue, 1st)
-  Overseer -> Millwright : /mo-continue
+group Stage 4 — Chain resumed (/mi-continue, 1st)
+  Inspector -> Millwright : /mi-continue
   Millwright -> FS : sub-flow=resuming
   Millwright -> Git : log base-commit..HEAD
   Millwright -> FS : implementation-completed=true
-  Millwright --> Overseer : "Pick execution mode."
-  Overseer -> Millwright : <choice>
+  Millwright --> Inspector : "Pick execution mode."
+  Inspector -> Millwright : <choice>
   Millwright -> FS : execution-mode=<choice>; advance 3 → 4
 
-  Millwright --> Overseer : "Drift check: reason or `continue`?"
-  alt overseer supplied a reason
-    Overseer -> Millwright : "<reason>"
-    Millwright -> Millwright : /mo-update-blueprint <reason>
+  Millwright --> Inspector : "Drift check: reason or `continue`?"
+  alt inspector supplied a reason
+    Inspector -> Millwright : "<reason>"
+    Millwright -> Millwright : /mi-update-blueprint <reason>
     note right of Millwright #LightCyan
       Rotate current/ → history/v[N+1]/ (incl. primer.md).
       Ensure change-summary.md is fresh (cache check).
       Regenerate Goals + diagrams + primer.md from
       change-summary.md + targeted hunks.
-      Preserve ## GIT BRANCH + ## Overseer Additions.
-      review.sh sync-refs re-points overseer-review.md /
+      Preserve ## GIT BRANCH + ## Inspector Additions.
+      review.sh sync-refs re-points inspector-review.md /
       review-context.md / change-summary.md.
     end note
 
@@ -197,7 +197,7 @@ group Stage 4 — Chain resumed (/mo-continue, 1st)
   else "continue"
   end
 
-  Millwright -> Millwright : /mo-generate-implementation-diagrams
+  Millwright -> Millwright : /mi-generate-implementation-diagrams
   note right of Millwright
     change-summary-fresh → reuse cache (0) or regen (1/2).
     Frame diagrams from change-summary.md + targeted re-reads.
@@ -207,7 +207,7 @@ group Stage 4 — Chain resumed (/mo-continue, 1st)
   alt cache miss + many-area diff
     note over Millwright, SubAgent #LightCyan
       **Delegation:** write change-summary.md body
-      (same recipe as /mo-update-blueprint Step 4a).
+      (same recipe as /mi-update-blueprint Step 4a).
       Tier: strong code-analysis, high effort.
     end note
     Millwright -> SubAgent : delegate: change-summary body
@@ -218,29 +218,29 @@ group Stage 4 — Chain resumed (/mo-continue, 1st)
     Millwright -> FS : reuse / inline-write change-summary.md
   end
 
-  Millwright -> FS : create overseer-review.md skeleton
+  Millwright -> FS : create inspector-review.md skeleton
   Millwright -> FS : advance 4 → 5
-  Millwright --> Overseer : "Stage 5 — review. Write findings or leave empty, then /mo-continue."
+  Millwright --> Inspector : "Stage 5 — review. Write findings or leave empty, then /mi-continue."
 end
 
-== Stage 5 — Overseer review ==
+== Stage 5 — Inspector review ==
 
-group Stage 5 — Overseer review
-  Overseer -> FS : review code (base..HEAD) + diagrams/
-  Overseer -> FS : edit overseer-review.md (### IR-NNN blocks, or empty)
-  Overseer -> Millwright : /mo-continue (2nd)
+group Stage 5 — Inspector review
+  Inspector -> FS : review code (base..HEAD) + diagrams/
+  Inspector -> FS : edit inspector-review.md (### IR-NNN blocks, or empty)
+  Inspector -> Millwright : /mi-continue (2nd)
 end
 
-== Stage 6 — Overseer review session (isolated) ==
+== Stage 6 — Inspector review session (isolated) ==
 
-group Stages 5→6 (/mo-continue, 2nd)
+group Stages 5→6 (/mi-continue, 2nd)
   Millwright -> FS : check open findings
 
   alt no findings
-    Millwright -> FS : overseer-review-completed=true; advance 5 → 6 → 7
-    Millwright --> Overseer : "Approved. Auto-finalizing."
+    Millwright -> FS : inspector-review-completed=true; advance 5 → 6 → 7
+    Millwright --> Inspector : "Approved. Auto-finalizing."
   else findings
-    Millwright -> Millwright : /mo-review
+    Millwright -> Millwright : /mi-review
     Millwright -> FS : Step 2.5 — write implementation/review-context.md\n(reads change-summary.md if fresh, else commits.sh changed-files)
 
     alt >5 open findings
@@ -262,79 +262,79 @@ group Stages 5→6 (/mo-continue, 2nd)
 
     note over Millwright, Chain #LightYellow
       **Review primer (layered load):**
-      - First reads: review-context.md + overseer-review.md
+      - First reads: review-context.md + inspector-review.md
       - On-demand: requirements.md, config.md, primer.md,
         summary.md (active feature section)
     end note
 
     Millwright -> Chain : Skill(brainstorming) — review primer
-    Millwright --> Overseer : "Review session live. Drive to completion, then /mo-continue."
+    Millwright --> Inspector : "Review session live. Drive to completion, then /mi-continue."
 
     note over Chain
       Isolated. Chain decides per-finding:
       fix / re-implement / re-plan / re-spec.
-      No iteration cap. Overseer ends with `approve`.
+      No iteration cap. Inspector ends with `approve`.
     end note
 
     loop until `approve`
       Chain -> FS : address open findings
       Chain -> Git : new commits
-      Chain -> FS : mark fixed in overseer-review.md
-      Chain --> Overseer : "Findings addressed. `approve` or `go again`?"
+      Chain -> FS : mark fixed in inspector-review.md
+      Chain --> Inspector : "Findings addressed. `approve` or `go again`?"
       alt go again
-        Overseer -> FS : edit overseer-review.md (new IR-NNN)
-        Overseer -> Chain : "go again"
+        Inspector -> FS : edit inspector-review.md (new IR-NNN)
+        Inspector -> Chain : "go again"
       else approve
-        Overseer -> Chain : "approve"
+        Inspector -> Chain : "approve"
       end
     end
 
-    Chain --> Overseer : "Approved. Type /mo-continue."
+    Chain --> Inspector : "Approved. Type /mi-continue."
   end
 end
 
-== Stage 6 → 7 — Post-review-session resume (/mo-continue, 3rd) ==
+== Stage 6 → 7 — Post-review-session resume (/mi-continue, 3rd) ==
 
 group Post-review-session resume
-  Overseer -> Millwright : /mo-continue
+  Inspector -> Millwright : /mi-continue
   Millwright -> FS : sanity-check no open findings remain
-  Millwright -> FS : sub-flow=none; overseer-review-completed=true; advance 6 → 7
-  Millwright --> Overseer : "Approved. Auto-finalizing."
+  Millwright -> FS : sub-flow=none; inspector-review-completed=true; advance 6 → 7
+  Millwright --> Inspector : "Approved. Auto-finalizing."
 end
 
 == Stage 8 — Completion ==
 
-group Stage 8 — Completion (/mo-complete-workflow, auto-fired)
-  Millwright -> Millwright : /mo-complete-workflow
+group Stage 8 — Completion (/mi-complete-workflow, auto-fired)
+  Millwright -> Millwright : /mi-complete-workflow
   Millwright -> FS : promote IMPLEMENTING → IMPLEMENTED (active feature)
   Millwright -> Git : log base..HEAD → commits[]
   Millwright -> FS : populate `commits:` in requirements.md
   Millwright -> FS : rotate blueprints/current/ → history/v[N+1]/\n(incl. primer.md; writes reason.md kind=completion)
-  Millwright -> FS : clear implementation/\n(overseer-review.md, review-context.md, change-summary.md, diagrams/)
+  Millwright -> FS : clear implementation/\n(inspector-review.md, review-context.md, change-summary.md, diagrams/)
   Millwright -> FS : archive feature → completed[]; active=null
 
   alt queue non-empty
-    Millwright --> Overseer : "Next: <next>. Auto-proceeding."
-    Millwright -> Millwright : /mo-apply-impact → loop to Stage 2
+    Millwright --> Inspector : "Next: <next>. Auto-proceeding."
+    Millwright -> Millwright : /mi-apply-impact → loop to Stage 2
   else queue empty
-    Millwright --> Overseer : "All complete. Run /mo-run for new cycle."
+    Millwright --> Inspector : "All complete. Run /mi-run for new cycle."
   end
 end
 
 == Out-of-band commands (recovery / manual) ==
 
-note over Overseer, FS #LightGray
-  **/mo-resume-workflow** — diagnostic dispatcher; no state mutation.
+note over Inspector, FS #LightGray
+  **/mi-resume-workflow** — diagnostic dispatcher; no state mutation.
 
-  **/mo-abort-workflow [--drop-feature={completed|requeue}]** — safe cancel.
-  Reverts IMPLEMENTING → PENDING; clears implementation/ (overseer-review.md,
+  **/mi-abort-workflow [--drop-feature={completed|requeue}]** — safe cancel.
+  Reverts IMPLEMENTING → PENDING; clears implementation/ (inspector-review.md,
   review-context.md, change-summary.md, diagrams/); resets runtime fields.
   Preserves blueprints/current/ (incl. primer.md). Never touches git.
 
-  **/mo-update-blueprint <reason>** — manual mid-cycle blueprint refresh.
+  **/mi-update-blueprint <reason>** — manual mid-cycle blueprint refresh.
   Same as Stage 4 auto-trigger. Stage 3+ only.
 
-  **/mo-update-todo-list <add|cancel|set-state> ...** — manual todo edits.
+  **/mi-update-todo-list <add|cancel|set-state> ...** — manual todo edits.
   Never mutates blueprints or progress.md.
 end note
 

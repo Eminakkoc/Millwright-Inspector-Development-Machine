@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# common.sh — shared helpers sourced by every millwright-overseer-development-machine script.
+# common.sh — shared helpers sourced by every millwright-inspector-development-machine script.
 # Not meant to be executed directly.
 
 set -euo pipefail
@@ -7,15 +7,15 @@ set -euo pipefail
 # Plugin root. Prefer $CLAUDE_PLUGIN_ROOT (set by Claude Code when commands run),
 # fall back to discovering from this script's location for standalone invocation.
 if [[ -n "${CLAUDE_PLUGIN_ROOT:-}" ]]; then
-  MO_PLUGIN_ROOT="$CLAUDE_PLUGIN_ROOT"
+  MI_PLUGIN_ROOT="$CLAUDE_PLUGIN_ROOT"
 else
-  MO_PLUGIN_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+  MI_PLUGIN_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 fi
-export MO_PLUGIN_ROOT
+export MI_PLUGIN_ROOT
 
 # Data root. Precedence (each step short-circuits if it produces a value):
 #
-# 1. $MO_DATA_ROOT — explicit per-invocation override. Set by command wrappers,
+# 1. $MI_DATA_ROOT — explicit per-invocation override. Set by command wrappers,
 #    by the user in their shell, or by integration scripts. Highest precedence
 #    because it is intentional and per-invocation.
 #
@@ -23,29 +23,29 @@ export MO_PLUGIN_ROOT
 #    runtime when the user configures `userConfig.data_root` at install time
 #    (see plugin.json). The convention `CLAUDE_PLUGIN_USER_CONFIG_<key>` is
 #    the documented Claude Code plugin pattern for exposing user config to
-#    subprocess scripts. If your runtime does not set this var, `MO_DATA_ROOT`
+#    subprocess scripts. If your runtime does not set this var, `MI_DATA_ROOT`
 #    or the default is used instead.
 #
-# 3. ./millwright-overseer relative to the current working directory
+# 3. ./millwright-inspector relative to the current working directory
 #    (default when nothing else is set).
 #
 # Resolved values may be relative or absolute. They are concatenated with the
 # absolute project working directory when a relative value is returned, so
 # every call site can rely on the result being absolute.
-mo_data_root() {
-  if [[ -n "${MO_DATA_ROOT:-}" ]]; then
-    _mo_data_root_resolve "$MO_DATA_ROOT"
+mi_data_root() {
+  if [[ -n "${MI_DATA_ROOT:-}" ]]; then
+    _mi_data_root_resolve "$MI_DATA_ROOT"
     return
   fi
   if [[ -n "${CLAUDE_PLUGIN_USER_CONFIG_data_root:-}" ]]; then
-    _mo_data_root_resolve "$CLAUDE_PLUGIN_USER_CONFIG_data_root"
+    _mi_data_root_resolve "$CLAUDE_PLUGIN_USER_CONFIG_data_root"
     return
   fi
-  echo "${PWD}/millwright-overseer"
+  echo "${PWD}/millwright-inspector"
 }
 
 # Resolve a possibly-relative data root to an absolute path. Internal helper.
-_mo_data_root_resolve() {
+_mi_data_root_resolve() {
   local val="$1"
   if [[ "$val" = /* ]]; then
     echo "$val"
@@ -56,66 +56,66 @@ _mo_data_root_resolve() {
 
 # Print the basename of the data root — used by the validate-on-write hook
 # to test whether a Write/Edit landed under the configured workspace folder.
-# Falls back to "millwright-overseer" when nothing is set.
-mo_data_root_segment() {
-  basename "$(mo_data_root)"
+# Falls back to "millwright-inspector" when nothing is set.
+mi_data_root_segment() {
+  basename "$(mi_data_root)"
 }
 
-# Paths the millwright-overseer-development-machine operates on — always resolve via these helpers.
+# Paths the millwright-inspector-development-machine operates on — always resolve via these helpers.
 #
-# The quest folder is now per-cycle: each /mo-run creates a fresh subfolder
+# The quest folder is now per-cycle: each /mi-run creates a fresh subfolder
 # under quest/ named after the journal folders + date (the "slug"), and a
 # top-level quest/active.md pointer file records which slug is currently
 # active. Historical quest folders are preserved across cycles so PMs can
 # query past task lists, summaries, and queue rationales.
-mo_quest_dir()             { echo "$(mo_data_root)/quest"; }
-mo_quest_active_pointer()  { echo "$(mo_quest_dir)/active.md"; }
-mo_journal_dir()           { echo "$(mo_data_root)/journal"; }
-mo_stream_dir()            { echo "$(mo_data_root)/workflow-stream"; }
-mo_feature_dir()           { echo "$(mo_stream_dir)/$1"; }
-mo_blueprints_current(){ echo "$(mo_feature_dir "$1")/blueprints/current"; }
-mo_blueprints_history(){ echo "$(mo_feature_dir "$1")/blueprints/history"; }
-mo_impl_dir()          { echo "$(mo_feature_dir "$1")/implementation"; }
-mo_test_dir()          { echo "$(mo_feature_dir "$1")/test"; }
+mi_quest_dir()             { echo "$(mi_data_root)/quest"; }
+mi_quest_active_pointer()  { echo "$(mi_quest_dir)/active.md"; }
+mi_journal_dir()           { echo "$(mi_data_root)/journal"; }
+mi_stream_dir()            { echo "$(mi_data_root)/workflow-stream"; }
+mi_feature_dir()           { echo "$(mi_stream_dir)/$1"; }
+mi_blueprints_current(){ echo "$(mi_feature_dir "$1")/blueprints/current"; }
+mi_blueprints_history(){ echo "$(mi_feature_dir "$1")/blueprints/history"; }
+mi_impl_dir()          { echo "$(mi_feature_dir "$1")/implementation"; }
+mi_test_dir()          { echo "$(mi_feature_dir "$1")/test"; }
 
 # Active-quest helpers — resolve through quest/active.md.
 #
-# mo_active_quest_slug — print the active slug to stdout. Exit 0 if active,
+# mi_active_quest_slug — print the active slug to stdout. Exit 0 if active,
 # non-zero if no active cycle (slug missing, null, or pointer absent).
-mo_active_quest_slug() {
+mi_active_quest_slug() {
   local pointer
-  pointer="$(mo_quest_active_pointer)"
+  pointer="$(mi_quest_active_pointer)"
   [[ -f "$pointer" ]] || return 1
   local slug
-  slug="$(mo_fm_get "$pointer" slug 2>/dev/null || true)"
+  slug="$(mi_fm_get "$pointer" slug 2>/dev/null || true)"
   [[ -n "$slug" && "$slug" != "null" && "$slug" != "~" ]] || return 1
   printf '%s' "$slug"
 }
 
 # Path of the active quest's subfolder. Errors if no cycle is active.
-mo_quest_active_dir() {
+mi_quest_active_dir() {
   local slug
-  slug="$(mo_active_quest_slug)" || mo_die "no active quest cycle (run /mo-run to start one)"
-  echo "$(mo_quest_dir)/${slug}"
+  slug="$(mi_active_quest_slug)" || mi_die "no active quest cycle (run /mi-run to start one)"
+  echo "$(mi_quest_dir)/${slug}"
 }
 
 # Path of <name>.md inside the active quest folder. Errors if no cycle is active.
-# Usage: mo_quest_active_file todo-list  ->  <data>/quest/<slug>/todo-list.md
-mo_quest_active_file() {
+# Usage: mi_quest_active_file todo-list  ->  <data>/quest/<slug>/todo-list.md
+mi_quest_active_file() {
   local name="${1:?name required}"
-  echo "$(mo_quest_active_dir)/${name}.md"
+  echo "$(mi_quest_active_dir)/${name}.md"
 }
 
 # Path of progress.md for the active quest. Errors if no cycle is active.
-mo_progress_file() { mo_quest_active_file progress; }
+mi_progress_file() { mi_quest_active_file progress; }
 
 # Compute the canonical quest slug from a journal-folder list.
 # Format: YYYY-MM-DD-<kebab1>+<kebab2>+...  with a 3-char hash suffix on
 # collision (when quest/<slug>/ already exists). Each input folder is
 # kebab-normalized via the same rules as scripts/todo.sh.
-mo_quest_compute_slug() {
-  [[ $# -gt 0 ]] || mo_die "mo_quest_compute_slug: at least one journal folder required"
-  python3 - "$(mo_quest_dir)" "$@" <<'PYEOF'
+mi_quest_compute_slug() {
+  [[ $# -gt 0 ]] || mi_die "mi_quest_compute_slug: at least one journal folder required"
+  python3 - "$(mi_quest_dir)" "$@" <<'PYEOF'
 import os, re, sys, hashlib, time
 quest_root, *folders = sys.argv[1:]
 def kebab(s):
@@ -151,7 +151,7 @@ PYEOF
 
 # yq wrapper — all reads/writes must go through these helpers so a future
 # replacement of yq with another YAML tool is a single-file change.
-mo_require_yq() {
+mi_require_yq() {
   if ! command -v yq >/dev/null 2>&1; then
     echo "error: yq is required (install via 'brew install yq' or equivalent)" >&2
     exit 2
@@ -159,9 +159,9 @@ mo_require_yq() {
 }
 
 # Read a frontmatter field from a markdown file.
-# Usage: mo_fm_get <file> <field>
-mo_fm_get() {
-  mo_require_yq
+# Usage: mi_fm_get <file> <field>
+mi_fm_get() {
+  mi_require_yq
   local file="$1" field="$2"
   # Accept either bare field names ("queue") or fully-qualified yq
   # paths (".queue[0]", ".active.feature", ".queue[]"). Strip a leading
@@ -173,15 +173,15 @@ mo_fm_get() {
 }
 
 # Set a frontmatter field in-place.
-# Usage: mo_fm_set <file> <field> <value>
+# Usage: mi_fm_set <file> <field> <value>
 # Value is treated as a YAML literal (strings need to be quoted by the caller).
-mo_fm_set() {
-  mo_require_yq
+mi_fm_set() {
+  mi_require_yq
   local file="$1" field="$2" value="$3"
   local tmp
   tmp="$(mktemp)"
   # Split frontmatter from body, edit frontmatter, restitch.
-  awk 'BEGIN{c=0} /^---$/{c++; print; next} c==1{print > "/tmp/mo_fm_head"} c>1{print > "/tmp/mo_fm_body"}' "$file" >/dev/null 2>&1 || true
+  awk 'BEGIN{c=0} /^---$/{c++; print; next} c==1{print > "/tmp/mi_fm_head"} c>1{print > "/tmp/mi_fm_body"}' "$file" >/dev/null 2>&1 || true
   # Simpler approach: use yq's frontmatter-aware mode via a pre/post split.
   python3 - "$file" "$field" "$value" <<'PYEOF' > "$tmp"
 import sys, re, yaml
@@ -208,7 +208,7 @@ PYEOF
 }
 
 # Render a template by substituting {{TOKEN}} placeholders.
-# Usage: mo_render_template <template-path> <dest-path> KEY1=VAL1 KEY2=VAL2 ...
+# Usage: mi_render_template <template-path> <dest-path> KEY1=VAL1 KEY2=VAL2 ...
 #
 # Substitutions that land inside the YAML frontmatter block are encoded as
 # YAML scalars — i.e. quoted whenever the raw value contains characters that
@@ -229,7 +229,7 @@ PYEOF
 #      explicit array literal). Reserved for internal callers.
 #
 # Substitutions outside the frontmatter (in the body) are always literal.
-mo_render_template() {
+mi_render_template() {
   local tmpl="$1" dest="$2"; shift 2
   mkdir -p "$(dirname "$dest")"
   python3 - "$tmpl" "$dest" "$@" <<'PYEOF'
@@ -321,7 +321,7 @@ PYEOF
 # When the active block is null, or when the fingerprint fields aren't
 # present (cycle activated before the worktree-fingerprint change shipped),
 # the function is a no-op so old in-flight cycles keep working. Once a
-# cycle is re-activated (next /mo-apply-impact), the fingerprint is
+# cycle is re-activated (next /mi-apply-impact), the fingerprint is
 # captured and the guard becomes active.
 #
 # Compares three things, in order of strength:
@@ -333,19 +333,19 @@ PYEOF
 #      dirs are unavailable (rare; would mean the user moved their git dir).
 #
 # Exits non-zero with a guidance message on mismatch.
-mo_assert_worktree_match() {
+mi_assert_worktree_match() {
   local progress
-  progress="$(mo_progress_file 2>/dev/null || true)"
+  progress="$(mi_progress_file 2>/dev/null || true)"
   [[ -n "$progress" && -f "$progress" ]] || return 0
 
   local active
-  active="$(mo_fm_get "$progress" active 2>/dev/null || echo "null")"
+  active="$(mi_fm_get "$progress" active 2>/dev/null || echo "null")"
   [[ "$active" == "null" || -z "$active" ]] && return 0
 
   local recorded_path recorded_common recorded_wtdir
-  recorded_path="$(mo_fm_get "$progress" .active.worktree-path 2>/dev/null || echo "null")"
-  recorded_common="$(mo_fm_get "$progress" .active.git-common-dir 2>/dev/null || echo "null")"
-  recorded_wtdir="$(mo_fm_get "$progress" .active.git-worktree-dir 2>/dev/null || echo "null")"
+  recorded_path="$(mi_fm_get "$progress" .active.worktree-path 2>/dev/null || echo "null")"
+  recorded_common="$(mi_fm_get "$progress" .active.git-common-dir 2>/dev/null || echo "null")"
+  recorded_wtdir="$(mi_fm_get "$progress" .active.git-worktree-dir 2>/dev/null || echo "null")"
 
   # Pre-fingerprint cycle (activated before this change shipped). Skip the
   # guard so old cycles can finish; new cycles get the fingerprint at activate.
@@ -360,47 +360,47 @@ mo_assert_worktree_match() {
   fi
 
   local feature
-  feature="$(mo_fm_get "$progress" .active.feature 2>/dev/null || echo "?")"
+  feature="$(mi_fm_get "$progress" .active.feature 2>/dev/null || echo "?")"
 
   # Strongest signal: git worktree dir mismatch. This catches sibling
   # `git worktree add` checkouts of the same repo.
   if [[ -n "$current_wtdir" && "$recorded_wtdir" != "null" && "$current_wtdir" != "$recorded_wtdir" ]]; then
-    mo_die "worktree mismatch: active feature '${feature}' was activated from
+    mi_die "worktree mismatch: active feature '${feature}' was activated from
        worktree:   ${recorded_path}
        git-dir:    ${recorded_wtdir}
   but this command is running in
        worktree:   ${PWD}
        git-dir:    ${current_wtdir}
 
-  Two git worktrees appear to share the same data_root. Run mo-workflow
+  Two git worktrees appear to share the same data_root. Run mi-workflow
   commands for this active feature only from the worktree that activated
-  it, or set MO_DATA_ROOT to a per-worktree path before retrying."
+  it, or set MI_DATA_ROOT to a per-worktree path before retrying."
   fi
 
   # Different repository entirely.
   if [[ -n "$current_common" && "$recorded_common" != "null" && "$current_common" != "$recorded_common" ]]; then
-    mo_die "repository mismatch: active feature '${feature}' belongs to
+    mi_die "repository mismatch: active feature '${feature}' belongs to
        repo:       ${recorded_common}
   but this command is running in
        repo:       ${current_common}
 
   This data_root is being used by a different repository. Use a separate
-  data_root for this repository (set MO_DATA_ROOT or userConfig.data_root)."
+  data_root for this repository (set MI_DATA_ROOT or userConfig.data_root)."
   fi
 
   # Path-only fallback when git wasn't usable for the comparison.
   if [[ -z "$current_wtdir" && "$recorded_path" != "null" && "$PWD" != "$recorded_path" ]]; then
-    mo_die "worktree mismatch: active feature '${feature}' was activated from ${recorded_path}, but this command is running from ${PWD}."
+    mi_die "worktree mismatch: active feature '${feature}' was activated from ${recorded_path}, but this command is running from ${PWD}."
   fi
 }
 
 # Abort with a message on stderr and non-zero exit.
-mo_die() {
+mi_die() {
   echo "error: $*" >&2
   exit 1
 }
 
 # Pretty-print info to stderr (keeps stdout clean for command output).
-mo_info() {
-  echo "mo: $*" >&2
+mi_info() {
+  echo "mi: $*" >&2
 }

@@ -1,13 +1,13 @@
 $schema: "http://json-schema.org/draft-07/schema#"
-$id: millwright-overseer-development-machine/review-context.schema.yaml
+$id: millwright-inspector-development-machine/review-context.schema.yaml
 title: workflow-stream/<feature>/implementation/review-context.md frontmatter
 description: >
   Stage-6 review-loop primer. Derived snapshot composed from
   blueprints/current/requirements.md (active goals), implementation/diagrams/
-  (file list), implementation/overseer-review.md (open findings snapshot),
-  and progress.md (branch + base-commit). Written by /mo-review immediately
+  (file list), implementation/inspector-review.md (open findings snapshot),
+  and progress.md (branch + base-commit). Written by /mi-review immediately
   before the brainstorming review session is invoked. Cleaned up by
-  /mo-complete-workflow and /mo-abort-workflow alongside overseer-review.md
+  /mi-complete-workflow and /mi-abort-workflow alongside inspector-review.md
   and implementation/diagrams/.
 
 type: object
@@ -24,7 +24,7 @@ properties:
   requirements-id:
     type: string
     pattern: "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"
-    description: UUID of the requirements.md this review-context summarizes. Re-pointed by /mo-update-blueprint via review.sh sync-refs if blueprint rotates.
+    description: UUID of the requirements.md this review-context summarizes. Re-pointed by /mi-update-blueprint via review.sh sync-refs if blueprint rotates.
   feature:
     type: string
     pattern: "^[a-z0-9][a-z0-9-]*$"

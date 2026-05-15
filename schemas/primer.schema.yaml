@@ -1,13 +1,13 @@
 $schema: "http://json-schema.org/draft-07/schema#"
-$id: millwright-overseer-development-machine/primer.schema.yaml
+$id: millwright-inspector-development-machine/primer.schema.yaml
 title: workflow-stream/<feature>/blueprints/current/primer.md frontmatter
 description: >
   Stage-3 launch primer. Derived snapshot composed from requirements.md,
   config.md, summary.md (active feature section), and progress.md
-  (branch + base-commit). Written by mo-plan-implementation immediately
-  before the brainstorming chain is invoked, refreshed by mo-update-blueprint
+  (branch + base-commit). Written by mi-plan-implementation immediately
+  before the brainstorming chain is invoked, refreshed by mi-update-blueprint
   whenever blueprints/current/ is regenerated. Rotated to history with the
-  rest of current/ at stage 8 or on /mo-update-blueprint, so historical
+  rest of current/ at stage 8 or on /mi-update-blueprint, so historical
   primers remain auditable.
 
 type: object

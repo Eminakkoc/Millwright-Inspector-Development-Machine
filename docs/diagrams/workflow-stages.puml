@@ -1,5 +1,5 @@
 @startuml workflow-stages
-title Millwright-Overseer Workflow — Stages
+title Millwright-Inspector Workflow — Stages
 
 skinparam backgroundColor #FFFFFF
 skinparam shadowing false
@@ -16,12 +16,12 @@ skinparam rectangle {
   RoundCorner 12
 }
 
-' Color the auto-fired stages distinctly from overseer-driven ones
+' Color the auto-fired stages distinctly from inspector-driven ones
 skinparam rectangle<<auto>> {
   BackgroundColor #EEF7FF
   BorderColor #2C7BB6
 }
-skinparam rectangle<<overseer>> {
+skinparam rectangle<<inspector>> {
   BackgroundColor #FFF8DC
   BorderColor #8B7500
 }
@@ -34,36 +34,36 @@ skinparam rectangle<<terminal>> {
   BorderColor #2E7D32
 }
 
-rectangle "**Stage 0 — Journal populated**\n//Overseer drops .md/.txt files into\njournal/<folder>/. No mo command yet.//" as S0 <<overseer>>
+rectangle "**Stage 0 — Journal populated**\n//Inspector drops .md/.txt files into\njournal/<folder>/. No mi command yet.//" as S0 <<inspector>>
 
-rectangle "**Stage 1 — Quest scaffolded**\n//`/mo-run <folders>` creates quest/<slug>/\nwith todo-list.md, summary.md, progress.md\n(features grouped, queue empty).//" as S1 <<overseer>>
+rectangle "**Stage 1 — Quest scaffolded**\n//`/mi-run <folders>` creates quest/<slug>/\nwith todo-list.md, summary.md, progress.md\n(features grouped, queue empty).//" as S1 <<inspector>>
 
-rectangle "**Stage 1.5 — Selection + queue confirm**\n//Overseer marks `[x] (name)` items;\n`/mo-continue` ×2 promotes to PENDING,\nproposes order, writes queue-rationale.md.//" as S15 <<overseer>>
+rectangle "**Stage 1.5 — Selection + queue confirm**\n//Inspector marks `[x] (name)` items;\n`/mi-continue` ×2 promotes to PENDING,\nproposes order, writes queue-rationale.md.//" as S15 <<inspector>>
 
-rectangle "**Stage 2 — Blueprints generated**\n//`/mo-apply-impact` (auto) activates queue[0],\nwrites blueprints/current/ requirements.md,\nconfig.md, diagrams/. Overseer replies `approve`.//" as S2 <<auto>>
+rectangle "**Stage 2 — Blueprints generated**\n//`/mi-apply-impact` (auto) activates queue[0],\nwrites blueprints/current/ requirements.md,\nconfig.md, diagrams/. Inspector replies `approve`.//" as S2 <<auto>>
 
-rectangle "**Stage 3 — Chain launched**\n//`/mo-plan-implementation` (auto) validates\n## GIT BRANCH, captures base-commit, writes\nprimer.md, hands off to brainstorming chain.//" as S3 <<isolated>>
+rectangle "**Stage 3 — Chain launched**\n//`/mi-plan-implementation` (auto) validates\n## GIT BRANCH, captures base-commit, writes\nprimer.md, hands off to brainstorming chain.//" as S3 <<isolated>>
 
-rectangle "**Stage 4 — Chain resumed**\n//`/mo-continue` (1st): drift check, optional\n`/mo-update-blueprint`, render implementation/\ndiagrams/, seed overseer-review.md skeleton.//" as S4 <<auto>>
+rectangle "**Stage 4 — Chain resumed**\n//`/mi-continue` (1st): drift check, optional\n`/mi-update-blueprint`, render implementation/\ndiagrams/, seed inspector-review.md skeleton.//" as S4 <<auto>>
 
-rectangle "**Stage 5 — Overseer review**\n//Overseer reads base..HEAD + diagrams/,\nedits overseer-review.md (### IR-NNN blocks\nor leaves empty), then `/mo-continue` (2nd).//" as S5 <<overseer>>
+rectangle "**Stage 5 — Inspector review**\n//Inspector reads base..HEAD + diagrams/,\nedits inspector-review.md (### IR-NNN blocks\nor leaves empty), then `/mi-continue` (2nd).//" as S5 <<inspector>>
 
-rectangle "**Stage 6 — Review session**\n//If findings: `/mo-review` (auto) launches an\nisolated brainstorming chain that fixes /\nre-implements / re-plans until `approve`.//" as S6 <<isolated>>
+rectangle "**Stage 6 — Review session**\n//If findings: `/mi-review` (auto) launches an\nisolated brainstorming chain that fixes /\nre-implements / re-plans until `approve`.//" as S6 <<isolated>>
 
-rectangle "**Stage 7 — Post-review resume**\n//`/mo-continue` (3rd): sanity-check no open\nfindings remain; mark overseer-review-completed;\nadvance 6 → 7. Skipped if Stage 5 was empty.//" as S7 <<auto>>
+rectangle "**Stage 7 — Post-review resume**\n//`/mi-continue` (3rd): sanity-check no open\nfindings remain; mark inspector-review-completed;\nadvance 6 → 7. Skipped if Stage 5 was empty.//" as S7 <<auto>>
 
-rectangle "**Stage 8 — Completion**\n//`/mo-complete-workflow` (auto): IMPLEMENTING →\nIMPLEMENTED, rotate blueprints/current/ → history/,\narchive implementation/, advance feature queue.//" as S8 <<terminal>>
+rectangle "**Stage 8 — Completion**\n//`/mi-complete-workflow` (auto): IMPLEMENTING →\nIMPLEMENTED, rotate blueprints/current/ → history/,\narchive implementation/, advance feature queue.//" as S8 <<terminal>>
 
 ' --- Main flow ---
-S0  -down-> S1   : overseer types\n/mo-run
-S1  -down-> S15  : overseer marks\n[x] (name)
+S0  -down-> S1   : inspector types\n/mi-run
+S1  -down-> S15  : inspector marks\n[x] (name)
 S15 -down-> S2   : queue confirmed
 S2  -down-> S3   : `approve`
-S3  -down-> S4   : chain exits +\n/mo-continue (1st)
+S3  -down-> S4   : chain exits +\n/mi-continue (1st)
 S4  -down-> S5   : review scaffold\nready
-S5  -down-> S6   : findings present\n+ /mo-continue (2nd)
+S5  -down-> S6   : findings present\n+ /mi-continue (2nd)
 S5  -right-> S7  : no findings\n(skip Stage 6)
-S6  -down-> S7   : `approve` +\n/mo-continue (3rd)
+S6  -down-> S7   : `approve` +\n/mi-continue (3rd)
 S7  -down-> S8   : auto-finalize
 
 ' --- Loop back: more features in queue ---
@@ -72,7 +72,7 @@ S8 -left-> S2 : queue non-empty\n(next feature)
 ' Legend
 legend right
 | Color | Meaning |
-| <back:#FFF8DC>     </back> | Overseer-driven stage |
+| <back:#FFF8DC>     </back> | Inspector-driven stage |
 | <back:#EEF7FF>     </back> | Millwright auto-fired |
 | <back:#FFF0F5>     </back> | Isolated chain (Stage 3 / 6) |
 | <back:#E8F5E9>     </back> | Terminal / loop-back |

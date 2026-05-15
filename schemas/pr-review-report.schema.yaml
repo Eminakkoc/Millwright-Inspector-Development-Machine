@@ -1,8 +1,8 @@
 $schema: "http://json-schema.org/draft-07/schema#"
-$id: millwright-overseer-development-machine/pr-review-report.schema.yaml
+$id: millwright-inspector-development-machine/pr-review-report.schema.yaml
 title: pr-reviews/<slug>/<ts>/report.md frontmatter
 description: >-
-  Schema for a PR-review analysis report produced by /mo-analyze-review. The
+  Schema for a PR-review analysis report produced by /mi-analyze-review. The
   PR-NNN comment blocks in the body are validated structurally by
   scripts/pr-review.sh canonicalize rather than by this JSON Schema.
 

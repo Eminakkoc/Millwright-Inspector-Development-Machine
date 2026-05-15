@@ -32,7 +32,7 @@ source "$(dirname "$0")/internal/common.sh"
 
 ledger_file() {
   local quest_dir
-  quest_dir="$(mo_quest_active_dir 2>/dev/null)" || mo_die "ledger: no active quest"
+  quest_dir="$(mi_quest_active_dir 2>/dev/null)" || mi_die "ledger: no active quest"
   echo "$quest_dir/context-ledger.md"
 }
 
@@ -42,15 +42,15 @@ case "$cmd" in
   init)
     dest="$(ledger_file)"
     if [[ -f "$dest" ]]; then
-      mo_info "ledger already initialized at $dest (idempotent)"
+      mi_info "ledger already initialized at $dest (idempotent)"
       exit 0
     fi
-    quest_dir="$(mo_quest_active_dir)"
+    quest_dir="$(mi_quest_active_dir)"
     cycle_slug="$(basename "$quest_dir")"
     mkdir -p "$quest_dir"
-    "${MO_PLUGIN_ROOT}/scripts/frontmatter.sh" init context-ledger "$dest" \
+    "${MI_PLUGIN_ROOT}/scripts/frontmatter.sh" init context-ledger "$dest" \
       "CYCLE_SLUG=$cycle_slug"
-    mo_info "initialized $dest"
+    mi_info "initialized $dest"
     ;;
 
   append)
@@ -61,13 +61,13 @@ case "$cmd" in
     location="${5:?location required (main|sub-agent|fork)}"
     artifact="${6:?artifact required}"
 
-    [[ "$class" =~ ^(small|medium|large)$ ]] || mo_die "ledger: class must be small|medium|large"
-    [[ "$location" =~ ^(main|sub-agent|fork)$ ]] || mo_die "ledger: location must be main|sub-agent|fork"
+    [[ "$class" =~ ^(small|medium|large)$ ]] || mi_die "ledger: class must be small|medium|large"
+    [[ "$location" =~ ^(main|sub-agent|fork)$ ]] || mi_die "ledger: location must be main|sub-agent|fork"
 
     dest="$(ledger_file)"
     # Auto-init on first append so callers don't need to remember.
     if [[ ! -f "$dest" ]]; then
-      "${MO_PLUGIN_ROOT}/scripts/ledger.sh" init >/dev/null 2>&1 || true
+      "${MI_PLUGIN_ROOT}/scripts/ledger.sh" init >/dev/null 2>&1 || true
     fi
     [[ -f "$dest" ]] || { echo "ledger: $dest still missing after init — skipping append" >&2; exit 0; }
 

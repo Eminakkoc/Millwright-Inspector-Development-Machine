@@ -1,8 +1,8 @@
 $schema: "http://json-schema.org/draft-07/schema#"
-$id: millwright-overseer-development-machine/manual-test-results.schema.yaml
+$id: millwright-inspector-development-machine/manual-test-results.schema.yaml
 title: workflow-stream/<feature>/test/manual-test-results.md frontmatter
 description: >
-  Per-scenario verdict log written by /mo-manual-test-run as scenarios are
+  Per-scenario verdict log written by /mi-manual-test-run as scenarios are
   evaluated. Body holds one canonical `### <SCENARIO_ID> — <VERDICT>` block
   per scenario with bullets for Verdict / Observation / Recorded at / Seeded
   / Cited as IR-NNN; this schema validates frontmatter shape only. The runner
@@ -59,8 +59,8 @@ properties:
       the plan it was rendered against" invariant even if the
       activation was re-minted between plan render and results render
       (e.g., abort-retry crashed between the two). The cross-cycle
-      rotation guard at /mo-manual-test-plan Step 1 and
-      /mo-manual-test-run Branch A pre-normalization compares this
+      rotation guard at /mi-manual-test-plan Step 1 and
+      /mi-manual-test-run Branch A pre-normalization compares this
       value against `progress.md.active.activation-id` — mismatch means
       "results belong to a prior activation, rotate them." See
       docs/manual-testing-folder/plan.md § 4.3.

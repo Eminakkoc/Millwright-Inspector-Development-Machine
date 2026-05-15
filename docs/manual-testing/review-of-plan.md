@@ -27,15 +27,15 @@ None of the findings rise to a strict blocker — the design is implementable as
 
 ## Major
 
-### M1. Duplicate "generate manual test plan?" prompt between `mo-continue` step 7 and `mo-manual-test-plan` step 1
+### M1. Duplicate "generate manual test plan?" prompt between `mi-continue` step 7 and `mi-manual-test-plan` step 1
 
-**Where:** § 3.1.1 (lines 644–662) defines the stage-5 hand-off prompt, which on `y` auto-fires `/mo-manual-test-plan`. § 2.1 step 1 (lines 335–337) re-prompts the overseer with the *same* y/n question.
+**Where:** § 3.1.1 (lines 644–662) defines the stage-5 hand-off prompt, which on `y` auto-fires `/mi-manual-test-plan`. § 2.1 step 1 (lines 335–337) re-prompts the inspector with the *same* y/n question.
 
-**Impact:** the overseer who answers `y` to the first prompt is immediately asked again. They might answer `n` the second time by accident (or out of fatigue) and skip the manual-test phase they just opted into. UX bug.
+**Impact:** the inspector who answers `y` to the first prompt is immediately asked again. They might answer `n` the second time by accident (or out of fatigue) and skip the manual-test phase they just opted into. UX bug.
 
-**Why both prompts exist today:** § 2.1 also supports manual invocation (overseer types `/mo-manual-test-plan` mid-cycle without being routed via `mo-continue`); for that case the prompt is needed.
+**Why both prompts exist today:** § 2.1 also supports manual invocation (inspector types `/mi-manual-test-plan` mid-cycle without being routed via `mi-continue`); for that case the prompt is needed.
 
-**Suggested fix:** add a `--from-resume` (or `--no-prompt`) flag to `/mo-manual-test-plan`. `mo-continue` step 7 passes the flag on auto-fire, suppressing the redundant prompt. Direct invocation by the overseer (no flag) keeps the prompt. Document the flag in § 2.1's "Manual invocability" paragraph (line 354) and reference it from § 3.1.1's "On `y`" branch.
+**Suggested fix:** add a `--from-resume` (or `--no-prompt`) flag to `/mi-manual-test-plan`. `mi-continue` step 7 passes the flag on auto-fire, suppressing the redundant prompt. Direct invocation by the inspector (no flag) keeps the prompt. Document the flag in § 2.1's "Manual invocability" paragraph (line 354) and reference it from § 3.1.1's "On `y`" branch.
 
 ---
 
@@ -43,17 +43,17 @@ None of the findings rise to a strict blocker — the design is implementable as
 
 **Where:** § 2.2 step 4 final message (line 466):
 
-> "Manual test done. Review `overseer-review.md` (auto-seeded failures appear at the bottom; **canonicalization runs on `/mo-continue`**), add any subjective findings, and type `/mo-continue` when done."
+> "Manual test done. Review `inspector-review.md` (auto-seeded failures appear at the bottom; **canonicalization runs on `/mi-continue`**), add any subjective findings, and type `/mi-continue` when done."
 
 But § 3.1.4 (lines 698–700) explicitly states:
 
-> "Seeded failures are already-canonical `### IR-NNN` blocks via `review.sh upsert-manual-test-failure`. The handler's existing canonicalization step has nothing to do with seeded blocks — they're canonical from the moment `upsert-manual-test-failure` writes them. Canonicalization only handles overseer-authored free-form review text."
+> "Seeded failures are already-canonical `### IR-NNN` blocks via `review.sh upsert-manual-test-failure`. The handler's existing canonicalization step has nothing to do with seeded blocks — they're canonical from the moment `upsert-manual-test-failure` writes them. Canonicalization only handles inspector-authored free-form review text."
 
-**Impact:** the message implies the auto-seeded blocks are not yet canonical and might be reformatted on `/mo-continue` — readers/implementers will write tests that exercise that reformatting, only to find the spec elsewhere says it does nothing. Minor at runtime (the canonicalize pass is a no-op on already-canonical blocks), but the contradicting prose is a maintenance trap.
+**Impact:** the message implies the auto-seeded blocks are not yet canonical and might be reformatted on `/mi-continue` — readers/implementers will write tests that exercise that reformatting, only to find the spec elsewhere says it does nothing. Minor at runtime (the canonicalize pass is a no-op on already-canonical blocks), but the contradicting prose is a maintenance trap.
 
 **Suggested fix:** rewrite the hand-off line to:
 
-> "Manual test done. Review `overseer-review.md` (auto-seeded failures appear at the bottom as canonical `### IR-NNN` blocks; any free-form findings you author will be canonicalized on `/mo-continue` per the existing pass), add any subjective findings, and type `/mo-continue` when done."
+> "Manual test done. Review `inspector-review.md` (auto-seeded failures appear at the bottom as canonical `### IR-NNN` blocks; any free-form findings you author will be canonicalized on `/mi-continue` per the existing pass), add any subjective findings, and type `/mi-continue` when done."
 
 ---
 
@@ -63,29 +63,29 @@ But § 3.1.4 (lines 698–700) explicitly states:
 
 - Auto-seed loop ran to completion.
 - No-failures no-op.
-- `manual→auto-seed` flip-and-seed (overseer answered `y`).
+- `manual→auto-seed` flip-and-seed (inspector answered `y`).
 - `manual` decline (`n`) to flip-prompt.
 - `auto-seed` re-seed completed, no diff produced.
 
-**Missing case:** Branch B entered with `policy=none` AND `failed > 0`. The policy table at line 498 says: "If `failed > 0`: prompt the overseer (auto-seed prompt as in step 4)." That prompt has three answers (`y` / `y --classify` / `n`), each producing a valid done-state. None of those answers are explicitly listed as a "valid exit" — the closest is "Auto-seed loop ran to completion," which arguably covers the `y` and `y --classify` cases but not `n` (where no loop runs and policy is set to `manual`).
+**Missing case:** Branch B entered with `policy=none` AND `failed > 0`. The policy table at line 498 says: "If `failed > 0`: prompt the inspector (auto-seed prompt as in step 4)." That prompt has three answers (`y` / `y --classify` / `n`), each producing a valid done-state. None of those answers are explicitly listed as a "valid exit" — the closest is "Auto-seed loop ran to completion," which arguably covers the `y` and `y --classify` cases but not `n` (where no loop runs and policy is set to `manual`).
 
-**Impact:** an implementer reading the list literally might leave Branch B without finalizing in the `policy=none → answered n → no loop ran` shape, leaving `(sub-flow=manual-testing, manual-test-state=running)` on disk and looping the next `/mo-continue` back into the same handler — exactly the bug rev-9 finding #1 fixed for `policy=manual`.
+**Impact:** an implementer reading the list literally might leave Branch B without finalizing in the `policy=none → answered n → no loop ran` shape, leaving `(sub-flow=manual-testing, manual-test-state=running)` on disk and looping the next `/mi-continue` back into the same handler — exactly the bug rev-9 finding #1 fixed for `policy=manual`.
 
 **Suggested fix:** rewrite the "valid exit" list to be answer-driven rather than entry-state-driven:
 
 ```
-"Valid exit" — finalize whenever the overseer answered the auto-seed/flip prompt
+"Valid exit" — finalize whenever the inspector answered the auto-seed/flip prompt
 (or the no-failures no-op fired):
-  - From any policy entry state, the overseer answered `y` or `y --classify` and the
+  - From any policy entry state, the inspector answered `y` or `y --classify` and the
     auto-seed loop ran to its end (regardless of how many scenarios actually got seeded;
     skipped/refused per-scenario outcomes still finalize the run).
-  - From any policy entry state, the overseer answered `n` to the prompt (no writes happen,
+  - From any policy entry state, the inspector answered `n` to the prompt (no writes happen,
     but the workflow is genuinely done).
   - No-failures no-op (nothing to seed).
   - `auto-seed` re-seed completed (idempotent, may produce zero diff).
 ```
 
-This also removes a separate problem: the current list reads as if the per-policy entry shape matters for "valid exit" classification, when really only the overseer's answer matters.
+This also removes a separate problem: the current list reads as if the per-policy entry shape matters for "valid exit" classification, when really only the inspector's answer matters.
 
 ---
 
@@ -95,9 +95,9 @@ This also removes a separate problem: the current list reads as if the per-polic
 
 > "Add a malformed-history sibling where duplicate A.1 verdict blocks exist: implementation must either keep the latest block and rewrite a single canonical A.1 block, or refuse with a diagnostic naming the duplicate; it must not silently count both."
 
-**Impact:** the two options produce *very* different UX. "Keep latest + rewrite" is silent self-healing; "refuse with diagnostic" forces overseer intervention. The test allows either, but downstream consumers (Overseer Handler summary, review-context citation) read the result body and need to know which shape they'll see. A spec that allows both invites silent divergence between implementations.
+**Impact:** the two options produce *very* different UX. "Keep latest + rewrite" is silent self-healing; "refuse with diagnostic" forces inspector intervention. The test allows either, but downstream consumers (Inspector Handler summary, review-context citation) read the result body and need to know which shape they'll see. A spec that allows both invites silent divergence between implementations.
 
-**Suggested fix:** pick one and pin it in § 2.2 step 3.4 (verdict commit unit). Recommendation: **"keep the latest block; emit a one-line stderr warning naming the duplicate; do not refuse"** — the runner already owns parsing-by-scenario-id, so silent self-healing matches the rest of the file's idempotency story. Adding a refuse path here means the overseer has to hand-edit a markdown file mid-run, which is hostile.
+**Suggested fix:** pick one and pin it in § 2.2 step 3.4 (verdict commit unit). Recommendation: **"keep the latest block; emit a one-line stderr warning naming the duplicate; do not refuse"** — the runner already owns parsing-by-scenario-id, so silent self-healing matches the rest of the file's idempotency story. Adding a refuse path here means the inspector has to hand-edit a markdown file mid-run, which is hostile.
 
 ---
 
@@ -105,11 +105,11 @@ This also removes a separate problem: the current list reads as if the per-polic
 
 **Where:** § 2.2 "Classification override propagation" (lines 512–513) requires the runner to pass `--reclassify` for open-base default updates when `reclassify_existing=true`. The runner test at lines 1073–1076 covers reclassify propagation for closed-base secondary calls and orphan-family seed-into-family, but **not** for open-base default updates.
 
-**Impact:** without a gating test, an implementer could miss the open-base path. The user-visible failure: overseer runs `/mo-manual-test-run --seed-only --reclassify`, expecting to reclassify scenarios with open-base IRs; the helper preserves the old severity/scope and the overseer's choice is silently discarded.
+**Impact:** without a gating test, an implementer could miss the open-base path. The user-visible failure: inspector runs `/mi-manual-test-run --seed-only --reclassify`, expecting to reclassify scenarios with open-base IRs; the helper preserves the old severity/scope and the inspector's choice is silently discarded.
 
 **Suggested fix:** add a fourth sub-test under the rev-17 propagation block:
 
-> **Open base + `--seed-only --reclassify`:** set up an open base IR with `severity=major scope=fix`. Run `/mo-manual-test-run --seed-only --reclassify`, overseer picks `severity=blocker scope=re-plan`. Assert: helper call includes `--reclassify`; the open base IR's severity/scope are updated to `blocker`/`re-plan`; status remains `open`; details are refreshed.
+> **Open base + `--seed-only --reclassify`:** set up an open base IR with `severity=major scope=fix`. Run `/mi-manual-test-run --seed-only --reclassify`, inspector picks `severity=blocker scope=re-plan`. Assert: helper call includes `--reclassify`; the open base IR's severity/scope are updated to `blocker`/`re-plan`; status remains `open`; details are refreshed.
 
 ---
 
@@ -140,10 +140,10 @@ Open questions the spec doesn't answer:
 
 The verdict block stores observation as a markdown bullet:
 ```
-- **Observation:** {{OVERSEER_REPLY}}
+- **Observation:** {{INSPECTOR_REPLY}}
 ```
 
-If the overseer's reply is multi-line, the rendered storage shape isn't specified — block scalar (`|` indent), bullet sub-lines, or escaped single line? The auto-seed loop needs a deterministic shape so the inverse extraction is unambiguous.
+If the inspector's reply is multi-line, the rendered storage shape isn't specified — block scalar (`|` indent), bullet sub-lines, or escaped single line? The auto-seed loop needs a deterministic shape so the inverse extraction is unambiguous.
 
 **Suggested fix:** specify in § 4.2 that multi-line observations are stored as a YAML-style block scalar under the bullet:
 
@@ -157,13 +157,13 @@ And specify in § 2.2 step 4 that the runner reads the block-scalar body, strips
 
 ---
 
-### m3. `mo-doctor` check is too narrow
+### m3. `mi-doctor` check is too narrow
 
 **Where:** § 3.8 (line 1127):
 
 > "Add a check: `templates/manual-test-plan.md.tmpl` and `templates/manual-test-results.md.tmpl` exist. Trivial."
 
-**Impact:** the design also adds two new schemas (`schemas/manual-test-plan.schema.yaml`, `schemas/manual-test-results.schema.yaml`) and depends on `scripts/review.sh` having `find-by-seed-id-family` and `upsert-manual-test-failure` subcommands. None of these are checked by the proposed `mo-doctor` extension.
+**Impact:** the design also adds two new schemas (`schemas/manual-test-plan.schema.yaml`, `schemas/manual-test-results.schema.yaml`) and depends on `scripts/review.sh` having `find-by-seed-id-family` and `upsert-manual-test-failure` subcommands. None of these are checked by the proposed `mi-doctor` extension.
 
 **Suggested fix:** rewrite § 3.8 to check:
 - Templates exist (current scope).
@@ -194,19 +194,19 @@ The test set at lines 1090–1094 covers:
 
 ---
 
-### m5. "Overseer Handler does not Edit overseer-review.md when policy=auto-seed" — gating test missing
+### m5. "Inspector Handler does not Edit inspector-review.md when policy=auto-seed" — gating test missing
 
 **Where:** § 1.3 schema description (lines 282–285) says:
 
-> "tests should assert the Overseer Handler does not Edit overseer-review.md when this field is `auto-seed`"
+> "tests should assert the Inspector Handler does not Edit inspector-review.md when this field is `auto-seed`"
 
 But this assertion is not in the § 3.7.5 test list, nor in § 8 step 3 implementation order.
 
-**Impact:** the single-owner discipline is a load-bearing invariant of the design (revisions 2/3 emphasized it). Without a test, an over-eager implementer who reads § 3.1.4's "summary line" prose and assumes "summary line implies updates" could add a re-canonicalize-and-rewrite step to the Overseer Handler.
+**Impact:** the single-owner discipline is a load-bearing invariant of the design (revisions 2/3 emphasized it). Without a test, an over-eager implementer who reads § 3.1.4's "summary line" prose and assumes "summary line implies updates" could add a re-canonicalize-and-rewrite step to the Inspector Handler.
 
 **Suggested fix:** add a test under § 3.7.5:
 
-> **Overseer Handler is read-only against `overseer-review.md` when `policy=auto-seed`.** Set up: completed manual-test run with `policy=auto-seed`, two seeded failures in `overseer-review.md`. Capture sha256 of `overseer-review.md`. Type `/mo-continue` (lands in Overseer Handler). Assert: the handler emits the expected summary line; the post-handler sha256 matches the pre-handler sha256 (file was not edited).
+> **Inspector Handler is read-only against `inspector-review.md` when `policy=auto-seed`.** Set up: completed manual-test run with `policy=auto-seed`, two seeded failures in `inspector-review.md`. Capture sha256 of `inspector-review.md`. Type `/mi-continue` (lands in Inspector Handler). Assert: the handler emits the expected summary line; the post-handler sha256 matches the pre-handler sha256 (file was not edited).
 
 ---
 
@@ -223,7 +223,7 @@ But this assertion is not in the § 3.7.5 test list, nor in § 8 step 3 implemen
 
 **Suggested fix:** add a defensive clause after the bulk-skip body:
 
-> "Before bulk-skipping, validate that every scenario id ordered before `current-scenario` in the plan has a verdict block. If any are missing, refuse with diagnostic: `--finalize-skipped: scenario <X> has no verdict but cursor is past it. Inspect the results file and fix by hand, or run /mo-manual-test-plan --force to start over.`"
+> "Before bulk-skipping, validate that every scenario id ordered before `current-scenario` in the plan has a verdict block. If any are missing, refuse with diagnostic: `--finalize-skipped: scenario <X> has no verdict but cursor is past it. Inspect the results file and fix by hand, or run /mi-manual-test-plan --force to start over.`"
 
 This makes `--finalize-skipped` truly a finalization escape hatch and not a tool that can paper over genuine corruption.
 
@@ -235,13 +235,13 @@ This makes `--finalize-skipped` truly a finalization escape hatch and not a tool
 
 > "On `y`: enter the auto-seed loop with `scope=fix, severity=major` for every failure. After it completes, set `progress.sh set manual-test-failure-policy=auto-seed` and report seeded/failed counts."
 
-**Why this matters:** if the auto-seed loop crashes mid-iteration (helper non-zero exit aborts the per-scenario seed step per the closed-IR caller pattern), `manual-test-failure-policy` stays `none`. Re-entry via Manual-Test-Resume Handler → `--seed-only` → Branch B with `policy=none` → re-prompt the overseer from scratch.
+**Why this matters:** if the auto-seed loop crashes mid-iteration (helper non-zero exit aborts the per-scenario seed step per the closed-IR caller pattern), `manual-test-failure-policy` stays `none`. Re-entry via Manual-Test-Resume Handler → `--seed-only` → Branch B with `policy=none` → re-prompt the inspector from scratch.
 
-This is *probably* the right behavior (the overseer can re-confirm), but it's not explicitly justified in the spec. A reader could reasonably argue the policy should be set BEFORE the loop so resume picks up without re-prompting.
+This is *probably* the right behavior (the inspector can re-confirm), but it's not explicitly justified in the spec. A reader could reasonably argue the policy should be set BEFORE the loop so resume picks up without re-prompting.
 
 **Suggested fix:** add a sentence after the policy-set line explaining the choice:
 
-> "Setting policy *after* the loop is deliberate: a mid-loop crash leaves `policy=none`, and Branch B re-enters the auto-seed prompt on resume — this is preferable to silently committing the overseer to `auto-seed` before they confirmed the prompt actually completed. Idempotency of the per-scenario seeding (via seed-id) means re-running doesn't double-write any IRs."
+> "Setting policy *after* the loop is deliberate: a mid-loop crash leaves `policy=none`, and Branch B re-enters the auto-seed prompt on resume — this is preferable to silently committing the inspector to `auto-seed` before they confirmed the prompt actually completed. Idempotency of the per-scenario seeding (via seed-id) means re-running doesn't double-write any IRs."
 
 ---
 
@@ -298,17 +298,17 @@ Line 451:
 But the family-inspection rules in lines 457–464 (rev-16 finding #1 fix) introduce per-scenario branches where:
 - Family empty → write a base IR (matches the prose).
 - Orphan family with `skip` choice → no helper call, scenario unseeded.
-- Closed base → may end up with `Seeded: false` if overseer picks `skip`.
+- Closed base → may end up with `Seeded: false` if inspector picks `skip`.
 
 So "writes each failed scenario" is wrong in two of three branches.
 
 **Fix:** rewrite the line to:
 
-> "`y` runs the per-scenario family-inspection loop (see "Family inspection in first-time auto-seed" below) and seeds each failed scenario via `review.sh upsert-manual-test-failure` per the inspection's branch decision; some scenarios may end up with `Seeded: false` if the overseer picks `skip` at a per-IR prompt."
+> "`y` runs the per-scenario family-inspection loop (see "Family inspection in first-time auto-seed" below) and seeds each failed scenario via `review.sh upsert-manual-test-failure` per the inspection's branch decision; some scenarios may end up with `Seeded: false` if the inspector picks `skip` at a per-IR prompt."
 
 ---
 
-### mn6. `templates/overseer-review.md.tmpl` doesn't yet have `source` / `seed-id` example fields
+### mn6. `templates/inspector-review.md.tmpl` doesn't yet have `source` / `seed-id` example fields
 
 Verification confirmed the template currently has only `severity / scope / status / details / fix-note` in its structured-block example (lines 24–29). § 8 step 1 (line 1314) lists this as work to do, but it's worth flagging that this *prerequisite* needs to land before any auto-seed work merges, alongside the `FIELD_RE` extension.
 
@@ -330,11 +330,11 @@ This appends `\n` even when `$observation` already ends with one — producing a
 
 ---
 
-### mn8. `mo-abort-workflow.md:81` cited; actual line is 88
+### mn8. `mi-abort-workflow.md:81` cited; actual line is 88
 
-Verification turned up that the cited line for `progress.sh reset` invocation is line 88, not line 81 (line 81 in the current file is part of an earlier branch). Inside § 3.4 / § 1.4 the citation is `mo-abort-workflow.md line 81` (line 800 of the plan).
+Verification turned up that the cited line for `progress.sh reset` invocation is line 88, not line 81 (line 81 in the current file is part of an earlier branch). Inside § 3.4 / § 1.4 the citation is `mi-abort-workflow.md line 81` (line 800 of the plan).
 
-**Fix:** update the citation to line 88. Or, since these citations age fast, replace with a stable description: "the retry-mode `progress.sh reset` invocation in `mo-abort-workflow.md`."
+**Fix:** update the citation to line 88. Or, since these citations age fast, replace with a stable description: "the retry-mode `progress.sh reset` invocation in `mi-abort-workflow.md`."
 
 ---
 
@@ -342,16 +342,16 @@ Verification turned up that the cited line for `progress.sh reset` invocation is
 
 | # | Severity | One-line fix |
 |---|----------|--------------|
-| M1 | Major | Add `--from-resume` flag to `/mo-manual-test-plan` so `mo-continue` step-7 doesn't double-prompt. |
+| M1 | Major | Add `--from-resume` flag to `/mi-manual-test-plan` so `mi-continue` step-7 doesn't double-prompt. |
 | M2 | Major | Rewrite stage-5 hand-off message — auto-seeded blocks are canonical from write; canonicalize only touches free-form text. |
-| M3 | Major | Reword Branch B "valid exit" list as answer-driven (overseer picked y/n), not entry-state-driven. |
+| M3 | Major | Reword Branch B "valid exit" list as answer-driven (inspector picked y/n), not entry-state-driven. |
 | M4 | Major | Pin "duplicate verdict block" recovery to `keep-latest + warn`, not implementer's choice. |
 | M5 | Major | Add gating test for `--seed-only --reclassify` against an open base IR. |
 | m1 | Moderate | Add a § 4.2.1 verdict-block parsing contract (boundary, field order, missing-field defaults). |
 | m2 | Moderate | Specify multi-line observation storage shape (YAML block scalar) and the inverse extraction. |
-| m3 | Moderate | Expand `mo-doctor` to also check schemas, `review.sh` subcommands, and progress.schema.yaml additions. |
+| m3 | Moderate | Expand `mi-doctor` to also check schemas, `review.sh` subcommands, and progress.schema.yaml additions. |
 | m4 | Moderate | Add a "Closed base, no regressions" sub-test to the citation-priority test set. |
-| m5 | Moderate | Add a gating test asserting Overseer Handler is read-only on `overseer-review.md` when `policy=auto-seed`. |
+| m5 | Moderate | Add a gating test asserting Inspector Handler is read-only on `inspector-review.md` when `policy=auto-seed`. |
 | m6 | Moderate | Add defensive validation in `--finalize-skipped` for missing-verdict scenarios before the cursor. |
 | m7 | Moderate | Add an explicit rationale paragraph for setting `policy=auto-seed` AFTER the loop. |
 | mn1 | Minor | Replace `progress.sh:277-296` with `277-295` consistently. |
@@ -361,7 +361,7 @@ Verification turned up that the cited line for `progress.sh reset` invocation is
 | mn5 | Minor | Soften the "`y` writes each failed scenario" line — some scenarios may end up `Seeded: false`. |
 | mn6 | Minor | (No change needed; flag for implementer that `FIELD_RE` + template + schema must land together.) |
 | mn7 | Minor | (No change needed; note `printf '%s\n'` trailing-newline asymmetry.) |
-| mn8 | Minor | Update `mo-abort-workflow.md:81` citation → line 88, or replace with stable description. |
+| mn8 | Minor | Update `mi-abort-workflow.md:81` citation → line 88, or replace with stable description. |
 
 **Bottom line:** the design is implementable as written; M1–M5 are worth fixing before code lands because they will cause user-visible bugs or test gaps. m1–m7 are spec-tightening that will save an implementer time. mn1–mn8 are housekeeping.
 
@@ -386,7 +386,7 @@ Findings are numbered R1, R2, … to keep them distinct from pass-1's M/m/mn ser
 
 **Fix:** add a `--finalize-skipped` cursor-integrity refusal test under § 3.7.5, paralleling the precondition-refusals test:
 
-> **`--finalize-skipped` refuses when scenarios before the cursor lack verdicts (revision 18 — gates m6).** Set up: paused mid-run with `current-scenario=B.1` but **no verdict block for A.2** (manually deleted after the cursor advanced — simulates corruption). Run `/mo-manual-test-run --finalize-skipped`. Assert: refusal with diagnostic naming `A.2`; `progress.md` byte-identical pre/post-call; `manual-test-results.md` byte-identical pre/post-call. Sibling sub-test: A.1 verdict missing (multiple scenarios before cursor without verdicts) — diagnostic names the first such scenario in plan order.
+> **`--finalize-skipped` refuses when scenarios before the cursor lack verdicts (revision 18 — gates m6).** Set up: paused mid-run with `current-scenario=B.1` but **no verdict block for A.2** (manually deleted after the cursor advanced — simulates corruption). Run `/mi-manual-test-run --finalize-skipped`. Assert: refusal with diagnostic naming `A.2`; `progress.md` byte-identical pre/post-call; `manual-test-results.md` byte-identical pre/post-call. Sibling sub-test: A.1 verdict missing (multiple scenarios before cursor without verdicts) — diagnostic names the first such scenario in plan order.
 
 This belongs immediately after the existing `--finalize-skipped` precondition-refusals test.
 
@@ -410,7 +410,7 @@ This belongs immediately after the existing `--finalize-skipped` precondition-re
 
 **Fix:** add a sentence after the M3 text (or in § 3.7.1's caller pattern) specifying:
 
-> "Helper non-zero exit is treated as fatal by default (the runner aborts the loop, leaves markers untouched, and exits non-zero with the helper's stderr surfaced to the overseer). The reasoning: every documented non-zero refusal (mutual exclusion, empty-family `--force-new-regression`, schema problems) indicates a runner bug or environmental failure that re-running won't fix without intervention. The runner does NOT silently `continue` past these — the overseer should see the failure, fix the cause, and re-run. Idempotency via seed-id means partial progress isn't lost."
+> "Helper non-zero exit is treated as fatal by default (the runner aborts the loop, leaves markers untouched, and exits non-zero with the helper's stderr surfaced to the inspector). The reasoning: every documented non-zero refusal (mutual exclusion, empty-family `--force-new-regression`, schema problems) indicates a runner bug or environmental failure that re-running won't fix without intervention. The runner does NOT silently `continue` past these — the inspector should see the failure, fix the cause, and re-run. Idempotency via seed-id means partial progress isn't lost."
 
 This pin closes the ambiguity in both directions: the loop aborts; the prior partial seeding survives via seed-id.
 
@@ -420,8 +420,8 @@ This pin closes the ambiguity in both directions: the loop aborts; the prior par
 
 **Where:** § 2.2 Branch B finalization, lines 625–626 (revision 18 — addressing M3):
 
-> "Overseer answered `y` or `y --classify` (**from any policy entry state**): ..."
-> "Overseer answered `n` (**from any policy entry state** — including the `policy=none → answered n` first-time decline AND the `policy=manual → declined flip` case): ..."
+> "Inspector answered `y` or `y --classify` (**from any policy entry state**): ..."
+> "Inspector answered `n` (**from any policy entry state** — including the `policy=none → answered n` first-time decline AND the `policy=manual → declined flip` case): ..."
 
 **Problem:** "from any policy entry state" reads as "regardless of what `policy` was when Branch B started." But "entry state" is also a term that might be confused with the dispatcher's entry guard at the top of § 2.2. Mild ambiguity. Pass 1 wrote this phrase; rev 18 retained it.
 
@@ -455,7 +455,7 @@ Compare to the corrupt-frontmatter handling (§ 2.2 Branch A pre-normalization, 
 
 **Fix:** rewrite the bullet to:
 
-> "- `Verdict:` missing → refuse the whole runner invocation with non-zero exit; emit diagnostic `verdict block for scenario <X> has no Verdict: field; cannot determine outcome. Inspect manual-test-results.md and either restore the field or rewind current-scenario by hand.` Do NOT count this scenario; do NOT advance cursor; do NOT re-render the verdict block. Resume re-encounters the same malformed block and refuses identically until the overseer fixes it. (Same shape as corrupt-frontmatter handling at § 2.2 Branch A pre-normalization.)"
+> "- `Verdict:` missing → refuse the whole runner invocation with non-zero exit; emit diagnostic `verdict block for scenario <X> has no Verdict: field; cannot determine outcome. Inspect manual-test-results.md and either restore the field or rewind current-scenario by hand.` Do NOT count this scenario; do NOT advance cursor; do NOT re-render the verdict block. Resume re-encounters the same malformed block and refuses identically until the inspector fixes it. (Same shape as corrupt-frontmatter handling at § 2.2 Branch A pre-normalization.)"
 
 ---
 
@@ -463,7 +463,7 @@ Compare to the corrupt-frontmatter handling (§ 2.2 Branch A pre-normalization, 
 
 **Where:** § 4.2.1 (lines 1291–1301, revision 18 — added in m1):
 
-> "When the overseer's reply is multi-line, store as a YAML-style block scalar:
+> "When the inspector's reply is multi-line, store as a YAML-style block scalar:
 > ...
 > Indent body four spaces. The block scalar runs until the next bullet (`^- ` outdent), the next heading (`^### ` or `^## `), or end-of-block (per the boundary rule). Blank lines inside the block scalar are preserved."
 
@@ -481,13 +481,13 @@ Compare to the corrupt-frontmatter handling (§ 2.2 Branch A pre-normalization, 
 
 > "The flag is mutually compatible with `--force` and `--new-seed-family`; passing all three is well-defined (force a re-run from a terminal state without re-prompting and reset the seed family)."
 
-**Problem:** the only auto-fire site for `--from-resume` is § 3.1.1 step 7 (Resume Handler), which never passes `--force`. The Resume Handler reaches step 7 only when entering stage 5 with `manual-test-state=none` (not `complete` or `skipped`). So `--from-resume --force` is never auto-fired; it'd only happen if the overseer types both flags by hand, which is an odd manual recovery path.
+**Problem:** the only auto-fire site for `--from-resume` is § 3.1.1 step 7 (Resume Handler), which never passes `--force`. The Resume Handler reaches step 7 only when entering stage 5 with `manual-test-state=none` (not `complete` or `skipped`). So `--from-resume --force` is never auto-fired; it'd only happen if the inspector types both flags by hand, which is an odd manual recovery path.
 
 **Impact:** the compatibility claim isn't wrong, but it implies a use case the spec doesn't actually support. A future reader might write a "force-from-resume" routine that the rest of the spec doesn't cover.
 
 **Fix:** simplify the paragraph:
 
-> "The flag is mutually compatible with `--force` and `--new-seed-family` if passed together (well-defined: force a re-run from a terminal state without re-prompting). However, `mo-continue`'s Resume Step 7 only auto-fires with `--from-resume` alone — it never passes `--force` because step 7 only fires when `manual-test-state=none`. The combined-flag form is reserved for manual invocation in atypical recovery scenarios."
+> "The flag is mutually compatible with `--force` and `--new-seed-family` if passed together (well-defined: force a re-run from a terminal state without re-prompting). However, `mi-continue`'s Resume Step 7 only auto-fires with `--from-resume` alone — it never passes `--force` because step 7 only fires when `manual-test-state=none`. The combined-flag form is reserved for manual invocation in atypical recovery scenarios."
 
 ---
 
@@ -495,7 +495,7 @@ Compare to the corrupt-frontmatter handling (§ 2.2 Branch A pre-normalization, 
 
 **Where:** § 4.2 (line 1265, last paragraph, predates revision 18):
 
-> "The runner parses verdict blocks by `### <SCENARIO_ID> — ...`, keeps exactly one canonical block per scenario id, renders blocks in plan order, and recomputes counts from those blocks. The `Seeded:` field is parsed by `mo-manual-test-run`'s auto-seed loop via a regex over the scenario's bullet list — keep the format stable."
+> "The runner parses verdict blocks by `### <SCENARIO_ID> — ...`, keeps exactly one canonical block per scenario id, renders blocks in plan order, and recomputes counts from those blocks. The `Seeded:` field is parsed by `mi-manual-test-run`'s auto-seed loop via a regex over the scenario's bullet list — keep the format stable."
 
 **Problem:** § 4.2.1 (added in revision 18) is the authoritative parsing contract. The quoted prose in § 4.2 partially duplicates it (block boundary, "one canonical block per scenario id," counts recomputation) and partially handwaves what § 4.2.1 now pins precisely. If a future revision changes one without the other, the spec drifts.
 
@@ -511,9 +511,9 @@ Compare to the corrupt-frontmatter handling (§ 2.2 Branch A pre-normalization, 
 
 > "Two consumers (verdict-commit unit, auto-seed loop) read these blocks; an explicit contract prevents tolerance drift between them."
 
-**Problem:** the Overseer Handler (§ 3.1.4, line 731) also reads verdict blocks — specifically the `Seeded:` field — to compute its summary line: "`seeded_failed` is computed from failed verdict blocks whose `Seeded:` field is `true`."
+**Problem:** the Inspector Handler (§ 3.1.4, line 731) also reads verdict blocks — specifically the `Seeded:` field — to compute its summary line: "`seeded_failed` is computed from failed verdict blocks whose `Seeded:` field is `true`."
 
-**Fix:** "Three consumers (verdict-commit unit, auto-seed loop, Overseer Handler summary line) read these blocks; an explicit contract prevents tolerance drift between them."
+**Fix:** "Three consumers (verdict-commit unit, auto-seed loop, Inspector Handler summary line) read these blocks; an explicit contract prevents tolerance drift between them."
 
 ---
 
@@ -553,9 +553,9 @@ Compare to the corrupt-frontmatter handling (§ 2.2 Branch A pre-normalization, 
 
 **Where:** § 4.2.1 (lines 1303–1305, revision 18):
 
-> "Unknown bullets within a verdict block are preserved in place on rewrite — they're foreign content and the runner has no opinion about them. (Rare; would only happen if the overseer hand-annotated a block.)"
+> "Unknown bullets within a verdict block are preserved in place on rewrite — they're foreign content and the runner has no opinion about them. (Rare; would only happen if the inspector hand-annotated a block.)"
 
-**Problem:** the contract says how to handle unknown *bullets*, but not unknown *sub-headings*. If the overseer adds `#### Notes` inside an A.1 block, what does the runner do on rewrite? Drop it? Preserve it in place? The block-boundary rule (line 1271) ends the block at the next `^### ` or `^## ` heading — `^#### ` (four-hash) doesn't end the block, so it's *inside*. Behavior unspecified.
+**Problem:** the contract says how to handle unknown *bullets*, but not unknown *sub-headings*. If the inspector adds `#### Notes` inside an A.1 block, what does the runner do on rewrite? Drop it? Preserve it in place? The block-boundary rule (line 1271) ends the block at the next `^### ` or `^## ` heading — `^#### ` (four-hash) doesn't end the block, so it's *inside*. Behavior unspecified.
 
 **Fix:** add to the "Unknown bullets" paragraph:
 
@@ -565,7 +565,7 @@ Compare to the corrupt-frontmatter handling (§ 2.2 Branch A pre-normalization, 
 
 ## R13. Test list is now near 50 bullets; consider grouping by concern
 
-**Where:** § 3.7.5 (lines 1043–1161 in revision 18) is now a flat list of ~50 test bullets covering helper-level tests, runner-level tests, helper-output-format tests, end-to-end tests, and review-context tests. This was already long in revision 17; revision 18 added two more (M5 reclassify open-base, m4 closed-base-only-family priority, m5 Overseer Handler read-only — three actually). The flat shape is starting to make the file hard to navigate.
+**Where:** § 3.7.5 (lines 1043–1161 in revision 18) is now a flat list of ~50 test bullets covering helper-level tests, runner-level tests, helper-output-format tests, end-to-end tests, and review-context tests. This was already long in revision 17; revision 18 added two more (M5 reclassify open-base, m4 closed-base-only-family priority, m5 Inspector Handler read-only — three actually). The flat shape is starting to make the file hard to navigate.
 
 **Impact:** not a correctness issue; an organization issue. An implementer working through the test list has to scan the whole flat list to figure out what they've covered.
 
@@ -573,10 +573,10 @@ Compare to the corrupt-frontmatter handling (§ 2.2 Branch A pre-normalization, 
 
 ```
 ### 3.7.5.1 Helper-level tests (`upsert-manual-test-failure`, `find-by-seed-id*`)
-### 3.7.5.2 Runner-level tests (`mo-manual-test-run` Branch B, family inspection)
+### 3.7.5.2 Runner-level tests (`mi-manual-test-run` Branch B, family inspection)
 ### 3.7.5.3 End-to-end tests (`--finalize-skipped`, verdict-commit recovery, plan rotation)
-### 3.7.5.4 Review-context tests (`mo-review` step 2.5)
-### 3.7.5.5 Cross-skill tests (Overseer Handler read-only, corrupt-frontmatter)
+### 3.7.5.4 Review-context tests (`mi-review` step 2.5)
+### 3.7.5.5 Cross-skill tests (Inspector Handler read-only, corrupt-frontmatter)
 ```
 
 This is presentation-only; the test bullets themselves don't change.
@@ -595,7 +595,7 @@ This is presentation-only; the test bullets themselves don't change.
 | R6 | Spec gap (rev-18 m1) | Pin chomping for the multi-line block scalar (strip leading/trailing, preserve internal). |
 | R7 | Wording (rev-18 M1) | Soften the `--from-resume` + `--force` compatibility claim — only manual invocation uses the combined form. |
 | R8 | Redundancy (pre-rev-18) | Replace § 4.2's parsing prose with a one-liner pointer to § 4.2.1. |
-| R9 | Wording (rev-18 m1) | "Two consumers" → "Three consumers" (Overseer Handler also reads `Seeded:`). |
+| R9 | Wording (rev-18 m1) | "Two consumers" → "Three consumers" (Inspector Handler also reads `Seeded:`). |
 | R10 | Test wording (rev-18 M5) | Drop "helper call includes `--reclassify`" assertion; rely on outcome assertions. |
 | R11 | Test wording (rev-18 M4) | Disambiguate "three duplicates" — three blocks total, two dropped, warning reports `2`. |
 | R12 | Spec gap (rev-18 m1) | Specify behavior for foreign sub-headings inside a verdict block — preserve in place. |

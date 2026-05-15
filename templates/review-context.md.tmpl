@@ -9,17 +9,17 @@ feature: {{FEATURE}}
 Compact context bundle for the stage-6 brainstorming review session. When this snapshot covers a topic, the chain does NOT need to re-load the canonical files. When a gap surfaces while addressing a finding, drop into the on-demand references at the bottom.
 
 > **Snapshot caveat:** The body of this file is a point-in-time snapshot from
-> when `/mo-review` was invoked. If `/mo-update-blueprint` runs mid-session,
+> when `/mi-review` was invoked. If `/mi-update-blueprint` runs mid-session,
 > `review.sh sync-refs` re-points the `requirements-id` frontmatter but does
 > NOT regenerate the body. When goals or implemented surface look inconsistent
-> with the canonical files, trust `overseer-review.md` and
+> with the canonical files, trust `inspector-review.md` and
 > `blueprints/current/requirements.md` over this snapshot.
 
-<!-- mo:sync-marker — managed by review.sh sync-refs; do not hand-edit -->
+<!-- mi:sync-marker — managed by review.sh sync-refs; do not hand-edit -->
 
-<!-- Generated artifact — written by /mo-review just before the brainstorming review
-     session is invoked. Cleaned up by /mo-complete-workflow and /mo-abort-workflow.
-     Treat overseer-review.md and the canonical blueprint files as the source of
+<!-- Generated artifact — written by /mi-review just before the brainstorming review
+     session is invoked. Cleaned up by /mi-complete-workflow and /mi-abort-workflow.
+     Treat inspector-review.md and the canonical blueprint files as the source of
      truth; this is a snapshot to spare repeated reads. -->
 
 ## Active scope
@@ -48,19 +48,19 @@ Compact context bundle for the stage-6 brainstorming review session. When this s
 
 ## Open findings (snapshot)
 
-<!-- One line per finding, in the order they appear in overseer-review.md:
+<!-- One line per finding, in the order they appear in inspector-review.md:
      - `IR-NNN` (<severity>): <summary line>
-     The chain re-reads overseer-review.md as the canonical state — this list is
+     The chain re-reads inspector-review.md as the canonical state — this list is
      a cheat sheet, not the source of truth. Refresh it on `go again` if findings
      change materially. -->
 
 ## Decisions
 
 <!-- Verbatim bullet entries from workflow-stream/<feature>/decisions.md (folded
-     in by /mo-review Step 2.5; populated only when decisions.md exists with body
+     in by /mi-review Step 2.5; populated only when decisions.md exists with body
      content, otherwise this section reads "_(none recorded)_"). These are
-     feature-scoped scope/constraint decisions made during overseer Q&A that
-     aren't reflected in requirements.md, config.md, or overseer-review.md.
+     feature-scoped scope/constraint decisions made during inspector Q&A that
+     aren't reflected in requirements.md, config.md, or inspector-review.md.
      Per-iteration review sub-agents read review-context.md as their primary
      context source — this section is the only path by which decisions reach
      them. Treat the entries as binding constraints when addressing findings. -->
@@ -71,8 +71,8 @@ _(none recorded)_
 
 If this snapshot is missing context, read these directly:
 
-- `{{DATA_ROOT}}/workflow-stream/{{FEATURE}}/implementation/overseer-review.md` — canonical findings (read on every loop trip; the chain re-reads on `go again`)
+- `{{DATA_ROOT}}/workflow-stream/{{FEATURE}}/implementation/inspector-review.md` — canonical findings (read on every loop trip; the chain re-reads on `go again`)
 - `{{DATA_ROOT}}/workflow-stream/{{FEATURE}}/blueprints/current/requirements.md` — full goals / planned / non-goals
-- `{{DATA_ROOT}}/workflow-stream/{{FEATURE}}/blueprints/current/config.md` — full skills/rules + GIT BRANCH + Overseer Additions
+- `{{DATA_ROOT}}/workflow-stream/{{FEATURE}}/blueprints/current/config.md` — full skills/rules + GIT BRANCH + Inspector Additions
 - `{{DATA_ROOT}}/workflow-stream/{{FEATURE}}/blueprints/current/primer.md` — the original stage-3 launch primer (rotated if blueprint was refreshed)
 - the active cycle's `summary.md` (under `{{DATA_ROOT}}/quest/<active-slug>/`; the slug is recorded in `{{DATA_ROOT}}/quest/active.md`) — read `## Cross-cutting constraints` and `## Feature: {{FEATURE}}` first

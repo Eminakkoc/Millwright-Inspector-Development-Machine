@@ -6,11 +6,11 @@ description: {{DESCRIPTION}}
 
 # Todo list
 
-Todo items grouped by feature/module. Each item has a state (TODO | PENDING | IMPLEMENTING | IMPLEMENTED), an optional `(assignee)` tag naming the overseer responsible for it, and a stable item-id.
+Todo items grouped by feature/module. Each item has a state (TODO | PENDING | IMPLEMENTING | IMPLEMENTED), an optional `(assignee)` tag naming the inspector responsible for it, and a stable item-id.
 
-**Overseer:** to select which items this workflow cycle should cover, put an `x` inside the checkbox `[ ]` → `[x]` (or `[X]`). Leave unselected items as `[ ]`. When you tell the millwright to proceed, it runs `todo.sh pend-selected` — your `[x] TODO` lines become `[x] PENDING` automatically. You don't need to rewrite the state word yourself.
+**Inspector:** to select which items this workflow cycle should cover, put an `x` inside the checkbox `[ ]` → `[x]` (or `[X]`). Leave unselected items as `[ ]`. When you tell the millwright to proceed, it runs `todo.sh pend-selected` — your `[x] TODO` lines become `[x] PENDING` automatically. You don't need to rewrite the state word yourself.
 
-**Assignee tag:** put the overseer's name between the checkbox and the state word, inside parentheses: `- [ ] (emin) TODO — ...`. It's optional on `[ ] TODO` lines (you may pre-assign without selecting). It becomes **mandatory** the moment you mark the checkbox `[x]` — `todo.sh pend-selected` will reject any `[x] TODO` line without an `(assignee)` tag and list the offending items so you can add names.
+**Assignee tag:** put the inspector's name between the checkbox and the state word, inside parentheses: `- [ ] (emin) TODO — ...`. It's optional on `[ ] TODO` lines (you may pre-assign without selecting). It becomes **mandatory** the moment you mark the checkbox `[x]` — `todo.sh pend-selected` will reject any `[x] TODO` line without an `(assignee)` tag and list the offending items so you can add names.
 
 **State machine (millwright-managed):** `[ ] TODO` → `[x] (assignee) PENDING` (after your selection) → `[x] (assignee) IMPLEMENTING` (stage 3) → `[x] (assignee) IMPLEMENTED` (stage 8). The checkbox encodes selection (`[ ]` = not selected / TODO; `[x]` = selected, any downstream state). The assignee tag is preserved verbatim across every transition. The state word is the canonical source of truth for progress.
 
@@ -19,6 +19,6 @@ Todo items grouped by feature/module. Each item has a state (TODO | PENDING | IM
 ## <feature>
 
 - [ ] TODO — <item-id>: <one-line description>                 (unassigned, unselected)
-- [ ] (<overseer>) TODO — <item-id>: <one-line description>    (assigned, not yet selected)
-- [x] (<overseer>) TODO — <item-id>: <one-line description>    (assigned AND selected — promoted to [x] (<overseer>) PENDING by pend-selected)
+- [ ] (<inspector>) TODO — <item-id>: <one-line description>    (assigned, not yet selected)
+- [x] (<inspector>) TODO — <item-id>: <one-line description>    (assigned AND selected — promoted to [x] (<inspector>) PENDING by pend-selected)
 -->

@@ -1,7 +1,7 @@
 $schema: "http://json-schema.org/draft-07/schema#"
-$id: millwright-overseer-development-machine/review-file.schema.yaml
-title: overseer-review.md frontmatter
-description: Schema for overseer-review.md. Finding blocks in the body are validated structurally by scripts/internal/validate-frontmatter.sh rather than by this JSON Schema.
+$id: millwright-inspector-development-machine/review-file.schema.yaml
+title: inspector-review.md frontmatter
+description: Schema for inspector-review.md. Finding blocks in the body are validated structurally by scripts/internal/validate-frontmatter.sh rather than by this JSON Schema.
 
 type: object
 additionalProperties: false

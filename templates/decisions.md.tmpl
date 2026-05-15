@@ -5,19 +5,19 @@ feature: {{FEATURE}}
 
 # Decisions — {{FEATURE}}
 
-Verbal decisions, scope adjustments, and constraints captured during overseer ↔ millwright Q&A that aren't reflected in `requirements.md`, `config.md`, or `overseer-review.md`. Append-only across stages — survives blueprint regenerations (per `docs/clear-points/plan.md` §9.2, this file is excluded from history rotation).
+Verbal decisions, scope adjustments, and constraints captured during inspector ↔ millwright Q&A that aren't reflected in `requirements.md`, `config.md`, or `inspector-review.md`. Append-only across stages — survives blueprint regenerations (per `docs/clear-points/plan.md` §9.2, this file is excluded from history rotation).
 
 <!-- Generated artifact — initialized by the millwright on first decision write,
      appended to throughout the feature lifetime. Lives at
      workflow-stream/<feature>/decisions.md (root, NOT inside blueprints/current/).
      Read by:
-       - mo-plan-implementation Step 3.5 — folds entries into primer.md
+       - mi-plan-implementation Step 3.5 — folds entries into primer.md
          (### 9.3 of docs/clear-points/plan.md)
-       - /mo-review Step 2.5 — folds entries into review-context.md
-         (### 5.2 mo-review section of docs/clear-points/plan.md)
-       - /mo-update-blueprint regen — folds scope/constraint entries into
-         requirements.md Non-goals and config.md Overseer Additions, AFTER
-         blueprints.sh preserve-overseer-sections runs (### 9.6)
+       - /mi-review Step 2.5 — folds entries into review-context.md
+         (### 5.2 mi-review section of docs/clear-points/plan.md)
+       - /mi-update-blueprint regen — folds scope/constraint entries into
+         requirements.md Non-goals and config.md Inspector Additions, AFTER
+         blueprints.sh preserve-inspector-sections runs (### 9.6)
      Never modified by consumers — they read, fold derivative content
      elsewhere, and leave this file alone.
 
@@ -43,7 +43,7 @@ Verbal decisions, scope adjustments, and constraints captured during overseer �
 
 ## Stage 5 — Findings canonicalization
 
-<!-- Same format as Stage 2. Captures decisions made during overseer
+<!-- Same format as Stage 2. Captures decisions made during inspector
      review canonicalization or findings dispatch — e.g., "skip the
      legacy module Y while addressing IR-003 even though the finding
      touches it." Skip the section entirely if empty. -->

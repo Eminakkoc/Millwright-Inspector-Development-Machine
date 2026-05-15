@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# review.sh — manage overseer-review.md and review-context.md.
+# review.sh — manage inspector-review.md and review-context.md.
 #
 # CACHE CONTRACTS (Phase 6.2 of the context-optimization plan).
 # This script hosts one cache-aware operation:
@@ -40,13 +40,13 @@
 #   review.sh list-open <feature>                         # prints open finding ids, one per line
 #   review.sh list-open-summaries <feature>               # TSV: <id>\t<severity>\t<scope>\t<summary>
 #                                                          # for every open finding (Phase 6.5).
-#   review.sh sync-refs <feature> [--refresh-body]        # sync overseer-review.md's requirements-id
+#   review.sh sync-refs <feature> [--refresh-body]        # sync inspector-review.md's requirements-id
 #                                                          # to the current blueprint after a rotation.
 #                                                          # With --refresh-body, ALSO regenerates the
 #                                                          # `## Implemented surface` and `## Open findings
 #                                                          # (snapshot)` sections of review-context.md
 #                                                          # from current git state and `list-open`. Used
-#                                                          # by /mo-review's per-iteration loop (Phase 1.4).
+#                                                          # by /mi-review's per-iteration loop (Phase 1.4).
 #   review.sh canonicalize <feature>                      # detect freeform (non-IR-NNN) text under
 #                                                          # ## Implementation Review and emit one TSV row
 #                                                          # per detected span: <line-start>\t<line-end>\t<text>.
@@ -66,7 +66,7 @@ source "$(dirname "$0")/internal/common.sh"
 
 review_file() {
   local feature="$1"
-  echo "$(mo_impl_dir "$feature")/overseer-review.md"
+  echo "$(mi_impl_dir "$feature")/inspector-review.md"
 }
 
 cmd="${1:-}"; shift || true
@@ -75,18 +75,18 @@ case "$cmd" in
   init)
     feature="${1:?feature required}"
     dest="$(review_file "$feature")"
-    [[ ! -f "$dest" ]] || mo_die "$dest already exists"
+    [[ ! -f "$dest" ]] || mi_die "$dest already exists"
 
     # Pull the requirements-id from the active blueprint to stitch the frontmatter.
-    requirements_file="$(mo_blueprints_current "$feature")/requirements.md"
-    requirements_id="$(mo_fm_get "$requirements_file" id)"
+    requirements_file="$(mi_blueprints_current "$feature")/requirements.md"
+    requirements_id="$(mi_fm_get "$requirements_file" id)"
 
     mkdir -p "$(dirname "$dest")"
-    "${MO_PLUGIN_ROOT}/scripts/frontmatter.sh" init overseer-review "$dest" \
+    "${MI_PLUGIN_ROOT}/scripts/frontmatter.sh" init inspector-review "$dest" \
       "REQUIREMENTS_ID=$requirements_id" \
       "FEATURE=$feature"
-    "${MO_PLUGIN_ROOT}/scripts/frontmatter.sh" validate "$dest" review-file >/dev/null
-    mo_info "initialized $dest"
+    "${MI_PLUGIN_ROOT}/scripts/frontmatter.sh" validate "$dest" review-file >/dev/null
+    mi_info "initialized $dest"
     ;;
 
   add)
@@ -99,33 +99,33 @@ case "$cmd" in
     while [[ $# -gt 0 ]]; do
       case "$1" in
         --source)
-          [[ $# -ge 2 ]] || mo_die "add: --source requires a value"
+          [[ $# -ge 2 ]] || mi_die "add: --source requires a value"
           source_field="$2"; shift 2
           ;;
         --source=*)
           source_field="${1#--source=}"; shift
           ;;
         --seed-id)
-          [[ $# -ge 2 ]] || mo_die "add: --seed-id requires a value"
+          [[ $# -ge 2 ]] || mi_die "add: --seed-id requires a value"
           seed_id_field="$2"; shift 2
           ;;
         --seed-id=*)
           seed_id_field="${1#--seed-id=}"; shift
           ;;
         *)
-          mo_die "add: unknown argument: $1 (expected --source|--seed-id)"
+          mi_die "add: unknown argument: $1 (expected --source|--seed-id)"
           ;;
       esac
     done
     dest="$(review_file "$feature")"
-    [[ -f "$dest" ]] || mo_die "review file not found: $dest"
+    [[ -f "$dest" ]] || mi_die "review file not found: $dest"
 
-    [[ "$severity" =~ ^(blocker|major|minor)$ ]] || mo_die "severity must be blocker|major|minor"
+    [[ "$severity" =~ ^(blocker|major|minor)$ ]] || mi_die "severity must be blocker|major|minor"
     [[ "$scope" =~ ^(fix|re-implement|re-plan|re-spec)$ ]] || \
-      mo_die "scope must be fix|re-implement|re-plan|re-spec"
+      mi_die "scope must be fix|re-implement|re-plan|re-spec"
     heading="## Implementation Review"
 
-    # Determine next id within overseer-review.md.
+    # Determine next id within inspector-review.md.
     last=$( { grep -h -oE '^### IR-[0-9]{3}' "$dest" 2>/dev/null || true; } | \
            sed -E 's/^### IR-0*//' | sort -n | tail -1)
     last="${last:-0}"
@@ -184,8 +184,8 @@ PYEOF
     new_status="${3:?status required}"
     fix_note="${4:-}"
     dest="$(review_file "$feature")"
-    [[ -f "$dest" ]] || mo_die "review file not found: $dest"
-    [[ "$new_status" =~ ^(open|fixed|wontfix)$ ]] || mo_die "status must be open|fixed|wontfix"
+    [[ -f "$dest" ]] || mi_die "review file not found: $dest"
+    [[ "$new_status" =~ ^(open|fixed|wontfix)$ ]] || mi_die "status must be open|fixed|wontfix"
     python3 - "$dest" "$finding_id" "$new_status" "$fix_note" <<'PYEOF'
 import sys, re
 path, fid, new_status, fix_note = sys.argv[1:5]
@@ -205,14 +205,14 @@ if fix_note:
 new_content = content[:m.start(2)] + block + content[m.end(2):]
 with open(path, 'w') as f:
     f.write(new_content)
-print(f'mo: {fid} → {new_status}', file=sys.stderr)
+print(f'mi: {fid} → {new_status}', file=sys.stderr)
 PYEOF
     ;;
 
   iterate)
     feature="${1:?feature required}"
     dest="$(review_file "$feature")"
-    [[ -f "$dest" ]] || mo_die "review file not found: $dest"
+    [[ -f "$dest" ]] || mi_die "review file not found: $dest"
     # Count existing Iteration N headings; N+1 is the new one.
     last=$(grep -c "^## Iteration " "$dest" || true)
     next=$((last + 2))  # Iteration 1 is implicit; explicit numbering starts at 2.
@@ -221,13 +221,13 @@ PYEOF
 ## Iteration $next
 
 EOF
-    mo_info "added Iteration $next to $dest"
+    mi_info "added Iteration $next to $dest"
     ;;
 
   list-open)
     feature="${1:?feature required}"
     dest="$(review_file "$feature")"
-    [[ -f "$dest" ]] || mo_die "review file not found: $dest"
+    [[ -f "$dest" ]] || mi_die "review file not found: $dest"
     python3 - "$dest" <<'PYEOF'
 import sys, re
 path = sys.argv[1]
@@ -246,14 +246,14 @@ PYEOF
     # scope + summary for every open finding, WITHOUT the multi-line
     # `details:` body. Used by stages 5, 6 when only a cheat-sheet view is
     # needed (e.g., the per-iteration sub-agent prompt's open-findings
-    # section). Reduces main-context reads when overseer-review.md has long
+    # section). Reduces main-context reads when inspector-review.md has long
     # details bodies.
     #
     # Output format: one TSV row per open finding —
     #   <IR-id>\t<severity>\t<scope>\t<summary>
     feature="${1:?feature required}"
     dest="$(review_file "$feature")"
-    [[ -f "$dest" ]] || mo_die "review file not found: $dest"
+    [[ -f "$dest" ]] || mi_die "review file not found: $dest"
     python3 - "$dest" <<'PYEOF'
 import sys, re
 path = sys.argv[1]
@@ -275,7 +275,7 @@ PYEOF
     ;;
 
   sync-refs)
-    # Update overseer-review.md's and review-context.md's requirements-id
+    # Update inspector-review.md's and review-context.md's requirements-id
     # frontmatter to match the current blueprints/current/requirements.md id.
     # Called after blueprint rotation + regeneration so an in-flight review
     # loop keeps its frontmatter pointing at live scope. Silently skips files
@@ -285,7 +285,7 @@ PYEOF
     # frontmatter is synced and a staleness marker is stamped. Pass
     # --refresh-body to ALSO regenerate the `## Implemented surface` and
     # `## Open findings (snapshot)` sections from current git state and
-    # `review.sh list-open` output. /mo-review's per-iteration loop calls
+    # `review.sh list-open` output. /mi-review's per-iteration loop calls
     # --refresh-body at iteration start so the snapshot reflects commits
     # made by the previous iteration's sub-agent (Phase 1.4 of the
     # context-optimization plan).
@@ -295,29 +295,29 @@ PYEOF
       case "$1" in
         --refresh-body) refresh_body=1; shift ;;
         --) shift; break ;;
-        -*) mo_die "sync-refs: unknown flag: $1" ;;
+        -*) mi_die "sync-refs: unknown flag: $1" ;;
         *)
           if [[ -z "$feature" ]]; then
             feature="$1"
           else
-            mo_die "sync-refs: unexpected positional arg: $1"
+            mi_die "sync-refs: unexpected positional arg: $1"
           fi
           shift
           ;;
       esac
     done
-    [[ -n "$feature" ]] || mo_die "sync-refs: feature required"
-    new_requirements_id="$(mo_fm_get "$(mo_blueprints_current "$feature")/requirements.md" id)"
+    [[ -n "$feature" ]] || mi_die "sync-refs: feature required"
+    new_requirements_id="$(mi_fm_get "$(mi_blueprints_current "$feature")/requirements.md" id)"
     rf="$(review_file "$feature")"
     if [[ -f "$rf" ]]; then
-      mo_fm_set "$rf" requirements-id "$new_requirements_id"
-      mo_info "synced refs in $rf (requirements-id=$new_requirements_id)"
+      mi_fm_set "$rf" requirements-id "$new_requirements_id"
+      mi_info "synced refs in $rf (requirements-id=$new_requirements_id)"
     fi
-    ctx="$(mo_impl_dir "$feature")/review-context.md"
+    ctx="$(mi_impl_dir "$feature")/review-context.md"
     if [[ -f "$ctx" ]]; then
-      mo_fm_set "$ctx" requirements-id "$new_requirements_id"
+      mi_fm_set "$ctx" requirements-id "$new_requirements_id"
       # Stamp a body marker so the staleness window is visible to readers.
-      # The marker lives between `<!-- mo:sync-marker -->` and the next blank
+      # The marker lives between `<!-- mi:sync-marker -->` and the next blank
       # line / `<!--` so it can be replaced idempotently across re-runs.
       ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
       python3 - "$ctx" "$ts" "$refresh_body" <<'PYEOF'
@@ -329,18 +329,18 @@ if refresh:
     marker_text = (
         f"\n> _Body sections (`## Implemented surface`, `## Open findings (snapshot)`) "
         f"refreshed at {ts}. `requirements-id` also synced. Read canonical files "
-        f"(`overseer-review.md`, `requirements.md`) when current state matters beyond "
+        f"(`inspector-review.md`, `requirements.md`) when current state matters beyond "
         f"this snapshot._\n"
     )
 else:
     marker_text = (
         f"\n> _Frontmatter `requirements-id` last synced at {ts} (mid-cycle "
         f"blueprint refresh). Body content above and below was captured at "
-        f"`/mo-review` invocation and is NOT regenerated; read canonical files "
+        f"`/mi-review` invocation and is NOT regenerated; read canonical files "
         f"for current scope._\n"
     )
 pat = re.compile(
-    r'(<!--\s*mo:sync-marker[^>]*-->)(.*?)(?=\n\s*\n|\n<!--)',
+    r'(<!--\s*mi:sync-marker[^>]*-->)(.*?)(?=\n\s*\n|\n<!--)',
     re.DOTALL,
 )
 m = pat.search(body)
@@ -353,9 +353,9 @@ PYEOF
       if [[ "$refresh_body" == "1" ]]; then
         # Regenerate the body's `## Implemented surface` and
         # `## Open findings (snapshot)` sections.
-        base_commit="$("${MO_PLUGIN_ROOT}/scripts/progress.sh" get base-commit 2>/dev/null || echo '')"
+        base_commit="$("${MI_PLUGIN_ROOT}/scripts/progress.sh" get base-commit 2>/dev/null || echo '')"
         ov_file="$(review_file "$feature")"
-        impl_dir="$(mo_impl_dir "$feature")"
+        impl_dir="$(mi_impl_dir "$feature")"
         diagrams_dir="$impl_dir/diagrams"
         python3 - "$ctx" "$ov_file" "$base_commit" "$diagrams_dir" <<'PYEOF'
 import re, sys, subprocess
@@ -446,22 +446,22 @@ ctx = replace_section(ctx, 'Open findings (snapshot)', findings_body)
 with open(ctx_path, 'w') as f:
     f.write(ctx)
 PYEOF
-        mo_info "synced refs in $ctx (requirements-id=$new_requirements_id; refreshed body)"
+        mi_info "synced refs in $ctx (requirements-id=$new_requirements_id; refreshed body)"
       else
-        mo_info "synced refs in $ctx (requirements-id=$new_requirements_id; stamped sync marker)"
+        mi_info "synced refs in $ctx (requirements-id=$new_requirements_id; stamped sync marker)"
       fi
     fi
-    cs="$(mo_impl_dir "$feature")/change-summary.md"
+    cs="$(mi_impl_dir "$feature")/change-summary.md"
     if [[ -f "$cs" ]]; then
-      mo_fm_set "$cs" requirements-id "$new_requirements_id"
-      mo_info "synced refs in $cs (requirements-id=$new_requirements_id)"
+      mi_fm_set "$cs" requirements-id "$new_requirements_id"
+      mi_info "synced refs in $cs (requirements-id=$new_requirements_id)"
     fi
     ;;
 
   canonicalize)
     feature="${1:?feature required}"
     dest="$(review_file "$feature")"
-    [[ -f "$dest" ]] || mo_die "review file not found: $dest"
+    [[ -f "$dest" ]] || mi_die "review file not found: $dest"
     # Walk lines under `## Implementation Review` (and any `## Iteration N`
     # sections), grouping consecutive non-blank, non-structured lines into
     # spans. Skip:
@@ -563,7 +563,7 @@ PYEOF
     line_start="${2:?line-start required}"
     line_end="${3:?line-end required}"
     dest="$(review_file "$feature")"
-    [[ -f "$dest" ]] || mo_die "review file not found: $dest"
+    [[ -f "$dest" ]] || mi_die "review file not found: $dest"
     python3 - "$dest" "$line_start" "$line_end" <<'PYEOF'
 import sys
 path, start, end = sys.argv[1], int(sys.argv[2]), int(sys.argv[3])
@@ -575,7 +575,7 @@ if start < 1 or end > len(lines) or start > end:
 del lines[start - 1:end]
 with open(path, 'w') as f:
     f.writelines(lines)
-print(f"mo: stripped lines {start}-{end} from {path}", file=sys.stderr)
+print(f"mi: stripped lines {start}-{end} from {path}", file=sys.stderr)
 PYEOF
     ;;
 
@@ -583,7 +583,7 @@ PYEOF
     feature="${1:?feature required}"
     seed_id="${2:?seed-id required}"
     dest="$(review_file "$feature")"
-    [[ -f "$dest" ]] || mo_die "review file not found: $dest"
+    [[ -f "$dest" ]] || mi_die "review file not found: $dest"
     python3 - "$dest" "$seed_id" <<'PYEOF'
 import sys, re
 path, target = sys.argv[1], sys.argv[2]
@@ -615,7 +615,7 @@ PYEOF
     feature="${1:?feature required}"
     base_seed_id="${2:?base-seed-id required}"
     dest="$(review_file "$feature")"
-    [[ -f "$dest" ]] || mo_die "review file not found: $dest"
+    [[ -f "$dest" ]] || mi_die "review file not found: $dest"
     python3 - "$dest" "$base_seed_id" <<'PYEOF'
 import sys, re
 path, base = sys.argv[1], sys.argv[2]
@@ -687,9 +687,9 @@ PYEOF
     scenario_id="${1:?scenario-id required}"; shift
     severity="${1:?severity required (blocker|major|minor)}"; shift
     scope="${1:?scope required (fix|re-implement|re-plan|re-spec)}"; shift
-    [[ "$severity" =~ ^(blocker|major|minor)$ ]] || mo_die "severity must be blocker|major|minor"
+    [[ "$severity" =~ ^(blocker|major|minor)$ ]] || mi_die "severity must be blocker|major|minor"
     [[ "$scope" =~ ^(fix|re-implement|re-plan|re-spec)$ ]] || \
-      mo_die "scope must be fix|re-implement|re-plan|re-spec"
+      mi_die "scope must be fix|re-implement|re-plan|re-spec"
     flag_reopen=""
     flag_new_finding=""
     flag_force_new_regression=""
@@ -702,15 +702,15 @@ PYEOF
         --force-new-regression) flag_force_new_regression=1; shift ;;
         --reclassify) flag_reclassify=1; shift ;;
         --file-citation)
-          [[ $# -ge 2 ]] || mo_die "upsert-manual-test-failure: --file-citation requires a value"
+          [[ $# -ge 2 ]] || mi_die "upsert-manual-test-failure: --file-citation requires a value"
           file_citation="$2"; shift 2
           ;;
         --file-citation=*) file_citation="${1#--file-citation=}"; shift ;;
-        *) mo_die "upsert-manual-test-failure: unknown argument: $1" ;;
+        *) mi_die "upsert-manual-test-failure: unknown argument: $1" ;;
       esac
     done
     dest="$(review_file "$feature")"
-    [[ -f "$dest" ]] || mo_die "review file not found: $dest"
+    [[ -f "$dest" ]] || mi_die "review file not found: $dest"
 
     # Read multi-line observation body from stdin (mirrors `review.sh add`).
     observation=""

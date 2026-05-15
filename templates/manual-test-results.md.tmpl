@@ -16,11 +16,11 @@ finished-at: null
 
 # Manual test results — {{FEATURE}}
 
-This file is the per-cycle verdict log for the active manual-test plan. Each scenario verdict is upserted by scenario id (one canonical block per scenario) by `/mo-manual-test-run` as the overseer answers. The body is parsed per the contract in `docs/manual-testing/plan.md` § 4.2.1 — block boundary `^### <SCENARIO_ID> — ` to next `^### `/`^## `/EOF, exact bullet keys in canonical order, four-space-indented YAML block scalar for multi-line `Observation:` bodies.
+This file is the per-cycle verdict log for the active manual-test plan. Each scenario verdict is upserted by scenario id (one canonical block per scenario) by `/mi-manual-test-run` as the inspector answers. The body is parsed per the contract in `docs/manual-testing/plan.md` § 4.2.1 — block boundary `^### <SCENARIO_ID> — ` to next `^### `/`^## `/EOF, exact bullet keys in canonical order, four-space-indented YAML block scalar for multi-line `Observation:` bodies.
 
 ## Per-scenario verdicts
 
-(populated by `/mo-manual-test-run` as scenarios are evaluated)
+(populated by `/mi-manual-test-run` as scenarios are evaluated)
 
 <!--
 Each verdict block is upserted by scenario id as follows. The runner emits all five bullets in this exact order on every commit; the parser tolerates any order on read.
@@ -28,8 +28,8 @@ Each verdict block is upserted by scenario id as follows. The runner emits all f
 ### {{SCENARIO_ID}} — {{VERDICT}}
 
 - **Verdict:** pass | fail | skip
-- **Observation:** {{OVERSEER_REPLY}}
+- **Observation:** {{INSPECTOR_REPLY}}
 - **Recorded at:** {{TIMESTAMP}}
-- **Seeded:** false   ← only meaningful for `fail` verdicts; flipped to `true` after a *successful seed action* (helper exit 0 with no `^warning:` on stderr). Display/cache only — NOT a correctness mechanism. The seed-id grep-and-replace in `mo-manual-test-run` is what makes seeding idempotent. `--seed-only` mode ignores this field entirely.
+- **Seeded:** false   ← only meaningful for `fail` verdicts; flipped to `true` after a *successful seed action* (helper exit 0 with no `^warning:` on stderr). Display/cache only — NOT a correctness mechanism. The seed-id grep-and-replace in `mi-manual-test-run` is what makes seeding idempotent. `--seed-only` mode ignores this field entirely.
 - **Cited as IR-NNN:** (populated by review-context.md generation; cleared to blank-after-colon when the cited family is deleted)
 -->

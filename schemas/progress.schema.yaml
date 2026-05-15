@@ -1,13 +1,13 @@
 $schema: "http://json-schema.org/draft-07/schema#"
-$id: millwright-overseer-development-machine/progress.schema.yaml
-title: millwright-overseer/quest/<active-slug>/progress.md frontmatter
+$id: millwright-inspector-development-machine/progress.schema.yaml
+title: millwright-inspector/quest/<active-slug>/progress.md frontmatter
 description: >
   Single workflow-wide state file. Tracks the queue, completed features,
   and the currently active feature's runtime state. Lives inside the
   active quest cycle's per-cycle subfolder
-  (millwright-overseer/quest/<active-slug>/progress.md; the slug is
+  (millwright-inspector/quest/<active-slug>/progress.md; the slug is
   recorded in the top-level quest/active.md pointer). Co-generated with
-  todo-list.md, summary.md, and queue-rationale.md by mo-run. Replaces
+  todo-list.md, summary.md, and queue-rationale.md by mi-run. Replaces
   the previous flat quest/progress.md layout, the older quest/workflow-queue.md,
   and per-feature workflow-stream/<feature>/progress.md.
 
@@ -64,7 +64,7 @@ properties:
           - diagram-rendering
           - implementation-diagrams-skipped
           - implementation-completed
-          - overseer-review-completed
+          - inspector-review-completed
           - manual-test-state
           - manual-test-failure-policy
           - worktree-path
@@ -83,7 +83,7 @@ properties:
                 minLength: 1
             description: >
               Git branch carrying the implementation commits. Null on stage-2 activation;
-              populated at stage 3 when `/mo-plan-implementation` reads
+              populated at stage 3 when `/mi-plan-implementation` reads
               `## GIT BRANCH` from config.md.
           current-stage:
             type: integer
@@ -92,7 +92,7 @@ properties:
             description: >
               Active-feature stage. Only exists between stage 2 (just activated)
               and stage 8 (completed, about to be archived). Stages 0 (journal intake)
-              and 1 (mo-run) are workflow-wide and implied by the presence of this file
+              and 1 (mi-run) are workflow-wide and implied by the presence of this file
               with active=null.
           sub-flow:
             type: string
@@ -106,7 +106,7 @@ properties:
               Git SHA captured at stage 3 — defines the implementation diff range
               (base-commit..HEAD) used by review and diagram generation. The
               brainstorming chain's spec/plan files are intentionally NOT tracked
-              here; mo-workflow treats those as opaque chain outputs.
+              here; mi-workflow treats those as opaque chain outputs.
           execution-mode:
             type: string
             enum: [subagent-driven, inline, none]
@@ -117,7 +117,7 @@ properties:
               Stage-3 launch choice. `brainstorming` invokes the brainstorming
               Skill in an isolated session; `direct` skips the Skill and has
               the millwright implement in the main session using primer.md
-              as the required first read. `none` until /mo-plan-implementation
+              as the required first read. `none` until /mi-plan-implementation
               records the choice.
           review-mode:
             type: string
@@ -126,21 +126,21 @@ properties:
               Stage-6 launch choice for the review session. `brainstorming`
               invokes the brainstorming Skill (isolated session); `direct`
               has the millwright address findings in the main session using
-              review-context.md + overseer-review.md as required first reads.
-              `none` until /mo-review records the choice.
+              review-context.md + inspector-review.md as required first reads.
+              `none` until /mi-review records the choice.
           review-mode-suggestion:
             type: string
             enum: [brainstorming, direct, none]
             description: >
-              Hint persisted by stage 5 (`/mo-continue` Overseer Step 1.5)
+              Hint persisted by stage 5 (`/mi-continue` Inspector Step 1.5)
               after canonicalizing findings. Computed from the scope
               distribution: `direct` when 100% of currently-open findings
               have `scope: fix`, `brainstorming` when at least one finding
               has scope ≠ fix, `none` when there are zero open findings.
-              Stage 6 (`/mo-review` Step 2.6) reads this to set the default
+              Stage 6 (`/mi-review` Step 2.6) reads this to set the default
               of the `review-mode` prompt — `direct` defaults to direct mode
               with rationale; otherwise the prompt defaults to brainstorming.
-              Distinct from `review-mode`, which records the overseer's
+              Distinct from `review-mode`, which records the inspector's
               actual choice. Initialized to `none` by progress.sh activate
               and reset; set by stage 5; cleared back to `none` at the next
               feature's activation.
@@ -149,9 +149,9 @@ properties:
             enum: [prompt, auto]
             description: >
               Per-feature setting for the per-event diagram prompt at stages
-              2 and 4. `prompt` (default) — ask the overseer before each
+              2 and 4. `prompt` (default) — ask the inspector before each
               diagram-generation event. `auto` — skip the prompt and proceed
-              to generation directly. The overseer can opt into `auto` once
+              to generation directly. The inspector can opt into `auto` once
               per feature workflow when answering the diagram prompt; the
               field resets to `prompt` at the next feature's `activate`.
               Quest-cycle-wide preferences would belong outside `active.*`
@@ -165,10 +165,10 @@ properties:
               produced alongside the `.puml` source. `never` (default) —
               `.puml`-only output; SVG/PNG are NOT generated. `on-request`
               — SVG/PNG are generated when an explicit request is made
-              (e.g., the overseer asks during the per-event prompt or via
+              (e.g., the inspector asks during the per-event prompt or via
               a follow-up command). Even on `on-request`, rendering happens
               only on explicit ask; it is never automatic. Stays `never`
-              for the entire feature workflow unless the overseer changes
+              for the entire feature workflow unless the inspector changes
               it; resets to `never` at the next feature's `activate`.
               Out of scope for the workflow plan: deciding *when* SVG/PNG
               are useful (e.g., for CI / visual QA). The field reserves
@@ -176,20 +176,20 @@ properties:
           implementation-diagrams-skipped:
             type: boolean
             description: >
-              True when the overseer answered `n` to stage 4's per-event
+              True when the inspector answered `n` to stage 4's per-event
               diagram prompt. Records that no `.puml` files exist under
               `implementation/diagrams/` by design (not because of a partial
-              run). Stage 5's overseer-review handoff and Stage 7's
+              run). Stage 5's inspector-review handoff and Stage 7's
               diagram-refresh prompt branch on this marker so they don't
-              point the overseer at a non-existent folder. The directory
-              MUST NOT exist when this is true — `/mo-generate-implementation-diagrams.md`
+              point the inspector at a non-existent folder. The directory
+              MUST NOT exist when this is true — `/mi-generate-implementation-diagrams.md`
               removes any pre-existing directory BEFORE setting the marker
               to preserve the invariant under crash. Cleared back to false
               when a subsequent stage-4 `y`/`auto` or stage-7 generation
               succeeds. Resets to false at the next feature's `activate`.
           implementation-completed:
             type: boolean
-          overseer-review-completed:
+          inspector-review-completed:
             type: boolean
           manual-test-state:
             type: string
@@ -197,7 +197,7 @@ properties:
             description: >
               Coarse lifecycle marker for the stage-5 manual-test phase.
                 - `none` — initial value at activate. Also the state when a
-                  plan has been generated but the overseer has deferred
+                  plan has been generated but the inspector has deferred
                   running it (file exists at
                   workflow-stream/<feature>/test/manual-test-plan.md but
                   the per-scenario loop has not started). The "plan
@@ -211,12 +211,12 @@ properties:
                   frontmatter.
                 - `complete` — loop finished (pass/fail counts live in
                   manual-test-results.md frontmatter).
-                - `skipped` — overseer declined the manual-test phase entirely
+                - `skipped` — inspector declined the manual-test phase entirely
                   at the stage-5 plan prompt (no plan generated, no scenarios
                   run). Reserved for "decline the phase" only. Resets to
                   `none` at next feature's activate.
 
-              `/mo-manual-test-run --finalize-skipped` does NOT set this state.
+              `/mi-manual-test-run --finalize-skipped` does NOT set this state.
               Bulk-skipping remaining scenarios from a paused state is
               treated as a *completed run with skipped count* — terminal
               state is `complete`, with the skipped count tracked in
@@ -226,40 +226,40 @@ properties:
             type: string
             enum: [auto-seed, manual, none]
             description: >
-              Records the overseer's answer to the auto-seed prompt at the
-              end of a manual-test run. Set by `mo-manual-test-run` (the
+              Records the inspector's answer to the auto-seed prompt at the
+              end of a manual-test run. Set by `mi-manual-test-run` (the
               single owner of seeding for manual-test results).
                 - `none` — initial value; also the value when the run is
                   `skipped` or when no failures occurred.
-                - `auto-seed` — overseer chose to run the auto-seed loop.
+                - `auto-seed` — inspector chose to run the auto-seed loop.
                   Cycle-level intent/outcome marker, NOT a guarantee that
                   every failed scenario ended with a seeded IR. Individual
-                  failures may remain unseeded when the overseer picks `skip`
+                  failures may remain unseeded when the inspector picks `skip`
                   on a closed-IR or orphan-family prompt, or when a helper
                   hard error aborts the loop. The per-scenario `Seeded:`
                   cache in the results file is the source of truth for how
                   many failures currently have a successful seed action.
                   Seeded failures are written as canonical `### IR-NNN`
                   blocks (with `- source: manual-test` and `- seed-id: ...`
-                  fields) into overseer-review.md under
+                  fields) into inspector-review.md under
                   `## Implementation Review`.
-                - `manual` — overseer answered `n`; overseer-review.md was
-                  not modified by the run; the overseer authors any
+                - `manual` — inspector answered `n`; inspector-review.md was
+                  not modified by the run; the inspector authors any
                   findings themselves.
-              The Overseer Handler at commands/mo-continue.md (stage 5)
+              The Inspector Handler at commands/mi-continue.md (stage 5)
               reads this field for its summary line ONLY — it must not
               auto-seed, reopen, reclassify, or rewrite manual-test seeded
               IR blocks based on this value. Existing canonicalization of
-              overseer-authored free-form review text remains outside this
+              inspector-authored free-form review text remains outside this
               invariant.
           drift-check-completed:
             type: boolean
             description: >
               True once the Stage-4 drift prompt has been answered (either
-              "continue" or a reason fed to /mo-update-blueprint). Optional —
+              "continue" or a reason fed to /mi-update-blueprint). Optional —
               missing means false. Used by the Resume Handler's Step 0 probe
               to skip re-prompting after a session break that lost the marker
-              write but completed the underlying rotation. /mo-abort-workflow's
+              write but completed the underlying rotation. /mi-abort-workflow's
               reset intentionally drops this field so the next stage-3 entry
               starts with a fresh state.
           history-baseline-version:
@@ -275,9 +275,9 @@ properties:
               treats unknown specially: it captures the current finalized
               version and disables the probe for that invocation rather than
               defaulting to 0, which would mistake old spec-update history for
-              this-cycle drift). Captured by /mo-plan-implementation alongside
+              this-cycle drift). Captured by /mi-plan-implementation alongside
               base-commit on first stage-3 entry; preserved across re-entries
-              (the re-entry guard skips Step 3 entirely). /mo-abort-workflow's
+              (the re-entry guard skips Step 3 entirely). /mi-abort-workflow's
               reset intentionally drops this field.
           clear-recommendations:
             type: array
@@ -291,12 +291,12 @@ properties:
               Optional — missing/empty means "no clears recommended yet."
               Read by `progress.sh has-clear-recommendation` to decide whether
               the corresponding gate has already fired (so it doesn't re-prompt
-              on overseer re-entry). Mutated by `progress.sh
+              on inspector re-entry). Mutated by `progress.sh
               add-clear-recommendation` (idempotent — adding an already-present
               identifier is a no-op). The feature-boundary gate
               (`stage-8-to-2`) does NOT use this field — its non-replaying
               behavior is structural (`active=null` + queue non-empty happens
-              once per transition by construction). /mo-abort-workflow drops
+              once per transition by construction). /mi-abort-workflow drops
               this field as part of its reset, so the next stage-3 entry on
               the same feature re-fires the gate.
           worktree-path:
@@ -339,7 +339,7 @@ properties:
               field was introduced will be missing it; consumers must
               handle the missing value by treating it as "unknown cycle"
               (the guard treats missing/non-matching the same — rotate).
-              Backfilled lazily by /mo-manual-test-plan Step 1 on first
+              Backfilled lazily by /mi-manual-test-plan Step 1 on first
               run after the change ships. Immutable after activate
               (progress.sh set / advance-to refuse rewrites), with one
               narrow exception: a missing → set transition is allowed

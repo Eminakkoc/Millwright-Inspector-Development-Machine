@@ -1,1 +1,1 @@
-Refused: no active cycle. Run /mo-init and /mo-run first.
+Refused: no active cycle. Run /mi-init and /mi-run first.

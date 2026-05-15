@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# doctor.sh — check millwright-overseer-development-machine dependencies and emit a structured report.
+# doctor.sh — check millwright-inspector-development-machine dependencies and emit a structured report.
 #
 # Usage:
 #   doctor.sh                      # full check, JSON output, exit 0|1|2
@@ -121,19 +121,19 @@ check_skill_local_or_plugin() {
     present="true"; [[ -z "$location" ]] && location="plugin: superpowers"
   fi
 
-  # kind=plugin hints are instructions, not Bash-runnable commands. mo-doctor.md renders
-  # these verbatim and asks the overseer to run them inside the Claude Code session.
-  local hints='{"any":"Run inside Claude Code: `/plugin marketplace add <superpowers-source>` then `/plugin install superpowers@<marketplace>`. Alternatively, copy a SKILL.md into `.claude/skills/'"$name"'/`. Re-run /mo-doctor after installing."}'
+  # kind=plugin hints are instructions, not Bash-runnable commands. mi-doctor.md renders
+  # these verbatim and asks the inspector to run them inside the Claude Code session.
+  local hints='{"any":"Run inside Claude Code: `/plugin marketplace add <superpowers-source>` then `/plugin install superpowers@<marketplace>`. Alternatively, copy a SKILL.md into `.claude/skills/'"$name"'/`. Re-run /mi-doctor after installing."}'
   record "$name" plugin "$required" "$present" "$location" "$hints"
 }
 
 check_repo_file() {
   # check_repo_file <name> <relative-path> <required>
-  # Records present=true (severity=ok) when "$MO_PLUGIN_ROOT/$relpath" exists,
+  # Records present=true (severity=ok) when "$MI_PLUGIN_ROOT/$relpath" exists,
   # present=false otherwise. install_hints is empty (these are repo artifacts;
   # the operator fixes them via the manual-testing implementation, not via apt/brew).
   local name="$1" relpath="$2" required="$3"
-  local target="${MO_PLUGIN_ROOT}/$relpath"
+  local target="${MI_PLUGIN_ROOT}/$relpath"
   if [[ -e "$target" ]]; then
     record "$name" env "$required" true "$relpath" '{}'
   else
@@ -148,7 +148,7 @@ check_review_sh_subcommand() {
   # naming the subcommand). Cheaper alternative: grep the script source for the
   # case label, which is what we do here — same signal, no side effects.
   local sub="$1" required="$2"
-  if grep -qE "^  ${sub}\\)" "${MO_PLUGIN_ROOT}/scripts/review.sh" 2>/dev/null; then
+  if grep -qE "^  ${sub}\\)" "${MI_PLUGIN_ROOT}/scripts/review.sh" 2>/dev/null; then
     record "review.sh:${sub}" env "$required" true "scripts/review.sh" '{}'
   else
     record "review.sh:${sub}" env "$required" false "" "$(printf '{"any": "review.sh missing subcommand %s — implement docs/manual-testing/plan.md § 3.7"}' "$sub")"
@@ -162,7 +162,7 @@ check_progress_schema_field() {
   # field, manual-test-failure-policy field). Each is recorded separately so
   # the operator knows which piece is missing on partial updates.
   local name="$1" pattern="$2" required="$3"
-  if grep -qE "$pattern" "${MO_PLUGIN_ROOT}/schemas/progress.schema.yaml" 2>/dev/null; then
+  if grep -qE "$pattern" "${MI_PLUGIN_ROOT}/schemas/progress.schema.yaml" 2>/dev/null; then
     record "$name" env "$required" true "schemas/progress.schema.yaml" '{}'
   else
     record "$name" env "$required" false "" "$(printf '{"any": "schemas/progress.schema.yaml missing %s — implement docs/manual-testing/plan.md § 1.2-1.3"}' "$name")"
@@ -174,7 +174,7 @@ check_review_sh_field_re() {
   # This is the highest-risk silent-failure: without the extension, canonicalize
   # corrupts auto-seeded blocks (the `source` and `seed-id` lines look like
   # freeform paragraphs and break IR_HEAD_RE boundaries).
-  if grep -qE "severity\|scope\|status\|source\|seed-id\|details\|fix-note" "${MO_PLUGIN_ROOT}/scripts/review.sh" 2>/dev/null; then
+  if grep -qE "severity\|scope\|status\|source\|seed-id\|details\|fix-note" "${MI_PLUGIN_ROOT}/scripts/review.sh" 2>/dev/null; then
     record "review.sh:FIELD_RE" env true true "extended" '{}'
   else
     record "review.sh:FIELD_RE" env true false "" '{"any": "review.sh FIELD_RE missing source/seed-id extension — implement docs/manual-testing/plan.md § 3.7.3 (canonicalize will silently corrupt auto-seeded blocks without it)"}'
@@ -267,7 +267,7 @@ hints_rtk() {
 {
   "darwin": "brew install rtk && rtk init -g",
   "any": "https://github.com/rtk-ai/rtk  (install binary, then run `rtk init -g` to register the Claude Code pre-tool-use hook)",
-  "note": "optional — filters verbose shell output (git diff, test runs, etc.) before Claude sees it. Large token savings in /mo-review, /mo-generate-implementation-diagrams, and the brainstorming chain."
+  "note": "optional — filters verbose shell output (git diff, test runs, etc.) before Claude sees it. Large token savings in /mi-review, /mi-generate-implementation-diagrams, and the brainstorming chain."
 }
 JSON
 }
@@ -280,7 +280,7 @@ hints_docling() {
   "linux-pacman": "pipx install docling  # or: python3 -m pip install --user docling",
   "linux-dnf": "pipx install docling  # or: python3 -m pip install --user docling",
   "any": "pipx install docling  # or: python3 -m pip install --user docling",
-  "note": "optional — enables /mo-ingest, which converts non-text journal files (.pdf, .docx, .pptx, .xlsx, images) into sibling .md so /mo-run can consume them. Skip if your journal folder will only ever contain .md and .txt. Pulls ML dependencies (torch, transformers); the first `docling <file>` may download a few hundred MB of models."
+  "note": "optional — enables /mi-ingest, which converts non-text journal files (.pdf, .docx, .pptx, .xlsx, images) into sibling .md so /mi-run can consume them. Skip if your journal folder will only ever contain .md and .txt. Pulls ML dependencies (torch, transformers); the first `docling <file>` may download a few hundred MB of models."
 }
 JSON
 }
@@ -305,7 +305,7 @@ hints_gh() {
   "linux-pacman": "sudo pacman -S github-cli",
   "linux-dnf": "sudo dnf install gh",
   "any": "https://cli.github.com/  — then run `gh auth login`",
-  "note": "optional — required only for /mo-analyze-review (PR-review analysis). After installing, authenticate with `gh auth login`."
+  "note": "optional — required only for /mi-analyze-review (PR-review analysis). After installing, authenticate with `gh auth login`."
 }
 JSON
 }
@@ -329,16 +329,16 @@ fi
 check_cli ajv false      "$(hints_ajv)"
 check_pymod jsonschema false "$(hints_jsonschema)"
 
-# OPTIONAL — gh (GitHub CLI) powers /mo-analyze-review (PR-review analysis).
+# OPTIONAL — gh (GitHub CLI) powers /mi-analyze-review (PR-review analysis).
 # Not needed for the core 8-stage workflow; safe to omit if you never analyze
-# PR reviews. /mo-analyze-review does its own gh preflight + auth check.
+# PR reviews. /mi-analyze-review does its own gh preflight + auth check.
 check_cli gh false "$(hints_gh)"
 
 # OPTIONAL companions — token-reduction tools that our commands auto-detect and use
 # when present. Never required; missing = normal operation.
 check_cli rtk false              "$(hints_rtk)"
 
-# OPTIONAL ingest — docling powers /mo-ingest (non-text journal files → sibling .md).
+# OPTIONAL ingest — docling powers /mi-ingest (non-text journal files → sibling .md).
 # Safe to omit for text-only journals.
 check_cli docling false "$(hints_docling)"
 
@@ -351,7 +351,7 @@ done
 
 # REQUIRED manual-testing feature artifacts (stage-5 sub-flow per docs/manual-testing/plan.md).
 # These are repo artifacts the manual-testing implementation creates; they must be present for
-# /mo-manual-test-plan and /mo-manual-test-run to function. Missing pieces surface as clear
+# /mi-manual-test-plan and /mi-manual-test-run to function. Missing pieces surface as clear
 # named checks rather than as cryptic runtime errors.
 check_repo_file "templates/manual-test-plan.md.tmpl"      "templates/manual-test-plan.md.tmpl"     true
 check_repo_file "templates/manual-test-results.md.tmpl"   "templates/manual-test-results.md.tmpl"  true
@@ -375,7 +375,7 @@ check_review_sh_field_re
 
 # Verify blueprints.sh has the manual-test path resolvers and rotate.
 for sub in manual-test-plan-path manual-test-results-path manual-test-plan-rotate manual-test-results-rotate-only; do
-  if grep -qE "^  ${sub}\\)" "${MO_PLUGIN_ROOT}/scripts/blueprints.sh" 2>/dev/null; then
+  if grep -qE "^  ${sub}\\)" "${MI_PLUGIN_ROOT}/scripts/blueprints.sh" 2>/dev/null; then
     record "blueprints.sh:${sub}" env true true "scripts/blueprints.sh" '{}'
   else
     record "blueprints.sh:${sub}" env true false "" "$(printf '{"any": "blueprints.sh missing subcommand %s — implement docs/manual-testing/plan.md § 3.6"}' "$sub")"
@@ -386,7 +386,7 @@ done
 if (( preflight )); then
   # Preflight: exit 0 iff all required deps are present (worst_severity < 2).
   if (( worst_severity >= 2 )); then
-    echo "millwright-overseer-development-machine preflight: required dependencies missing. Run /mo-doctor for details." >&2
+    echo "millwright-inspector-development-machine preflight: required dependencies missing. Run /mi-doctor for details." >&2
     exit 1
   fi
   exit 0
@@ -394,7 +394,7 @@ fi
 
 # ---------- Emit report ---------------------------------------------------
 if [[ "$format" == "human" ]]; then
-  echo "millwright-overseer-development-machine dependency report (os=$os)"
+  echo "millwright-inspector-development-machine dependency report (os=$os)"
   echo "-----------------------------------"
   for r in "${results[@]}"; do
     python3 - "$r" <<'PYEOF'

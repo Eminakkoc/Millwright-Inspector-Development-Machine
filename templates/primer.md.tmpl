@@ -8,8 +8,8 @@ feature: {{FEATURE}}
 
 Compact context bundle for the stage-3 brainstorming chain (and any review-loop re-entries). When this primer covers a topic, the chain does NOT need to re-load the canonical files. When a gap surfaces, drop into the on-demand references at the bottom.
 
-<!-- Generated artifact — overwritten on every mo-plan-implementation launch and every
-     mo-update-blueprint refresh. Treat the canonical files in `blueprints/current/`
+<!-- Generated artifact — overwritten on every mi-plan-implementation launch and every
+     mi-update-blueprint refresh. Treat the canonical files in `blueprints/current/`
      and `quest/` as the source of truth; this primer is a snapshot. -->
 
 ## Active scope
@@ -41,9 +41,9 @@ Compact context bundle for the stage-3 brainstorming chain (and any review-loop 
 ## Decisions
 
 <!-- Verbatim bullet entries from workflow-stream/<feature>/decisions.md (read by
-     mo-plan-implementation Step 3.5; populated only when decisions.md exists
+     mi-plan-implementation Step 3.5; populated only when decisions.md exists
      with body content, otherwise this section reads "_(none recorded)_").
-     These are feature-scoped scope/constraint decisions made during overseer
+     These are feature-scoped scope/constraint decisions made during inspector
      Q&A that aren't reflected in requirements.md or config.md. The chain
      MUST honor them as binding constraints — they override defaults derived
      from the canonical files. Decisions accumulate across blueprint
@@ -58,7 +58,7 @@ _(none recorded)_
 Concrete thresholds from the context-optimization plan (Phase 5.3) — guidance, not directives. The chain reads these when deciding execution mode per task:
 
 - **Prefer `subagent-driven-development` for tasks touching >3 files OR >100 LOC.** Per-task delegation keeps each task's reads in a disposable sub-agent context, which caps main-context growth across the executing-plans phase. Inline execution is fine for trivial single-file changes; sub-agent delegation pays for itself once the task crosses the threshold.
-- **Consider `direct` planning mode for features under ~500 LOC.** If the feature scope is genuinely small (one or two files, one Goals item, no cascade-scoped findings expected), the brainstorming chain ceremony — spec → plan → executing-plans — adds turns without proportional value. Direct mode skips the spec / plan files and lets the millwright implement against the primer in main. The overseer answers `direct` at `mo-plan-implementation`'s mode prompt to opt in.
+- **Consider `direct` planning mode for features under ~500 LOC.** If the feature scope is genuinely small (one or two files, one Goals item, no cascade-scoped findings expected), the brainstorming chain ceremony — spec → plan → executing-plans — adds turns without proportional value. Direct mode skips the spec / plan files and lets the millwright implement against the primer in main. The inspector answers `direct` at `mi-plan-implementation`'s mode prompt to opt in.
 - The thresholds are heuristics, not hard rules. If an initial estimate of "small" turns out to span more files mid-implementation, the chain can switch to subagent-driven-development for the remaining tasks.
 
 ## On-demand canonical files
@@ -66,6 +66,6 @@ Concrete thresholds from the context-optimization plan (Phase 5.3) — guidance,
 If this primer is missing context, read these directly:
 
 - `{{DATA_ROOT}}/workflow-stream/{{FEATURE}}/blueprints/current/requirements.md` — full goals / planned / non-goals + commits
-- `{{DATA_ROOT}}/workflow-stream/{{FEATURE}}/blueprints/current/config.md` — full skills/rules + `## GIT BRANCH` + `## Overseer Additions` + `## Lessons learned`. If its `## Lessons learned` section lists a real path (not `(none yet)`), read that file before writing plans or code — it records mistakes from past PR reviews not to repeat.
+- `{{DATA_ROOT}}/workflow-stream/{{FEATURE}}/blueprints/current/config.md` — full skills/rules + `## GIT BRANCH` + `## Inspector Additions` + `## Lessons learned`. If its `## Lessons learned` section lists a real path (not `(none yet)`), read that file before writing plans or code — it records mistakes from past PR reviews not to repeat.
 - the active cycle's `summary.md` (under `{{DATA_ROOT}}/quest/<active-slug>/`; the slug is recorded in `{{DATA_ROOT}}/quest/active.md`) — other features' sections, cross-cutting constraints, out-of-scope
 - the active cycle's `todo-list.md` (same subfolder) — full feature breakdown including PENDING and TODO items

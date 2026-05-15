@@ -6,14 +6,14 @@ This document is the consolidated, ordered work list for executing the context-o
 
 **How to read it:** Phases run in order. Items inside a phase can largely run in parallel except where `Depends on` is noted. Phase 0 establishes the return-contract standard before any delegation work begins. Phase 7 is deferred — only ship if observed pain warrants the refactor.
 
-**Revision note (post-review):** A reviewer pass on the first draft caught several issues: stage-8 regeneration items described behavior that doesn't exist in the current workflow, `/mo-review` is currently a pure launcher (so Phase 1.3 needs to rewrite the loop into main, not just swap chain for sub-agent), `progress.md` field additions need `scripts/progress.sh` updates not just schema/template changes, and several mechanical errors (schema file extensions, invalid `advance-to` transition, item count mismatch). All addressed in this revision.
+**Revision note (post-review):** A reviewer pass on the first draft caught several issues: stage-8 regeneration items described behavior that doesn't exist in the current workflow, `/mi-review` is currently a pure launcher (so Phase 1.3 needs to rewrite the loop into main, not just swap chain for sub-agent), `progress.md` field additions need `scripts/progress.sh` updates not just schema/template changes, and several mechanical errors (schema file extensions, invalid `advance-to` transition, item count mismatch). All addressed in this revision.
 
 ---
 
 ## Source documents
 
 - **`docs/context optimization/recommendations.md`** — full specification, cost model, architectural principles, options 1A–1B / 2A–2F.
-- **`docs/context optimization/workflow-simulation.md`** — stage-by-stage token simulation showing before/after impact. *Note: stage-8 entries in the simulation overstate completion-regeneration cost — current `/mo-complete-workflow` does not regenerate `current/`, only rotates and archives. The savings claimed there shift to stage 2 (next cycle's `/mo-apply-impact`).*
+- **`docs/context optimization/workflow-simulation.md`** — stage-by-stage token simulation showing before/after impact. *Note: stage-8 entries in the simulation overstate completion-regeneration cost — current `/mi-complete-workflow` does not regenerate `current/`, only rotates and archives. The savings claimed there shift to stage 2 (next cycle's `/mi-apply-impact`).*
 - **`docs/context optimization/optimization-assessment.md`** — peer review of the recommendations.
 
 When this plan references "Option XX" or "Architectural Principle N", look up the detail in `recommendations.md`.
@@ -25,7 +25,7 @@ When this plan references "Option XX" or "Architectural Principle N", look up th
 Before starting any phase:
 
 1. **Create a feature branch.** `git checkout -b feat/context-optimization` (or split per phase if you want smaller PRs — recommended for review).
-2. **Run `/mo-doctor`.** Confirm dependencies are healthy before touching the workflow.
+2. **Run `/mi-doctor`.** Confirm dependencies are healthy before touching the workflow.
 3. **Snapshot a baseline workflow run.** Run a small representative cycle end-to-end on `main` and save the conversation export. After implementation, run the same cycle on the feature branch and compare main-context growth empirically.
 4. **Familiarize with the affected files.** The optimizations touch `commands/*.md` (slash-command bodies), `scripts/*.sh` (helpers), `templates/*.tmpl` (artifact templates), and `schemas/*.schema.yaml` (frontmatter validation). Hook-based validation runs after every write — broken frontmatter blocks the workflow.
 5. **Decide on phase split.** Each phase is internally cohesive. Phase 0 + Phase 1 together deliver the largest wins and are the recommended first PR.
@@ -92,7 +92,7 @@ Before starting any phase:
 
 **Why first:** Largest single-stage savings (~205k tokens of main-context relief per cycle in the worst case). Self-contained — does not require P2/P3 work to be in place.
 
-**Estimated combined effort:** ~2.5 days. The bulk is in 1.3 because `/mo-review` is currently a pure launcher and needs to become a main-driven loop driver.
+**Estimated combined effort:** ~2.5 days. The bulk is in 1.3 because `/mi-review` is currently a pure launcher and needs to become a main-driven loop driver.
 
 ### 1.1 — Stage 5 auto-direct-mode hint persistence (prerequisite)
 
@@ -101,7 +101,7 @@ Before starting any phase:
 **Depends on:** none.
 
 **Files to modify:**
-- `commands/mo-continue.md` — Overseer Step 1.5 (canonicalization).
+- `commands/mi-continue.md` — Inspector Step 1.5 (canonicalization).
 - `schemas/progress.schema.yaml` — add `review-mode-suggestion` field to the `active` block (allowed values: `direct | brainstorming | none`; default `none`).
 - `templates/progress.md.tmpl` — surface the new field with a default.
 - **`scripts/progress.sh` — `activate` and `reset` blocks** (lines ~139 and ~227 currently). Both explicitly construct the `active` object; the new field must be initialized in both paths or it'll be absent when `active` is created.
@@ -131,7 +131,7 @@ Before starting any phase:
 **Depends on:** 1.1.
 
 **Files to modify:**
-- `commands/mo-review.md` — Step 2.6 (review-mode prompt).
+- `commands/mi-review.md` — Step 2.6 (review-mode prompt).
 
 **Changes:**
 - Read `progress.sh get review-mode-suggestion` at Step 2.6 entry.
@@ -146,30 +146,30 @@ Before starting any phase:
 
 ---
 
-### 1.3 — Option 2B: Rewrite `/mo-review` Step 3a into a main-driven loop with fresh per-iteration sub-agents
+### 1.3 — Option 2B: Rewrite `/mi-review` Step 3a into a main-driven loop with fresh per-iteration sub-agents
 
 **Source:** `(*ADD THIS)` at workflow-simulation.md Stage 6 / `recommendations.md` Option 2B.
-**Effort:** Medium-Large. **This is the most invasive item in the plan** — it changes `/mo-review` from a pure launcher (which currently hands the entire `go again` loop to the brainstorming Skill) into a main-driven loop driver.
+**Effort:** Medium-Large. **This is the most invasive item in the plan** — it changes `/mi-review` from a pure launcher (which currently hands the entire `go again` loop to the brainstorming Skill) into a main-driven loop driver.
 **Depends on:** 0.1 (return contract), 1.1.
 
-**Current behavior to replace.** Per `commands/mo-review.md:7` and `commands/mo-review.md:97`, `/mo-review` is *invoke-and-hand-off*: it sets up the sub-flow, generates `review-context.md`, asks for `review-mode`, then invokes the brainstorming Skill once with a primer that contains the entire loop pattern (steps 1–6 of the loop). The Skill drives the loop; `/mo-review` returns immediately. The overseer types `/mo-continue` after the loop exits.
+**Current behavior to replace.** Per `commands/mi-review.md:7` and `commands/mi-review.md:97`, `/mi-review` is *invoke-and-hand-off*: it sets up the sub-flow, generates `review-context.md`, asks for `review-mode`, then invokes the brainstorming Skill once with a primer that contains the entire loop pattern (steps 1–6 of the loop). The Skill drives the loop; `/mi-review` returns immediately. The inspector types `/mi-continue` after the loop exits.
 
-**New behavior to introduce (brainstorming mode only).** Move the loop into `/mo-review` itself:
+**New behavior to introduce (brainstorming mode only).** Move the loop into `/mi-review` itself:
 
 1. Setup (unchanged): generate `review-context.md`, write `sub-flow=reviewing`, advance 5→6.
 2. Read `review.sh list-open` to get the IR-IDs to address this iteration.
 3. Spawn one fresh sub-agent (`subagent_type: general-purpose`, explicitly NOT a fork) with:
    - Path to `review-context.md`
-   - Path to `overseer-review.md`
+   - Path to `inspector-review.md`
    - The list of open IR-NNN ids to address this iteration
    - The cascade pre-classification primer (item 1.6): for each `re-spec`/`re-plan` finding, pass IR-id + path to relevant plan/spec + 1-line excerpt only (NOT file content).
    - The Phase 0 return contract appended verbatim.
 4. Sub-agent does its own reads, edits, commits, and calls `review.sh set-status` per finding.
 5. Sub-agent returns the structured summary.
-6. Main reads the summary, surfaces it to the overseer, asks `approve | go again | abort`.
-7. On `go again`: re-canonicalize any new free-form additions (call `review.sh canonicalize` + `review.sh add` per Overseer Step 1.5), run the body refresh from item 1.4, then loop to step 2.
-8. On `approve`: exit cleanly. Tell overseer to type `/mo-continue` to resume mo-workflow (unchanged hand-off contract).
-9. On `abort`: invoke `/mo-abort-workflow`.
+6. Main reads the summary, surfaces it to the inspector, asks `approve | go again | abort`.
+7. On `go again`: re-canonicalize any new free-form additions (call `review.sh canonicalize` + `review.sh add` per Inspector Step 1.5), run the body refresh from item 1.4, then loop to step 2.
+8. On `approve`: exit cleanly. Tell inspector to type `/mi-continue` to resume mi-workflow (unchanged hand-off contract).
+9. On `abort`: invoke `/mi-abort-workflow`.
 
 **Direct mode (Step 3b).** Already runs the loop in main today. Update it only to:
 - Adopt the same iteration boundaries (read open IR-IDs once, address all, ask approve/go again/abort).
@@ -177,18 +177,18 @@ Before starting any phase:
 - Optionally: when iteration count crosses a threshold or scope mix changes, prompt to switch to brainstorming mode mid-loop (existing item — preserve).
 
 **Files to modify:**
-- `commands/mo-review.md` — Step 3a (full rewrite), Step 3b (alignment), Step 4 (hand-off doc updated).
+- `commands/mi-review.md` — Step 3a (full rewrite), Step 3b (alignment), Step 4 (hand-off doc updated).
 - New (or inline): the sub-agent prompt template that includes the Phase 0 return contract.
 
 **Acceptance criteria:**
-- `/mo-review` no longer hands the entire loop to the brainstorming Skill in `brainstorming` mode. Main owns the iteration boundaries.
+- `/mi-review` no longer hands the entire loop to the brainstorming Skill in `brainstorming` mode. Main owns the iteration boundaries.
 - Per-iteration main-context growth caps at <1k tokens (the return summary).
 - A 4-iteration loop ends with main-context delta under 5k tokens (vs ~200k under current behavior — verify against the simulation file's worst-case scenario).
 - Sub-agent commits land in `base-commit..HEAD` as expected.
 - `review.sh list-open` decreases as findings are resolved.
 - Cascading scopes (`re-spec` / `re-plan`) still work — they happen inside the sub-agent.
 - `direct` mode still works and is consistent in iteration boundaries.
-- The hand-off contract is unchanged: overseer types `/mo-continue` after `approve` to resume mo-workflow.
+- The hand-off contract is unchanged: inspector types `/mi-continue` after `approve` to resume mi-workflow.
 
 **Notes:** This is the single biggest token saving in the entire plan. Test on a real cycle with at least 2 iterations and at least one cascade-scoped finding before merging. Treat regressions in cascade behavior as blockers — the cascade must produce correct outputs even when it runs inside the sub-agent.
 
@@ -202,7 +202,7 @@ Before starting any phase:
 
 **Files to modify:**
 - `scripts/review.sh` — extend `sync-refs` with `--refresh-body` flag, OR add `refresh-context` subcommand.
-- `commands/mo-review.md` — call the new mode at the start of each `go again` iteration (step 7 of 1.3's loop above).
+- `commands/mi-review.md` — call the new mode at the start of each `go again` iteration (step 7 of 1.3's loop above).
 
 **Changes:**
 - New mode regenerates the `## Implemented surface` and `## Open findings (snapshot)` sections of `review-context.md` from current git state and `review.sh list-open` output.
@@ -222,12 +222,12 @@ Before starting any phase:
 **Depends on:** none.
 
 **Files to modify:**
-- `commands/mo-continue.md` — Review-Resume Step 1 (open-findings completion check).
+- `commands/mi-continue.md` — Review-Resume Step 1 (open-findings completion check).
 
 **Changes:**
 - Reword the `completed | abandoned | abort` prompt to surface deferred-findings as an intentional choice for non-blocking issues.
 - Frame `completed` as: *"keep them open and proceed; useful when you and the chain agreed to defer non-blocking follow-up work. The deferred findings remain queryable in the historical record at stage 8."*
-- Do NOT auto-default to `completed` — that would mislead overseers. Keep the prompt explicit.
+- Do NOT auto-default to `completed` — that would mislead inspectors. Keep the prompt explicit.
 
 **Acceptance criteria:**
 - The prompt text clearly distinguishes "intentionally deferred" from "abandoned mid-loop".
@@ -242,7 +242,7 @@ Before starting any phase:
 **Depends on:** 1.3 (cascades happen inside the sub-agent).
 
 **Files to modify:**
-- `commands/mo-review.md` — sub-agent prompt template (introduced in 1.3).
+- `commands/mi-review.md` — sub-agent prompt template (introduced in 1.3).
 
 **Changes:**
 - When the sub-agent prompt is being built and the open findings include any `re-spec` or `re-plan` scope, pre-pass:
@@ -265,7 +265,7 @@ Before starting any phase:
 
 **Estimated combined effort:** ~0.5 day.
 
-> **Reviewer note (revision):** The original draft had three additional items here for stage 8 (delegate completion regeneration, skip when fresh, reuse implementation diagrams). Those items described behavior that does not exist in the current workflow — `/mo-complete-workflow` rotates and archives `current/` but does not regenerate it; the next feature's stage 2 (`/mo-apply-impact`) builds the next `current/`. So the savings claimed for stage 8 in the simulation file actually flow to the next cycle's stage 2, which is already addressed by item 2.1 below. The stage-8 items have been removed; if a future change introduces an explicit completion-kind regeneration at stage 8, re-add them as a separate phase with that introduction as a prerequisite.
+> **Reviewer note (revision):** The original draft had three additional items here for stage 8 (delegate completion regeneration, skip when fresh, reuse implementation diagrams). Those items described behavior that does not exist in the current workflow — `/mi-complete-workflow` rotates and archives `current/` but does not regenerate it; the next feature's stage 2 (`/mi-apply-impact`) builds the next `current/`. So the savings claimed for stage 8 in the simulation file actually flow to the next cycle's stage 2, which is already addressed by item 2.1 below. The stage-8 items have been removed; if a future change introduces an explicit completion-kind regeneration at stage 8, re-add them as a separate phase with that introduction as a prerequisite.
 
 ### 2.1 — Stage 2: Delegate codebase-grounding pass to a fresh sub-agent
 
@@ -274,9 +274,9 @@ Before starting any phase:
 **Depends on:** 0.1.
 
 **Files to modify:**
-- `commands/mo-apply-impact.md` — Step A (codebase-grounding pass).
+- `commands/mi-apply-impact.md` — Step A (codebase-grounding pass).
 - `docs/blueprint-regeneration.md` — update Step A description to reflect delegation.
-- `commands/mo-complete-workflow.md` — Step 5 archival list (see lifecycle note below).
+- `commands/mi-complete-workflow.md` — Step 5 archival list (see lifecycle note below).
 - New: `schemas/grounding-report.schema.yaml` (if frontmatter validation is required) and `templates/grounding-report.md.tmpl`.
 
 **Changes:**
@@ -287,54 +287,54 @@ Before starting any phase:
 
 **Lifecycle decision — `grounding-report.md`:**
 - **Storage:** under `implementation/` (it's audit/debug state derived from the codebase at stage 2 entry; consumed by stage 2 to compose blueprints; useful in the historical record for understanding why the requirements were written the way they were).
-- **Archival:** add `grounding-report.md` to the Step 5 archive list in `commands/mo-complete-workflow.md` alongside `overseer-review.md`, `review-context.md`, `change-summary.md`, and `diagrams/`. The archival loop already moves files conditional on existence (`[[ -e ... ]] && mv -n ...`), so adding one more entry is a one-line change.
-- **Abort path:** `/mo-abort-workflow` already deletes the live `implementation/` folder; no change needed there.
+- **Archival:** add `grounding-report.md` to the Step 5 archive list in `commands/mi-complete-workflow.md` alongside `inspector-review.md`, `review-context.md`, `change-summary.md`, and `diagrams/`. The archival loop already moves files conditional on existence (`[[ -e ... ]] && mv -n ...`), so adding one more entry is a one-line change.
+- **Abort path:** `/mi-abort-workflow` already deletes the live `implementation/` folder; no change needed there.
 
 **Acceptance criteria:**
 - `requirements.md` quality matches current behavior (test on representative cycle).
 - Main-context growth at stage 2 drops from ~94k to ~25k.
 - `grounding-report.md` is generated and used by stage 2.
-- After `/mo-complete-workflow` runs, `grounding-report.md` is present at `blueprints/history/v[N+1]/implementation/grounding-report.md`.
+- After `/mi-complete-workflow` runs, `grounding-report.md` is present at `blueprints/history/v[N+1]/implementation/grounding-report.md`.
 
 ---
 
 ## Phase 3 — Stage 4 Diagram Delegation (P3)
 
-**Why third:** Moderate cost, multi-touchpoint. The user has explicitly requested per-event overseer prompting before any diagram generation, and explicitly opted out of SVG/PNG rendering by default — both reflected below.
+**Why third:** Moderate cost, multi-touchpoint. The user has explicitly requested per-event inspector prompting before any diagram generation, and explicitly opted out of SVG/PNG rendering by default — both reflected below.
 
 **Estimated combined effort:** ~1 day.
 
-### 3.1 — Per-event overseer prompt + delegate diagram generation when approved (stage-aware)
+### 3.1 — Per-event inspector prompt + delegate diagram generation when approved (stage-aware)
 
 **Source:** `(*ADD THIS)` at workflow-simulation.md Stages 2/4 + user's reaffirmed preference for per-event prompting.
 **Effort:** Medium.
 **Depends on:** 0.1.
 
 **Files to modify:**
-- `commands/mo-apply-impact.md` (stage 2 — blueprint diagrams).
-- `commands/mo-generate-implementation-diagrams.md` (stage 4 — implementation diagrams).
-- `commands/mo-draw-diagrams.md` (overseer-invokable wrapper for stage 4).
-- `commands/mo-continue.md` — Resume Step 7 stage-5 handoff (~line 644) and Review-Resume Step 2.5 stage-7 refresh prompt (~line 782). Both currently assume implementation diagrams always exist; they need branching for the skipped case.
+- `commands/mi-apply-impact.md` (stage 2 — blueprint diagrams).
+- `commands/mi-generate-implementation-diagrams.md` (stage 4 — implementation diagrams).
+- `commands/mi-draw-diagrams.md` (inspector-invokable wrapper for stage 4).
+- `commands/mi-continue.md` — Resume Step 7 stage-5 handoff (~line 644) and Review-Resume Step 2.5 stage-7 refresh prompt (~line 782). Both currently assume implementation diagrams always exist; they need branching for the skipped case.
 - `schemas/progress.schema.yaml` — add TWO fields to the `active` block (default values shown):
-  - `diagram-prompt: prompt | auto` (default `prompt`) — controls whether to ask the overseer.
-  - `implementation-diagrams-skipped: boolean` (default `false`) — records whether the overseer said `n` at stage 4 so downstream stages can distinguish "missing because skipped" from "missing because pending/stale".
+  - `diagram-prompt: prompt | auto` (default `prompt`) — controls whether to ask the inspector.
+  - `implementation-diagrams-skipped: boolean` (default `false`) — records whether the inspector said `n` at stage 4 so downstream stages can distinguish "missing because skipped" from "missing because pending/stale".
   Both are required because the schema sets `additionalProperties: false` on `active`; without these additions, `progress.sh set` will fail validation.
 - `templates/progress.md.tmpl` — surface both new fields with their defaults.
 - **`scripts/progress.sh` — `activate` and `reset` blocks** (lines ~139 and ~227). Both explicitly construct the `active` object; initialize `diagram-prompt: prompt` and `implementation-diagrams-skipped: false` in both paths.
 
 **Changes — stage-aware prompt behavior:**
 
-The prompt is gated by a hard constraint: stage 2 cannot legally produce a diagramless blueprint. `scripts/blueprints.sh check-current` (line ~465) requires `diagrams/README.md` plus at least one `use-case-*.puml`, and `commands/mo-continue.md` Approve Step 1 (~line 173) blocks the stage-2 approval gate when check-current returns partial. So the prompt at stage 2 cannot offer `n`.
+The prompt is gated by a hard constraint: stage 2 cannot legally produce a diagramless blueprint. `scripts/blueprints.sh check-current` (line ~465) requires `diagrams/README.md` plus at least one `use-case-*.puml`, and `commands/mi-continue.md` Approve Step 1 (~line 173) blocks the stage-2 approval gate when check-current returns partial. So the prompt at stage 2 cannot offer `n`.
 
-**Stage 2 (mo-apply-impact) — `y` and `auto` only:**
+**Stage 2 (mi-apply-impact) — `y` and `auto` only:**
 
 > "Stage 2 is about to generate blueprint diagrams for `<feature>`. Stage-2 approval requires diagrams (use-case + supporting set), so this step is mandatory. Reply:
 >   - `y` — generate `.puml` source files now (delegated to a fresh sub-agent; ~30s).
 >   - `auto` — generate, and don't ask again for diagrams during the rest of this feature's workflow (resets when the next feature activates)."
 
-The `n` option is intentionally absent. If the overseer needs to defer the workflow, they should use `/mo-abort-workflow` rather than landing a partial blueprint.
+The `n` option is intentionally absent. If the inspector needs to defer the workflow, they should use `/mi-abort-workflow` rather than landing a partial blueprint.
 
-**Stage 4 (mo-generate-implementation-diagrams) — `y` / `n` / `auto`:**
+**Stage 4 (mi-generate-implementation-diagrams) — `y` / `n` / `auto`:**
 
 > "Stage 4 is about to generate implementation diagrams for `<feature>`. Reply:
 >   - `y` — generate `.puml` source files now (delegated to a fresh sub-agent; ~30s).
@@ -353,23 +353,23 @@ Stage 4's diagrams live under `implementation/diagrams/` and are not gated by `c
    [[ -d "$impl_diagrams" ]] && rm -rf "$impl_diagrams"
    ```
 
-   The cleanup is intentionally destructive — there's no "are you sure?" prompt, because the overseer just chose `n`. If the directory contained valuable work-in-progress, the right recovery would have been to answer `y` (which preserves prior work via the `cp -n` seed step in 3.5), not `n`.
+   The cleanup is intentionally destructive — there's no "are you sure?" prompt, because the inspector just chose `n`. If the directory contained valuable work-in-progress, the right recovery would have been to answer `y` (which preserves prior work via the `cp -n` seed step in 3.5), not `n`.
 
 2. **Then** set `progress.sh set implementation-diagrams-skipped=true`.
 
-**Why this order matters.** If the session breaks between step 1 and step 2, the next `/mo-continue` sees `implementation-diagrams-skipped=false` (default) AND no `implementation/diagrams/` directory — `diagrams-fresh` returns `missing`, which routes to the diagnostic / regeneration recovery path. That is the safe failure mode. The reverse order (marker first, then `rm`) would leave a window where `implementation-diagrams-skipped=true` was persisted but the stale directory still existed, causing stage 8's archival loop (`[[ -d "$impl_dir/diagrams" ]] && mv -n ...`) to silently archive stale `.puml` files into history under a "skipped" cycle — a quiet correctness bug that would only surface during audit reads.
+**Why this order matters.** If the session breaks between step 1 and step 2, the next `/mi-continue` sees `implementation-diagrams-skipped=false` (default) AND no `implementation/diagrams/` directory — `diagrams-fresh` returns `missing`, which routes to the diagnostic / regeneration recovery path. That is the safe failure mode. The reverse order (marker first, then `rm`) would leave a window where `implementation-diagrams-skipped=true` was persisted but the stale directory still existed, causing stage 8's archival loop (`[[ -d "$impl_dir/diagrams" ]] && mv -n ...`) to silently archive stale `.puml` files into history under a "skipped" cycle — a quiet correctness bug that would only surface during audit reads.
 
 The contract is: **when `implementation-diagrams-skipped=true`, the directory MUST NOT exist.** The ordering above preserves that invariant under crash conditions.
 
 This persisted marker plus directory invariant drive downstream branching:
 
-- **Stage 5 handoff** (`commands/mo-continue.md` Resume Step 7, ~line 644): the overseer prompt currently reads *"Look at: commits `$base_commit..HEAD` and diagrams under `implementation/diagrams`"*. When `implementation-diagrams-skipped=true`, change the wording to: *"Look at: commits `$base_commit..HEAD` and the stage-2 blueprint diagrams under `blueprints/current/diagrams` (implementation diagrams were skipped at stage 4)."* This makes the review target unambiguous.
-- **Stage 7 refresh prompt** (`commands/mo-continue.md` Review-Resume Step 2.5, ~line 782): currently assumes implementation diagrams exist and asks whether to refresh them. When `implementation-diagrams-skipped=true`, replace the prompt with: *"Implementation diagrams were skipped at stage 4. The review session committed N additional commits since then. Reply: `y` — generate now (catches the full base-commit..HEAD range; ~30s); `n` — proceed without implementation diagrams (stage-2 diagrams remain the only diagram artifact archived at stage 8)."* If the overseer answers `y`, clear `implementation-diagrams-skipped=false` after generation succeeds.
-- **Stage 8 archival** (already filesystem-only): the existing `[[ -d "$impl_dir/diagrams" ]] && mv -n ...` line in `commands/mo-complete-workflow.md` Step 5 handles the missing case correctly — no change required.
+- **Stage 5 handoff** (`commands/mi-continue.md` Resume Step 7, ~line 644): the inspector prompt currently reads *"Look at: commits `$base_commit..HEAD` and diagrams under `implementation/diagrams`"*. When `implementation-diagrams-skipped=true`, change the wording to: *"Look at: commits `$base_commit..HEAD` and the stage-2 blueprint diagrams under `blueprints/current/diagrams` (implementation diagrams were skipped at stage 4)."* This makes the review target unambiguous.
+- **Stage 7 refresh prompt** (`commands/mi-continue.md` Review-Resume Step 2.5, ~line 782): currently assumes implementation diagrams exist and asks whether to refresh them. When `implementation-diagrams-skipped=true`, replace the prompt with: *"Implementation diagrams were skipped at stage 4. The review session committed N additional commits since then. Reply: `y` — generate now (catches the full base-commit..HEAD range; ~30s); `n` — proceed without implementation diagrams (stage-2 diagrams remain the only diagram artifact archived at stage 8)."* If the inspector answers `y`, clear `implementation-diagrams-skipped=false` after generation succeeds.
+- **Stage 8 archival** (already filesystem-only): the existing `[[ -d "$impl_dir/diagrams" ]] && mv -n ...` line in `commands/mi-complete-workflow.md` Step 5 handles the missing case correctly — no change required.
 
 **Stage-aware worker inputs (the prompt template diverges between stages):**
 
-- **Stage 2 sub-agent** reads the blueprint-regeneration inputs per `commands/mo-apply-impact.md` and `docs/blueprint-regeneration.md`:
+- **Stage 2 sub-agent** reads the blueprint-regeneration inputs per `commands/mi-apply-impact.md` and `docs/blueprint-regeneration.md`:
   - `summary.md` (active feature section + cross-cutting)
   - `grounding-report.md` (from item 2.1)
   - The draft `requirements.md` being composed (passed by path)
@@ -385,7 +385,7 @@ This persisted marker plus directory invariant drive downstream branching:
 
 - The `diagram-prompt` field lives in `progress.md` `active.*`. The `active` block is per-feature: it is constructed by `progress.sh activate` when a feature is popped from the queue, mutated during that feature's stages 2–8, and torn down by `progress.sh finish` (or rebuilt by `progress.sh reset`) when the feature completes. So **`auto` applies to the currently-active feature's workflow only** — it does NOT carry across feature boundaries within the same quest cycle (where multiple features share a `quest/<slug>/` subfolder but each gets its own `active` block).
 - If `auto`: persist `active.diagram-prompt: auto` to `progress.md` so subsequent stage 2 / stage 4 invocations within this feature's workflow skip the prompt and proceed directly to generation.
-- The field resets to `prompt` automatically when the next feature activates: `progress.sh activate` constructs a fresh `active` block per item 1.1's initialization rule, so `diagram-prompt` defaults back to `prompt` for the next feature. This is intentional — different features in the queue may have different scopes, and the overseer's "auto for this feature" choice should not silently apply to subsequent unrelated work.
+- The field resets to `prompt` automatically when the next feature activates: `progress.sh activate` constructs a fresh `active` block per item 1.1's initialization rule, so `diagram-prompt` defaults back to `prompt` for the next feature. This is intentional — different features in the queue may have different scopes, and the inspector's "auto for this feature" choice should not silently apply to subsequent unrelated work.
 - If a future requirement emerges to make `auto` quest-cycle-scoped (e.g., a global "always auto-generate diagrams" preference), the right place is a new top-level `progress.md` field outside `active.*` (alongside `queue` and `completed`), not inside `active`. That's out of scope for this plan but worth flagging.
 
 **Acceptance criteria:**
@@ -412,15 +412,15 @@ This persisted marker plus directory invariant drive downstream branching:
 **Depends on:** 3.1.
 
 **Files to modify:**
-- `commands/mo-generate-implementation-diagrams.md` — gate any SVG/PNG rendering.
-- `commands/mo-apply-impact.md` — same gating at stage 2.
+- `commands/mi-generate-implementation-diagrams.md` — gate any SVG/PNG rendering.
+- `commands/mi-apply-impact.md` — same gating at stage 2.
 - `schemas/progress.schema.yaml` — add `diagram-rendering: never|on-request` field to `active` (default `never`).
 - `templates/progress.md.tmpl` — surface the new field with a default of `never`.
 - **`scripts/progress.sh` — `activate` and `reset` blocks.** Both explicitly construct the `active` object; the new field must be initialized in both paths.
 
 **Changes:**
 - Hard-code `.puml`-only output. SVG/PNG rendering never runs implicitly.
-- The `diagram-rendering` field defaults to `never`. Even when set to `on-request` (e.g., via overseer typing a follow-up command after the per-event prompt), rendering happens only on an explicit request, not automatically as part of generation.
+- The `diagram-rendering` field defaults to `never`. Even when set to `on-request` (e.g., via inspector typing a follow-up command after the per-event prompt), rendering happens only on an explicit request, not automatically as part of generation.
 - Update `progress.sh activate` and `reset` to initialize `diagram-rendering: never`.
 
 **Acceptance criteria:**
@@ -437,15 +437,15 @@ This persisted marker plus directory invariant drive downstream branching:
 **Depends on:** 3.1.
 
 **Files to modify:**
-- `commands/mo-generate-implementation-diagrams.md` — verify `commits.sh change-summary-fresh` is called before generation.
-- `commands/mo-update-blueprint.md` — same verification on its existing regeneration path (note: only `manual`, `spec-update`, `re-spec-cascade`, `re-plan-cascade` reasons exist today; completion is reserved for `/mo-complete-workflow` per `commands/mo-update-blueprint.md`).
+- `commands/mi-generate-implementation-diagrams.md` — verify `commits.sh change-summary-fresh` is called before generation.
+- `commands/mi-update-blueprint.md` — same verification on its existing regeneration path (note: only `manual`, `spec-update`, `re-spec-cascade`, `re-plan-cascade` reasons exist today; completion is reserved for `/mi-complete-workflow` per `commands/mi-update-blueprint.md`).
 
 **Changes:**
 - Confirm both call sites use the cache key check; regenerate `change-summary.md` only on cache miss.
 - Add a regression test (or manual checklist item) so future changes don't re-introduce double-walks.
 
 **Acceptance criteria:**
-- A second invocation of `/mo-draw-diagrams` within the same `(base-commit, HEAD)` range does not regenerate `change-summary.md`.
+- A second invocation of `/mi-draw-diagrams` within the same `(base-commit, HEAD)` range does not regenerate `change-summary.md`.
 
 ---
 
@@ -457,8 +457,8 @@ This persisted marker plus directory invariant drive downstream branching:
 
 **Files to modify:**
 - `scripts/commits.sh` — add `diagrams-fresh <feature>` subcommand.
-- `commands/mo-generate-implementation-diagrams.md` — call before regenerating.
-- `commands/mo-continue.md` — update Review-Resume Step 2.5's `new_since_diagrams` calculation (~line 789) to handle the skipped case.
+- `commands/mi-generate-implementation-diagrams.md` — call before regenerating.
+- `commands/mi-continue.md` — update Review-Resume Step 2.5's `new_since_diagrams` calculation (~line 789) to handle the skipped case.
 
 **Changes:**
 
@@ -469,22 +469,22 @@ This persisted marker plus directory invariant drive downstream branching:
 - `skipped` (normal) — `progress.sh get implementation-diagrams-skipped` returns `true`. By contract, no `.puml` files exist (see the directory-invariant note in 3.1).
 - `missing` (diagnostic) — neither `skipped=true` nor `.puml` files exist. This violates the directory invariant and should not occur in normal flow; the script surfaces a diagnostic message and exits non-zero. Callers route to a recovery prompt rather than silently regenerating.
 
-The first three are the routing inputs that the call sites (auto-stage-4, overseer-invoked `/mo-draw-diagrams`, stage-7 refresh) switch on. `missing` is treated as an out-of-band error condition — implement it as a non-zero exit so a forgotten branch in a caller doesn't silently fall through.
+The first three are the routing inputs that the call sites (auto-stage-4, inspector-invoked `/mi-draw-diagrams`, stage-7 refresh) switch on. `missing` is treated as an out-of-band error condition — implement it as a non-zero exit so a forgotten branch in a caller doesn't silently fall through.
 
 Cache key for `stale` detection: `(base-commit, latest-commit-touching-implementation/diagrams/)`.
 
 **Caller behavior:**
 
-- **`/mo-draw-diagrams` (stage 4 entry — auto-invoked by stage 4):** if `fresh`, tell the overseer "diagrams already current" and skip the sub-agent. If `stale` or `missing`, proceed with generation (after the 3.1 prompt). If `skipped`, do nothing — the 3.1 prompt at stage 4 has already happened and persisted the marker (the auto-invoke flow does not re-prompt).
-- **`/mo-draw-diagrams` (overseer-invoked manually):** the overseer might invoke `/mo-draw-diagrams` directly between stages 4 and 7 to recover from a stage-4 skip they regret. **Treat `skipped` as a recovery affordance**, not a no-op:
-  - If `skipped`: prompt the overseer with *"Stage-4 diagrams were skipped earlier this cycle. Generate them now? Reply `y` (delegated to a fresh sub-agent; ~30s) or `n` (keep the skip)."* On `y`, run the seed-then-render flow from 3.5 against the current `base-commit..HEAD` range. After generation succeeds, clear the marker: `progress.sh set implementation-diagrams-skipped=false`. On `n`, exit without changes.
+- **`/mi-draw-diagrams` (stage 4 entry — auto-invoked by stage 4):** if `fresh`, tell the inspector "diagrams already current" and skip the sub-agent. If `stale` or `missing`, proceed with generation (after the 3.1 prompt). If `skipped`, do nothing — the 3.1 prompt at stage 4 has already happened and persisted the marker (the auto-invoke flow does not re-prompt).
+- **`/mi-draw-diagrams` (inspector-invoked manually):** the inspector might invoke `/mi-draw-diagrams` directly between stages 4 and 7 to recover from a stage-4 skip they regret. **Treat `skipped` as a recovery affordance**, not a no-op:
+  - If `skipped`: prompt the inspector with *"Stage-4 diagrams were skipped earlier this cycle. Generate them now? Reply `y` (delegated to a fresh sub-agent; ~30s) or `n` (keep the skip)."* On `y`, run the seed-then-render flow from 3.5 against the current `base-commit..HEAD` range. After generation succeeds, clear the marker: `progress.sh set implementation-diagrams-skipped=false`. On `n`, exit without changes.
   - Optional: accept a `--force` (or `--generate`) flag that bypasses the prompt and proceeds directly to generation, with the same marker reset on success. Useful for scripted recovery.
   - If `fresh` / `stale` / `missing`: behave as today.
-- **Stage 7 refresh** (`commands/mo-continue.md` Review-Resume Step 2.5): the current calculation `new_since_diagrams="$(git rev-list --count "${diagram_commits:-$base_commit}..HEAD")"` falls back to `base_commit` when no diagram commit exists, which would erroneously prompt for refresh after a skip. Replace the calculation with: first call `commits.sh diagrams-fresh`. If `skipped`, route to the modified prompt described in item 3.1 (offer `y`/`n` to generate; clear the marker on `y` after success). If `fresh`, skip the prompt entirely. If `stale`, run the existing refresh prompt. If `missing`, surface a diagnostic and prompt for generation.
+- **Stage 7 refresh** (`commands/mi-continue.md` Review-Resume Step 2.5): the current calculation `new_since_diagrams="$(git rev-list --count "${diagram_commits:-$base_commit}..HEAD")"` falls back to `base_commit` when no diagram commit exists, which would erroneously prompt for refresh after a skip. Replace the calculation with: first call `commits.sh diagrams-fresh`. If `skipped`, route to the modified prompt described in item 3.1 (offer `y`/`n` to generate; clear the marker on `y` after success). If `fresh`, skip the prompt entirely. If `stale`, run the existing refresh prompt. If `missing`, surface a diagnostic and prompt for generation.
 
 **Acceptance criteria:**
 - `commits.sh diagrams-fresh <feature>` returns the correct state for all four cases.
-- `/mo-draw-diagrams` invoked twice in a row (no new commits in between) does not re-render.
+- `/mi-draw-diagrams` invoked twice in a row (no new commits in between) does not re-render.
 - A cycle that skipped stage-4 diagrams reaches stage 7 with the appropriate "previously skipped" prompt, not the regular refresh prompt.
 - After stage-7 generation succeeds, `implementation-diagrams-skipped` is reset to `false`.
 
@@ -497,18 +497,18 @@ Cache key for `stale` detection: `(base-commit, latest-commit-touching-implement
 **Depends on:** 3.1, 3.4.
 
 **Files to modify:**
-- `commands/mo-generate-implementation-diagrams.md` — owns the seed-then-render flow, the fresh implementation README generation, and the selective re-render logic.
-- `commands/mo-continue.md` — Resume Step 7 (~line 644 stage-5 handoff). 3.5 owns the **"diagrams generated, some seeded-only"** wording case (i.e., when diagrams exist but some subjects are verbatim from stage 2). 3.1 owns the disjoint **"diagrams skipped entirely"** wording case (i.e., when `implementation-diagrams-skipped=true`). Both wording variants live in the same Resume Step 7 handoff prompt — implement them as branched messages keyed off the sub-agent return summary's seeded-only count and the skip marker respectively.
+- `commands/mi-generate-implementation-diagrams.md` — owns the seed-then-render flow, the fresh implementation README generation, and the selective re-render logic.
+- `commands/mi-continue.md` — Resume Step 7 (~line 644 stage-5 handoff). 3.5 owns the **"diagrams generated, some seeded-only"** wording case (i.e., when diagrams exist but some subjects are verbatim from stage 2). 3.1 owns the disjoint **"diagrams skipped entirely"** wording case (i.e., when `implementation-diagrams-skipped=true`). Both wording variants live in the same Resume Step 7 handoff prompt — implement them as branched messages keyed off the sub-agent return summary's seeded-only count and the skip marker respectively.
 - `scripts/uuid.sh` — invoked from the sub-agent prompt to mint the new README's id; no code changes expected, just usage.
 
-**Constraint to honour.** Stage 5 review and stage 8 archival both expect `implementation/diagrams/` to be a **complete diagram set** (one file per subject, matching the stage-2 set per `docs/workflow-spec.md:354`: *"Subjects/filenames should match the implementation diagrams rendered at stage 4 so the overseer can diff equivalent diagrams across the two folders."*). If item 3.5 only writes affected diagrams to `implementation/diagrams/`, the unchanged subjects would be missing entirely — making the stage-5 review and stage-8 archive incomplete.
+**Constraint to honour.** Stage 5 review and stage 8 archival both expect `implementation/diagrams/` to be a **complete diagram set** (one file per subject, matching the stage-2 set per `docs/workflow-spec.md:354`: *"Subjects/filenames should match the implementation diagrams rendered at stage 4 so the inspector can diff equivalent diagrams across the two folders."*). If item 3.5 only writes affected diagrams to `implementation/diagrams/`, the unchanged subjects would be missing entirely — making the stage-5 review and stage-8 archive incomplete.
 
 **Three-step approach:**
 
 1. **Seed `.puml` files only from `blueprints/current/diagrams/`.** On stage-4 entry (after the 3.1 prompt approves generation), the sub-agent copies every `.puml` file (and ONLY `.puml` files — not `README.md`) from `blueprints/current/diagrams/` to `implementation/diagrams/`. Use `cp -n` so a re-run idempotently preserves any already-generated implementation versions.
 2. **Generate a fresh implementation `README.md` using the existing manual write path.** The blueprint and implementation README schemas are deliberately distinct: blueprint READMEs require `requirements-id` (and forbid other fields via `additionalProperties: false`), while implementation READMEs require `id` + `stage: implementation` (and intentionally do NOT carry `requirements-id` — see `schemas/diagrams-readme-implementation.schema.yaml:8-11` for the rationale). Copying the blueprint README would fail schema validation either way.
 
-   Use the existing pattern documented in `commands/mo-generate-implementation-diagrams.md:121-132`: mint a new `id` via `scripts/uuid.sh`, then write the README directly with frontmatter:
+   Use the existing pattern documented in `commands/mi-generate-implementation-diagrams.md:121-132`: mint a new `id` via `scripts/uuid.sh`, then write the README directly with frontmatter:
 
    ```yaml
    ---
@@ -517,28 +517,28 @@ Cache key for `stale` detection: `(base-commit, latest-commit-touching-implement
    ---
    ```
 
-   Body: bullet list of diagrams with one-line purpose each, plus the seeded-only convention note when applicable (see Wording caveat below). Do NOT use `frontmatter.sh init diagrams-readme-implementation` — that path requires `templates/diagrams-readme-implementation.md.tmpl` which does not exist in the repo (`scripts/frontmatter.sh:20` will fail). If a future change introduces the template, this step can switch to `init`; for now the manual write path is what `mo-generate-implementation-diagrams.md` already uses.
+   Body: bullet list of diagrams with one-line purpose each, plus the seeded-only convention note when applicable (see Wording caveat below). Do NOT use `frontmatter.sh init diagrams-readme-implementation` — that path requires `templates/diagrams-readme-implementation.md.tmpl` which does not exist in the repo (`scripts/frontmatter.sh:20` will fail). If a future change introduces the template, this step can switch to `init`; for now the manual write path is what `mi-generate-implementation-diagrams.md` already uses.
 3. **Selective re-render.** Sub-agent identifies which diagram subjects are affected by `base-commit..HEAD`. It re-renders only those subjects — overwriting the seeded copies for affected subjects. Unchanged subjects keep their stage-2 `.puml` content as-is (see "Wording caveat" below).
 
 **Wording caveat for seeded-only diagrams (Finding #3 trade-off).** The stage-2 and stage-4 diagram conventions share the existing-vs-new colour scheme but differ in baseline semantics: stage-2 paints "blue = current HEAD codebase, green = planned new functionality"; stage-4 paints "blue = `base-commit`, green = `base-commit..HEAD`" — and the legend wording reflects each. **Seeded-only diagrams retain stage-2 wording** (e.g., legend may read "Planned" or "To be implemented"). For subjects that received no implementation commits in this cycle, this is correct in the strong sense — there literally was no implementation work to recolour, and the stage-2 design intent is the most accurate representation available. But it is a presentation deviation from the standard stage-4 convention.
 
 Two ways to handle this; the plan picks the second by default:
 
-- **Option A — Legend normalization (rejected as default):** Programmatically rewrite each seeded `.puml` to swap "Planned" → "Not implemented in this cycle" or similar. This requires fragile string surgery on PlantUML legend blocks and risks breaking customised legends. Only worth implementing if seeded-wording confusion becomes a real overseer pain point.
-- **Option B — Document and message (default):** Keep seeded `.puml` content verbatim. Mention the convention in the freshly-generated implementation `README.md` body. Stage-5 handoff messaging (item 3.1's `commands/mo-continue.md` updates) calls it out explicitly: *"Subjects with no commits in `base-commit..HEAD` show the stage-2 design as-is — interpret these as 'design intent preserved without implementation changes in this cycle.'"*
+- **Option A — Legend normalization (rejected as default):** Programmatically rewrite each seeded `.puml` to swap "Planned" → "Not implemented in this cycle" or similar. This requires fragile string surgery on PlantUML legend blocks and risks breaking customised legends. Only worth implementing if seeded-wording confusion becomes a real inspector pain point.
+- **Option B — Document and message (default):** Keep seeded `.puml` content verbatim. Mention the convention in the freshly-generated implementation `README.md` body. Stage-5 handoff messaging (item 3.1's `commands/mi-continue.md` updates) calls it out explicitly: *"Subjects with no commits in `base-commit..HEAD` show the stage-2 design as-is — interpret these as 'design intent preserved without implementation changes in this cycle.'"*
 
 **Changes:**
 - Sub-agent prompt template (introduced in 3.1) is extended with the three-step instruction (seed `.puml` → fresh implementation README → selective re-render).
 - Sub-agent reads the seed source (`blueprints/current/diagrams/*.puml`) plus the implementation context (`change-summary.md` + `base-commit..HEAD`) needed to re-render affected subjects.
-- Sub-agent invokes `scripts/uuid.sh` to mint the new id, writes the README manually with the literal frontmatter (`id` + `stage: implementation`) per the pattern in `commands/mo-generate-implementation-diagrams.md:121-132`, then validates the written file against `schemas/diagrams-readme-implementation.schema.yaml` (e.g., via `scripts/frontmatter.sh validate <path> diagrams-readme-implementation`). Do NOT use `frontmatter.sh init` — see the rationale at the manual-write-path step above.
+- Sub-agent invokes `scripts/uuid.sh` to mint the new id, writes the README manually with the literal frontmatter (`id` + `stage: implementation`) per the pattern in `commands/mi-generate-implementation-diagrams.md:121-132`, then validates the written file against `schemas/diagrams-readme-implementation.schema.yaml` (e.g., via `scripts/frontmatter.sh validate <path> diagrams-readme-implementation`). Do NOT use `frontmatter.sh init` — see the rationale at the manual-write-path step above.
 - Sub-agent return summary lists each diagram with its disposition: `seeded-only` (verbatim from stage-2) or `re-rendered` (affected) — and confirms the README was generated fresh.
-- Update stage-5 handoff wording in `commands/mo-continue.md` Resume Step 7 to include the seeded-only convention note when the diagram set contains any seeded-only subjects.
+- Update stage-5 handoff wording in `commands/mi-continue.md` Resume Step 7 to include the seeded-only convention note when the diagram set contains any seeded-only subjects.
 
 **Acceptance criteria:**
 - After stage 4 generation, `implementation/diagrams/` contains one `.puml` per stage-2 subject AND a fresh `README.md` that validates against `diagrams-readme-implementation.schema.yaml` (has `id`, has `stage: implementation`, has NO `requirements-id`).
 - A change touching only `src/payments/` re-renders the payments diagram and leaves the audit-log diagram as the verbatim stage-2 `.puml`.
 - Seeded-only `.puml` files have content equal to the corresponding `blueprints/current/diagrams/` files (verifiable with `diff`).
-- The fresh implementation README mentions the seeded-only convention when applicable so the overseer reading at stage 5 understands the wording difference.
+- The fresh implementation README mentions the seeded-only convention when applicable so the inspector reading at stage 5 understands the wording difference.
 - Stage 5 review and stage 8 archival can read from `implementation/diagrams/` alone without needing to consult `blueprints/current/diagrams/` for missing subjects.
 
 ---
@@ -556,13 +556,13 @@ Two ways to handle this; the plan picks the second by default:
 **Depends on:** none.
 
 **Files to modify:**
-- `commands/mo-continue.md` — Pre-flight Step 2A item 4.
+- `commands/mi-continue.md` — Pre-flight Step 2A item 4.
 - `docs/workflow-spec.md:289, 591` — update text to reflect journal-only ordering.
 
 **Changes:**
 - Remove the codebase-grep step from Pre-flight Step 2A item 4.
 - Replace with a journal-only ordering pass: scan `summary.md` `## Cross-cutting constraints` and feature sections for cross-references.
-- The proposal to the overseer is based purely on journal signals.
+- The proposal to the inspector is based purely on journal signals.
 
 **Acceptance criteria:**
 - Stage 1.5 does not invoke any source-file Read or grep tools.
@@ -577,7 +577,7 @@ Two ways to handle this; the plan picks the second by default:
 **Depends on:** 4.1.
 
 **Files to modify:**
-- `commands/mo-continue.md` — Pre-flight Step 2A.
+- `commands/mi-continue.md` — Pre-flight Step 2A.
 
 **Changes:**
 - Implement a heuristic check on `summary.md` body: regex for feature names appearing in another feature's section, or dependency keywords ("depends on", "blocks", "requires").
@@ -597,7 +597,7 @@ Two ways to handle this; the plan picks the second by default:
 **Depends on:** 0.1, 4.2.
 
 **Files to modify:**
-- `commands/mo-continue.md` — Pre-flight Step 2A.
+- `commands/mi-continue.md` — Pre-flight Step 2A.
 - `schemas/queue-rationale.schema.yaml` — add cache-key fields to frontmatter.
 - `templates/queue-rationale.md.tmpl` — surface the cache fields.
 
@@ -605,11 +605,11 @@ Two ways to handle this; the plan picks the second by default:
 - Sub-agent (`subagent_type: general-purpose`) inspects cross-feature imports and writes the `queue-rationale.md` body directly.
 - Sub-agent return: 2-3 sentence summary (Phase 0 contract shape).
 - Cache key per `recommendations.md` § "queue-rationale.md cache": `(cycle-slug, ordered-feature-ids, summary-md-hash, HEAD-when-scanned)`.
-- On subsequent `/mo-continue` invocations within the same cycle: read the cached `queue-rationale.md` instead of re-scanning.
+- On subsequent `/mi-continue` invocations within the same cycle: read the cached `queue-rationale.md` instead of re-scanning.
 
 **Acceptance criteria:**
-- First `/mo-continue` after marking selections: spawns sub-agent (when 4.2 said "needed").
-- Second `/mo-continue` within the same cycle: hits cache, no sub-agent.
+- First `/mi-continue` after marking selections: spawns sub-agent (when 4.2 said "needed").
+- Second `/mi-continue` within the same cycle: hits cache, no sub-agent.
 - Cache invalidates if `summary.md` body changes or HEAD moves.
 
 ---
@@ -648,7 +648,7 @@ Two ways to handle this; the plan picks the second by default:
 **Depends on:** 0.1.
 
 **Files to modify:**
-- `commands/mo-run.md` — Step 2.5 (size manifest and threshold check).
+- `commands/mi-run.md` — Step 2.5 (size manifest and threshold check).
 
 **Changes:**
 - Add a folder-level threshold: `>5 files AND >40 KB total per folder` triggers per-folder summarization.
@@ -671,7 +671,7 @@ Two ways to handle this; the plan picks the second by default:
 
 **Files to modify:**
 - `templates/primer.md.tmpl`.
-- `commands/mo-plan-implementation.md` — Step 3.5 (primer composition).
+- `commands/mi-plan-implementation.md` — Step 3.5 (primer composition).
 
 **Changes:**
 - Add concrete threshold language to the primer:
@@ -692,8 +692,8 @@ Two ways to handle this; the plan picks the second by default:
 **Depends on:** none for the basic implementation. **Soft dependency on 6.5** (artifact excerpt commands) — if 6.5 has already shipped, this item uses the excerpt commands for cleaner extraction; if not, it falls back to reading `config.md` directly via existing tools (`frontmatter.sh get` + section grep). Both paths produce equivalent results; only the implementation cleanliness differs.
 
 **Files to modify:**
-- `commands/mo-plan-implementation.md` — primer composition.
-- `commands/mo-apply-impact.md` — `config.md` skill/rule filtering at stage 2.
+- `commands/mi-plan-implementation.md` — primer composition.
+- `commands/mi-apply-impact.md` — `config.md` skill/rule filtering at stage 2.
 
 **Changes:**
 - Stage 2 already produces `config.md`'s `## Skills`, `## Rules`, `## Load on demand` tiers.
@@ -716,12 +716,12 @@ Two ways to handle this; the plan picks the second by default:
 **Depends on:** none.
 
 **Files to modify:**
-- `commands/mo-complete-workflow.md` — finalize sequence.
+- `commands/mi-complete-workflow.md` — finalize sequence.
 - `scripts/blueprints.sh` — archival logic.
 - `scripts/progress.sh` — possibly extend `finish` to accept `--set field=value` pairs (mirror of the existing `advance-to ... --set` pattern) so the finalize write is atomic.
 
 **Changes:**
-- The current `progress.sh advance-to` whitelist is `3→5 | 5→7 | 6→7`; do NOT introduce a `7 → -1` transition. Stage finalization correctly uses `progress.sh finish` (per `commands/mo-complete-workflow.md` Step 6).
+- The current `progress.sh advance-to` whitelist is `3→5 | 5→7 | 6→7`; do NOT introduce a `7 → -1` transition. Stage finalization correctly uses `progress.sh finish` (per `commands/mi-complete-workflow.md` Step 6).
 - Where multiple `progress.sh set` calls precede `progress.sh finish`, consolidate them: optionally extend `finish` to accept `--set field=value` pairs so the whole finalize write is atomic. This mirrors the `advance-to ... --set` pattern.
 - Skip frontmatter re-validation on archived files (they're frozen post-rotation). The archive loop in Step 5 already uses `mv -n` for idempotency; ensure no validation hooks fire on the moved files in the archive directory.
 
@@ -769,7 +769,7 @@ Two ways to handle this; the plan picks the second by default:
 
 **Changes:**
 - At command entry, document and enforce the stage's allowed reads per the budget table.
-- If a command would exceed its budget, either delegate or surface an explicit override prompt to the overseer.
+- If a command would exceed its budget, either delegate or surface an explicit override prompt to the inspector.
 - Override prompts should be rare and intentional — they signal scope creep that needs review.
 
 **Acceptance criteria:**
@@ -824,7 +824,7 @@ Two ways to handle this; the plan picks the second by default:
 
 ## Phase 7 — Deferred (P7)
 
-**Why deferred:** Larger refactor that touches Skill-level prompts (brainstorming, writing-plans), not just mo-workflow. Only ship if observed pain warrants.
+**Why deferred:** Larger refactor that touches Skill-level prompts (brainstorming, writing-plans), not just mi-workflow. Only ship if observed pain warrants.
 
 ### 7.1 — Option 2F: Delta primers for cascades
 
@@ -835,7 +835,7 @@ Two ways to handle this; the plan picks the second by default:
 **Files to modify:**
 - Brainstorming Skill prompt (out-of-tree — coordinate with the chain author).
 - Writing-plans Skill prompt (same).
-- `commands/mo-review.md` — pre-cascade primer composition (item 1.3's sub-agent prompt).
+- `commands/mi-review.md` — pre-cascade primer composition (item 1.3's sub-agent prompt).
 
 **Changes:**
 - When a cascade fires, pass a delta primer: *"You already produced spec X and plan Y. Finding IR-NNN invalidated steps 3-5. Regenerate only those steps; keep 1-2 and 6+ verbatim."*
@@ -856,12 +856,12 @@ All items at a glance. Mark `Status` as you go: `todo | in-progress | done | ski
 | 0.1 | Sub-Agent Return Contract Standard | 0 | Small | — | done |
 | 1.1 | Stage 5 auto-direct-mode hint persistence (incl. progress.sh activate/reset) | 1 | Small | — | done |
 | 1.2 | Option 2A — auto-route to direct mode | 1 | Small | 1.1 | done |
-| 1.3 | Option 2B — rewrite /mo-review Step 3a into main-driven loop with fresh per-iteration sub-agents | 1 | Medium-Large | 0.1, 1.1 | done |
+| 1.3 | Option 2B — rewrite /mi-review Step 3a into main-driven loop with fresh per-iteration sub-agents | 1 | Medium-Large | 0.1, 1.1 | done |
 | 1.4 | Option 2D — refresh review-context.md body | 1 | Small | 1.3 | done |
 | 1.5 | Approve-with-deferred-findings UX framing | 1 | Small | — | done |
 | 1.6 | Pre-classify cascades before sub-agent | 1 | Small | 1.3 | done |
 | 2.1 | Stage 2 — delegate codebase-grounding pass; archive grounding-report | 2 | Medium | 0.1 | done |
-| 3.1 | Per-event diagram prompt (stage 2: y/auto only; stage 4: y/n/auto) + delegate generation; adds `diagram-prompt` and `implementation-diagrams-skipped` to schema/progress.sh; updates `mo-continue.md` stage-5 handoff and stage-7 refresh wording | 3 | Medium | 0.1 | done |
+| 3.1 | Per-event diagram prompt (stage 2: y/auto only; stage 4: y/n/auto) + delegate generation; adds `diagram-prompt` and `implementation-diagrams-skipped` to schema/progress.sh; updates `mi-continue.md` stage-5 handoff and stage-7 refresh wording | 3 | Medium | 0.1 | done |
 | 3.2 | `.puml`-only default; SVG/PNG never auto-rendered; adds `diagram-rendering` to schema/progress.sh | 3 | Small | 3.1 | done |
 | 3.3 | Stage 4 — change-summary cache reuse verification | 3 | Small | 3.1 | done |
 | 3.4 | Stage 4 — skip diagram regen when fresh | 3 | Small | 3.1 | done |
@@ -901,7 +901,7 @@ All items at a glance. Mark `Status` as you go: `todo | in-progress | done | ski
 1. Run a representative cycle end-to-end on the PR branch.
 2. Compare main-context growth vs. baseline (from the pre-implementation snapshot).
 3. Verify schema-validation hooks pass.
-4. Confirm `/mo-doctor` reports clean.
+4. Confirm `/mi-doctor` reports clean.
 
 **Backwards compatibility:** the workflow needs to keep working through partial implementation. Anchor that by:
 
@@ -912,7 +912,7 @@ All items at a glance. Mark `Status` as you go: `todo | in-progress | done | ski
   - `diagram-rendering: never` (item 3.2)
   Without `additionalProperties: false`-compatible initialization in both lifecycle paths, `progress.sh set` will fail validation. **Verify each field appears in BOTH `activate` and `reset` blocks of `scripts/progress.sh` before merging the corresponding PR.**
 - Most cache keys default to "missing → regenerate" behavior on first encounter (e.g., `change-summary.md`, `queue-rationale.md`, `review-context.md` body refresh — all return `missing` and the call site silently regenerates).
-- **Exception: `diagrams-fresh`.** `missing` is treated as a diagnostic, not an automatic regenerate trigger. Per item 3.4, `missing` indicates an invariant violation (neither `implementation-diagrams-skipped=true` nor `.puml` files exist). The script exits non-zero; callers route to a recovery prompt that may regenerate after explicit overseer confirmation. The other three states (`fresh | stale | skipped`) are normal-flow outcomes the call sites handle inline.
+- **Exception: `diagrams-fresh`.** `missing` is treated as a diagnostic, not an automatic regenerate trigger. Per item 3.4, `missing` indicates an invariant violation (neither `implementation-diagrams-skipped=true` nor `.puml` files exist). The script exits non-zero; callers route to a recovery prompt that may regenerate after explicit inspector confirmation. The other three states (`fresh | stale | skipped`) are normal-flow outcomes the call sites handle inline.
 - The `diagrams-fresh` four-state output (three normal: `fresh | stale | skipped`; one diagnostic: `missing`) handles the skipped case explicitly so downstream stages don't re-prompt for refresh.
 - All sub-agent invocations have a fallback path (in-main execution) if the sub-agent fails — the workflow should not deadlock when delegation breaks.
 

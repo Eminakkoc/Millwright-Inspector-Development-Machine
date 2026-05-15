@@ -1,17 +1,17 @@
 $schema: "http://json-schema.org/draft-07/schema#"
-$id: millwright-overseer-development-machine/decisions.schema.yaml
+$id: millwright-inspector-development-machine/decisions.schema.yaml
 title: workflow-stream/<feature>/decisions.md frontmatter
 description: >
   Feature-scoped, append-only log of verbal decisions, scope adjustments,
-  and constraints captured during overseer ↔ millwright Q&A that aren't
-  reflected in requirements.md, config.md, or overseer-review.md. Lives at
+  and constraints captured during inspector ↔ millwright Q&A that aren't
+  reflected in requirements.md, config.md, or inspector-review.md. Lives at
   the root of workflow-stream/<feature>/ (NOT inside blueprints/current/);
   excluded from history rotation by design (per docs/clear-points/plan.md
   §9.2) so it persists for the feature's lifetime and accumulates across
-  blueprint regenerations. Read by mo-plan-implementation Step 3.5
-  (folds into primer.md), /mo-review Step 2.5 (folds into review-context.md),
-  and /mo-update-blueprint regen (folds into requirements.md Non-goals
-  and config.md Overseer Additions). Never modified by consumers.
+  blueprint regenerations. Read by mi-plan-implementation Step 3.5
+  (folds into primer.md), /mi-review Step 2.5 (folds into review-context.md),
+  and /mi-update-blueprint regen (folds into requirements.md Non-goals
+  and config.md Inspector Additions). Never modified by consumers.
 
 type: object
 additionalProperties: false

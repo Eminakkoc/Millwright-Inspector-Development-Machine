@@ -1,6 +1,6 @@
 # Worst-Case Workflow Simulation — Stage-by-Stage Token Cost
 
-This document walks through one full mo-workflow cycle for a deliberately large feature, tracking main-agent context, sub-agent token cost, and cumulative total work at every stage. Two passes are presented side-by-side: the **current** behavior (spec as-is) and the **optimized** behavior (with the recommendations from `recommendations.md` applied).
+This document walks through one full mi-workflow cycle for a deliberately large feature, tracking main-agent context, sub-agent token cost, and cumulative total work at every stage. Two passes are presented side-by-side: the **current** behavior (spec as-is) and the **optimized** behavior (with the recommendations from `recommendations.md` applied).
 
 The numbers are estimates with stated assumptions. They are intentionally on the high side so you see the worst case clearly; smaller features scale down proportionally.
 
@@ -11,12 +11,12 @@ The numbers are estimates with stated assumptions. They are intentionally on the
 **Cycle**: "Payments overhaul + audit-log compliance"
 
 - **Features in queue**: `payments`, `audit-log` (2 features → triggers stage-1.5 dependency analysis under current spec)
-- **Journal folders supplied to `/mo-run`**: `pricing-meeting`, `compliance-rfc`, `audit-design-doc`
+- **Journal folders supplied to `/mi-run`**: `pricing-meeting`, `compliance-rfc`, `audit-design-doc`
 - **Journal sizes**:
   - `pricing-meeting/transcript.txt` — 150 KB
   - `compliance-rfc/audit-rfc.md` — 80 KB
   - `audit-design-doc/design.md` — 60 KB
-  - **Total intake**: 290 KB (`transcript.txt` exceeds the 100 KB single-file threshold from `/mo-run` Step 2.5)
+  - **Total intake**: 290 KB (`transcript.txt` exceeds the 100 KB single-file threshold from `/mi-run` Step 2.5)
 - **Codebase**: ~80,000 LOC TypeScript + Python backend monorepo
 - **Implementation scope**:
   - 30 source files touched across both features
@@ -45,7 +45,7 @@ These are the conversion rules used throughout. They are rough but defensible:
 
 Other assumptions:
 
-1. **Same-conversation context.** Skill invocations (brainstorming, writing-plans, executing-plans) run in the same Claude Code session — their reads accumulate in main context. The "isolated from mo-workflow" phrase in the spec means mo-workflow commands don't read the chain's spec/plan files, NOT that the chain runs in a separate process. Tokens spent inside the chain are tokens spent in main context.
+1. **Same-conversation context.** Skill invocations (brainstorming, writing-plans, executing-plans) run in the same Claude Code session — their reads accumulate in main context. The "isolated from mi-workflow" phrase in the spec means mi-workflow commands don't read the chain's spec/plan files, NOT that the chain runs in a separate process. Tokens spent inside the chain are tokens spent in main context.
 2. **Forks vs fresh sub-agents.** The "Sub-agents" column in each table counts tokens spent in disposable sub-agent contexts that do NOT add to main context. A fork (no `subagent_type`) inherits main context — its reads would land in main, so it is treated as "main" in this simulation. The optimized scenarios use **fresh sub-agents** (`subagent_type: general-purpose` or similar) so their reads stay isolated.
 3. **Prompt cache.** Cached re-reads cost ~10% of normal at runtime, but they still occupy context-window space. The numbers below count **bytes-in-context** rather than per-turn-cost. Per-turn cost with caching is meaningfully lower; context-window pressure is what's tracked here.
 4. **"Cumulative main" tracks bytes in main context.** Sub-agent contexts evaporate after they return; their tokens are reported per-stage but not summed into the running main total.
@@ -65,12 +65,12 @@ Anthropic does **not** publish exact token limits for Claude Code plans — usag
 
 Effective budget depends on:
 
-- **Model**: Opus is heavier per token than Sonnet (rough rule: ~3–4× the weight). The mo-workflow runs on Opus 4.7, so lean toward the **lower end** of the range.
+- **Model**: Opus is heavier per token than Sonnet (rough rule: ~3–4× the weight). The mi-workflow runs on Opus 4.7, so lean toward the **lower end** of the range.
 - **Tool use**: every tool invocation has bookkeeping overhead beyond the tokens it processes.
 - **Cache hit rate**: cached prefixes cost ~10% of normal. High hit rates stretch the budget significantly; low hit rates compress it.
 - **Output volume**: output tokens cost ~5× input tokens (from the API price ratio for Opus). Long generation passes (writing specs, plans, blueprints) skew effective cost upward.
 
-For the mo-workflow's Opus + heavy tool use + frequent generation profile, **assume ~5 million token-equivalents per Max 5x session window** as the working budget. This is conservative; some sessions may stretch further.
+For the mi-workflow's Opus + heavy tool use + frequent generation profile, **assume ~5 million token-equivalents per Max 5x session window** as the working budget. This is conservative; some sessions may stretch further.
 
 ### Two ways to compare a workflow against this budget
 
@@ -88,7 +88,7 @@ Both metrics — total work and effective billing — are reported in the sessio
 
 ---
 
-## Stage 1 — `/mo-run pricing-meeting compliance-rfc audit-design-doc`
+## Stage 1 — `/mi-run pricing-meeting compliance-rfc audit-design-doc`
 
 Activity: dependency preflight, parse arguments, validate journal folders, size manifest, slug + cycle subfolder, generate `todo-list.md` + `summary.md` + `progress.md`.
 
@@ -98,7 +98,7 @@ Step 2.5's per-file summarization fires automatically for the 150 KB transcript 
 
 | Activity | Main delta | Sub-agent delta |
 | --- | --- | --- |
-| `/mo-run` command body loaded into context | 6,000 | — |
+| `/mi-run` command body loaded into context | 6,000 | — |
 | `doctor.sh --preflight` output | 200 | — |
 | Journal folder validation + size manifest | 500 | — |
 | Per-file summarization sub-agent for `transcript.txt` (Step 2.5 delegation) | — | 50,000 |
@@ -126,16 +126,16 @@ No additional optimization beyond what Step 2.5 already provides — current beh
 
 ### Stage 1 optimization suggestions
 
-- **Size thresholds (already in spec).** `/mo-run` Step 2.5 triggers per-file summarization at >100 KB single-file or >500 KB total. Defaults are reasonable but can be tuned downward (e.g., 60 KB / 300 KB) if your typical journal files are smaller and you still see context pressure here.
+- **Size thresholds (already in spec).** `/mi-run` Step 2.5 triggers per-file summarization at >100 KB single-file or >500 KB total. Defaults are reasonable but can be tuned downward (e.g., 60 KB / 300 KB) if your typical journal files are smaller and you still see context pressure here.
 - **Pre-trim irrelevant sections.** For very large transcripts (multi-hour meeting recordings), pre-process them with a script that strips boilerplate (timestamps, speaker tags repeated each turn, off-topic sections marked by speakers) before they enter the journal folder. The summarizer reads less.
 - (*ADD THIS) **Per-folder summarization (not currently in spec).** When a single journal folder has many small files (e.g., 20 short notes in one folder), a per-folder sub-agent can produce a single digest covering all files instead of reading them individually in main. Add a threshold: if a journal folder contains >5 files totaling >40 KB, dispatch one sub-agent for the folder.
 - **Skip frontmatter validation re-reads.** `frontmatter.sh init` validation reads the file it just wrote. The hook re-validates on the next tool call. These compound — consider a `--skip-validate` flag on the init path when the hook will catch errors anyway.
 
 ---
 
-## Stage 1.5 — `/mo-continue` ×2 (Pre-flight Steps 2A + 2B)
+## Stage 1.5 — `/mi-continue` ×2 (Pre-flight Steps 2A + 2B)
 
-Activity: promote `[x] TODO → PENDING`, analyze cross-feature dependencies (current spec), propose order, write `queue-rationale.md`, reorder queue, auto-fire `/mo-apply-impact`.
+Activity: promote `[x] TODO → PENDING`, analyze cross-feature dependencies (current spec), propose order, write `queue-rationale.md`, reorder queue, auto-fire `/mi-apply-impact`.
 
 ### Current behavior
 
@@ -143,13 +143,13 @@ The Pre-flight Step 2A item 4 explicitly reads the codebase: *"For ≥ 2 feature
 
 | Activity | Main delta | Sub-agent delta |
 | --- | --- | --- |
-| `/mo-continue` command body loaded | 5,000 | — |
+| `/mi-continue` command body loaded | 5,000 | — |
 | `todo.sh pend-selected` output | 200 | — |
 | Re-read `todo-list.md` to group features (already partly cached) | 2,000 | — |
 | **Cross-feature codebase scan**: grep results + reading 8–15 candidate files for context | **40,000** | — |
 | Propose order in chat (output tokens) | 1,500 | — |
-| Second `/mo-continue` — write `queue-rationale.md`, run `progress.sh reorder` | 2,000 | — |
-| Auto-fire `/mo-apply-impact` (handed off — its cost counted in stage 2) | 0 | — |
+| Second `/mi-continue` — write `queue-rationale.md`, run `progress.sh reorder` | 2,000 | — |
+| Auto-fire `/mi-apply-impact` (handed off — its cost counted in stage 2) | 0 | — |
 | **Stage 1.5 main delta** | **~50,700** | — |
 | **Sub-agents this stage** | — | **0** |
 | **Cumulative main** | **~111,700** | — |
@@ -161,12 +161,12 @@ Apply **Option 1A** (drop the codebase scan; use journal-only ordering signals f
 
 | Activity | Main delta | Sub-agent delta |
 | --- | --- | --- |
-| `/mo-continue` command body loaded (cached) | 500 | — |
+| `/mi-continue` command body loaded (cached) | 500 | — |
 | `todo.sh pend-selected` output | 200 | — |
 | Re-read `todo-list.md` (cached) | 200 | — |
 | **Order proposal from journal signals only**: scan `summary.md` cross-cutting + feature sections (already in main from stage 1) | 500 | — |
 | Propose order in chat (output tokens) | 1,500 | — |
-| Second `/mo-continue` — write `queue-rationale.md`, run `progress.sh reorder` | 2,000 | — |
+| Second `/mi-continue` — write `queue-rationale.md`, run `progress.sh reorder` | 2,000 | — |
 | **Stage 1.5 main delta** | **~4,900** | — |
 | **Sub-agents this stage** | — | **0** |
 | **Cumulative main** | **~65,900** | — |
@@ -190,14 +190,14 @@ Option 1A and 1B yield comparable main-context savings; 1B preserves the depende
 
 ### Stage 1.5 optimization suggestions
 
-- **Option 1A — Drop the codebase scan entirely (recommended P2).** Cross-feature ordering is derived from journal signals only (`summary.md` cross-cutting + feature sections, both already in main context from stage 1). If stage 2's grounding pass later reveals an ordering inversion, the overseer reorders manually — the cost of being occasionally wrong is small.
+- **Option 1A — Drop the codebase scan entirely (recommended P2).** Cross-feature ordering is derived from journal signals only (`summary.md` cross-cutting + feature sections, both already in main context from stage 1). If stage 2's grounding pass later reveals an ordering inversion, the inspector reorders manually — the cost of being occasionally wrong is small.
 - (*ADD THIS if this option prevents main agent context bloating) **Option 1B — Delegate the scan to a fresh sub-agent.** Lower the existing >3-feature threshold to ≥2 to match the actual code path. Sub-agent inspects imports/references and writes the `queue-rationale.md` body directly. Main only sees a one-paragraph summary.
 - (*ADD THIS) **Heuristic short-circuit.** Run the scan only when feature names cross-reference each other in `summary.md`'s body (regex check on feature-name appearances inside another feature's section). Most cycles will skip the scan; only ambiguous ones trigger it.
-- (*ADD THIS) **Cache the result for the cycle.** If the scan does run, the result is stable for the entire cycle. Don't re-derive it on subsequent `/mo-continue` invocations within the same cycle.
+- (*ADD THIS) **Cache the result for the cycle.** If the scan does run, the result is stable for the entire cycle. Don't re-derive it on subsequent `/mi-continue` invocations within the same cycle.
 
 ---
 
-## Stage 2 — `/mo-apply-impact` (auto-fired)
+## Stage 2 — `/mi-apply-impact` (auto-fired)
 
 Activity: codebase-grounding pass per `docs/blueprint-regeneration.md`, generate `requirements.md` + `config.md` + `diagrams/` for the active feature (`payments`).
 
@@ -207,7 +207,7 @@ The grounding pass reads 10–20 files across the payments seam (`src/payments/*
 
 | Activity | Main delta | Sub-agent delta |
 | --- | --- | --- |
-| `/mo-apply-impact` command body loaded | 4,500 | — |
+| `/mi-apply-impact` command body loaded | 4,500 | — |
 | Read `summary.md` `## Cross-cutting` + `## Feature: payments` (cached partial from stage 1) | 3,000 | — |
 | **Codebase-grounding pass**: walk payments seam, read ~12 files | **65,000** | — |
 | Skill/rule scanning under `.claude/skills/` and `.claude/rules/` | 8,000 | — |
@@ -226,7 +226,7 @@ Apply Architectural Principle 3: **push large reads into sub-agents**. The codeb
 
 | Activity | Main delta | Sub-agent delta |
 | --- | --- | --- |
-| `/mo-apply-impact` command body loaded | 4,500 | — |
+| `/mi-apply-impact` command body loaded | 4,500 | — |
 | Read `summary.md` `## Feature: payments` (cached) | 1,500 | — |
 | **Codebase-grounding sub-agent**: reads payments seam, returns structured report | — | **65,000** |
 | Sub-agent return: grounding report (~3 KB markdown) | 3,500 | — |
@@ -249,11 +249,11 @@ Apply Architectural Principle 3: **push large reads into sub-agents**. The codeb
 - **Skill/rule filter sub-agent (>30 entries threshold).** Already in `docs/workflow-spec.md:290` as optional. Make it default behavior when `.claude/skills/` + `.claude/rules/` exceed 30 entries combined.
 - **Read only the active feature section of `summary.md`.** `## Cross-cutting constraints` is needed; other features' sections are not. Use `awk` or a small script to extract just the relevant sections, not the whole file.
 - **Avoid re-generating `change-summary.md` if fresh.** The cache key is `(base-commit, head)`. At stage 2 there are no commits yet on the feature branch, so `change-summary.md` doesn't apply — this is more relevant to stages 4 and 8.
-- (*ADD THIS and we can completely avoid generating .svg and .png files. We can also ask the overseer if they want the diagrams to be generated so we can make the diagram generation optional.) **Diagram rendering — defer SVG generation.** PlantUML rendering produces large output but the renderer's binary output isn't relevant to context. Confirm the rendered SVGs/PNGs are not being read into context (only the `.puml` source matters).
+- (*ADD THIS and we can completely avoid generating .svg and .png files. We can also ask the inspector if they want the diagrams to be generated so we can make the diagram generation optional.) **Diagram rendering — defer SVG generation.** PlantUML rendering produces large output but the renderer's binary output isn't relevant to context. Confirm the rendered SVGs/PNGs are not being read into context (only the `.puml` source matters).
 
 ---
 
-## Stage 3 — `/mo-plan-implementation` + brainstorming chain
+## Stage 3 — `/mi-plan-implementation` + brainstorming chain
 
 Activity: launch the brainstorming chain (in same session). Chain executes brainstorming → writing-plans → executing-plans, producing 12 commits across 30 files (4,000 LOC). The Skill's reads accumulate in main session context.
 
@@ -265,7 +265,7 @@ For a 4,000 LOC / 30-file scope:
 
 | Activity | Main delta | Sub-agent delta |
 | --- | --- | --- |
-| `/mo-plan-implementation` command + branch validation | 5,000 | — |
+| `/mi-plan-implementation` command + branch validation | 5,000 | — |
 | Read `primer.md` | 2,500 | — |
 | **Brainstorming phase**: read 15–25 candidate files for design context, draft + iterate spec | **80,000** | — |
 | **Writing-plans phase**: re-read relevant files, draft plan with checkboxes | **40,000** | — |
@@ -281,9 +281,9 @@ The 327k figure crosses the 200k context window — implying compaction will fir
 
 ### Optimized behavior
 
-The brainstorming chain itself is governed by Skill prompts that aren't directly under the mo-workflow's control. The recommendations doc does not propose changes to the chain's internal token use; it focuses on stages 1.5 and 6 where the mo-workflow IS in control.
+The brainstorming chain itself is governed by Skill prompts that aren't directly under the mi-workflow's control. The recommendations doc does not propose changes to the chain's internal token use; it focuses on stages 1.5 and 6 where the mi-workflow IS in control.
 
-That said, the chain's own design — particularly `subagent-driven-development` — already delegates per-task work to sub-agents when invoked. Whether that delegation happens depends on the chain's own decisions per task; mo-workflow can't force it.
+That said, the chain's own design — particularly `subagent-driven-development` — already delegates per-task work to sub-agents when invoked. Whether that delegation happens depends on the chain's own decisions per task; mi-workflow can't force it.
 
 | Activity | Main delta | Sub-agent delta |
 | --- | --- | --- |
@@ -292,23 +292,23 @@ That said, the chain's own design — particularly `subagent-driven-development`
 | **Cumulative main** | **~418,200** | — |
 | **Cumulative total work** | **~541,200** | — |
 
-**Delta vs current: 0 from mo-workflow's perspective.** The cumulative difference (533,500 vs 418,200 main) comes entirely from the savings in stages 1.5 and 2 — main entered stage 3 with 90k of context instead of 206k, and exits with 418k instead of 533k.
+**Delta vs current: 0 from mi-workflow's perspective.** The cumulative difference (533,500 vs 418,200 main) comes entirely from the savings in stages 1.5 and 2 — main entered stage 3 with 90k of context instead of 206k, and exits with 418k instead of 533k.
 
 ### Stage 3 optimization suggestions
 
-Mo-workflow has limited control here, but several levers exist:
+Mi-workflow has limited control here, but several levers exist:
 
 - **Tighten `primer.md`.** Currently the primer can include broad scope and goals. Reduce it to the bare minimum — active scope, goals (compressed), 5–10 most likely-relevant skills/rules. The chain reads canonical files on demand anyway; over-bundling here just inflates main early.
-- (*ADD THIS) **Strongly encourage `subagent-driven-development` mode.** When the chain decides between inline execution and sub-agent dispatch per task, the primer can nudge it toward delegation: *"Prefer subagent-driven-development for tasks touching >3 files or >100 LOC."* Mo-workflow can't enforce this but the primer text influences the chain's choices.
+- (*ADD THIS) **Strongly encourage `subagent-driven-development` mode.** When the chain decides between inline execution and sub-agent dispatch per task, the primer can nudge it toward delegation: *"Prefer subagent-driven-development for tasks touching >3 files or >100 LOC."* Mi-workflow can't enforce this but the primer text influences the chain's choices.
 - **Smaller commit boundaries.** Chains that batch many file edits per commit accumulate more open-file context per commit cycle. If the chain's plan tasks are kept granular (one task = one file or one function), per-task context stays bounded.
 - (*ADD THIS) **Make `direct` planning mode more attractive for small features.** The stage-3 launcher asks for `brainstorming` vs `direct`. `direct` skips the chain entirely and runs implementation in main — for features under 500 LOC this is often cheaper than chain ceremony. The default-mode prompt could note this trade-off explicitly.
 - (*ADD THIS) **Pre-pass tighter skill metadata.** The chain reads skill descriptions to decide which to invoke. If `config.md` already filtered to ~10 skills/rules at stage 2, the chain has less to scan.
 
 ---
 
-## Stage 4 — `/mo-continue` (Resume Handler) + diagrams
+## Stage 4 — `/mi-continue` (Resume Handler) + diagrams
 
-Activity: drift-check probe, optional drift prompt, generate implementation diagrams (`/mo-draw-diagrams` → `mo-generate-implementation-diagrams`), create `overseer-review.md` skeleton, atomic advance 3 → 5.
+Activity: drift-check probe, optional drift prompt, generate implementation diagrams (`/mi-draw-diagrams` → `mi-generate-implementation-diagrams`), create `inspector-review.md` skeleton, atomic advance 3 → 5.
 
 ### Current behavior
 
@@ -316,10 +316,10 @@ Diagram generation re-reads the commit range (`base-commit..HEAD`) plus context 
 
 | Activity | Main delta | Sub-agent delta |
 | --- | --- | --- |
-| `/mo-continue` body (mostly cached) | 1,000 | — |
+| `/mi-continue` body (mostly cached) | 1,000 | — |
 | Drift-completion probe (file-system reads) | 800 | — |
-| Drift prompt + overseer reply | 500 | — |
-| **`/mo-draw-diagrams` invocation**: read `change-summary.md` (or generate it), walk `base-commit..HEAD`, read 8–12 files for diagram context, render 4–6 diagram files | **48,000** | — |
+| Drift prompt + inspector reply | 500 | — |
+| **`/mi-draw-diagrams` invocation**: read `change-summary.md` (or generate it), walk `base-commit..HEAD`, read 8–12 files for diagram context, render 4–6 diagram files | **48,000** | — |
 | `review.sh init` skeleton write | 500 | — |
 | Atomic `progress.sh advance-to 3 5` | 200 | — |
 | **Stage 4 main delta** | **~51,000** | — |
@@ -333,7 +333,7 @@ Delegate diagram generation to a sub-agent. The sub-agent reads the commit range
 
 | Activity | Main delta | Sub-agent delta |
 | --- | --- | --- |
-| `/mo-continue` body (cached) | 1,000 | — |
+| `/mi-continue` body (cached) | 1,000 | — |
 | Drift probe | 800 | — |
 | Drift prompt | 500 | — |
 | **Diagram-generation sub-agent**: reads commit range, renders diagrams, writes files | — | **48,000** |
@@ -350,14 +350,14 @@ Delegate diagram generation to a sub-agent. The sub-agent reads the commit range
 ### Stage 4 optimization suggestions
 
 - (*ADD THIS) **Delegate diagram generation to a sub-agent.** Same pattern as stage 2's grounding pass. Sub-agent reads commit range, runs `commits.sh changed-files`, reads context files, renders diagram source files, returns one-line summary per diagram.
-- (*ADD THIS) **Reuse `change-summary.md` cache.** The (base-commit, head) cache key is shared with `/mo-update-blueprint`. If the sub-agent (or chain) already produced `change-summary.md` mid-stage-3, stage 4 should NOT regenerate it — just read.
-- **Skip drift prompt when probe set marker.** `commands/mo-continue.md` Resume Step 0 already handles this. Verify it's firing correctly — a session break that loses the marker but completes the rotation results in a redundant drift prompt that the user dismisses.
+- (*ADD THIS) **Reuse `change-summary.md` cache.** The (base-commit, head) cache key is shared with `/mi-update-blueprint`. If the sub-agent (or chain) already produced `change-summary.md` mid-stage-3, stage 4 should NOT regenerate it — just read.
+- **Skip drift prompt when probe set marker.** `commands/mi-continue.md` Resume Step 0 already handles this. Verify it's firing correctly — a session break that loses the marker but completes the rotation results in a redundant drift prompt that the user dismisses.
 - (*ADD THIS) **Skip diagram regeneration when no commits since last diagrams.** Stage 7's diagram-refresh prompt already has this logic. Apply the same idempotency to stage 4: if `implementation/diagrams/` has commits newer than `base-commit`, don't re-render.
-- (*ADD THIS and we can make the diagram generation optional by asking the overseer if they want diagram generation at this stage and also avoid generating .svg or .png files, just create .puml files) **Render only changed-area diagrams.** A 30-file change might touch only 2 of 5 diagram subjects. Sub-agent identifies which diagrams need update from the commit range; unchanged diagrams stay as stage-2 versions.
+- (*ADD THIS and we can make the diagram generation optional by asking the inspector if they want diagram generation at this stage and also avoid generating .svg or .png files, just create .puml files) **Render only changed-area diagrams.** A 30-file change might touch only 2 of 5 diagram subjects. Sub-agent identifies which diagrams need update from the commit range; unchanged diagrams stay as stage-2 versions.
 
 ---
 
-## Stage 5 — `/mo-continue` (Overseer Handler)
+## Stage 5 — `/mi-continue` (Inspector Handler)
 
 Activity: canonicalize free-form findings, list open findings, dispatch.
 
@@ -365,8 +365,8 @@ Activity: canonicalize free-form findings, list open findings, dispatch.
 
 | Activity | Main delta | Sub-agent delta |
 | --- | --- | --- |
-| `/mo-continue` body (cached) | 500 | — |
-| Read `overseer-review.md` | 3,000 | — |
+| `/mi-continue` body (cached) | 500 | — |
+| Read `inspector-review.md` | 3,000 | — |
 | `review.sh canonicalize` output (TSV rows for unstructured spans) | 1,000 | — |
 | Per-finding classification + `review.sh add` calls | 4,000 | — |
 | `review.sh list-open` | 200 | — |
@@ -392,16 +392,16 @@ If all findings have `scope: fix` after classification, **Option 2A** auto-route
 
 - **Already small** — stage 5 is one of the cheapest stages. Don't over-optimize.
 - **Batch finding classification when >5 unstructured spans.** A single sub-agent classifies all spans at once and returns a TSV of `(line-start, line-end, severity, scope, summary)` rows. Main applies them via `review.sh add` in a loop.
-- **Canonical metadata cache.** If the overseer revises findings mid-stage-5 (rare but possible), avoid re-classifying spans that are already structured `### IR-NNN` blocks. `review.sh canonicalize` already does this; verify it's not re-reading structured blocks.
+- **Canonical metadata cache.** If the inspector revises findings mid-stage-5 (rare but possible), avoid re-classifying spans that are already structured `### IR-NNN` blocks. `review.sh canonicalize` already does this; verify it's not re-reading structured blocks.
 - (*ADD THIS) **Auto-direct-mode hint here, not at stage 6.** Run the scope-distribution check during stage 5 (after classification). If 100% of findings are `fix`, persist `review-mode-suggestion: direct` to `progress.md` so stage 6 can default to direct mode without re-classifying.
 
 ---
 
-## Stage 6 — `/mo-review` brainstorming review session — 4 iterations
+## Stage 6 — `/mi-review` brainstorming review session — 4 iterations
 
-Activity: generate `review-context.md`, ask review-mode, invoke brainstorming Skill, run loop until overseer types `approve`.
+Activity: generate `review-context.md`, ask review-mode, invoke brainstorming Skill, run loop until inspector types `approve`.
 
-The 5 findings: `IR-001` (fix), `IR-002` (fix), `IR-003` (re-implement), `IR-004` (re-implement), `IR-005` (re-plan). Loop runs 4 iterations because the overseer adds 2 new findings mid-session in iteration 3.
+The 5 findings: `IR-001` (fix), `IR-002` (fix), `IR-003` (re-implement), `IR-004` (re-implement), `IR-005` (re-plan). Loop runs 4 iterations because the inspector adds 2 new findings mid-session in iteration 3.
 
 ### Current behavior
 
@@ -414,11 +414,11 @@ Iteration breakdown:
 | 1 | IR-001, IR-002 (both fix) | 4 files for context | 2 commits | ~22,000 |
 | 2 | IR-003, IR-004 (re-implement) — `executing-plans` re-entry | 8 files re-read | 4 commits | ~58,000 |
 | 3 | IR-005 (re-plan) — `writing-plans` + `executing-plans` cascade | 12 files re-read, plan rewritten | 5 commits | **~110,000** |
-| 4 | (overseer added IR-006, IR-007 as fix scope mid-session) | 3 files | 2 commits | ~18,000 |
+| 4 | (inspector added IR-006, IR-007 as fix scope mid-session) | 3 files | 2 commits | ~18,000 |
 
 | Activity | Main delta | Sub-agent delta |
 | --- | --- | --- |
-| `/mo-review` command body | 4,000 | — |
+| `/mi-review` command body | 4,000 | — |
 | Generate `review-context.md` (read requirements + run `commits.sh changed-files`) | 8,000 | — |
 | Brainstorming Skill primer + initial setup | 6,000 | — |
 | Iteration 1 (2× fix) | 22,000 | — |
@@ -436,11 +436,11 @@ Stage 6 alone adds 226k tokens. The cumulative crosses 819k — well past the 20
 
 Apply **Option 2B** (fresh per-iteration sub-agent on `go again`) and **Option 2D** (refresh `review-context.md` body per iteration). Option 2A (auto-direct-mode) does NOT apply because not all findings are `fix`.
 
-The loop now spawns one fresh sub-agent per iteration. Each sub-agent reads `review-context.md` + the current `overseer-review.md`, addresses its assigned findings, commits, calls `review.sh set-status`, and returns a short summary. Cascading scopes (re-plan in iteration 3) still happen — but they happen *inside* the sub-agent and never enter main.
+The loop now spawns one fresh sub-agent per iteration. Each sub-agent reads `review-context.md` + the current `inspector-review.md`, addresses its assigned findings, commits, calls `review.sh set-status`, and returns a short summary. Cascading scopes (re-plan in iteration 3) still happen — but they happen *inside* the sub-agent and never enter main.
 
 | Activity | Main delta | Sub-agent delta |
 | --- | --- | --- |
-| `/mo-review` command body | 4,000 | — |
+| `/mi-review` command body | 4,000 | — |
 | Generate `review-context.md` | 8,000 | — |
 | Iteration 1 sub-agent (2× fix) | — | 22,000 |
 | Iteration 1 return summary | 600 | — |
@@ -471,14 +471,14 @@ This is by far the largest individual saving. Stage 6 went from adding 226k to m
 - (*ADD THIS) **Option 2E — tighten `change-summary.md` body.** Bound diff excerpts (max 50 lines per file, 500 lines total). Affects stages 4, 6, and 8.
 - **Option 2C — lower cluster-delegation threshold from >5 to ≥2.** Made redundant by Option 2B if Option 2B is implemented.
 - **Cap re-spec / re-plan cascades to a separate session.** When a finding's scope is `re-spec`, the cascade runs `brainstorming` + `writing-plans` + `executing-plans` — that's effectively a second stage 3. Consider making this an explicit sub-agent boundary: the cascade runs in its own sub-agent, and main only sees that the cascade completed and what it changed.
-- (*ADD THIS) **Approve-with-deferred-findings shortcut.** When the overseer types `approve` with open findings remaining, the spec already supports `completed` (deferred). Surface this prominently — for cases where 1-2 findings are non-blocking, deferring is cheaper than a 5th iteration.
+- (*ADD THIS) **Approve-with-deferred-findings shortcut.** When the inspector types `approve` with open findings remaining, the spec already supports `completed` (deferred). Surface this prominently — for cases where 1-2 findings are non-blocking, deferring is cheaper than a 5th iteration.
 - (*ADD THIS) **Pre-classify cascades before invoking the chain.** If the chain is about to do a `re-plan`, the millwright can pre-fetch the relevant plan/spec context once and pass it; the chain doesn't re-walk to find context that's already known.
 
 ---
 
 ## Stage 7 — auto-advance
 
-Activity: post-review-resume handler advances 6 → 7 atomically. Set `overseer-review-completed=true`, clear `sub-flow`. Optional diagram refresh prompt (skipped here — no new commits since iteration 4 diagrams are fresh).
+Activity: post-review-resume handler advances 6 → 7 atomically. Set `inspector-review-completed=true`, clear `sub-flow`. Optional diagram refresh prompt (skipped here — no new commits since iteration 4 diagrams are fresh).
 
 ### Current and Optimized
 
@@ -496,12 +496,12 @@ Activity: post-review-resume handler advances 6 → 7 atomically. Set `overseer-
 ### Stage 7 optimization suggestions
 
 - **Already minimal.** Don't over-optimize.
-- **Skip the diagram-refresh prompt when no review-loop commits.** The prompt already self-suppresses when `new_since_diagrams == 0` (per `commands/mo-continue.md` Review-Resume Step 2.5). Verify the suppression is firing correctly — the count check is git-log based; a session break mid-iteration could miscount.
-- **Make diagram-refresh decision automatic for `n`-only cycles.** If the overseer reflexively answers `n` to this prompt every time, persist a per-cycle preference (`refresh-diagrams: never|prompt|auto`) and skip the prompt accordingly.
+- **Skip the diagram-refresh prompt when no review-loop commits.** The prompt already self-suppresses when `new_since_diagrams == 0` (per `commands/mi-continue.md` Review-Resume Step 2.5). Verify the suppression is firing correctly — the count check is git-log based; a session break mid-iteration could miscount.
+- **Make diagram-refresh decision automatic for `n`-only cycles.** If the inspector reflexively answers `n` to this prompt every time, persist a per-cycle preference (`refresh-diagrams: never|prompt|auto`) and skip the prompt accordingly.
 
 ---
 
-## Stage 8 — `/mo-complete-workflow`
+## Stage 8 — `/mi-complete-workflow`
 
 Activity: rotate `blueprints/current/` into `history/v[N+1]/`, archive live `implementation/` folder alongside, regenerate fresh `current/` from the codebase + diff (`completion`-kind blueprint regeneration), advance todos IMPLEMENTING → IMPLEMENTED, pop the queue, finalize.
 
@@ -511,10 +511,10 @@ Completion blueprint regeneration runs an implementation-driven pass (reads `cha
 
 | Activity | Main delta | Sub-agent delta |
 | --- | --- | --- |
-| `/mo-complete-workflow` command body | 5,000 | — |
+| `/mi-complete-workflow` command body | 5,000 | — |
 | `blueprints.sh rotate` (filesystem moves; minimal) | 500 | — |
 | Archive `implementation/` to `history/v[N+1]/implementation/` | 300 | — |
-| **`/mo-update-blueprint --reason-kind=completion`**: read `change-summary.md` (cached partly) + targeted `git diff` hunks + regenerate `requirements.md` / `config.md` / diagrams | **55,000** | — |
+| **`/mi-update-blueprint --reason-kind=completion`**: read `change-summary.md` (cached partly) + targeted `git diff` hunks + regenerate `requirements.md` / `config.md` / diagrams | **55,000** | — |
 | Update todos to IMPLEMENTED | 500 | — |
 | `progress.sh finish` | 200 | — |
 | Open next feature in queue (`audit-log`) — but queue advance is the next cycle's stage 2 trigger via Row A | 0 | — |
@@ -529,7 +529,7 @@ Apply Architectural Principle 3: delegate the completion-blueprint regeneration 
 
 | Activity | Main delta | Sub-agent delta |
 | --- | --- | --- |
-| `/mo-complete-workflow` command body | 5,000 | — |
+| `/mi-complete-workflow` command body | 5,000 | — |
 | Rotate + archive | 800 | — |
 | **Completion-regeneration sub-agent**: reads `change-summary.md` + diffs, writes new `current/` files | — | **55,000** |
 | Sub-agent return summary | 1,500 | — |
@@ -544,7 +544,7 @@ Apply Architectural Principle 3: delegate the completion-blueprint regeneration 
 ### Stage 8 optimization suggestions
 
 - (*ADD THIS) **Delegate completion regeneration to a sub-agent.** Same pattern as stage 2 grounding. Largest single stage-8 saving.
-- (*ADD THIS) **Skip regeneration when blueprint is already fresh.** If `/mo-update-blueprint` ran during stage 4's drift check and `current/` already reflects the implementation, completion-rotation can move the existing `current/` directly into history without regenerating. Check via `commits.sh change-summary-fresh` — if fresh AND drift-check happened this cycle, skip regeneration.
+- (*ADD THIS) **Skip regeneration when blueprint is already fresh.** If `/mi-update-blueprint` ran during stage 4's drift check and `current/` already reflects the implementation, completion-rotation can move the existing `current/` directly into history without regenerating. Check via `commits.sh change-summary-fresh` — if fresh AND drift-check happened this cycle, skip regeneration.
 - (*ADD THIS) **Reuse the implementation diagrams.** `current/diagrams/` and `implementation/diagrams/` should already be aligned by stage 7's refresh prompt. Stage 8 doesn't need to re-render — just copy `implementation/diagrams/` into the rotated `current/` of the new history version.
 - (*ADD THIS) **Atomic finalize.** Multiple `progress.sh set` calls and todo updates can race with hooks. Use a single `progress.sh advance-to 7 -1 --set ...` style transition where possible to reduce hook re-validation cost.
 - (*ADD THIS) **Lazy archival.** `implementation/` archival into `history/v[N+1]/implementation/` is filesystem-only (zero token cost). But the `change-summary.md` and `review-context.md` inside it have frontmatter that gets re-validated by the hook on archival. Skip validation for archived files (they're frozen and won't be edited).
@@ -557,15 +557,15 @@ Cumulative main-context size and cumulative total work after each stage. Lower i
 
 | Stage | Activity | Main (current) | Main (optimized) | Total work (current) | Total work (optimized) | Per-stage main Δ | Running main Δ |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| 1 | `/mo-run` (intake) | 61,000 | 61,000 | 111,000 | 111,000 | 0 | 0 |
-| 1.5 | `/mo-continue` ×2 (queue ordering) | 111,700 | 65,900 | 161,700 | 115,900 | −45,800 | −45,800 |
-| 2 | `/mo-apply-impact` (blueprints) | 206,000 | 90,700 | 256,000 | 213,700 | −69,500 | −115,300 |
-| 3 | `/mo-plan-implementation` (chain) | 533,500 | 418,200 | 583,500 | 541,200 | 0 | −115,300 |
-| 4 | `/mo-continue` (diagrams) | 584,500 | 422,700 | 634,500 | 593,700 | −46,500 | −161,800 |
-| 5 | `/mo-continue` (overseer handler) | 593,200 | 431,400 | 643,200 | 602,400 | 0 | −161,800 |
-| 6 | `/mo-review` ×4 iterations | 819,200 | 451,600 | 869,200 | 830,600 | −205,800 | −367,600 |
+| 1 | `/mi-run` (intake) | 61,000 | 61,000 | 111,000 | 111,000 | 0 | 0 |
+| 1.5 | `/mi-continue` ×2 (queue ordering) | 111,700 | 65,900 | 161,700 | 115,900 | −45,800 | −45,800 |
+| 2 | `/mi-apply-impact` (blueprints) | 206,000 | 90,700 | 256,000 | 213,700 | −69,500 | −115,300 |
+| 3 | `/mi-plan-implementation` (chain) | 533,500 | 418,200 | 583,500 | 541,200 | 0 | −115,300 |
+| 4 | `/mi-continue` (diagrams) | 584,500 | 422,700 | 634,500 | 593,700 | −46,500 | −161,800 |
+| 5 | `/mi-continue` (inspector handler) | 593,200 | 431,400 | 643,200 | 602,400 | 0 | −161,800 |
+| 6 | `/mi-review` ×4 iterations | 819,200 | 451,600 | 869,200 | 830,600 | −205,800 | −367,600 |
 | 7 | auto-advance | 820,100 | 452,500 | 870,100 | 831,500 | 0 | −367,600 |
-| 8 | `/mo-complete-workflow` | 881,600 | 460,500 | 931,600 | 894,500 | −53,500 | −421,100 |
+| 8 | `/mi-complete-workflow` | 881,600 | 460,500 | 931,600 | 894,500 | −53,500 | −421,100 |
 
 **Reading the table:**
 
@@ -608,7 +608,7 @@ By raw total-work alone, both versions fit comfortably in a single Max 5x sessio
 
 ### Effective billing per cycle (with prompt-cache re-sends)
 
-The mo-workflow runs ~120 turns end-to-end (rough estimate: ~5 turns per stage × 9 stages, plus ~50–80 turns within stages 3 and 6 for the chain and review loop). Each turn re-sends the current prompt prefix; cached prefixes cost ~10% of normal.
+The mi-workflow runs ~120 turns end-to-end (rough estimate: ~5 turns per stage × 9 stages, plus ~50–80 turns within stages 3 and 6 for the chain and review loop). Each turn re-sends the current prompt prefix; cached prefixes cost ~10% of normal.
 
 Approximate effective billing:
 
@@ -648,7 +648,7 @@ A typical cycle fits comfortably in a Max 5x session under both versions. The op
 ### Caveats on these numbers
 
 - **The 5M Max 5x figure is approximate.** Anthropic's actual limits are weighted-message-based and not publicly documented as token counts. Some sessions stretch to 10M+; some compress to 3–4M depending on cache hit rate, output volume, and tool-use overhead. Use 5M as a conservative working number.
-- **Turn count varies.** A workflow with many overseer interactions (lots of `go again` cycles, drift prompts, multi-batch queue ordering) can hit 200+ turns. Conversely, a streamlined cycle might run in 60 turns. Effective billing scales linearly with turn count.
+- **Turn count varies.** A workflow with many inspector interactions (lots of `go again` cycles, drift prompts, multi-batch queue ordering) can hit 200+ turns. Conversely, a streamlined cycle might run in 60 turns. Effective billing scales linearly with turn count.
 - **Cache hit rate is assumed high (~90% on prefix re-sends).** A cold start, frequent compaction events, or context modifications between turns reduce the hit rate and increase effective cost.
 - **Output token cost is folded into the work estimate but not separately tracked.** Output tokens cost ~5× input tokens at API rates; if a stage produces unusually large generated output (e.g., a long spec or plan), its effective cost is higher than the raw token count suggests.
 
@@ -656,7 +656,7 @@ A typical cycle fits comfortably in a Max 5x session under both versions. The op
 
 ## Key takeaways
 
-1. **The cycle's three biggest single-stage costs are stage 3 (chain), stage 6 (review loop), and stage 2 (blueprint generation), in that order.** Stage 3 the mo-workflow has limited leverage over (chain internals); stages 2 and 6 are fully addressable.
+1. **The cycle's three biggest single-stage costs are stage 3 (chain), stage 6 (review loop), and stage 2 (blueprint generation), in that order.** Stage 3 the mi-workflow has limited leverage over (chain internals); stages 2 and 6 are fully addressable.
 
 2. **The recommendations cut roughly half of the cycle's main-context cost** (881k → 460k for this scenario, a 47.7% reduction). The biggest single win is stage 6 (Option 2B fresh per-iteration sub-agent), worth 205k by itself.
 
@@ -676,7 +676,7 @@ A typical cycle fits comfortably in a Max 5x session under both versions. The op
 
 - **Numbers are estimates with stated assumptions.** Real workflow runs will vary based on file sizes, codebase shape, model behavior, and prompt-cache hit rates. The intent is to show *relative* impact, not predict exact runtime cost.
 - **Per-turn cost is not the same as context-window occupancy.** With prompt caching, repeat reads of the same content cost ~10% of normal at runtime. The "cumulative main" numbers track context-window bytes, which is what determines whether compaction fires and what the per-turn cache prefix size is. The session-budget analysis above estimates per-turn cost separately.
-- **Stage 3 cost is highly variable.** A 4,000-LOC feature is on the larger end. A 500-LOC feature might run stage 3 in under 50k tokens. Stage 3's internal token use is dominated by the chain's design and execution choices, which mo-workflow does not control directly.
+- **Stage 3 cost is highly variable.** A 4,000-LOC feature is on the larger end. A 500-LOC feature might run stage 3 in under 50k tokens. Stage 3's internal token use is dominated by the chain's design and execution choices, which mi-workflow does not control directly.
 - **Sub-agent dispatch has overhead** beyond the work tokens themselves: prompt construction, summary parsing, hook re-validation. The numbers above include rough overhead estimates but real overhead may be 10–20% higher per sub-agent.
-- **The "isolated from mo-workflow" wording in the spec refers to logical isolation** (mo-workflow doesn't read the chain's spec/plan files), not session isolation. Skill invocations run in the same Claude Code session and their reads do accumulate in main context, contrary to what an unfamiliar reader might assume from the term.
+- **The "isolated from mi-workflow" wording in the spec refers to logical isolation** (mi-workflow doesn't read the chain's spec/plan files), not session isolation. Skill invocations run in the same Claude Code session and their reads do accumulate in main context, contrary to what an unfamiliar reader might assume from the term.
 - **Anthropic does not publish exact token limits for plan tiers.** The 5M Max 5x figure used here is a community-derived approximation. Treat it as an order-of-magnitude reference, not a precise budget.

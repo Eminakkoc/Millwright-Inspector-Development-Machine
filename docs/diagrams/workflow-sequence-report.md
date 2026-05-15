@@ -13,7 +13,7 @@ scope:
 
 ## Summary
 
-No blocker or major sequence/code inconsistency was found in the current workflow. The PlantUML source now reflects the important high-level happy-path behavior: staged `/mo-continue` gates, isolated stage-3 and stage-6 sessions, layered context files, `change-summary.md` cache reuse, bounded codebase reads, and capability-based sub-agent delegation.
+No blocker or major sequence/code inconsistency was found in the current workflow. The PlantUML source now reflects the important high-level happy-path behavior: staged `/mi-continue` gates, isolated stage-3 and stage-6 sessions, layered context files, `change-summary.md` cache reuse, bounded codebase reads, and capability-based sub-agent delegation.
 
 The SVG appears to be current relative to the PUML (`workflow-sequence.svg` is newer than `workflow-sequence.puml`) and contains the same rendered stage structure.
 
@@ -25,16 +25,16 @@ One medium issue remains in the project docs/logic around post-review diagram re
 
 **Where**
 
-- `commands/mo-continue.md`, Review-Resume Step 2.5
-- `commands/mo-draw-diagrams.md`, notes on transient implementation diagrams
-- `commands/mo-generate-implementation-diagrams.md`, `diagrams/README.md` frontmatter recipe
+- `commands/mi-continue.md`, Review-Resume Step 2.5
+- `commands/mi-draw-diagrams.md`, notes on transient implementation diagrams
+- `commands/mi-generate-implementation-diagrams.md`, `diagrams/README.md` frontmatter recipe
 
 **What I found**
 
 The Review-Resume Handler computes:
 
 ```bash
-diagram_commits="$(git log --format=%H -- "millwright-overseer/workflow-stream/$active_feature/implementation/diagrams/" | head -1)"
+diagram_commits="$(git log --format=%H -- "millwright-inspector/workflow-stream/$active_feature/implementation/diagrams/" | head -1)"
 new_since_diagrams="$(git rev-list --count "${diagram_commits:-$base_commit}..HEAD" 2>/dev/null || echo 0)"
 ```
 
@@ -42,7 +42,7 @@ But `implementation/diagrams/` is a transient workflow artifact that is archived
 
 **Impact**
 
-The workflow can prompt to regenerate implementation diagrams even when no review-loop code changes happened. If the overseer accepts, the diagram pass may re-open `change-summary.md`, diff hunks, and targeted code context unnecessarily. That is exactly the kind of avoidable context expansion the optimization work is trying to prevent.
+The workflow can prompt to regenerate implementation diagrams even when no review-loop code changes happened. If the inspector accepts, the diagram pass may re-open `change-summary.md`, diff hunks, and targeted code context unnecessarily. That is exactly the kind of avoidable context expansion the optimization work is trying to prevent.
 
 **Suggested fix**
 
@@ -66,7 +66,7 @@ An alternative is storing `implementation-diagrams-head=<sha>` in `progress.md`,
 **Where**
 
 - `docs/diagrams/workflow-sequence.puml`, `Stage 6 → 7 — Post-review-session resume`
-- `commands/mo-continue.md`, Review-Resume Step 2.5
+- `commands/mi-continue.md`, Review-Resume Step 2.5
 
 **What I found**
 
@@ -84,10 +84,10 @@ If desired, add a compact `alt review-loop commits since diagrams` block after `
 
 ```plantuml
 alt final HEAD differs from implementation/diagrams/README head
-  Millwright --> Overseer : "Refresh diagrams before finalizing?"
-  Overseer -> Millwright : y / n
+  Millwright --> Inspector : "Refresh diagrams before finalizing?"
+  Inspector -> Millwright : y / n
   opt y
-    Millwright -> Millwright : /mo-draw-diagrams
+    Millwright -> Millwright : /mi-draw-diagrams
   end
 end
 ```
@@ -96,11 +96,11 @@ This should be paired with Finding 1's deterministic freshness key. Without that
 
 ## Confirmed Consistencies
 
-- Stage 2 blueprint generation matches `mo-apply-impact.md`: active feature is activated, `summary.md` is read, current requirements/config/diagrams are generated, and the workflow waits for overseer approval.
-- Stage 3 now matches `mo-plan-implementation.md`: branch validation happens before work starts, PENDING todos are promoted to IMPLEMENTING before `base-commit` is captured, and `primer.md` is generated after branch/base state exists.
-- Stage 4 matches `mo-continue.md`, `mo-update-blueprint.md`, and `mo-generate-implementation-diagrams.md`: post-chain resume verifies commits, optional drift refresh uses `change-summary.md`, implementation diagrams are generated from `base-commit..HEAD`, and review skeleton creation advances the workflow to stage 5.
-- Stage 6 review handling matches `mo-review.md`: the review session is isolated, uses `review-context.md` plus `overseer-review.md` as first reads, and delegates finding clusters only for larger review sets.
-- Stage 8 completion matches `mo-complete-workflow.md`: IMPLEMENTING todos become IMPLEMENTED, commits are written into requirements, blueprints are archived, transient implementation artifacts are removed, and the next queued feature loops back to stage 2.
+- Stage 2 blueprint generation matches `mi-apply-impact.md`: active feature is activated, `summary.md` is read, current requirements/config/diagrams are generated, and the workflow waits for inspector approval.
+- Stage 3 now matches `mi-plan-implementation.md`: branch validation happens before work starts, PENDING todos are promoted to IMPLEMENTING before `base-commit` is captured, and `primer.md` is generated after branch/base state exists.
+- Stage 4 matches `mi-continue.md`, `mi-update-blueprint.md`, and `mi-generate-implementation-diagrams.md`: post-chain resume verifies commits, optional drift refresh uses `change-summary.md`, implementation diagrams are generated from `base-commit..HEAD`, and review skeleton creation advances the workflow to stage 5.
+- Stage 6 review handling matches `mi-review.md`: the review session is isolated, uses `review-context.md` plus `inspector-review.md` as first reads, and delegates finding clusters only for larger review sets.
+- Stage 8 completion matches `mi-complete-workflow.md`: IMPLEMENTING todos become IMPLEMENTED, commits are written into requirements, blueprints are archived, transient implementation artifacts are removed, and the next queued feature loops back to stage 2.
 - Sub-agent wording in the diagram and command docs uses capability tiers rather than explicit model names.
 - The high-level diagram does not show every fallback or recovery path, but the omitted details are either out-of-band commands or non-happy-path branches.
 
@@ -109,7 +109,7 @@ This should be paired with Finding 1's deterministic freshness key. Without that
 The main context-bloat controls are present and consistent:
 
 - Stage 3 uses `primer.md` as the required first read and keeps requirements/config/summary/todo-list as on-demand fallbacks.
-- Stage 4 uses `implementation/change-summary.md` as a cache keyed by `base-commit` + `head`, so `/mo-update-blueprint` and diagram generation do not independently re-scan the same range.
+- Stage 4 uses `implementation/change-summary.md` as a cache keyed by `base-commit` + `head`, so `/mi-update-blueprint` and diagram generation do not independently re-scan the same range.
 - Stage 4's bounded context policy prioritizes diff hunks, caps caller/callee expansion, skips generated/vendor/lock/binary artifacts, and records omissions.
 - Stage 6 uses `review-context.md` as a compact review-loop snapshot and escalates to canonical files only when needed.
 - Sub-agents write small artifacts and keep chat replies short, which prevents the main context from absorbing every detailed inspection.

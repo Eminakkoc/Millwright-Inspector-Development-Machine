@@ -1,5 +1,5 @@
 $schema: "http://json-schema.org/draft-07/schema#"
-$id: millwright-overseer-development-machine/diagrams-readme-blueprint.schema.yaml
+$id: millwright-inspector-development-machine/diagrams-readme-blueprint.schema.yaml
 title: workflow-stream/<feature>/blueprints/current/diagrams/README.md frontmatter
 description: >
   Blueprint diagrams index. Carries a back-reference to the requirements
@@ -26,7 +26,7 @@ properties:
       Optional UUID — present on READMEs generated after Item 9 of the v11
       progress-gap plan ships; absent on legacy READMEs. The migration helper
       (scripts/migrate-diagrams-readme.sh) back-fills `id` only when missing;
-      a present-but-invalid `id` is surfaced for overseer review rather than
+      a present-but-invalid `id` is surfaced for inspector review rather than
       auto-rewritten (it may be a deliberately-chosen external reference key).
 
   requirements-id:

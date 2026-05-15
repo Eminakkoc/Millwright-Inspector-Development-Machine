@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# info-bar.sh — Claude Code statusLine renderer for the mo-workflow.
+# info-bar.sh — Claude Code statusLine renderer for the mi-workflow.
 #
 # Pull-only. Reads stdin JSON (Claude Code's status-line payload), anchors
 # to workspace.project_dir, parses quest/active.md + progress.md once via
@@ -9,7 +9,7 @@
 #
 # Hot-path budget: ≤100ms typical (macOS python3 cold-start dominates).
 # To stay there, the script avoids:
-#   - mo_fm_get / scripts/internal/common.sh sourcing (mo_fm_get shells
+#   - mi_fm_get / scripts/internal/common.sh sourcing (mi_fm_get shells
 #     to yq per field — would be 3 yq processes)
 #   - quest.sh subshells
 #   - pyyaml import (~30ms; not needed for the few keys we look up —
@@ -19,8 +19,8 @@
 # Python is invoked with `-S -I` to skip site initialization and isolate
 # from user-site packages, which shaves ~35ms off cold-start vs vanilla.
 #
-# Wired at install time by /mo-init-status-bar via a generated wrapper at
-# .claude/mo-stage-info-bar.sh that exec's this script. Do NOT wire
+# Wired at install time by /mi-init-status-bar via a generated wrapper at
+# .claude/mi-stage-info-bar.sh that exec's this script. Do NOT wire
 # .claude/settings.json directly to this file with $CLAUDE_PLUGIN_ROOT —
 # the docs confirm Claude Code does not expand that variable inside
 # statusLine.command.
@@ -36,7 +36,7 @@ STAGE_NAMES = {
     2: "blueprint",
     3: "implementation",
     4: "impl-resumed",
-    5: "overseer-review",
+    5: "inspector-review",
     6: "review-session",
     7: "review-completed",
     8: "finalizing",
@@ -94,20 +94,20 @@ def yaml_nested(block, parent, child):
 
 
 def render_idle():
-    return "mo-workflow · idle"
+    return "mi-workflow · idle"
 
 
 def render_cycle(slug):
-    return f"mo-workflow · cycle {truncate(slug)} · Stage 1 · quest generated"
+    return f"mi-workflow · cycle {truncate(slug)} · Stage 1 · quest generated"
 
 
 def render_active(feature, stage):
     name = STAGE_NAMES.get(stage, "unknown")
-    return f"mo-workflow · {truncate(feature)} · Stage {stage} · {name}"
+    return f"mi-workflow · {truncate(feature)} · Stage {stage} · {name}"
 
 
 def render_unreadable(slug):
-    return f"mo-workflow · {truncate(slug)} · progress.md unreadable"
+    return f"mi-workflow · {truncate(slug)} · progress.md unreadable"
 
 
 # 1. Read stdin payload.
@@ -121,12 +121,12 @@ project_dir = ws.get("project_dir") or payload.get("cwd") or ""
 if not project_dir or not os.path.isdir(project_dir):
     fail_empty()
 
-# 2. Resolve data_root (mirrors mo_data_root, anchored to project_dir).
+# 2. Resolve data_root (mirrors mi_data_root, anchored to project_dir).
 env = os.environ
 data_root = (
-    env.get("MO_DATA_ROOT")
+    env.get("MI_DATA_ROOT")
     or env.get("CLAUDE_PLUGIN_USER_CONFIG_data_root")
-    or os.path.join(project_dir, "millwright-overseer")
+    or os.path.join(project_dir, "millwright-inspector")
 )
 if not os.path.isabs(data_root):
     data_root = os.path.join(project_dir, data_root)

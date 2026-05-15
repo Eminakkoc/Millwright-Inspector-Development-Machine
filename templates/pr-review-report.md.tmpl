@@ -14,15 +14,15 @@ codebase and proposed either a **fix** (the comment is valid) or a **reply**
 (the comment is not valid). For each block:
 
 - Flip `[ ]` → `[x]` in the `### PR-NNN` heading to act on it.
-  - `action: fix` → the marked fix is applied to the PR branch by `/mo-continue`.
+  - `action: fix` → the marked fix is applied to the PR branch by `/mi-continue`.
   - `action: reply` → the drafted reply is posted to GitHub (after you confirm).
 - Leave `[ ]` to skip the comment entirely — no fix, no reply.
 - You may edit `verdict` / `action` if you disagree with the millwright, and add
-  free text under `overseer-notes`. `action` is what the apply step obeys.
-- When done marking, run `/mo-continue`.
+  free text under `inspector-notes`. `action` is what the apply step obeys.
+- When done marking, run `/mi-continue`.
 
 If a run leaves blocks stuck (`reply-failed`, `reply-declined`, `fix-failed`,
-`fix-blocked`), the report stays `partial` and `/mo-continue` retries the marked
+`fix-blocked`), the report stays `partial` and `/mi-continue` retries the marked
 ones; un-mark a block to drop it.
 
 <!-- Block shape — the millwright fills these in; PR-NNN ids are assigned by
@@ -46,7 +46,7 @@ ones; un-mark a block to drop it.
     <what the millwright will change, and which files>
 - proposed-reply: |                          # present when action: reply
     <drafted reply text to post on GitHub>
-- overseer-notes: |                          # overseer fills in; optional
+- inspector-notes: |                          # inspector fills in; optional
 - status:             open                   # open → applied | replied | skipped
                                               #      | reply-failed | reply-declined
                                               #      | fix-failed | fix-blocked

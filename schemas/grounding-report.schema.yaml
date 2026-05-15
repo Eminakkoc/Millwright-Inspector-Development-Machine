@@ -1,9 +1,9 @@
 $schema: "http://json-schema.org/draft-07/schema#"
-$id: millwright-overseer-development-machine/grounding-report.schema.yaml
+$id: millwright-inspector-development-machine/grounding-report.schema.yaml
 title: workflow-stream/<feature>/implementation/grounding-report.md frontmatter
 description: >
   Stage-2 codebase-grounding report. Written by a fresh sub-agent during
-  /mo-apply-impact's Step A (Codebase-grounding pass) before the
+  /mi-apply-impact's Step A (Codebase-grounding pass) before the
   requirements.md body is composed. The sub-agent walks the active
   feature's seam (per todo item descriptions), identifies entrypoints /
   suspected flows / pre-existing classes, classifies the seam and cycle
@@ -12,9 +12,9 @@ description: >
 
   The report is audit/debug state — not blueprint state. Its lifecycle
   matches the rest of `implementation/`: archived at stage 8 alongside
-  overseer-review.md, change-summary.md, and diagrams/ under
+  inspector-review.md, change-summary.md, and diagrams/ under
   blueprints/history/v[N+1]/implementation/grounding-report.md; deleted
-  on /mo-abort-workflow with the rest of the live implementation folder.
+  on /mi-abort-workflow with the rest of the live implementation folder.
 
   UUID pattern accepts any RFC 4122 version (v1-v8) with a valid variant
   nibble — same permissive policy as other workflow schemas. New reports
@@ -56,7 +56,7 @@ properties:
     type: array
     items:
       type: string
-    description: Optional list of contributors (sub-agent + overseer typically).
+    description: Optional list of contributors (sub-agent + inspector typically).
 
   date:
     type: string

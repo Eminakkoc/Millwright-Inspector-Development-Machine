@@ -9,7 +9,7 @@ Per-cycle telemetry recording context-heavy events (large reads, delegations, su
 
 > _Coarse, not exact. The goal is regression detection, not exact token accounting. Use `scripts/ledger.sh append` to record events; do not hand-edit the table below._
 
-<!-- Generated artifact — initialized by /mo-run at stage 1, appended-to by
+<!-- Generated artifact — initialized by /mi-run at stage 1, appended-to by
      each command that performs a context-heavy read or delegation. Persists
      permanently under the cycle's slug subfolder once the cycle ends. -->
 
@@ -20,12 +20,12 @@ Per-cycle telemetry recording context-heavy events (large reads, delegations, su
 
 <!-- Rows are appended as work happens. Format reference:
 
-| 1   | /mo-run            | journal/pricing/transcript.txt    | large  | sub-agent | summary.md (transcript section) |
-| 1   | /mo-run            | journal/compliance/audit-rfc.md   | medium | main      | summary.md |
-| 1.5 | /mo-continue       | summary.md (cached)               | small  | main      | queue-rationale.md (proposed) |
-| 2   | /mo-apply-impact   | src/payments seam (12 files)      | large  | sub-agent | grounding-report.md, requirements.md, config.md |
-| 4   | /mo-draw-diagrams  | base-commit..HEAD (8 files)       | large  | sub-agent | implementation/diagrams/ |
-| 6   | /mo-review iter-1  | 4 source files for IR-001/002     | medium | sub-agent | 2 commits |
+| 1   | /mi-run            | journal/pricing/transcript.txt    | large  | sub-agent | summary.md (transcript section) |
+| 1   | /mi-run            | journal/compliance/audit-rfc.md   | medium | main      | summary.md |
+| 1.5 | /mi-continue       | summary.md (cached)               | small  | main      | queue-rationale.md (proposed) |
+| 2   | /mi-apply-impact   | src/payments seam (12 files)      | large  | sub-agent | grounding-report.md, requirements.md, config.md |
+| 4   | /mi-draw-diagrams  | base-commit..HEAD (8 files)       | large  | sub-agent | implementation/diagrams/ |
+| 6   | /mi-review iter-1  | 4 source files for IR-001/002     | medium | sub-agent | 2 commits |
 
 Token class buckets:
 - small  — under ~2k tokens

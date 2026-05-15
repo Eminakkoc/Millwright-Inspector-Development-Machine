@@ -8,13 +8,13 @@ features: [{{FEATURES}}]
 
 Audit trail for the dependency-ordering decision at stage 1.5. Persisted so the rationale survives a session break — without it, the analysis would have to be re-derived from scratch on resume.
 
-<!-- Generated artifact — written by /mo-run Step 6 immediately before
+<!-- Generated artifact — written by /mi-run Step 6 immediately before
      `progress.sh reorder`. The `features:` frontmatter is the canonical
      priority order; it must match the queue order in `progress.md` after the
      reorder call.
 
      Multi-batch (Item 7 of the v11 progress-gap plan): a single cycle can
-     accumulate multiple batches over time as the overseer marks more TODO
+     accumulate multiple batches over time as the inspector marks more TODO
      items mid-cycle. Each batch is appended as a `## Batch <N> — <date>`
      section with `### Order`, `### Dependencies`, `### Notes` sub-sections.
      Top-level `batch:` and `status:` describe the LATEST batch only; older
@@ -48,5 +48,5 @@ Audit trail for the dependency-ordering decision at stage 1.5. Persisted so the 
 
 ## Notes
 
-<!-- Optional. Any caveats: features the overseer reordered manually, dependencies
+<!-- Optional. Any caveats: features the inspector reordered manually, dependencies
      that look soft and could be re-evaluated, etc. Skip the section when empty. -->

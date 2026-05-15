@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # progress.sh — manage progress.md (central workflow state) inside the
 # active quest cycle's subfolder, resolved via quest/active.md →
-# millwright-overseer/quest/<slug>/progress.md.
+# millwright-inspector/quest/<slug>/progress.md.
 #
 # The file tracks the feature queue, completed features, and the currently
 # active feature's runtime state. Activation is two-step: finish sets the
@@ -84,17 +84,17 @@ source "$(dirname "$0")/internal/common.sh"
 
 # progress.md lives inside the active quest cycle's subfolder; resolve it
 # every call so the path tracks the active-quest pointer.
-progress_file() { mo_progress_file; }
+progress_file() { mi_progress_file; }
 
 require_file() {
   local file="$1"
-  [[ -f "$file" ]] || mo_die "progress.md not found at $file (run /mo-run first)"
+  [[ -f "$file" ]] || mi_die "progress.md not found at $file (run /mi-run first)"
 }
 
 require_active() {
   local file="$1"
-  local a; a="$(mo_fm_get "$file" active)"
-  [[ "$a" != "null" && -n "$a" ]] || mo_die "no active feature (active is null — run 'progress.sh activate' first)"
+  local a; a="$(mi_fm_get "$file" active)"
+  [[ "$a" != "null" && -n "$a" ]] || mi_die "no active feature (active is null — run 'progress.sh activate' first)"
 }
 
 cmd="${1:-}"; shift || true
@@ -102,10 +102,10 @@ cmd="${1:-}"; shift || true
 case "$cmd" in
   init)
     todo_list_id="${1:?todo-list-id required}"; shift
-    [[ $# -gt 0 ]] || mo_die "at least one feature required"
+    [[ $# -gt 0 ]] || mi_die "at least one feature required"
     dest="$(progress_file)"
-    [[ ! -f "$dest" ]] || mo_die "progress.md already exists: $dest"
-    "${MO_PLUGIN_ROOT}/scripts/frontmatter.sh" init progress "$dest" \
+    [[ ! -f "$dest" ]] || mi_die "progress.md already exists: $dest"
+    "${MI_PLUGIN_ROOT}/scripts/frontmatter.sh" init progress "$dest" \
       "TODO_LIST_ID=$todo_list_id"
     # Populate queue from args.
     python3 - "$dest" "$@" <<'PYEOF'
@@ -122,8 +122,8 @@ with open(path, 'w') as f:
     f.write('---\n')
     f.write(m.group(2))
 PYEOF
-    "${MO_PLUGIN_ROOT}/scripts/frontmatter.sh" validate "$dest" progress >/dev/null
-    mo_info "progress initialized with $# features in queue"
+    "${MI_PLUGIN_ROOT}/scripts/frontmatter.sh" validate "$dest" progress >/dev/null
+    mi_info "progress initialized with $# features in queue"
     ;;
 
   activate)
@@ -131,13 +131,13 @@ PYEOF
     require_file "$dest"
     # Capture the worktree fingerprint up front so the active block records
     # which working tree owns the cycle. Subsequent state mutations are gated
-    # on a match via mo_assert_worktree_match (common.sh).
+    # on a match via mi_assert_worktree_match (common.sh).
     git rev-parse --is-inside-work-tree >/dev/null 2>&1 \
-      || mo_die "progress.sh activate must run inside a git working tree (current dir: $PWD)"
+      || mi_die "progress.sh activate must run inside a git working tree (current dir: $PWD)"
     wt_path="$PWD"
     git_common_dir="$(cd "$(git rev-parse --git-common-dir)" && pwd)"
     git_worktree_dir="$(cd "$(git rev-parse --git-dir)" && pwd)"
-    activation_id="$("${MO_PLUGIN_ROOT}/scripts/uuid.sh")"
+    activation_id="$("${MI_PLUGIN_ROOT}/scripts/uuid.sh")"
     python3 - "$dest" "$wt_path" "$git_common_dir" "$git_worktree_dir" "$activation_id" <<'PYEOF'
 import sys, re, yaml
 path, wt_path, git_common_dir, git_worktree_dir, activation_id = sys.argv[1:]
@@ -166,7 +166,7 @@ fm['active'] = {
     'diagram-rendering': 'never',
     'implementation-diagrams-skipped': False,
     'implementation-completed': False,
-    'overseer-review-completed': False,
+    'inspector-review-completed': False,
     'manual-test-state': 'none',
     'manual-test-failure-policy': 'none',
     'worktree-path': wt_path,
@@ -181,7 +181,7 @@ with open(path, 'w') as f:
     f.write(m.group(2))
 print(feat)
 PYEOF
-    "${MO_PLUGIN_ROOT}/scripts/frontmatter.sh" validate "$dest" progress >/dev/null
+    "${MI_PLUGIN_ROOT}/scripts/frontmatter.sh" validate "$dest" progress >/dev/null
     ;;
 
   finish)
@@ -198,7 +198,7 @@ PYEOF
     while [[ $# -gt 0 ]]; do
       case "$1" in
         --set)
-          [[ $# -ge 2 ]] || mo_die "finish: --set requires field=value"
+          [[ $# -ge 2 ]] || mi_die "finish: --set requires field=value"
           set_args[${#set_args[@]}]="$2"
           shift 2
           ;;
@@ -207,7 +207,7 @@ PYEOF
           shift
           ;;
         *)
-          mo_die "finish: unknown argument: $1 (expected --set field=value)"
+          mi_die "finish: unknown argument: $1 (expected --set field=value)"
           ;;
       esac
     done
@@ -215,7 +215,7 @@ PYEOF
     dest="$(progress_file)"
     require_file "$dest"
     require_active "$dest"
-    mo_assert_worktree_match
+    mi_assert_worktree_match
     python3 - "$dest" "${set_args[@]:-}" <<'PYEOF'
 import sys, re, yaml
 path = sys.argv[1]
@@ -252,14 +252,14 @@ with open(path, 'w') as f:
     f.write(m.group(2))
 print(active['feature'])
 PYEOF
-    "${MO_PLUGIN_ROOT}/scripts/frontmatter.sh" validate "$dest" progress >/dev/null
+    "${MI_PLUGIN_ROOT}/scripts/frontmatter.sh" validate "$dest" progress >/dev/null
     ;;
 
   requeue)
     dest="$(progress_file)"
     require_file "$dest"
     require_active "$dest"
-    mo_assert_worktree_match
+    mi_assert_worktree_match
     python3 - "$dest" <<'PYEOF'
 import sys, re, yaml
 path = sys.argv[1]
@@ -277,15 +277,15 @@ with open(path, 'w') as f:
     f.write(m.group(2))
 print(active['feature'])
 PYEOF
-    "${MO_PLUGIN_ROOT}/scripts/frontmatter.sh" validate "$dest" progress >/dev/null
+    "${MI_PLUGIN_ROOT}/scripts/frontmatter.sh" validate "$dest" progress >/dev/null
     ;;
 
   reset)
     dest="$(progress_file)"
     require_file "$dest"
     require_active "$dest"
-    mo_assert_worktree_match
-    activation_id="$("${MO_PLUGIN_ROOT}/scripts/uuid.sh")"
+    mi_assert_worktree_match
+    activation_id="$("${MI_PLUGIN_ROOT}/scripts/uuid.sh")"
     python3 - "$dest" "$activation_id" <<'PYEOF'
 import sys, re, yaml
 path, activation_id = sys.argv[1], sys.argv[2]
@@ -308,7 +308,7 @@ fm['active'] = {
     'diagram-rendering': 'never',
     'implementation-diagrams-skipped': False,
     'implementation-completed': False,
-    'overseer-review-completed': False,
+    'inspector-review-completed': False,
     'manual-test-state': 'none',
     'manual-test-failure-policy': 'none',
     'worktree-path': old.get('worktree-path'),
@@ -322,12 +322,12 @@ with open(path, 'w') as f:
     f.write('---\n')
     f.write(m.group(2))
 PYEOF
-    "${MO_PLUGIN_ROOT}/scripts/frontmatter.sh" validate "$dest" progress >/dev/null
-    mo_info "reset active feature (feature + branch preserved)"
+    "${MI_PLUGIN_ROOT}/scripts/frontmatter.sh" validate "$dest" progress >/dev/null
+    mi_info "reset active feature (feature + branch preserved)"
     ;;
 
   enqueue)
-    [[ $# -gt 0 ]] || mo_die "at least one feature required"
+    [[ $# -gt 0 ]] || mi_die "at least one feature required"
     dest="$(progress_file)"
     require_file "$dest"
     python3 - "$dest" "$@" <<'PYEOF'
@@ -342,7 +342,7 @@ if fm.get('active') is not None:
     sys.stderr.write(
         f"error: cannot enqueue while a feature is active "
         f"(feature={fm['active'].get('feature')}). "
-        f"Wait for the active feature to finish (or run /mo-abort-workflow) first.\n"
+        f"Wait for the active feature to finish (or run /mi-abort-workflow) first.\n"
     )
     sys.exit(1)
 existing_queue = list(fm.get('queue', []))
@@ -380,13 +380,13 @@ with open(path, 'w') as f:
     f.write(yaml.safe_dump(fm, default_flow_style=False, sort_keys=False))
     f.write('---\n')
     f.write(m.group(2))
-print(f"mo: enqueued {len(new_list)} feature(s); queue is now: {', '.join(fm['queue'])}", file=sys.stderr)
+print(f"mi: enqueued {len(new_list)} feature(s); queue is now: {', '.join(fm['queue'])}", file=sys.stderr)
 PYEOF
-    "${MO_PLUGIN_ROOT}/scripts/frontmatter.sh" validate "$dest" progress >/dev/null
+    "${MI_PLUGIN_ROOT}/scripts/frontmatter.sh" validate "$dest" progress >/dev/null
     ;;
 
   reorder)
-    [[ $# -gt 0 ]] || mo_die "at least one feature required"
+    [[ $# -gt 0 ]] || mi_die "at least one feature required"
     dest="$(progress_file)"
     require_file "$dest"
     python3 - "$dest" "$@" <<'PYEOF'
@@ -401,7 +401,7 @@ if fm.get('active') is not None:
     sys.stderr.write(
         f"error: cannot reorder while a feature is active "
         f"(feature={fm['active'].get('feature')}). "
-        f"Reorder is a stage-1.5 operation; use /mo-abort-workflow first if needed.\n"
+        f"Reorder is a stage-1.5 operation; use /mi-abort-workflow first if needed.\n"
     )
     sys.exit(1)
 existing = list(fm.get('queue', []))
@@ -435,7 +435,7 @@ if existing_set != new_set:
     sys.exit(1)
 # No-op short-circuit: leave file untouched if order is unchanged.
 if existing == new_list:
-    sys.stderr.write("mo: reorder is a no-op (queue order unchanged)\n")
+    sys.stderr.write("mi: reorder is a no-op (queue order unchanged)\n")
     sys.exit(0)
 fm['queue'] = new_list
 with open(path, 'w') as f:
@@ -443,21 +443,21 @@ with open(path, 'w') as f:
     f.write(yaml.safe_dump(fm, default_flow_style=False, sort_keys=False))
     f.write('---\n')
     f.write(m.group(2))
-print(f"mo: queue reordered to: {', '.join(new_list)}", file=sys.stderr)
+print(f"mi: queue reordered to: {', '.join(new_list)}", file=sys.stderr)
 PYEOF
-    "${MO_PLUGIN_ROOT}/scripts/frontmatter.sh" validate "$dest" progress >/dev/null
+    "${MI_PLUGIN_ROOT}/scripts/frontmatter.sh" validate "$dest" progress >/dev/null
     ;;
 
   get-active)
     dest="$(progress_file)"
     require_file "$dest"
-    mo_fm_get "$dest" '.active.feature'
+    mi_fm_get "$dest" '.active.feature'
     ;;
 
   queue-remaining)
     dest="$(progress_file)"
     require_file "$dest"
-    mo_fm_get "$dest" '.queue[]'
+    mi_fm_get "$dest" '.queue[]'
     ;;
 
   get)
@@ -465,15 +465,15 @@ PYEOF
     dest="$(progress_file)"
     require_file "$dest"
     require_active "$dest"
-    mo_fm_get "$dest" ".active.${field}"
+    mi_fm_get "$dest" ".active.${field}"
     ;;
 
   set)
-    [[ $# -gt 0 ]] || mo_die "at least one field=value required"
+    [[ $# -gt 0 ]] || mi_die "at least one field=value required"
     dest="$(progress_file)"
     require_file "$dest"
     require_active "$dest"
-    mo_assert_worktree_match
+    mi_assert_worktree_match
     # Batched implementation: validate every field first (immutable rejection,
     # duplicate rejection, value parsing), build the candidate state in one
     # Python pass, write to a same-directory temp file, schema-validate the
@@ -540,8 +540,8 @@ with open(tmp, 'w') as f:
 PYEOF
       exit 1
     fi
-    if ! "${MO_PLUGIN_ROOT}/scripts/frontmatter.sh" validate "$tmp" progress >/dev/null; then
-      mo_die "progress.sh set: candidate state failed schema validation; original file unchanged"
+    if ! "${MI_PLUGIN_ROOT}/scripts/frontmatter.sh" validate "$tmp" progress >/dev/null; then
+      mi_die "progress.sh set: candidate state failed schema validation; original file unchanged"
     fi
     mv "$tmp" "$dest"
     trap - EXIT
@@ -552,7 +552,7 @@ PYEOF
     dest="$(progress_file)"
     require_file "$dest"
     require_active "$dest"
-    mo_assert_worktree_match
+    mi_assert_worktree_match
     # Idempotent append to active.clear-recommendations. Goes through the same
     # set pipeline as `set`: read → mutate → temp file → schema validate →
     # atomic rename. The schema's enum on items rejects unknown ids.
@@ -588,8 +588,8 @@ with open(tmp, 'w') as f:
 PYEOF
       exit 1
     fi
-    if ! "${MO_PLUGIN_ROOT}/scripts/frontmatter.sh" validate "$tmp" progress >/dev/null; then
-      mo_die "progress.sh add-clear-recommendation: candidate state failed schema validation; original file unchanged"
+    if ! "${MI_PLUGIN_ROOT}/scripts/frontmatter.sh" validate "$tmp" progress >/dev/null; then
+      mi_die "progress.sh add-clear-recommendation: candidate state failed schema validation; original file unchanged"
     fi
     mv "$tmp" "$dest"
     trap - EXIT
@@ -623,10 +623,10 @@ PYEOF
     dest="$(progress_file)"
     require_file "$dest"
     require_active "$dest"
-    mo_assert_worktree_match
-    current="$(mo_fm_get "$dest" '.active.current-stage')"
+    mi_assert_worktree_match
+    current="$(mi_fm_get "$dest" '.active.current-stage')"
     if [[ "$current" != "$expected" ]]; then
-      mo_die "stage mismatch: active.current-stage=$current, advance expected $expected"
+      mi_die "stage mismatch: active.current-stage=$current, advance expected $expected"
     fi
     next=$((expected + 1))
     python3 - "$dest" "$next" <<'PYEOF'
@@ -643,8 +643,8 @@ with open(path, 'w') as f:
     f.write('---\n')
     f.write(m.group(2))
 PYEOF
-    "${MO_PLUGIN_ROOT}/scripts/frontmatter.sh" validate "$dest" progress >/dev/null
-    mo_info "advanced to stage $next"
+    "${MI_PLUGIN_ROOT}/scripts/frontmatter.sh" validate "$dest" progress >/dev/null
+    mi_info "advanced to stage $next"
     ;;
 
   advance-to)
@@ -659,7 +659,7 @@ PYEOF
     case "${expected}-${target}" in
       3-5|5-7|6-7) ;;
       *)
-        mo_die "advance-to: stage transition ${expected} → ${target} not in whitelist (allowed: 3→5, 5→7, 6→7). Adjacent transitions use 'advance'."
+        mi_die "advance-to: stage transition ${expected} → ${target} not in whitelist (allowed: 3→5, 5→7, 6→7). Adjacent transitions use 'advance'."
         ;;
     esac
     # Parse --set field=value args (zero or more).
@@ -667,7 +667,7 @@ PYEOF
     while [[ $# -gt 0 ]]; do
       case "$1" in
         --set)
-          [[ $# -ge 2 ]] || mo_die "advance-to: --set requires field=value"
+          [[ $# -ge 2 ]] || mi_die "advance-to: --set requires field=value"
           set_args[${#set_args[@]}]="$2"
           shift 2
           ;;
@@ -676,14 +676,14 @@ PYEOF
           shift
           ;;
         *)
-          mo_die "advance-to: unknown argument: $1 (expected --set field=value)"
+          mi_die "advance-to: unknown argument: $1 (expected --set field=value)"
           ;;
       esac
     done
     dest="$(progress_file)"
     require_file "$dest"
     require_active "$dest"
-    mo_assert_worktree_match
+    mi_assert_worktree_match
     tmp="$(mktemp "$(dirname "$dest")/progress.md.XXXXXX")"
     trap 'rm -f "$tmp"' EXIT
     # Build the python args list explicitly so empty set_args expansion works
@@ -756,19 +756,19 @@ with open(tmp, 'w') as f:
 PYEOF
       exit 1
     fi
-    if ! "${MO_PLUGIN_ROOT}/scripts/frontmatter.sh" validate "$tmp" progress >/dev/null; then
-      mo_die "advance-to: candidate state failed schema validation; original file unchanged"
+    if ! "${MI_PLUGIN_ROOT}/scripts/frontmatter.sh" validate "$tmp" progress >/dev/null; then
+      mi_die "advance-to: candidate state failed schema validation; original file unchanged"
     fi
     mv "$tmp" "$dest"
     trap - EXIT
-    mo_info "advanced from stage $expected to stage $target"
+    mi_info "advanced from stage $expected to stage $target"
     ;;
 
   check-worktree)
     # Public pre-flight gate. Fails with a guidance message when the
     # current working tree is not the one that activated the active
     # feature. No-op when active is null or fingerprint absent.
-    mo_assert_worktree_match
+    mi_assert_worktree_match
     ;;
 
   *)

@@ -1,12 +1,12 @@
 $schema: "http://json-schema.org/draft-07/schema#"
-$id: millwright-overseer-development-machine/diagrams-readme-implementation.schema.yaml
+$id: millwright-inspector-development-machine/diagrams-readme-implementation.schema.yaml
 title: workflow-stream/<feature>/implementation/diagrams/README.md frontmatter
 description: >
   Implementation diagrams index. Describes the implementation commit range
-  base-commit..HEAD that mo-generate-implementation-diagrams just rendered.
+  base-commit..HEAD that mi-generate-implementation-diagrams just rendered.
 
   Intentionally does NOT carry `requirements-id` — implementation/change-summary.md
-  and the review artifacts (overseer-review.md, review-context.md) carry the
+  and the review artifacts (inspector-review.md, review-context.md) carry the
   requirements back-reference. Adding requirements-id here would duplicate state
   without a corresponding generator change.
 

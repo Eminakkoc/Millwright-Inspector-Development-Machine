@@ -1,17 +1,17 @@
 $schema: "http://json-schema.org/draft-07/schema#"
-$id: millwright-overseer-development-machine/active-quest.schema.yaml
-title: millwright-overseer/quest/active.md frontmatter
+$id: millwright-inspector-development-machine/active-quest.schema.yaml
+title: millwright-inspector/quest/active.md frontmatter
 description: >
   Top-level pointer file recording which per-cycle quest subfolder is
-  currently active. Each /mo-run creates a new subfolder under quest/
+  currently active. Each /mi-run creates a new subfolder under quest/
   (e.g. quest/2026-04-27-pricing-meeting/) and writes the four cycle
   files (todo-list.md, summary.md, progress.md, queue-rationale.md)
   inside it. The top-level quest/ directory keeps every cycle as a
   permanent record; this active.md file is the single piece of mutable
   state at the top level — its slug field tells path-resolution helpers
   which subfolder to read/write. When a cycle finishes (queue drained
-  and no [ ] TODO items remain), /mo-complete-workflow clears the
-  pointer so a fresh /mo-run can start a new cycle.
+  and no [ ] TODO items remain), /mi-complete-workflow clears the
+  pointer so a fresh /mi-run can start a new cycle.
 
 type: object
 additionalProperties: false
@@ -36,14 +36,14 @@ properties:
         minLength: 12
 
   started:
-    description: ISO-8601 timestamp when the active cycle was opened by /mo-run.
+    description: ISO-8601 timestamp when the active cycle was opened by /mi-run.
     type: string
     minLength: 1
 
   journal-folders:
     description: >
       Names of the journal/<folder> sub-folders that seeded this cycle. Same
-      list /mo-run was invoked with; preserved so historical quests carry
+      list /mi-run was invoked with; preserved so historical quests carry
       their input provenance.
     type: array
     items:
@@ -55,10 +55,10 @@ properties:
       Lifecycle state of the active.md pointer.
       - active: a cycle is in flight; slug is non-null and points at the
         currently-active subfolder.
-      - archived: the previous cycle ended (cleanly via /mo-complete-workflow,
-        or via /mo-run --archive-active). slug is null; journal-folders
+      - archived: the previous cycle ended (cleanly via /mi-complete-workflow,
+        or via /mi-run --archive-active). slug is null; journal-folders
         records the inputs of the just-archived cycle for context.
-      - none: the workspace has never run a cycle (set by /mo-init when it
+      - none: the workspace has never run a cycle (set by /mi-init when it
         scaffolds the empty pointer). slug is null; journal-folders is empty.
     type: string
     enum: [active, archived, none]

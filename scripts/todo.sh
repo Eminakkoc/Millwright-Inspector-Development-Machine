@@ -13,7 +13,7 @@
 #
 # Convention: [ ] = TODO only; [x] = any selected state (PENDING/IMPLEMENTING/IMPLEMENTED/CANCELED).
 # Assignee rules:
-#   - Optional on `[ ] TODO` lines (overseer may pre-assign or leave unassigned).
+#   - Optional on `[ ] TODO` lines (inspector may pre-assign or leave unassigned).
 #   - REQUIRED on any `[x]` line. pend-selected rejects `[x] TODO` lines that
 #     have no `(assignee)` tag and lists the offending item ids.
 #   - Preserved automatically by set-state / bulk-transition across all state changes.
@@ -25,7 +25,7 @@
 #                                 # without it: operates on every item in the file (backward-compatible).
 #                                 # header matching is case-insensitive and kebab-normalized,
 #                                 # so `## Marketing site` matches `--feature marketing-site`.
-#   todo.sh pend-selected         # transform overseer-marked [xX] TODO items to [x] PENDING
+#   todo.sh pend-selected         # transform inspector-marked [xX] TODO items to [x] PENDING
 #                                 # (fails if any selected item lacks an assignee)
 #   todo.sh list <state> [--feature <kebab-name>]
 #                                 # list item ids currently in <state>; with --feature,
@@ -34,7 +34,7 @@
 #                                 # append a new item under the feature's section (creating
 #                                 # the section if absent). state ∈ {TODO, IMPLEMENTING, CANCELED}.
 #                                 # PENDING is refused (only stage-1.5 pend-selected writes PENDING);
-#                                 # IMPLEMENTED is refused (only mo-complete-workflow writes IMPLEMENTED).
+#                                 # IMPLEMENTED is refused (only mi-complete-workflow writes IMPLEMENTED).
 #                                 # Fails if item-id already exists in the file.
 
 set -euo pipefail
@@ -42,7 +42,7 @@ source "$(dirname "$0")/internal/common.sh"
 
 # todo-list.md lives inside the active quest cycle's subfolder; resolve it
 # every call so the path tracks the active-quest pointer.
-todo_file() { mo_quest_active_file todo-list; }
+todo_file() { mi_quest_active_file todo-list; }
 
 cmd="${1:-}"; shift || true
 
@@ -51,7 +51,7 @@ case "$cmd" in
     item_id="${1:?item-id required}"
     new_state="${2:?new-state required}"
     file="$(todo_file)"
-    [[ -f "$file" ]] || mo_die "todo-list.md not found"
+    [[ -f "$file" ]] || mi_die "todo-list.md not found"
     python3 - "$file" "$item_id" "$new_state" <<'PYEOF'
 import sys, re
 path, item_id, new_state = sys.argv[1], sys.argv[2], sys.argv[3]
@@ -75,7 +75,7 @@ if updated == 0:
     sys.exit(1)
 with open(path, 'w') as f:
     f.writelines(lines)
-print(f'mo: set {item_id} to {new_state}', file=sys.stderr)
+print(f'mi: set {item_id} to {new_state}', file=sys.stderr)
 PYEOF
     ;;
 
@@ -88,11 +88,11 @@ PYEOF
       case "$1" in
         --feature)   feature_filter="${2:?--feature requires a value}"; shift 2 ;;
         --feature=*) feature_filter="${1#*=}"; shift ;;
-        *)           mo_die "bulk-transition: unknown argument: $1" ;;
+        *)           mi_die "bulk-transition: unknown argument: $1" ;;
       esac
     done
     file="$(todo_file)"
-    [[ -f "$file" ]] || mo_die "todo-list.md not found"
+    [[ -f "$file" ]] || mi_die "todo-list.md not found"
     python3 - "$file" "$from_state" "$to_state" "$feature_filter" <<'PYEOF'
 import sys, re
 path, from_state, to_state, feature_filter = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
@@ -137,19 +137,19 @@ with open(path, 'w') as f:
     f.writelines(lines)
 
 scope = f' under ## {feature_filter}' if feature_filter else ''
-print(f'mo: transitioned {count} items from {from_state} to {to_state}{scope}', file=sys.stderr)
+print(f'mi: transitioned {count} items from {from_state} to {to_state}{scope}', file=sys.stderr)
 PYEOF
     ;;
 
   pend-selected)
-    # Overseer marks items with [x]/[X] on TODO lines to select them for this cycle.
+    # Inspector marks items with [x]/[X] on TODO lines to select them for this cycle.
     # Convert those marks to canonical [x] (<assignee>) PENDING. Idempotent: an item
     # already in [x] PENDING is left untouched because this only matches state word == TODO.
     #
     # Validation: every [x] TODO line MUST carry an (assignee) tag. If any are missing,
     # the script exits 2 and lists the offending items without touching the file.
     file="$(todo_file)"
-    [[ -f "$file" ]] || mo_die "todo-list.md not found"
+    [[ -f "$file" ]] || mi_die "todo-list.md not found"
     python3 - "$file" <<'PYEOF'
 import sys, re
 path = sys.argv[1]
@@ -181,7 +181,7 @@ def _sub(m):
 new_content, count = pattern.subn(_sub, content)
 with open(path, 'w') as f:
     f.write(new_content)
-print(f'mo: transitioned {count} overseer-selected items from TODO to PENDING', file=sys.stderr)
+print(f'mi: transitioned {count} inspector-selected items from TODO to PENDING', file=sys.stderr)
 PYEOF
     ;;
 
@@ -193,11 +193,11 @@ PYEOF
       case "$1" in
         --feature)   feature_filter="${2:?--feature requires a value}"; shift 2 ;;
         --feature=*) feature_filter="${1#*=}"; shift ;;
-        *)           mo_die "list: unknown argument: $1" ;;
+        *)           mi_die "list: unknown argument: $1" ;;
       esac
     done
     file="$(todo_file)"
-    [[ -f "$file" ]] || mo_die "todo-list.md not found"
+    [[ -f "$file" ]] || mi_die "todo-list.md not found"
     # Python implementation — portable across BSD/GNU sed, accepts the optional
     # (assignee) tag, and honors --feature with the same kebab-normalization as
     # bulk-transition so `--feature marketing-site` matches `## Marketing site`.
@@ -241,12 +241,12 @@ PYEOF
     description="${5:?description required}"
     case "$state" in
       TODO|IMPLEMENTING|CANCELED) ;;
-      PENDING)     mo_die "state=PENDING is not allowed for manual add (only stage-1.5 pend-selected writes PENDING)" ;;
-      IMPLEMENTED) mo_die "state=IMPLEMENTED is not allowed for manual add (only mo-complete-workflow writes IMPLEMENTED)" ;;
-      *)           mo_die "invalid state: $state (valid: TODO|IMPLEMENTING|CANCELED)" ;;
+      PENDING)     mi_die "state=PENDING is not allowed for manual add (only stage-1.5 pend-selected writes PENDING)" ;;
+      IMPLEMENTED) mi_die "state=IMPLEMENTED is not allowed for manual add (only mi-complete-workflow writes IMPLEMENTED)" ;;
+      *)           mi_die "invalid state: $state (valid: TODO|IMPLEMENTING|CANCELED)" ;;
     esac
     file="$(todo_file)"
-    [[ -f "$file" ]] || mo_die "todo-list.md not found"
+    [[ -f "$file" ]] || mi_die "todo-list.md not found"
     python3 - "$file" "$feature" "$state" "$assignee" "$item_id" "$description" <<'PYEOF'
 import sys, re
 path, feature, state, assignee, item_id, description = sys.argv[1:]
@@ -307,7 +307,7 @@ else:
 with open(path, 'w') as f:
     f.writelines(lines)
 
-print(f'mo: added {item_id} as [{state}] under ## {target_section}', file=sys.stderr)
+print(f'mi: added {item_id} as [{state}] under ## {target_section}', file=sys.stderr)
 PYEOF
     ;;
 

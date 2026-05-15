@@ -1,5 +1,5 @@
 $schema: "http://json-schema.org/draft-07/schema#"
-$id: millwright-overseer-development-machine/context-ledger.schema.yaml
+$id: millwright-inspector-development-machine/context-ledger.schema.yaml
 title: quest/<active-slug>/context-ledger.md frontmatter
 description: >
   Per-cycle context-budget telemetry artifact. Phase 6.4 of the

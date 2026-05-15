@@ -1,5 +1,5 @@
 $schema: "http://json-schema.org/draft-07/schema#"
-$id: millwright-overseer-development-machine/config.schema.yaml
+$id: millwright-inspector-development-machine/config.schema.yaml
 title: workflow-stream/<feature>/blueprints/current/config.md frontmatter
 
 type: object

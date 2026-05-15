@@ -10,10 +10,10 @@ source "$(dirname "$0")/common.sh"
 
 file="${1:?file required}"
 schema_name="${2:?schema name required}"
-schema="${MO_PLUGIN_ROOT}/schemas/${schema_name}.schema.yaml"
+schema="${MI_PLUGIN_ROOT}/schemas/${schema_name}.schema.yaml"
 
-[[ -f "$file" ]] || mo_die "file not found: $file"
-[[ -f "$schema" ]] || mo_die "schema not found: $schema"
+[[ -f "$file" ]] || mi_die "file not found: $file"
+[[ -f "$schema" ]] || mi_die "schema not found: $schema"
 
 # Extract frontmatter as JSON to a tempfile.
 # Note: ajv-cli requires the .json extension on both schema and data files,
@@ -49,7 +49,7 @@ PYEOF
 # Try ajv-cli first for full JSON Schema validation.
 if command -v ajv >/dev/null 2>&1; then
   if ajv validate -s "$tmp_schema_json" -d "$tmp_fm" --strict=false >/dev/null 2>&1; then
-    mo_info "✓ $file frontmatter valid (ajv, schema=$schema_name)"
+    mi_info "✓ $file frontmatter valid (ajv, schema=$schema_name)"
     exit 0
   else
     echo "error: $file frontmatter failed schema validation (schema=$schema_name)" >&2
@@ -71,7 +71,7 @@ except jsonschema.ValidationError as e:
     sys.exit(1)
 PYEOF
   then
-    mo_info "✓ $file frontmatter valid (jsonschema, schema=$schema_name)"
+    mi_info "✓ $file frontmatter valid (jsonschema, schema=$schema_name)"
     exit 0
   else
     echo "error: $file frontmatter failed schema validation (schema=$schema_name)" >&2
@@ -80,7 +80,7 @@ PYEOF
 fi
 
 # Last fallback: structural check — required fields present, no obvious type mismatches.
-mo_info "ajv and python3-jsonschema both unavailable; using structural fallback for $file"
+mi_info "ajv and python3-jsonschema both unavailable; using structural fallback for $file"
 required_fields="$(python3 -c "
 import json, sys
 s = json.load(open('$tmp_schema_json'))
@@ -88,7 +88,7 @@ print(' '.join(s.get('required', [])))
 ")"
 missing=()
 for field in $required_fields; do
-  val="$(mo_fm_get "$file" "$field" 2>/dev/null || true)"
+  val="$(mi_fm_get "$file" "$field" 2>/dev/null || true)"
   if [[ -z "$val" || "$val" == "null" ]]; then
     missing+=("$field")
   fi
@@ -97,4 +97,4 @@ if [[ ${#missing[@]} -gt 0 ]]; then
   echo "error: $file missing required frontmatter fields: ${missing[*]}" >&2
   exit 1
 fi
-mo_info "✓ $file frontmatter structurally valid (fallback, schema=$schema_name)"
+mi_info "✓ $file frontmatter structurally valid (fallback, schema=$schema_name)"

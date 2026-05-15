@@ -1,15 +1,15 @@
 # Stage info-bar implementation plan
 
-A Claude Code bottom-bar widget that shows the current mo-workflow stage at a
+A Claude Code bottom-bar widget that shows the current mi-workflow stage at a
 glance. The line is regenerated on every status-line refresh by reading
 `progress.md` directly — there is no hook, no sidecar, no per-cycle log,
 and no token math.
 
 This is deliberately **smaller** than the v0.5.0–v0.7.4 info-bar (which
 tracked per-stage token usage via a `PostToolUse` hook + JSON sidecar +
-NDJSON usage log + `/mo-info-bar` wrapper). That feature was removed in
+NDJSON usage log + `/mi-info-bar` wrapper). That feature was removed in
 commit `2b14410` because the moving parts outweighed the signal. This plan
-keeps only the part the overseer actually wanted: knowing *which stage we
+keeps only the part the inspector actually wanted: knowing *which stage we
 are in right now*.
 
 ## 1. Goal
@@ -17,7 +17,7 @@ are in right now*.
 Render a single line at the bottom of Claude Code that always reads:
 
 ```
-mo-workflow · <feature> · Stage <N> · <stage-name>
+mi-workflow · <feature> · Stage <N> · <stage-name>
 ```
 
 The line refreshes on every Claude Code status-line tick. Because Claude Code
@@ -47,7 +47,7 @@ in a typical terminal width.
 ### 3.1 Active feature (stages 2–7)
 
 ```
-mo-workflow · <feature> · Stage <N> · <stage-name>
+mi-workflow · <feature> · Stage <N> · <stage-name>
 ```
 
 `<feature>` is `progress.md → active.feature` (kebab-case, e.g.
@@ -61,14 +61,14 @@ plus `…`.
 
 When `active` is `null` the schema says we are either:
 
-- pre-stage-2 (`/mo-run` happened but no feature has been activated yet), or
+- pre-stage-2 (`/mi-run` happened but no feature has been activated yet), or
 - post-stage-8 (the previous feature finished; the next one has not been
   activated).
 
 Both cases render as:
 
 ```
-mo-workflow · cycle <slug> · Stage 1 · quest generated
+mi-workflow · cycle <slug> · Stage 1 · quest generated
 ```
 
 …until `progress.sh activate` populates `active`. There is no separate
@@ -86,15 +86,15 @@ When `quest.sh has-active` exits non-zero (no `quest/active.md`, or
 `status != active`):
 
 ```
-mo-workflow · idle
+mi-workflow · idle
 ```
 
-### 3.4 Outside an mo-workspace
+### 3.4 Outside an mi-workspace
 
-When the current project has no `millwright-overseer/` data root, the
+When the current project has no `millwright-inspector/` data root, the
 script must print **nothing** (empty output). Claude Code is also used in
 repos that don't have this plugin configured; we don't want a
-"mo-workflow · idle" string leaking into those windows.
+"mi-workflow · idle" string leaking into those windows.
 
 **Detection.** Anchor to Claude Code's status-line stdin JSON, NOT to
 `$PWD`. Per the docs, every status-line invocation receives a JSON
@@ -102,12 +102,12 @@ payload on stdin with these always-present fields:
 
 - `workspace.project_dir` — directory where Claude Code was launched.
 - `workspace.current_dir` — current directory (may differ from
-  `project_dir` if the overseer `cd`'d during the session).
+  `project_dir` if the inspector `cd`'d during the session).
 - `cwd` — same value as `workspace.current_dir`, preserved for
   back-compat.
 
-Use `workspace.project_dir` to resolve a relative `MO_DATA_ROOT` /
-`CLAUDE_PLUGIN_USER_CONFIG_data_root` / default `millwright-overseer`
+Use `workspace.project_dir` to resolve a relative `MI_DATA_ROOT` /
+`CLAUDE_PLUGIN_USER_CONFIG_data_root` / default `millwright-inspector`
 (see §5.1 for the precedence chain). Then probe:
 
 ```bash
@@ -116,9 +116,9 @@ Use `workspace.project_dir` to resolve a relative `MO_DATA_ROOT` /
 
 This replaces an earlier draft of this plan that referred to a fictitious
 `quest.sh init-pointer-path` helper. The pointer file is the canonical
-"is this an mo-workspace" marker — `quest.sh init-pointer` writes it
-during `/mo-init`, so its presence is exactly equivalent to "this project
-ran mo-init at least once."
+"is this an mi-workspace" marker — `quest.sh init-pointer` writes it
+during `/mi-init`, so its presence is exactly equivalent to "this project
+ran mi-init at least once."
 
 ### 3.5 Error / unreadable state
 
@@ -126,7 +126,7 @@ If `progress.md` exists but is unparseable (corrupt frontmatter, schema
 mismatch), render:
 
 ```
-mo-workflow · <slug> · progress.md unreadable
+mi-workflow · <slug> · progress.md unreadable
 ```
 
 Never `exit 1` — Claude Code prints the script's stderr on failure, which
@@ -139,16 +139,16 @@ slash-command descriptions. Kept short for the status bar.
 
 | `current-stage` | Name shown                    | Source of truth                                        |
 | --------------: | ----------------------------- | ------------------------------------------------------ |
-| `null` (active=null, queue non-empty)         | `quest generated`             | `/mo-run` produced the cycle; no feature activated yet |
-| 2               | `blueprint`                   | `/mo-apply-impact` activated the feature              |
-| 3               | `implementation`              | `/mo-plan-implementation` advanced 2→3                 |
+| `null` (active=null, queue non-empty)         | `quest generated`             | `/mi-run` produced the cycle; no feature activated yet |
+| 2               | `blueprint`                   | `/mi-apply-impact` activated the feature              |
+| 3               | `implementation`              | `/mi-plan-implementation` advanced 2→3                 |
 | 4               | `impl-resumed`                | Resume Handler advanced 3→4 (drift check)              |
-| 5               | `overseer-review`             | `/mo-continue` advanced 4→5 (or 3→5 skip)              |
-| 6               | `review-session`              | `/mo-review` advanced 5→6                              |
+| 5               | `inspector-review`             | `/mi-continue` advanced 4→5 (or 3→5 skip)              |
+| 6               | `review-session`              | `/mi-review` advanced 5→6                              |
 | 7               | `review-completed`            | Review-Resume Handler advanced 6→7 (or 5→7 skip)       |
-| 8 (transient)   | `finalizing`                  | `/mo-complete-workflow` is mid-finalize                |
+| 8 (transient)   | `finalizing`                  | `/mi-complete-workflow` is mid-finalize                |
 
-**Stage 8 caveat.** Per `commands/mo-complete-workflow.md:13`, stage 8 is
+**Stage 8 caveat.** Per `commands/mi-complete-workflow.md:13`, stage 8 is
 "conceptual — it is not a persisted `current-stage` value; `progress.sh
 finish` sets `active=null` rather than incrementing the counter to 8."
 The `current-stage` enum in the schema does include `8` for forward-compat,
@@ -162,8 +162,8 @@ file, since it changes only when the workflow spec changes.
 
 ```
 scripts/info-bar.sh                new — pull-only renderer; reads stdin JSON; sub-50ms
-commands/mo-init-status-bar.md     new — slash command; writes wrapper + statusLine block
-commands/mo-init.md                edit — add Step 5.5 that calls /mo-init-status-bar
+commands/mi-init-status-bar.md     new — slash command; writes wrapper + statusLine block
+commands/mi-init.md                edit — add Step 5.5 that calls /mi-init-status-bar
 docs/stage-info-bar/plan.md        this file
 README.md                          +1 section: "Status line (opt-in)"
 ```
@@ -171,9 +171,9 @@ README.md                          +1 section: "Status line (opt-in)"
 Generated at install time (NOT shipped in the plugin):
 
 ```
-<project>/.claude/mo-stage-info-bar.sh        wrapper with absolute plugin root baked in
+<project>/.claude/mi-stage-info-bar.sh        wrapper with absolute plugin root baked in
 <project>/.claude/settings.local.json         statusLine → wrapper (machine-local)
-   (or ~/.claude/{mo-stage-info-bar.sh,settings.json} with --user)
+   (or ~/.claude/{mi-stage-info-bar.sh,settings.json} with --user)
    (or <project>/.claude/settings.json         with --project-shared, warned)
 ```
 
@@ -183,8 +183,8 @@ That is the entire surface area. No hook script, no schema, no template.
 
 Pure pull-only renderer. No state, no writes, no logs. Always exits 0.
 
-**Hot path is one Python call.** Do NOT call `mo_fm_get` from this
-script. `mo_fm_get` (in `scripts/internal/common.sh:162`) shells to `yq`
+**Hot path is one Python call.** Do NOT call `mi_fm_get` from this
+script. `mi_fm_get` (in `scripts/internal/common.sh:162`) shells to `yq`
 per field via an awk + yq pipeline; reading `active`, `active.feature`,
 and `active.current-stage` would mean three separate `yq` processes per
 status-line tick.
@@ -208,29 +208,29 @@ directly.
 1. Read the entire stdin payload (Claude Code's status-line JSON). It is
    small; a single `cat` is fine.
 2. In Bash, resolve `data_root` using this precedence chain (mirrors
-   `mo_data_root` in `common.sh` but anchors relative paths to
+   `mi_data_root` in `common.sh` but anchors relative paths to
    `workspace.project_dir` from the stdin payload, NOT `$PWD`):
-   - If `$MO_DATA_ROOT` is absolute → use it.
-   - Else if `$MO_DATA_ROOT` is relative → resolve against
+   - If `$MI_DATA_ROOT` is absolute → use it.
+   - Else if `$MI_DATA_ROOT` is relative → resolve against
      `workspace.project_dir`.
    - Else if `$CLAUDE_PLUGIN_USER_CONFIG_data_root` is absolute → use it.
    - Else if relative → resolve against `workspace.project_dir`.
-   - Else → `<project_dir>/millwright-overseer`.
+   - Else → `<project_dir>/millwright-inspector`.
 3. Probe for the workspace marker:
    `[[ -f "$data_root/quest/active.md" ]] || { echo ""; exit 0; }`
 4. Hand off to a single `python3 -` invocation that:
    - Reads `$data_root/quest/active.md` frontmatter.
    - Branches on `status`: missing/`archived`/`none` → print
-     `mo-workflow · idle`.
+     `mi-workflow · idle`.
    - Otherwise reads `$data_root/quest/<slug>/progress.md` frontmatter.
    - Branches on `active`:
-     - `null` (or missing) → print `mo-workflow · cycle <slug-short> ·
+     - `null` (or missing) → print `mi-workflow · cycle <slug-short> ·
        Stage 1 · quest generated`.
      - object → look up `feature` and `current-stage`, look up the
        `<stage-name>` from §4's mapping, print the active-feature line.
    - On any parse error or missing file, prints the §3.5 fallback
-     (`mo-workflow · <slug-short> · progress.md unreadable`) for the
-     progress.md branch, or `mo-workflow · idle` for the active.md
+     (`mi-workflow · <slug-short> · progress.md unreadable`) for the
+     progress.md branch, or `mi-workflow · idle` for the active.md
      branch.
    - Returns exit 0 unconditionally.
 5. Bash-side trap: any unexpected failure (e.g. python3 missing) falls
@@ -260,15 +260,15 @@ still falls through to `exit 0`.
 
 A short section under "Optional companions":
 
-> **Status line (opt-in).** Run `/mo-init-status-bar` once per machine
-> and Claude Code will show the current mo-workflow stage at the bottom
+> **Status line (opt-in).** Run `/mi-init-status-bar` once per machine
+> and Claude Code will show the current mi-workflow stage at the bottom
 > of the window. The command writes a small wrapper script
-> (`.claude/mo-stage-info-bar.sh`) and points your machine-local
+> (`.claude/mi-stage-info-bar.sh`) and points your machine-local
 > `.claude/settings.local.json` at it. The line refreshes on every
-> Claude Code event — no hook, no sidecar. Outside an mo-workspace it
+> Claude Code event — no hook, no sidecar. Outside an mi-workspace it
 > prints nothing (the bar collapses cleanly).
 >
-> `/mo-init` offers to do this automatically at the end of the wizard;
+> `/mi-init` offers to do this automatically at the end of the wizard;
 > the standalone command exists for re-running on other machines, after
 > resetting settings, or after a marketplace plugin upgrade if the
 > wrapper's fast-path resolution can't find the new install.
@@ -277,10 +277,10 @@ A short section under "Optional companions":
 > the committed `.claude/settings.json` (warned — the wrapper path is
 > machine-specific).
 
-### 5.3 `commands/mo-init-status-bar.md` (new slash command)
+### 5.3 `commands/mi-init-status-bar.md` (new slash command)
 
-Stand-alone, idempotent slash command. Either invoked by the overseer
-directly (`/mo-init-status-bar`) or auto-invoked by `/mo-init` Step 5.5.
+Stand-alone, idempotent slash command. Either invoked by the inspector
+directly (`/mi-init-status-bar`) or auto-invoked by `/mi-init` Step 5.5.
 
 **Critical fact this design depends on.** Per the official statusLine
 docs, **`$CLAUDE_PLUGIN_ROOT` is NOT expanded** in the
@@ -301,16 +301,16 @@ plugin-provided variables are unset. So we cannot wire
      applies to the statusLine command, not slash commands).
    - Fallback: scan `$HOME/.claude/plugins/` for any
      `**/.claude-plugin/plugin.json` whose `name` field equals
-     `millwright-overseer-development-machine`, pick the most recent
+     `millwright-inspector-development-machine`, pick the most recent
      mtime.
    - If both fail, error out with a clear message: "Cannot resolve
      plugin root. Re-run from a Claude Code session with the plugin
      loaded, or pass `--plugin-root <abs-path>`."
 2. **Pick the wrapper destination**, defaulting to a path next to the
    settings file we're going to wire (so the two move together):
-   - default → `<project_dir>/.claude/mo-stage-info-bar.sh`
-   - `--user` → `$HOME/.claude/mo-stage-info-bar.sh`
-   - `--project-shared` → `<project_dir>/.claude/mo-stage-info-bar.sh`
+   - default → `<project_dir>/.claude/mi-stage-info-bar.sh`
+   - `--user` → `$HOME/.claude/mi-stage-info-bar.sh`
+   - `--project-shared` → `<project_dir>/.claude/mi-stage-info-bar.sh`
      (same path as default, but pairs with the shared settings file —
      see step 4)
 3. **Write the wrapper** with the resolved absolute plugin root baked
@@ -337,7 +337,7 @@ plugin-provided variables are unset. So we cannot wire
    best = None  # (mtime, plugin_root)
    for p in glob.iglob(os.path.join(root, '**', '.claude-plugin', 'plugin.json'), recursive=True):
        try:
-           if json.load(open(p)).get('name') != 'millwright-overseer-development-machine':
+           if json.load(open(p)).get('name') != 'millwright-inspector-development-machine':
                continue
            pr = os.path.dirname(os.path.dirname(p))
            if not os.access(os.path.join(pr, 'scripts', 'info-bar.sh'), os.X_OK):
@@ -367,7 +367,7 @@ plugin-provided variables are unset. So we cannot wire
    - `--project-shared` → `<project_dir>/.claude/settings.json` —
      **emits a warning** ("the wrapper at `<abs-path>` is
      machine-specific; collaborators on this repo will get a broken
-     status line unless they run /mo-init-status-bar themselves") and
+     status line unless they run /mi-init-status-bar themselves") and
      requires confirmation before writing.
 5. **Read the chosen settings file** (create as `{}` if absent), inspect
    `statusLine`:
@@ -384,7 +384,7 @@ plugin-provided variables are unset. So we cannot wire
    {
      "statusLine": {
        "type": "command",
-       "command": "/abs/path/to/.claude/mo-stage-info-bar.sh"
+       "command": "/abs/path/to/.claude/mi-stage-info-bar.sh"
      }
    }
    ```
@@ -397,7 +397,7 @@ plugin-provided variables are unset. So we cannot wire
 **Marketplace-upgrade policy.** The wrapper's fallback scan handles
 moves in `~/.claude/plugins/` automatically. For installs outside that
 tree (local-dev `claude --plugin-dir <path>` invocations, custom
-locations), the policy is documented: "rerun `/mo-init-status-bar` after
+locations), the policy is documented: "rerun `/mi-init-status-bar` after
 plugin upgrades." The fallback scan is a best-effort convenience, not a
 guarantee.
 
@@ -406,14 +406,14 @@ guarantee.
 root require enough decision-making that one-liner instructions in the
 README would be error-prone. The command also handles overwrite
 prompts, the absolute-path warning for `--project-shared`, and the
-reload hint — all in one place the overseer can re-run.
+reload hint — all in one place the inspector can re-run.
 
 **Failure modes**
 
 - `.claude/` doesn't exist → `mkdir -p` first (project or user, as
   appropriate).
 - `settings.json` is malformed JSON → refuse to write; print the parse
-  error and ask the overseer to fix it manually. Never try to repair.
+  error and ask the inspector to fix it manually. Never try to repair.
 - Plugin root unresolvable → error per step 1.
 - Wrapper destination not writable → error with the resolved path.
 
@@ -421,21 +421,21 @@ reload hint — all in one place the overseer can re-run.
 
 ```yaml
 ---
-description: Wire the mo-workflow status line. Writes a wrapper script with the plugin's absolute path and points statusLine at it. Default target is .claude/settings.local.json (machine-local, not committed). Idempotent.
+description: Wire the mi-workflow status line. Writes a wrapper script with the plugin's absolute path and points statusLine at it. Default target is .claude/settings.local.json (machine-local, not committed). Idempotent.
 ---
 ```
 
 **Flags**
 
-- `--user` — write to `~/.claude/mo-stage-info-bar.sh` and
+- `--user` — write to `~/.claude/mi-stage-info-bar.sh` and
   `~/.claude/settings.json`.
-- `--project-shared` — write to `.claude/mo-stage-info-bar.sh` and
+- `--project-shared` — write to `.claude/mi-stage-info-bar.sh` and
   `.claude/settings.json`. Warned because the wrapper's baked-in
   absolute path is machine-specific.
 - `--plugin-root <abs>` — manual override for the resolution in step 1
   (escape hatch for unusual installs).
 
-### 5.4 `commands/mo-init.md` edit — Step 5.5
+### 5.4 `commands/mi-init.md` edit — Step 5.5
 
 After Step 5 (scaffold data folders) and before Step 6 (report and
 hand off), insert:
@@ -445,18 +445,18 @@ hand off), insert:
 > Ask once:
 >
 > ```
-> Wire the mo-workflow status line now? (y/n)
->   Shows: mo-workflow · <feature> · Stage <N> · <stage-name>
+> Wire the mi-workflow status line now? (y/n)
+>   Shows: mi-workflow · <feature> · Stage <N> · <stage-name>
 >   Refreshes automatically — no hook, no token tracking.
->   Writes a wrapper to .claude/mo-stage-info-bar.sh and a statusLine
+>   Writes a wrapper to .claude/mi-stage-info-bar.sh and a statusLine
 >   entry to .claude/settings.local.json (machine-local; not committed).
->   Skipped if you say n; you can run /mo-init-status-bar anytime later.
+>   Skipped if you say n; you can run /mi-init-status-bar anytime later.
 > ```
 >
-> - **`y`** → invoke `/mo-init-status-bar` (no flags — uses the
+> - **`y`** → invoke `/mi-init-status-bar` (no flags — uses the
 >   machine-local default) and let it run its own prompts (wrapper
 >   resolution and overwrite-on-conflict logic lives there, not here).
-> - **`n`** → skip silently. Mention `/mo-init-status-bar` once in
+> - **`n`** → skip silently. Mention `/mi-init-status-bar` once in
 >   Step 6's "Optional companions" footer so re-running is discoverable.
 
 The Step 5.5 prompt is intentionally separate from the Step 3 dependency
@@ -470,21 +470,21 @@ There is no plugin-manifest `statusLine` field — Claude Code does not
 accept it from plugin packages, and the docs confirm `$CLAUDE_PLUGIN_ROOT`
 is not expanded inside `statusLine.command` even if it were. The wiring is:
 
-1. `/mo-init-status-bar` writes (a) a wrapper script with the absolute
+1. `/mi-init-status-bar` writes (a) a wrapper script with the absolute
    plugin path baked in, then (b) a `statusLine` block pointing at the
    wrapper's absolute path. Default targets are
-   `.claude/mo-stage-info-bar.sh` + `.claude/settings.local.json`
+   `.claude/mi-stage-info-bar.sh` + `.claude/settings.local.json`
    (machine-local). `--user` retargets `~/.claude/`. `--project-shared`
    retargets the committed `.claude/settings.json` after a confirmation
    prompt.
-2. `/mo-init` Step 5.5 offers to invoke that command at the end of the
+2. `/mi-init` Step 5.5 offers to invoke that command at the end of the
    first-run wizard.
-3. The overseer can re-run `/mo-init-status-bar` at any time — on a new
+3. The inspector can re-run `/mi-init-status-bar` at any time — on a new
    machine, after settings are reset, or after a marketplace plugin
    upgrade if the wrapper's fallback scan can't find the new install.
 
-`/mo-doctor` is unchanged in this plan. (A future ticket may have it
-detect missing wiring and suggest `/mo-init-status-bar`, but that is
+`/mi-doctor` is unchanged in this plan. (A future ticket may have it
+detect missing wiring and suggest `/mi-init-status-bar`, but that is
 out of scope here.)
 
 ## 7. Edge cases
@@ -498,7 +498,7 @@ out of scope here.)
   read. The Python parser does not need a retry loop.
 - **`quest/active.md` exists with `status=archived`.** The Python parser
   in §5.1 step 4 branches on `status`; `archived` (and `none`) collapse
-  to `mo-workflow · idle`.
+  to `mi-workflow · idle`.
 - **Schema migration.** If `current-stage` ever grows past 8, the
   Python `dict` default prints `Stage <N> · unknown`. Status line never
   breaks.
@@ -507,20 +507,20 @@ out of scope here.)
   what saves it from the failure mode the deleted v0.5.0 hook ran into
   (commit `38dd1a4`), where Claude Code's hook subprocess inherited a
   stale CWD. As long as the data root is at the project root (the only
-  location `/mo-init` scaffolds), the bar renders correctly even if the
-  overseer `cd`'d into a subdirectory mid-session.
+  location `/mi-init` scaffolds), the bar renders correctly even if the
+  inspector `cd`'d into a subdirectory mid-session.
 - **Plugin moved by marketplace upgrade.** The wrapper's fast path uses
   the absolute plugin root captured at install time; if that path no
   longer exists, the wrapper scans `~/.claude/plugins/` for a current
   install. If the scan also fails (local-dev installs outside the
-  user-cache tree), the wrapper prints empty and the overseer reruns
-  `/mo-init-status-bar` per the documented policy.
+  user-cache tree), the wrapper prints empty and the inspector reruns
+  `/mi-init-status-bar` per the documented policy.
 
 ## 8. Implementation steps
 
 1. Add `scripts/info-bar.sh` per §5.1.
-2. Add `commands/mo-init-status-bar.md` per §5.3.
-3. Edit `commands/mo-init.md` per §5.4 (insert Step 5.5).
+2. Add `commands/mi-init-status-bar.md` per §5.3.
+3. Edit `commands/mi-init.md` per §5.4 (insert Step 5.5).
 4. Add the README section per §5.2.
 5. Smoke-test `info-bar.sh` directly. Feed it a synthetic stdin payload
    so we exercise the project_dir anchor:
@@ -529,11 +529,11 @@ out of scope here.)
      | scripts/info-bar.sh
    ```
    Cases:
-   - `project_dir` has no `millwright-overseer/` → empty output.
-   - `project_dir` has data root, no active quest → `mo-workflow · idle`.
-   - Active cycle, `active=null` → `mo-workflow · cycle <slug> · Stage 1
+   - `project_dir` has no `millwright-inspector/` → empty output.
+   - `project_dir` has data root, no active quest → `mi-workflow · idle`.
+   - Active cycle, `active=null` → `mi-workflow · cycle <slug> · Stage 1
      · quest generated`.
-   - Active cycle, `current-stage=3` → `mo-workflow · <feat> · Stage 3
+   - Active cycle, `current-stage=3` → `mi-workflow · <feat> · Stage 3
      · implementation`.
    - **From a subdirectory** — set `current_dir` to a child path of
      `project_dir`; the bar must still find the project-root data root
@@ -541,14 +541,14 @@ out of scope here.)
    - Corrupt `progress.md` frontmatter → §3.5 fallback line.
    - Time the round-trip; expect ≤100ms typical, ≤150ms max on macOS
      (python3 cold-start dominates).
-6. Smoke-test `/mo-init-status-bar`:
+6. Smoke-test `/mi-init-status-bar`:
    - No prior settings → wrapper written, `settings.local.json` written,
      both valid.
    - `statusLine` already points at our wrapper path → "already wired",
      no rewrite.
    - `statusLine` points elsewhere → prompt fires; `k` does nothing,
      `o` overwrites, `p` prints snippet.
-   - `--user` writes to `~/.claude/{mo-stage-info-bar.sh,settings.json}`;
+   - `--user` writes to `~/.claude/{mi-stage-info-bar.sh,settings.json}`;
      project files untouched.
    - `--project-shared` warns about the machine-specific wrapper path
      and requires confirmation; on confirm, writes `.claude/settings.json`
@@ -560,7 +560,7 @@ out of scope here.)
      - Both unresolvable → clear error message.
    - Malformed JSON in target settings file → refuses to write;
      prints parse error.
-7. Smoke-test `/mo-init` end-to-end: ensure Step 5.5 fires, declining
+7. Smoke-test `/mi-init` end-to-end: ensure Step 5.5 fires, declining
    skips cleanly, accepting wires the bar, and the bottom bar shows the
    correct line on the next Claude Code interaction.
 8. Bump plugin version to `0.7.5` and ship.
@@ -574,7 +574,7 @@ No new schema, no new template, no new hook.
 | `PostToolUse(Bash)` hook on every shell call   | No hook                                  |
 | Per-cycle `.stage-tokens.json` sidecar         | No sidecar                               |
 | Per-cycle NDJSON `usage.log`                   | No log                                   |
-| `/mo-info-bar` (token-math display wrapper)    | `/mo-init-status-bar` (one-time wiring   |
+| `/mi-info-bar` (token-math display wrapper)    | `/mi-init-status-bar` (one-time wiring   |
 |                                                | only; no display logic, no token math)   |
 | Token math (parsed Claude Code transcript)     | No math; reads `current-stage` integer   |
 | Hook anchored to a stale `$PWD` (silent fail   | Script reads `workspace.project_dir`     |
@@ -584,12 +584,12 @@ No new schema, no new template, no new hook.
 
 Remaining failure modes:
 
-- Status line shows the wrong stage if the overseer mutates
+- Status line shows the wrong stage if the inspector mutates
   `progress.md` outside `progress.sh` — already a documented "do not do
   that" in `templates/progress.md.tmpl`.
 - Status line goes blank after a marketplace plugin upgrade if the
   wrapper's fallback scan can't find the new install — recovered by
-  rerunning `/mo-init-status-bar`.
+  rerunning `/mi-init-status-bar`.
 
 ## 10. Decisions taken (resolutions to questions raised during planning)
 
@@ -599,7 +599,7 @@ implementation has no ambiguity to re-litigate.
 1. **Stage 1.5 rendering — fold into "Stage 1 · quest generated".**
    Distinguishing the queue-ordering-confirmation sub-state would require
    probing `queue-rationale.md` existence on every status-line tick.
-   Cost outweighs the signal; the overseer is staring at the queue
+   Cost outweighs the signal; the inspector is staring at the queue
    proposal in the chat anyway. The status line is for "where am I"
    awareness, not protocol-level disambiguation.
 2. **Slug / feature truncation: 24 chars, with `…` suffix at 22.**
@@ -608,7 +608,7 @@ implementation has no ambiguity to re-litigate.
    no point raising the limit for hypothetical names that don't exist
    yet.
 3. **Stage 8 renders as `finalizing`.** Even though `current-stage=8` is
-   rarely observed on disk (per `commands/mo-complete-workflow.md:13`,
+   rarely observed on disk (per `commands/mi-complete-workflow.md:13`,
    stage 8 is conceptual; `progress.sh finish` jumps straight to
    `active=null`), a status-line tick that races with the finalize
    write would otherwise show "Stage 8 · unknown". The `finalizing`
@@ -618,7 +618,7 @@ implementation has no ambiguity to re-litigate.
    plugin at the same path (think team-wide dotfiles, controlled-image
    dev environments) are a legitimate use case. Closing off
    `--project-shared` entirely would be paternalistic. The warning
-   makes the trade-off explicit; the confirmation forces the overseer
+   makes the trade-off explicit; the confirmation forces the inspector
    to acknowledge it.
 5. **Most-recent-mtime wins when multiple plugin installs exist in the
    user-cache.** Both the wrapper's fallback scan and the slash
@@ -627,7 +627,7 @@ implementation has no ambiguity to re-litigate.
    is exactly the case the fallback exists for, and "newest install"
    matches user intent in those scenarios. An explicit version pin
    would defeat the fallback's purpose (the captured fast-path root
-   already pins the install at the time `/mo-init-status-bar` ran).
+   already pins the install at the time `/mi-init-status-bar` ran).
 
 ## 11. Reload behavior — does the bar appear instantly?
 
@@ -639,7 +639,7 @@ Per the official Claude Code documentation
 > Settings reload automatically, but changes won't appear until your next
 > interaction with Claude Code.
 
-So the sequence after the overseer runs `/mo-init-status-bar` is:
+So the sequence after the inspector runs `/mi-init-status-bar` is:
 
 1. The command writes the wrapper script and the `statusLine` block to
    the chosen settings file (default `.claude/settings.local.json`,
@@ -659,12 +659,12 @@ The reload behavior is identical for `.claude/settings.local.json`,
 `.claude/settings.json`, and `~/.claude/settings.json` — Claude Code
 treats all three sources the same way for this purpose.
 
-### What `/mo-init-status-bar` should print at the end
+### What `/mi-init-status-bar` should print at the end
 
 To set expectations, the command finishes with something like:
 
 ```
-✓ wrote wrapper       → /abs/path/to/.claude/mo-stage-info-bar.sh
+✓ wrote wrapper       → /abs/path/to/.claude/mi-stage-info-bar.sh
 ✓ wrote statusLine    → .claude/settings.local.json
 The bar will appear on your next interaction with Claude Code (no restart needed).
 If it doesn't show up after the next message, check that the wrapper is

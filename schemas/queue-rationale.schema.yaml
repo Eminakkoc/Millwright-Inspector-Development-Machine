@@ -1,16 +1,16 @@
 $schema: "http://json-schema.org/draft-07/schema#"
-$id: millwright-overseer-development-machine/queue-rationale.schema.yaml
+$id: millwright-inspector-development-machine/queue-rationale.schema.yaml
 title: quest/<active-slug>/queue-rationale.md frontmatter
 description: >
   Audit artifact for the stage-1.5 dependency-ordering decision. Lives at
-  millwright-overseer/quest/<active-slug>/queue-rationale.md, co-located
+  millwright-inspector/quest/<active-slug>/queue-rationale.md, co-located
   with the cycle's todo-list.md, summary.md, and progress.md inside the
-  per-cycle subfolder. Written by the Pre-flight Handler in /mo-continue
+  per-cycle subfolder. Written by the Pre-flight Handler in /mi-continue
   (Step 2B) just before progress.sh reorder so the prioritized order and
   the reasoning behind it survive a session break. Persists permanently
   under the cycle's slug subfolder once the cycle ends — the historical
   rationale is preserved as part of the task archive rather than scrubbed
-  by the next /mo-run.
+  by the next /mi-run.
 
 type: object
 additionalProperties: false
@@ -40,7 +40,7 @@ properties:
       these aligned by refreshing `features` whenever the latest batch flips
       from `draft` to `confirmed`. Step 2A appending a new batch must publish
       the cumulative `features` and `batch: N+1`/`status: draft` in the same
-      write so the next /mo-continue routes to the draft-confirmation row.
+      write so the next /mi-continue routes to the draft-confirmation row.
   status:
     type: string
     enum:
@@ -80,7 +80,7 @@ properties:
       Optional cache field. Present only when `scan-mode: code-aware`. Hex
       digest (sha-256, abbreviated) of the cycle's `summary.md` content at
       scan time. Part of the cache key; if `summary.md` changes mid-cycle
-      (new batch added, edits during overseer review), the digest mismatches
+      (new batch added, edits during inspector review), the digest mismatches
       and the next code-aware scan re-derives.
   head-when-scanned:
     type: string

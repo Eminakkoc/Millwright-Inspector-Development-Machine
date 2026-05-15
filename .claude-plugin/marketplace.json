@@ -1,15 +1,15 @@
 {
-  "name": "millwright-overseer",
+  "name": "millwright-inspector",
   "owner": {
     "name": "Emin Akkoc",
     "email": "emin.akkoc@gmail.com"
   },
   "plugins": [
     {
-      "name": "millwright-overseer-development-machine",
+      "name": "millwright-inspector-development-machine",
       "source": "./",
-      "description": "Millwright-Overseer agentic workflow system — delegates coding to an AI 'millwright' while the human acts as 'overseer' who reviews generated specs, plans, implementations, and diagrams at each stage.",
-      "version": "0.1.0",
+      "description": "Millwright-Inspector agentic workflow system — delegates coding to an AI 'millwright' while the human acts as 'inspector' who reviews generated specs, plans, implementations, and diagrams at each stage.",
+      "version": "1.0.0",
       "author": {
         "name": "Emin Akkoc",
         "email": "emin.akkoc@gmail.com"

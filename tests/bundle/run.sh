@@ -5,7 +5,7 @@
 # flavors:
 #
 #   Success fixture:
-#     input/                — snapshot of millwright-overseer/ data tree
+#     input/                — snapshot of millwright-inspector/ data tree
 #     expected.md           — bundle output, byte-equal after timestamp norm
 #     [expected-stdout.txt] — optional, defaults to "<scrubbed>" check
 #     [invoke-from]         — optional, override cwd; supports
@@ -122,7 +122,7 @@ run_fixture() {
   local exit_code=0
   (
     cd "$cwd"
-    MO_DATA_ROOT="$sandbox/millwright-overseer" \
+    MI_DATA_ROOT="$sandbox/millwright-inspector" \
     CLAUDE_PLUGIN_ROOT="$REPO_ROOT" \
       "$BUNDLE_SH" export
   ) >"$out_file" 2>"$err_file" || exit_code=$?

@@ -5,7 +5,7 @@
 # The file is append-only and lives at the top level of the data root, a
 # sibling of journal/, quest/, workflow-stream/, and pr-reviews/. It is created
 # on demand the first time a lesson is appended. config.md references it by
-# path (written by mo-apply-impact) so the planning/implementation chains read
+# path (written by mi-apply-impact) so the planning/implementation chains read
 # it before writing code.
 #
 # Self-validation: append runs frontmatter.sh validate after each write — the
@@ -20,7 +20,7 @@
 set -euo pipefail
 source "$(dirname "$0")/internal/common.sh"
 
-lessons_file() { echo "$(mo_data_root)/lessons-learned.md"; }
+lessons_file() { echo "$(mi_data_root)/lessons-learned.md"; }
 
 cmd="${1:-}"; shift || true
 
@@ -34,26 +34,26 @@ case "$cmd" in
     title=""
     while [[ $# -gt 0 ]]; do
       case "$1" in
-        --source) [[ $# -ge 2 ]] || mo_die "append: --source requires a value"; source_ref="$2"; shift 2 ;;
+        --source) [[ $# -ge 2 ]] || mi_die "append: --source requires a value"; source_ref="$2"; shift 2 ;;
         --source=*) source_ref="${1#--source=}"; shift ;;
-        --title)  [[ $# -ge 2 ]] || mo_die "append: --title requires a value"; title="$2"; shift 2 ;;
+        --title)  [[ $# -ge 2 ]] || mi_die "append: --title requires a value"; title="$2"; shift 2 ;;
         --title=*) title="${1#--title=}"; shift ;;
-        *) mo_die "append: unknown argument: $1" ;;
+        *) mi_die "append: unknown argument: $1" ;;
       esac
     done
-    [[ -n "$title" ]]      || mo_die "append: --title is required"
-    [[ -n "$source_ref" ]] || mo_die "append: --source is required"
+    [[ -n "$title" ]]      || mi_die "append: --title is required"
+    [[ -n "$source_ref" ]] || mi_die "append: --source is required"
 
     dest="$(lessons_file)"
     if [[ ! -f "$dest" ]]; then
-      "${MO_PLUGIN_ROOT}/scripts/frontmatter.sh" init lessons-learned "$dest" >/dev/null
+      "${MI_PLUGIN_ROOT}/scripts/frontmatter.sh" init lessons-learned "$dest" >/dev/null
     fi
 
     lesson_body=""
     if [[ ! -t 0 ]]; then
       lesson_body="$(cat)"
     fi
-    [[ -n "${lesson_body//[[:space:]]/}" ]] || mo_die "append: lesson body (stdin) is empty"
+    [[ -n "${lesson_body//[[:space:]]/}" ]] || mi_die "append: lesson body (stdin) is empty"
 
     today="$(date -u +%Y-%m-%d)"
     python3 - "$dest" "$title" "$today" "$source_ref" "$lesson_body" <<'PYEOF'
@@ -82,8 +82,8 @@ with open(path, 'w') as f:
     f.write(content)
 print(lid)
 PYEOF
-    "${MO_PLUGIN_ROOT}/scripts/frontmatter.sh" validate "$dest" lessons-learned >/dev/null
-    mo_info "appended lesson to $dest"
+    "${MI_PLUGIN_ROOT}/scripts/frontmatter.sh" validate "$dest" lessons-learned >/dev/null
+    mi_info "appended lesson to $dest"
     ;;
 
   *)

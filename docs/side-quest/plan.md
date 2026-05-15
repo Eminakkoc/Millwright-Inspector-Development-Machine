@@ -1,23 +1,23 @@
 # Side-quest sub-agent implementation plan
 
 A user-triggered escape hatch for handling mid-workflow questions and small
-fixes without polluting the main orchestrator's context. The overseer types
-`/mo-sidequest "<question or ask>"`, the main agent reads the active quest's
+fixes without polluting the main orchestrator's context. The inspector types
+`/mi-sidequest "<question or ask>"`, the main agent reads the active quest's
 `progress.md` to learn what workflow it is inside, classifies the question
 into one of three effort tiers, and spawns a fresh sub-agent that does the
 exploration in its isolated context and returns a focused answer.
 
-The motivation: the mo-workflow already pushes large reads (codebase walks,
+The motivation: the mi-workflow already pushes large reads (codebase walks,
 diff analyses, per-iteration review) into fresh sub-agents so that main's
 context stays slim across stages (`docs/sub-agent-return-contract.md`). But
-*ad-hoc* overseer questions and "can you fix this small thing" requests
+*ad-hoc* inspector questions and "can you fix this small thing" requests
 typed mid-workflow currently land directly in main and propagate to later
 stages. This feature closes that gap with an **explicitly invoked**
 side-quest path — never an auto-router.
 
 ## 1. Goals
 
-1. Give the overseer a single slash command (`/mo-sidequest`) that runs a
+1. Give the inspector a single slash command (`/mi-sidequest`) that runs a
    mid-workflow question or small ask in an isolated sub-agent context.
 2. Make the sub-agent **workflow-aware** by reading `progress.md` once at
    spawn time — no extra state file, no sidecar, no in-memory pointer the
@@ -27,7 +27,7 @@ side-quest path — never an auto-router.
    *over*-effort under uncertainty. The budget controls read/grep caps
    and answer length in the spawn prompt; it does **not** swap models
    per call (see §5 rationale).
-4. Surface a clean answer to the overseer and a compact continuity line
+4. Surface a clean answer to the inspector and a compact continuity line
    in main, so that two turns later "do what we just discussed" still
    works.
 5. Give the sub-agent a one-shot escalation lever
@@ -36,7 +36,7 @@ side-quest path — never an auto-router.
 
 ## 2. Non-goals
 
-- **No auto-classification of arbitrary overseer messages.** Steering
+- **No auto-classification of arbitrary inspector messages.** Steering
   ("skip step 3", "actually let's stop") and side-quests look identical
   from the outside; auto-routing would silently drop steering into a
   throwaway context. The trigger is **always** the slash command.
@@ -67,21 +67,21 @@ side-quest path — never an auto-router.
   See §6.
 - **No re-implementation of the orchestrator's job.** A side-quest may
   not advance stages, activate features, or finalize the workflow.
-  Those are the existing `/mo-*` commands' responsibilities.
+  Those are the existing `/mi-*` commands' responsibilities.
 - **No new schema.** The slash command and the sub-agents both work off
   existing files (`progress.md`, `quest/active.md`, blueprint dir,
   implementation dir, test dir).
 
 ## 3. Trigger and surface
 
-The overseer invokes:
+The inspector invokes:
 
 ```
-/mo-sidequest "<question or ask, free-form>"
-/mo-sidequest --quick    "<...>"
-/mo-sidequest --standard "<...>"
-/mo-sidequest --deep     "<...>"
-/mo-sidequest --write    "<...>"      # see §6
+/mi-sidequest "<question or ask, free-form>"
+/mi-sidequest --quick    "<...>"
+/mi-sidequest --standard "<...>"
+/mi-sidequest --deep     "<...>"
+/mi-sidequest --write    "<...>"      # see §6
 ```
 
 The question is a single quoted string (multi-word arguments are joined by
@@ -95,34 +95,34 @@ with its own gating (§6).
 ### 3.1 Behavior with no active workflow
 
 If `quest.sh has-active` exits non-zero (no `quest/active.md`, or its
-`status != active`), `/mo-sidequest` refuses and prints:
+`status != active`), `/mi-sidequest` refuses and prints:
 
 ```
-No active mo-workflow. /mo-sidequest is for mid-workflow questions.
-Ask the question directly in chat, or run /mo-run to start a cycle first.
+No active mi-workflow. /mi-sidequest is for mid-workflow questions.
+Ask the question directly in chat, or run /mi-run to start a cycle first.
 ```
 
 If a cycle is active but `progress.md → active` is `null` (pre-stage-2 or
 post-stage-8), the command proceeds **at cycle scope** — the spawn prompt
 omits feature-specific paths and tells the sub-agent the cycle is between
-features. This is rare but legitimate (e.g., the overseer wants to ask
+features. This is rare but legitimate (e.g., the inspector wants to ask
 something about the queue between two features).
 
 ### 3.2 Where the answer is rendered
 
 The sub-agent's return follows the existing sub-agent return contract
 (`docs/sub-agent-return-contract.md`), with **two additions** — an
-`Answer:` block holding the overseer-facing response, and a
+`Answer:` block holding the inspector-facing response, and a
 `Continuity summary:` line for retention in main. The orchestrator:
 
-1. Prints the `Answer:` block verbatim to the overseer.
+1. Prints the `Answer:` block verbatim to the inspector.
 2. Retains the rest of the return shape (`Result`, `Findings / risks`,
    `Main should read`, `Continuity summary`) in its own context as the
    compact record of what just happened.
 
-No file is written for the answer by default. The overseer can pipe the
+No file is written for the answer by default. The inspector can pipe the
 answer into the workflow if it warrants — e.g., copy a finding into
-`/mo-review`, or update a goal via the next `/mo-*` command. This keeps
+`/mi-review`, or update a goal via the next `/mi-*` command. This keeps
 the side-quest from accidentally rewriting workflow artifacts.
 
 ## 4. Workflow awareness — how main learns the context
@@ -140,7 +140,7 @@ progress="$data_root/quest/$quest_slug/progress.md"
 # match the one that activated the feature. Mandatory before spawning,
 # especially before --write. Exits 0 when active=null (cycle scope), so
 # safe to call unconditionally. See scripts/progress.sh:767 and the
-# helper `mo_verify_worktree` at scripts/internal/common.sh:308.
+# helper `mi_verify_worktree` at scripts/internal/common.sh:308.
 $CLAUDE_PLUGIN_ROOT/scripts/progress.sh check-worktree
 
 active_feature="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get-active)"   # → "null" or feature name
@@ -151,11 +151,11 @@ sub_flow="$($CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get "$progress" .active.s
 (Helper names confirmed by `scripts/progress.sh:27,:451,:767` and
 `scripts/internal/common.sh:97`. `get-active` is a file read only — the
 worktree guard is the separate `check-worktree` subcommand and must be
-invoked explicitly. The `data-root.sh` resolution honors `MO_DATA_ROOT`
+invoked explicitly. The `data-root.sh` resolution honors `MI_DATA_ROOT`
 → `CLAUDE_PLUGIN_USER_CONFIG_data_root` → default per
 `scripts/internal/common.sh:16-46` — the rest of the plan must use
 `$data_root` whenever it needs an absolute path, never the literal
-`millwright-overseer/`.)
+`millwright-inspector/`.)
 
 From those five values the orchestrator derives the spawn-prompt header:
 
@@ -169,7 +169,7 @@ Data root (absolute): <data_root>
 
 The sub-agent uses `Data root (absolute)` as both (a) the anchor for
 "where workflow artifacts live" (so it can find them without hard-coding
-`millwright-overseer/`) and (b) the forbidden prefix in the writable
+`millwright-inspector/`) and (b) the forbidden prefix in the writable
 variant (§6).
 
 No artifact catalog is passed. The sub-agent reads `progress.md` itself
@@ -218,9 +218,9 @@ trip via escalation (§5.3); over-budget costs only tokens.
 ### 5.2 Overrides
 
 The flags `--quick` / `--standard` / `--deep` override the rubric. They
-are the right answer when the overseer already knows the question's
+are the right answer when the inspector already knows the question's
 shape better than any heuristic will. The orchestrator's rendered echo
-notes the override so the overseer can confirm:
+notes the override so the inspector can confirm:
 
 ```
 sidequest: tier=deep (overridden)
@@ -228,7 +228,7 @@ sidequest: tier=standard (rubric: scope=narrow, verb=audit→broad, concreteness
 ```
 
 The echo is one line, printed before the sub-agent is spawned. It exists
-so the overseer can `Ctrl-C` and retry with a different tier if the
+so the inspector can `Ctrl-C` and retry with a different tier if the
 classification is obviously wrong.
 
 ### 5.3 Escalation protocol
@@ -264,14 +264,14 @@ separate branches (§7.1.6):
 - `WRITE_REQUIRED: <reason>` — the read-only sub-agent has determined
   the ask cannot be satisfied without source edits. The orchestrator
   does **not** auto-promote to the writer; instead it surfaces the
-  reason and asks the overseer to re-run with `--write`. Write-mode is
-  an explicit overseer decision by design (§6.1).
+  reason and asks the inspector to re-run with `--write`. Write-mode is
+  an explicit inspector decision by design (§6.1).
 
 Keeping the two sentinels distinct avoids a real bug in an earlier
 revision of this plan: that revision told the reader to emit
 `NEEDS_ESCALATION: question requires --write`, which would have
 triggered the tier-escalation handler and re-run the question at
-`standard` instead of asking the overseer for `--write`. The token
+`standard` instead of asking the inspector for `--write`. The token
 distinction is what fixes that (recorded in §12 fold-in #5).
 
 ### 5.5 Why one model, not three
@@ -281,8 +281,8 @@ The plan originally suggested per-tier model selection (haiku / sonnet
 
 1. Sub-agent `model:` is set in frontmatter, and no command in this
    plugin invokes `Agent` with a per-call `model:` override
-   (`commands/mo-review.md:262`,
-   `commands/mo-generate-implementation-diagrams.md:88`). The override
+   (`commands/mi-review.md:262`,
+   `commands/mi-generate-implementation-diagrams.md:88`). The override
    may or may not be honored — the precedence vs frontmatter is not
    documented anywhere we control.
 2. Three agent files (one per tier) crossed with two access modes
@@ -313,7 +313,7 @@ writable agent's spawn prompt adds these rules:
    passed in the spawn-prompt header (so `progress.md`, `quest/`,
    `workflow-stream/`, blueprints, plans, reviews, test artifacts are
    immutable from the side-quest path regardless of where the user
-   pointed their data root via `MO_DATA_ROOT` /
+   pointed their data root via `MI_DATA_ROOT` /
    `CLAUDE_PLUGIN_USER_CONFIG_data_root`).
 3. **No git operations beyond `git status` / `git diff`.** Commits,
    branch creation, worktree manipulation are forbidden — those are
@@ -337,12 +337,12 @@ Two reasons:
 - **A silent write during a workflow can invalidate the in-flight
   stage's contract.** If stage 4 is mid-execution and a side-quest
   rewrites `src/foo.ts`, the resume-handler's drift check at stage 4
-  may fire on the next `/mo-continue`. Forcing the overseer to type
+  may fire on the next `/mi-continue`. Forcing the inspector to type
   `--write` keeps that decision explicit.
 
 A side-quest that **does** rewrite source code returns the list of
 touched files under `Artifacts changed`, exactly like any other
-sub-agent. The next `/mo-continue` drift check picks the change up
+sub-agent. The next `/mi-continue` drift check picks the change up
 normally.
 
 ## 7. Files
@@ -350,7 +350,7 @@ normally.
 ```
 agents/sidequest-reader.md                 new — read-only sub-agent (Q&A)
 agents/sidequest-writer.md                 new — writable sub-agent (--write only)
-commands/mo-sidequest.md                   new — slash-command spec
+commands/mi-sidequest.md                   new — slash-command spec
 docs/side-quest/plan.md                    this file
 README.md                                  +1 paragraph under "Optional companions"
 templates/sub-agent-return.md.tmpl         edit — add the `Answer:` and `Continuity summary:` lines
@@ -359,7 +359,7 @@ docs/sub-agent-return-contract.md          edit — document the two new fields 
 
 No new script. No new schema. No new template beyond the return-shape edit.
 
-### 7.1 `commands/mo-sidequest.md`
+### 7.1 `commands/mi-sidequest.md`
 
 Frontmatter:
 
@@ -382,7 +382,7 @@ Split `$ARGUMENTS` into:
 If `question` is empty after parsing, print:
 
 ```
-Usage: /mo-sidequest [--quick | --standard | --deep] [--write] "<question>"
+Usage: /mi-sidequest [--quick | --standard | --deep] [--write] "<question>"
 ```
 
 …and exit. Multiple tier flags is an error with the same usage line.
@@ -396,8 +396,8 @@ Run the reads from §4 in order:
    the §3.1 refusal and exit.
 3. `progress.sh check-worktree`. **Mandatory before any spawn**,
    especially under `--write` — the worktree-fingerprint mismatch
-   message surfaces to the overseer with the canonical text from
-   `mo_verify_worktree` (`scripts/internal/common.sh:308-365`). The
+   message surfaces to the inspector with the canonical text from
+   `mi_verify_worktree` (`scripts/internal/common.sh:308-365`). The
    slash command does not catch this error; the user sees it and the
    side-quest does not spawn.
 4. `progress.sh get-active`, `frontmatter.sh get` for `current-stage`
@@ -408,15 +408,15 @@ If `active_feature == "null"` and `current_stage == null`, set scope to
 
 #### 7.1.3 Step 3 — Classify (skipped on explicit tier override)
 
-Apply the §5.1 rubric. Print the one-line echo from §5.2 so the overseer
+Apply the §5.1 rubric. Print the one-line echo from §5.2 so the inspector
 sees the chosen tier.
 
 #### 7.1.4 Step 4 — Pick the sub-agent
 
 - `--write` absent → `subagent_type:
-  millwright-overseer-development-machine:sidequest-reader`.
+  millwright-inspector-development-machine:sidequest-reader`.
 - `--write` present → `subagent_type:
-  millwright-overseer-development-machine:sidequest-writer`.
+  millwright-inspector-development-machine:sidequest-writer`.
 
 No further pre-spawn computation is needed — the sub-agent infers which
 artifacts to read from the workflow-state header in the spawn prompt
@@ -445,7 +445,7 @@ order**; the first match wins:
 
 1. **`WRITE_REQUIRED: <reason>` as the first non-blank line.** The
    read-only sub-agent has determined the ask cannot be answered without
-   edits. Do NOT re-spawn — write-mode is an explicit overseer decision,
+   edits. Do NOT re-spawn — write-mode is an explicit inspector decision,
    never automatic. Print:
 
    ```
@@ -468,11 +468,11 @@ order**; the first match wins:
 
 3. **`NEEDS_ESCALATION: <reason>` at tier `deep`.** Cannot escalate
    further. Surface as a `Result: partial` and print the reason as a
-   `Findings / risks` bullet. Ask the overseer to narrow or split the
+   `Findings / risks` bullet. Ask the inspector to narrow or split the
    question.
 
 4. **Otherwise** — extract the `Answer:` block (§7.4) and print it
-   verbatim to the overseer.
+   verbatim to the inspector.
 
 5. Print a one-line trailer:
 
@@ -484,13 +484,13 @@ The structured part of the return (Result / Findings / Continuity
 summary / Main should read / Artifacts changed) is naturally retained in
 main's context as the tool result. No further main-side action is taken
 unless the sub-agent populated `Artifacts changed` (in which case a
-follow-up `/mo-continue` will pick the edits up via the existing drift
+follow-up `/mi-continue` will pick the edits up via the existing drift
 check — main does not need to read the edited files itself).
 
 ### 7.2 Spawn-prompt template
 
 ```
-You are a fresh sub-agent invoked from /mo-sidequest. Your context is
+You are a fresh sub-agent invoked from /mi-sidequest. Your context is
 isolated from the main session — main does not see your tool calls,
 only your final return summary.
 
@@ -510,7 +510,7 @@ shape (workflow-stream/<feature>/blueprints/current/, .../implementation/,
 .../test/, quest/<slug>/) to find what the question needs. Read narrowly;
 do not bulk-read directories.
 
-Overseer question:
+Inspector question:
 <<<
 <question>
 >>>
@@ -548,13 +548,13 @@ behavioral defaults.
 ```yaml
 ---
 name: sidequest-reader
-description: Mid-workflow Q&A sub-agent. Spawned by /mo-sidequest without --write. Reads workflow state from progress.md (passed in spawn prompt), answers the overseer's question, and returns a structured response with an Answer block for the overseer plus a Continuity summary line for main. Read-only — no Edit / Write.
+description: Mid-workflow Q&A sub-agent. Spawned by /mi-sidequest without --write. Reads workflow state from progress.md (passed in spawn prompt), answers the inspector's question, and returns a structured response with an Answer block for the inspector plus a Continuity summary line for main. Read-only — no Edit / Write.
 model: sonnet
 tools: [Read, Grep, Bash]
 ---
 
-You are a fresh sub-agent invoked from /mo-sidequest. The spawn prompt
-gives you (1) the overseer's question, (2) the active quest / feature /
+You are a fresh sub-agent invoked from /mi-sidequest. The spawn prompt
+gives you (1) the inspector's question, (2) the active quest / feature /
 stage context, (3) the absolute data root, (4) your tier, and (5)
 `Write mode: read-only`.
 
@@ -567,11 +567,11 @@ Behavioral defaults — discipline:
 - Read narrowly. Use Grep + symbol search first; escalate to whole-file
   reads only when a signature / line range is genuinely insufficient.
 - Workflow artifacts live under the absolute data root from your spawn
-  prompt. Use that path; never hard-code `millwright-overseer/`.
+  prompt. Use that path; never hard-code `millwright-inspector/`.
 - You do not have Edit or Write in your tool list. If the question
   cannot be answered without edits, return exactly
   `WRITE_REQUIRED: <one-sentence reason>` as the first line and stop —
-  the slash command will surface that to the overseer, who can re-run
+  the slash command will surface that to the inspector, who can re-run
   with --write. Do NOT use `NEEDS_ESCALATION` for this case; that
   sentinel is reserved for budget-tier escalation and would be handled
   differently.
@@ -585,7 +585,7 @@ additions. Include every standard field — `Artifacts changed:` and
 allowed per the contract). The full block:
 
   Answer:
-  <free-form response shown verbatim to the overseer; markdown is fine>
+  <free-form response shown verbatim to the inspector; markdown is fine>
 
   Continuity summary:
   <one line, ≤ 20 words, suitable for retention in main's context — what
@@ -607,13 +607,13 @@ allowed per the contract). The full block:
 ```yaml
 ---
 name: sidequest-writer
-description: Mid-workflow small-fix sub-agent. Spawned by /mo-sidequest --write. Reads workflow state from progress.md (passed in spawn prompt), answers and / or performs a small constrained fix, and returns a structured response with an Answer block, Continuity summary, and any touched files under Artifacts changed. Edits allowed in the project source tree only — workflow artifacts under the data root are read-only.
+description: Mid-workflow small-fix sub-agent. Spawned by /mi-sidequest --write. Reads workflow state from progress.md (passed in spawn prompt), answers and / or performs a small constrained fix, and returns a structured response with an Answer block, Continuity summary, and any touched files under Artifacts changed. Edits allowed in the project source tree only — workflow artifacts under the data root are read-only.
 model: sonnet
 tools: [Read, Grep, Bash, Edit, Write]
 ---
 
-You are a fresh sub-agent invoked from /mo-sidequest --write. The spawn
-prompt gives you (1) the overseer's question / ask, (2) the active
+You are a fresh sub-agent invoked from /mi-sidequest --write. The spawn
+prompt gives you (1) the inspector's question / ask, (2) the active
 quest / feature / stage context, (3) the absolute data root, (4) your
 tier, and (5) `Write mode: write-allowed`.
 
@@ -628,7 +628,7 @@ Behavioral defaults — discipline:
   progress.md, quest/, workflow-stream/, blueprints, plans, reviews,
   test artifacts. Edits in the surrounding project source tree are fine.
 - No `git commit`, no branch creation, no worktree manipulation. Only
-  `git status` and `git diff` are allowed. The next `/mo-continue` will
+  `git status` and `git diff` are allowed. The next `/mi-continue` will
   pick up your edits via the existing drift check.
 - Do not call `progress.sh` / `quest.sh` set helpers, or
   `frontmatter.sh set` on any workflow artifact.
@@ -644,7 +644,7 @@ though you cannot commit (empty bullet list per the contract). The full
 block:
 
   Answer:
-  <free-form response shown verbatim to the overseer; markdown is fine>
+  <free-form response shown verbatim to the inspector; markdown is fine>
 
   Continuity summary:
   <one line, ≤ 20 words, suitable for retention in main's context — what
@@ -654,7 +654,7 @@ block:
   Artifacts changed:
   - <path>: <one-line note on what changed>
   Commits:
-  (empty — you cannot commit; the next /mo-continue will pick up your edits)
+  (empty — you cannot commit; the next /mi-continue will pick up your edits)
   Findings / risks:
   - <main-actionable bullets, optional>
   Main should read:
@@ -677,12 +677,12 @@ In addition to the standard fields, side-quest returns include two extra
 blocks. They are emitted at the top of the return, before `Result:`.
 
 Answer:
-  Free-form response intended for the overseer. The /mo-sidequest
+  Free-form response intended for the inspector. The /mi-sidequest
   slash command prints this block verbatim. Markdown is allowed.
 
 Continuity summary:
   Single line, ≤ 20 words. Retained in main's context. Should make sense
-  to a reader who did not see the Answer block — e.g. "Overseer asked
+  to a reader who did not see the Answer block — e.g. "Inspector asked
   whether the rate-limiter fix touches both the API and CLI paths;
   confirmed it only touches the API path."
 
@@ -695,7 +695,7 @@ line and the sub-agent emits nothing else:
   writer both use this.
 - `WRITE_REQUIRED: <reason>` — reader-only. The question cannot be
   answered without edits; the orchestrator surfaces this to the
-  overseer rather than auto-promoting to the writer (write-mode is
+  inspector rather than auto-promoting to the writer (write-mode is
   always an explicit decision).
 ```
 
@@ -706,7 +706,7 @@ section pointing at the template's side-quest block.
 
 Under "Optional companions":
 
-> **Side-quest sub-agent.** `/mo-sidequest "<question>"` runs a
+> **Side-quest sub-agent.** `/mi-sidequest "<question>"` runs a
 > mid-workflow question or small ask in an isolated sub-agent context so
 > the question does not leak into the main orchestrator's context. The
 > sub-agent reads workflow state from `progress.md` at spawn, classifies
@@ -722,42 +722,42 @@ Under "Optional companions":
   `progress.md` once (via the snapshot in its spawn prompt); the workflow
   may advance during the side-quest. This is acceptable — the side-quest
   is for the state at spawn time. If the answer depends on a value that
-  changed (e.g., the overseer asked "is stage 5 done" mid-`/mo-continue`),
-  the answer is correct *as of spawn* and the overseer can re-ask.
+  changed (e.g., the inspector asked "is stage 5 done" mid-`/mi-continue`),
+  the answer is correct *as of spawn* and the inspector can re-ask.
 - **Side-quest takes longer than the next stage's drift threshold.**
-  Under `--write`, if the sub-agent edits source while `/mo-continue` is
+  Under `--write`, if the sub-agent edits source while `/mi-continue` is
   later run, the resume handler's drift check fires normally — this is
   the right behavior; we want drift to be visible.
 - **Custom data-root location.** A user with
-  `userConfig.data_root: .mo-data` (or any other value) is protected by
+  `userConfig.data_root: .mi-data` (or any other value) is protected by
   the same write-forbidden rule — the slash command resolves
   `data-root.sh` and passes the absolute path into the spawn prompt, so
   the writable agent's forbidden-path check is "anywhere under
-  `<resolved abs path>`," not "anywhere under `millwright-overseer/`."
+  `<resolved abs path>`," not "anywhere under `millwright-inspector/`."
 - **NEEDS_ESCALATION echoed by a deep-tier sub-agent.** A `deep`
   side-quest cannot escalate further. The orchestrator treats it as a
   `Result: partial` and prints the reason as a finding, asking the
-  overseer to narrow the question or split it across multiple
-  `/mo-sidequest` calls.
+  inspector to narrow the question or split it across multiple
+  `/mi-sidequest` calls.
 - **Read-only sub-agent asked to edit.** The reader's tool list omits
   Edit / Write. The reader's instructions tell it to return
   `WRITE_REQUIRED: <reason>` in that case (a separate sentinel from
   `NEEDS_ESCALATION` — see §5.4). Step 6's first branch surfaces this
-  to the overseer rather than auto-escalating to the writer; write-mode
+  to the inspector rather than auto-escalating to the writer; write-mode
   is an explicit decision, never automatic.
 - **Sub-agent crashes / returns malformed output.** The slash command's
   fallback is `Result: blocked` with the raw output preserved under
-  `Findings / risks`. The overseer can re-run.
-- **Overseer runs two `/mo-sidequest`s in quick succession.** Each
+  `Findings / risks`. The inspector can re-run.
+- **Inspector runs two `/mi-sidequest`s in quick succession.** Each
   spawns its own sub-agent — there is no shared state between
-  side-quests by design. If the overseer wants continuity across
+  side-quests by design. If the inspector wants continuity across
   side-quests, the second question should reference the first explicitly.
 - **`progress.md` mid-write at spawn time.** `progress.sh` writes via
   temp file + `os.replace`, so the orchestrator either sees the old or
   new state — never torn. No retry loop needed.
-- **`/mo-sidequest` is called from inside a worktree the workflow does
+- **`/mi-sidequest` is called from inside a worktree the workflow does
   not own.** Step 2 explicitly invokes `progress.sh check-worktree`
-  (`scripts/progress.sh:767`), which delegates to `mo_verify_worktree`
+  (`scripts/progress.sh:767`), which delegates to `mi_verify_worktree`
   (`scripts/internal/common.sh:308-365`). On mismatch the helper prints
   the canonical worktree-mismatch message and exits non-zero; the
   slash command does not catch this, so the user sees the error and the
@@ -777,11 +777,11 @@ Under "Optional companions":
 4. Add `agents/sidequest-writer.md` per §7.3, keeping body intentionally
    near-identical to the reader (only `tools:` line and the
    write-discipline bullets differ).
-5. Add `commands/mo-sidequest.md` per §7.1 — six numbered steps,
+5. Add `commands/mi-sidequest.md` per §7.1 — six numbered steps,
    spawn-prompt template at the end of the file.
 6. Edit `README.md` per §7.5.
 7. Smoke tests:
-   - **No active workflow.** `/mo-sidequest "anything"` → refusal per
+   - **No active workflow.** `/mi-sidequest "anything"` → refusal per
      §3.1.
    - **Quick tier auto.** Active stage-3 feature, question "where is
      `parseToken` defined" → tier=quick, answer references one file,
@@ -809,20 +809,20 @@ Under "Optional companions":
      instead. Verify by inspecting the trailer (no "re-spawning at"
      message).
    - **Worktree-mismatch guard.** From a checkout that is not the
-     activator worktree, run `/mo-sidequest "anything"`. Expect:
+     activator worktree, run `/mi-sidequest "anything"`. Expect:
      `progress.sh check-worktree` prints the canonical mismatch
      message and exits non-zero; the side-quest does not spawn.
      Repeat with `--write` to confirm the guard fires before any
      sub-agent invocation.
    - **`--write` allowed path.** Sub-agent edits a file under
      `src/` → return lists it under `Artifacts changed`; next
-     `/mo-continue` drift check picks it up.
+     `/mi-continue` drift check picks it up.
    - **`--write` forbidden path under default data root.** Sub-agent
-     attempts to edit `<project>/millwright-overseer/quest/<slug>/progress.md`
+     attempts to edit `<project>/millwright-inspector/quest/<slug>/progress.md`
      → refuses; `Result: blocked` with a clear finding.
    - **`--write` forbidden path under custom data root.** Set
-     `MO_DATA_ROOT=.mo-data`; spawn a writable side-quest; sub-agent
-     attempts to edit a file under `.mo-data/`; refuses identically.
+     `MI_DATA_ROOT=.mi-data`; spawn a writable side-quest; sub-agent
+     attempts to edit a file under `.mi-data/`; refuses identically.
      This validates the resolved-abs-path rule (§6 / §7.2).
    - **Manual-test artifact path.** Question at stage 7 referencing
      "the manual-test plan" — sub-agent finds
@@ -843,15 +843,15 @@ Under "Optional companions":
 | State file persists past workflow end                 | No state file; spawn-time read of `progress.md` is the only source.   |
 | Mid-workflow writes invalidate stage contracts        | Read-only sub-agent by default; writer's forbidden-path rule excludes the resolved absolute `$data_root`. |
 | Misclassified tier wastes a round trip                | One-shot `NEEDS_ESCALATION` escape hatch; bias-up rubric reduces miss rate. |
-| Side-quest answer reintroduces bloat into main        | Full Answer is shown to overseer; main only retains the structured fields, including the ≤20-word Continuity summary. |
-| Hard-coded `millwright-overseer/` in write-scope rule | Slash command resolves `data-root.sh` and passes the absolute path; agent's forbidden-prefix check uses it. Works under `MO_DATA_ROOT` / `CLAUDE_PLUGIN_USER_CONFIG_data_root` overrides. |
+| Side-quest answer reintroduces bloat into main        | Full Answer is shown to inspector; main only retains the structured fields, including the ≤20-word Continuity summary. |
+| Hard-coded `millwright-inspector/` in write-scope rule | Slash command resolves `data-root.sh` and passes the absolute path; agent's forbidden-prefix check uses it. Works under `MI_DATA_ROOT` / `CLAUDE_PLUGIN_USER_CONFIG_data_root` overrides. |
 | Tool-list extension at call time (unsupported)        | Two static agent files (reader / writer). Slash command picks one based on `--write`. |
 | Per-call model override (unverified)                  | Both agents pin `sonnet` in frontmatter. Tier is budget-only, not model. |
 | Two near-identical agent files drift apart            | Documented drift discipline (§7.3); PR reviewers flag any change that edits only one file. |
 | "Needs --write" signal collides with tier escalation  | Distinct sentinel `WRITE_REQUIRED: <reason>` (§5.4) handled by a separate first branch in Step 6 (§7.1.6). The orchestrator never auto-promotes reader → writer. |
 | Sidequest returns drop canonical contract fields      | Both agent return shapes (§7.3) include `Artifacts changed:` and `Commits:` with empty bullets where applicable, per `templates/sub-agent-return.md.tmpl`. |
 | Worktree-fingerprint guard assumed but not invoked    | Step 2 (§7.1.2) calls `progress.sh check-worktree` explicitly before classification, especially before `--write`. The helper is a no-op when `active=null`. |
-| Stale `progress.md` snapshot if workflow advances     | Documented as accepted; answer is "as of spawn time"; overseer can re-ask. |
+| Stale `progress.md` snapshot if workflow advances     | Documented as accepted; answer is "as of spawn time"; inspector can re-ask. |
 
 Remaining limitations — explicitly accepted:
 
@@ -861,7 +861,7 @@ Remaining limitations — explicitly accepted:
   main's. The Continuity summary is what main *keeps as record* after
   the Answer scrolls out of working attention.
 - A `deep` side-quest that exhausts sonnet's working budget cannot
-  escalate further; the overseer must split the question. If practice
+  escalate further; the inspector must split the question. If practice
   shows sonnet is undersized for the `deep` case, the right answer is
   to swap the deep agent's `model:` frontmatter, not to reintroduce
   a tier→model matrix.
@@ -884,8 +884,8 @@ the v2 review pass; what remains:
 3. **Version bump.** Plan picks `0.9.0` (new top-level slash command).
    Reviewer: confirm, or pick `0.8.3` if treated as additive.
 4. **Should the answer ever be persisted?** Plan says no — answers are
-   ephemeral; if the overseer wants the answer in the workflow, the
-   regular `/mo-*` commands are the right path. Reviewer: confirm, or
+   ephemeral; if the inspector wants the answer in the workflow, the
+   regular `/mi-*` commands are the right path. Reviewer: confirm, or
    add an optional `--save <name>` flag that writes to
    `quest/<slug>/sidequests/<timestamp>-<name>.md`. (Recommendation:
    defer to a future ticket if requested; not needed for v1.)
@@ -920,8 +920,8 @@ can see what changed and why.
    entirely. The sub-agent infers from the workflow-state header plus
    the documented directory shape, which avoids drift on every
    workflow-spec change. See §4 (no catalog) and §2 (non-goal).
-4. **Write-scope hard-coded `millwright-overseer/`.** Data root is
-   configurable via `MO_DATA_ROOT` / `CLAUDE_PLUGIN_USER_CONFIG_data_root`
+4. **Write-scope hard-coded `millwright-inspector/`.** Data root is
+   configurable via `MI_DATA_ROOT` / `CLAUDE_PLUGIN_USER_CONFIG_data_root`
    / default (`scripts/internal/common.sh:16-46`). A user with a custom
    path got no protection. Resolution: slash command resolves
    `data-root.sh` once (§4) and passes the absolute path into the
@@ -945,11 +945,11 @@ can see what changed and why.
    Resolution: both agents' return shapes now show the full standard
    block; the reader's `Artifacts changed` and `Commits` are documented
    as always-empty, the writer's `Commits` as always-empty (with a
-   note that the next `/mo-continue` handles commit creation).
+   note that the next `/mi-continue` handles commit creation).
 7. **Worktree guard was assumed, not invoked.** §8 said the §4 reads
-   "already error" via `mo_verify_worktree`, but the listed reads
+   "already error" via `mi_verify_worktree`, but the listed reads
    (`quest.sh current`, `progress.sh get-active`, `frontmatter.sh get`)
-   do not call the guard — `mo_verify_worktree` is exposed as the
+   do not call the guard — `mi_verify_worktree` is exposed as the
    separate subcommand `progress.sh check-worktree`
    (`scripts/progress.sh:767`). Resolution: §4 reads now include an
    explicit `progress.sh check-worktree` call; Step 2 (§7.1.2) lists

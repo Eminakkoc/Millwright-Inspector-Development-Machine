@@ -1,5 +1,5 @@
 $schema: "http://json-schema.org/draft-07/schema#"
-$id: millwright-overseer-development-machine/lessons-learned.schema.yaml
+$id: millwright-inspector-development-machine/lessons-learned.schema.yaml
 title: lessons-learned.md frontmatter
 description: >-
   Schema for the cumulative lessons-learned.md at the data-root top level. The

@@ -34,27 +34,27 @@ rotate every time.
 
 | Event                       | Today                                                                                                                                                              | After this change                                                                            |
 | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------- |
-| `/mo-complete-workflow` (stage 8) | `implementation/manual-test-plan.md`, `manual-test-results.md`, and `manual-test-plan.history/` are moved into `blueprints/history/v[N+1]/implementation/`. | `test/` folder is **left in place**. Nothing under it is moved, archived, or deleted.        |
-| `/mo-abort-workflow`        | `implementation/manual-test-plan.md`, `manual-test-results.md`, `manual-test-plan.history/` are deleted alongside the other implementation artifacts.              | `test/` folder is **left in place** (open question — see §6.1).                              |
-| `/mo-manual-test-plan --force` / `--discard-existing` | Rotates current plan + results into `implementation/manual-test-plan.history/<timestamp>/`.                                                          | Rotates into `test/manual-test-plan.history/<timestamp>/`. Same rotation mechanics, new root.|
-| Next cycle for the same feature | Folder didn't survive — a fresh plan is generated against a clean directory.                                                                                  | The previous plan + results survive at `test/`. The next cycle's `/mo-manual-test-plan` either reuses the existing plan or rotates it into `manual-test-plan.history/` under the same `seed-family-id`. |
+| `/mi-complete-workflow` (stage 8) | `implementation/manual-test-plan.md`, `manual-test-results.md`, and `manual-test-plan.history/` are moved into `blueprints/history/v[N+1]/implementation/`. | `test/` folder is **left in place**. Nothing under it is moved, archived, or deleted.        |
+| `/mi-abort-workflow`        | `implementation/manual-test-plan.md`, `manual-test-results.md`, `manual-test-plan.history/` are deleted alongside the other implementation artifacts.              | `test/` folder is **left in place** (open question — see §6.1).                              |
+| `/mi-manual-test-plan --force` / `--discard-existing` | Rotates current plan + results into `implementation/manual-test-plan.history/<timestamp>/`.                                                          | Rotates into `test/manual-test-plan.history/<timestamp>/`. Same rotation mechanics, new root.|
+| Next cycle for the same feature | Folder didn't survive — a fresh plan is generated against a clean directory.                                                                                  | The previous plan + results survive at `test/`. The next cycle's `/mi-manual-test-plan` either reuses the existing plan or rotates it into `manual-test-plan.history/` under the same `seed-family-id`. |
 
 ## 2. Files to change
 
 ### 2.1 Scripts
 
-- **`scripts/internal/common.sh`** — add a sibling helper alongside `mo_impl_dir`:
+- **`scripts/internal/common.sh`** — add a sibling helper alongside `mi_impl_dir`:
 
   ```bash
-  mo_test_dir() { echo "$(mo_feature_dir "$1")/test"; }
+  mi_test_dir() { echo "$(mi_feature_dir "$1")/test"; }
   ```
 
 - **`scripts/blueprints.sh`** — three existing subcommands that resolve
-  manual-test paths today via `mo_impl_dir` (lines 534–570), plus one
+  manual-test paths today via `mi_impl_dir` (lines 534–570), plus one
   new subcommand for results-only rotation (§4.1):
 
-  - `manual-test-plan-path` — switch to `mo_test_dir`.
-  - `manual-test-results-path` — switch to `mo_test_dir`.
+  - `manual-test-plan-path` — switch to `mi_test_dir`.
+  - `manual-test-results-path` — switch to `mi_test_dir`.
   - `manual-test-plan-rotate` — `impl_dir` local variable becomes `test_dir`;
     `history_dir` resolves under the new root. Add a `mkdir -p` for
     `$test_dir` at the top of rotate so the move targets exist even when
@@ -71,7 +71,7 @@ rotate every time.
     so the two lifecycles stay independent.
   - Update the usage string at the bottom of `blueprints.sh` accordingly.
 
-  The renderers in `/mo-manual-test-plan` and `/mo-manual-test-run` use
+  The renderers in `/mi-manual-test-plan` and `/mi-manual-test-run` use
   `frontmatter.sh init` and direct file writes — these will create the
   `test/` folder lazily, but the rotate path must also be safe when called
   before any plan-create has run.
@@ -102,7 +102,7 @@ rotate every time.
   mechanism:
 
   - **`activate` subcommand** (line ~129–183): mint a fresh UUIDv4
-    via `"${MO_PLUGIN_ROOT}/scripts/uuid.sh"` and add it to the
+    via `"${MI_PLUGIN_ROOT}/scripts/uuid.sh"` and add it to the
     `fm['active']` dict alongside the existing initialization fields
     (between `manual-test-failure-policy` and `worktree-path`). Use
     key `activation-id`.
@@ -143,7 +143,7 @@ For each, replace every occurrence of `workflow-stream/<feature>/implementation/
 `test/`-prefixed form. Replace inline shell snippets like
 `"$impl_dir/manual-test-plan.md"` with `"$test_dir/manual-test-plan.md"`.
 
-- **`commands/mo-manual-test-plan.md`** — three categories of edit:
+- **`commands/mi-manual-test-plan.md`** — three categories of edit:
 
   - Literal path updates in body prose (§1 invocation paragraph, §1
     "sub-flow" prose, Step 1, Step 5, Step 7 prompt). Also update the
@@ -158,7 +158,7 @@ For each, replace every occurrence of `workflow-stream/<feature>/implementation/
     same-cycle `--seed-only` recovery case OR a same-cycle paused-run
     resume. The state-agnostic shape covers prior-cycle `complete`
     AND `in-progress` results — both can leak across cycles now that
-    `/mo-abort-workflow` keeps `test/` intact (§6.1). Read-only
+    `/mi-abort-workflow` keeps `test/` intact (§6.1). Read-only
     against `progress.md` — safe to run before the existing read-only
     gates.
   - **New Step 1.5 (§4.2 freshness gate):** insert between the
@@ -166,7 +166,7 @@ For each, replace every occurrence of `workflow-stream/<feature>/implementation/
     `(requirements-id, generated-from-base-commit)` mismatch and
     dispatches per the table in §4.2. The gate MUST run before Step 2
     because the existing `--from-resume` + existing-plan branch in
-    Step 2 (line 89 of `commands/mo-manual-test-plan.md`) jumps
+    Step 2 (line 89 of `commands/mi-manual-test-plan.md`) jumps
     directly to Step 7, bypassing Step 3 entirely — a gate placed at
     Step 3 would never fire on the most important cross-cycle reuse
     path. Refusal/`c` answer leaves `progress.md` byte-identical
@@ -176,7 +176,7 @@ For each, replace every occurrence of `workflow-stream/<feature>/implementation/
     unchanged instead falls into the regeneration path (Steps 4–6),
     as if `--force` had been passed.
 
-- **`commands/mo-manual-test-run.md`** — Branches A/B/C preconditions name
+- **`commands/mi-manual-test-run.md`** — Branches A/B/C preconditions name
   the path literally; same change. The "Resolve RUN_ROOT" block doesn't
   reference the manual-test path. The worktree-drift guard reads
   `blueprints.sh manual-test-plan-path` (which is the right indirection);
@@ -198,10 +198,10 @@ For each, replace every occurrence of `workflow-stream/<feature>/implementation/
   as today: `state: complete` → `--seed-only` refusal,
   `state: in-progress` → paused-resume.
 
-- **`commands/mo-complete-workflow.md`** — **structural change**, not a
+- **`commands/mi-complete-workflow.md`** — **structural change**, not a
   literal rename:
 
-  - Step 5's `for artifact in overseer-review.md review-context.md change-summary.md grounding-report.md \ manual-test-plan.md manual-test-results.md; do`
+  - Step 5's `for artifact in inspector-review.md review-context.md change-summary.md grounding-report.md \ manual-test-plan.md manual-test-results.md; do`
     loop must **drop** `manual-test-plan.md` and `manual-test-results.md`.
   - The `[[ -d "$impl_dir/manual-test-plan.history" ]] && mv -n "$impl_dir/manual-test-plan.history" ...`
     line must be **deleted** (no longer applicable — the folder no longer
@@ -211,15 +211,15 @@ For each, replace every occurrence of `workflow-stream/<feature>/implementation/
     from the archive list and add a sentence noting that the test/ folder
     survives at the feature root, alongside `decisions.md`.
 
-- **`commands/mo-abort-workflow.md`** — Step 4 currently `rm`s
+- **`commands/mi-abort-workflow.md`** — Step 4 currently `rm`s
   `$impl_dir/manual-test-plan.md`, `$impl_dir/manual-test-results.md`, and
   `$impl_dir/manual-test-plan.history`. Per the permanence intent, these
   `rm` lines should be **deleted** so abort leaves the test/ folder
   intact. Update the Step 2 user-facing confirmation message accordingly
-  ("delete implementation/…") so the overseer knows the test/ folder
+  ("delete implementation/…") so the inspector knows the test/ folder
   survives. Treat as the default; revisit per §6.1.
 
-- **`commands/mo-continue.md`** — multiple literal references requiring
+- **`commands/mi-continue.md`** — multiple literal references requiring
   update:
   - Line 894 — user-facing prompt naming `workflow-stream/<active_feature>/implementation/manual-test-plan.md`.
   - Line 966 — surface-summary code-block prose naming `workflow-stream/<active_feature>/implementation/manual-test-results.md`.
@@ -238,14 +238,14 @@ For each, replace every occurrence of `workflow-stream/<feature>/implementation/
   on the per-file line-number lists in this plan — they are pre-edit
   pointers, not an exhaustive contract.
 
-- **`commands/mo-review.md`** — one reference in the "## Manual test
+- **`commands/mi-review.md`** — one reference in the "## Manual test
   results" section description (line 72) — update the literal path.
 
-- **`commands/mo-resume-workflow.md`** — no literal path changes; the row
+- **`commands/mi-resume-workflow.md`** — no literal path changes; the row
   description for `5 | manual-testing` references the file by name only.
   Re-read after rename and confirm no stale prose remains.
 
-- **`commands/mo-doctor.md`** — no data-path references.
+- **`commands/mi-doctor.md`** — no data-path references.
 
 ### 2.3 Schemas
 
@@ -256,8 +256,8 @@ For each, replace every occurrence of `workflow-stream/<feature>/implementation/
     area) and to the `properties:` block. UUIDv4 pattern, same as
     the existing `seed-family-id` declaration. Description: "UUIDv4
     of the `progress.md.active.activation-id` in effect when this
-    plan was rendered. Read by `/mo-manual-test-plan` Step 1 and
-    `/mo-manual-test-run` Branch A pre-normalization as the
+    plan was rendered. Read by `/mi-manual-test-plan` Step 1 and
+    `/mi-manual-test-run` Branch A pre-normalization as the
     cross-cycle discriminator (see `docs/manual-testing-folder/plan.md`
     § 4.3)."
 - **`schemas/manual-test-results.schema.yaml`** —
@@ -335,7 +335,7 @@ For each, replace every occurrence of `workflow-stream/<feature>/implementation/
 - The two `manual-test-*.schema.yaml` files validate **frontmatter only**.
   Their `$id` fields stay unchanged (they're identifiers, not paths). The
   `title` field is documentation. No validator code change.
-- The `mo-doctor` checks at `commands/mo-doctor.md` lines 78–91 verify
+- The `mi-doctor` checks at `commands/mi-doctor.md` lines 78–91 verify
   template + schema + `progress.schema.yaml` enum values. None of those
   reference data paths. No change.
 - The `progress.schema.yaml` enum value `manual-testing` (sub-flow) and
@@ -369,17 +369,17 @@ before cross-cycle reuse works.
 
 ### 4.1 Terminal `manual-test-results.md` blocks the next cycle's run
 
-`commands/mo-manual-test-run.md` Branch A's pre-normalization step
+`commands/mi-manual-test-run.md` Branch A's pre-normalization step
 explicitly refuses any results file with `state: complete`:
 
 > Valid `state: complete`: refuse: `"Manual test results already complete.
-> Pass --seed-only to manage auto-seeding, or /mo-manual-test-plan --force
+> Pass --seed-only to manage auto-seeding, or /mi-manual-test-plan --force
 > to start over."` Do NOT normalize progress.md.
 
 A finalized run from cycle N leaves `manual-test-results.md` with
 `state: complete`. Under today's lifecycle that file gets archived at
 stage 8 and the next cycle starts clean; under the new lifecycle that
-file survives, so cycle N+1's `/mo-manual-test-run` is dead-on-arrival
+file survives, so cycle N+1's `/mi-manual-test-run` is dead-on-arrival
 with the refusal above. The plan must add a **per-cycle results rotation**:
 
 - Introduce a new helper `blueprints.sh manual-test-results-rotate-only`
@@ -388,7 +388,7 @@ with the refusal above. The plan must add a **per-cycle results rotation**:
   This is a sibling rotation directory parallel to the existing
   `manual-test-plan.history/` so the plan vs. results lifecycles stay
   independent.
-- `commands/mo-manual-test-plan.md` Step 1 (existing-plan probe) gains
+- `commands/mi-manual-test-plan.md` Step 1 (existing-plan probe) gains
   a parallel check. Auto-rotate the results file whenever it
   unambiguously belongs to a prior cycle. The guard uses **activation-id**
   as the cross-cycle discriminator (see §4.3 for the activation-id
@@ -408,7 +408,7 @@ with the refusal above. The plan must add a **per-cycle results rotation**:
   when:
 
   - The prior cycle made zero commits (zero-commit-abort, direct-empty).
-  - The overseer manually `git reset`s the worktree back to the prior
+  - The inspector manually `git reset`s the worktree back to the prior
     baseline between cycles.
   - `active.base-commit` happens to match `plan.generated-from-base-commit`
     for any other reason.
@@ -420,7 +420,7 @@ with the refusal above. The plan must add a **per-cycle results rotation**:
   - `state: complete` — finalized run from a prior cycle. Today's
     runner would refuse with the `--seed-only` recovery message.
   - `state: in-progress` — paused or aborted run from a prior cycle.
-    With `/mo-abort-workflow` now keeping `test/` intact (§6.1),
+    With `/mi-abort-workflow` now keeping `test/` intact (§6.1),
     aborted runs leave `state: in-progress` results behind. Today's
     runner Branch A would treat these as a paused mid-run case
     (`current-scenario` cursor still set, verdict blocks in the body),
@@ -429,29 +429,29 @@ with the refusal above. The plan must add a **per-cycle results rotation**:
 
   Without the activation-id clause, a same-activation completed run
   with stale `progress.md` markers (the `(none, none) + results=complete`
-  recoverable state called out in `commands/mo-manual-test-run.md`
+  recoverable state called out in `commands/mi-manual-test-run.md`
   Branch B preconditions, line ~103) would be wrongly rotated, which
   would destroy the `--seed-only` recovery path. With it, that
   same-activation case falls through to the existing Step 2 branches
-  unmodified — the overseer reaches the existing `--seed-only` flow
+  unmodified — the inspector reaches the existing `--seed-only` flow
   as designed. Same-activation paused runs (`state: in-progress` with
   matching activation-id) likewise fall through to Branch A's
   existing paused-resume handling. This is read-only against the
   plan, so it composes with all the existing Step 2 branches
   (regenerate/use-unchanged/force).
 
-- `commands/mo-manual-test-run.md` Branch A pre-normalization gains a
+- `commands/mi-manual-test-run.md` Branch A pre-normalization gains a
   parallel pre-check using the SAME triple-AND guard above. If all
   three conditions hold, auto-rotate the results file and proceed as
   if results were absent. This is the fallback path when the runner
-  is reached without `/mo-manual-test-plan` having fired first. The
+  is reached without `/mi-manual-test-plan` having fired first. The
   existing `state: complete` refusal and the existing
   `state: in-progress` paused-resume path both still fire for the
   same-activation case (where `results.generated-in-activation == active.activation-id`)
   — that's the genuine "use `--seed-only`" or "resume from cursor"
   path.
 - The auto-rotation prints a one-line `^info:` to stderr naming the
-  rotation target so the overseer sees what happened.
+  rotation target so the inspector sees what happened.
 
 **Why not base-commit?** An earlier draft of this plan used
 `plan.generated-from-base-commit != active.base-commit` as the
@@ -476,7 +476,7 @@ Plan frontmatter today carries `generated-from-base-commit`,
 all four can drift:
 
 - `requirements-id` — bumps whenever `blueprints/current/requirements.md`
-  is rotated (which `/mo-update-blueprint` and stage-8 completion both
+  is rotated (which `/mi-update-blueprint` and stage-8 completion both
   do). A plan from cycle N tests against cycle N's `Goals`/`Planned`
   lists, not cycle N+1's.
 - `generated-from-base-commit` / `generated-from-head` — drift with
@@ -484,17 +484,17 @@ all four can drift:
   scenarios may reference symbols, env vars, or routes that no longer
   exist (or have been renamed) in cycle N+1's tree.
 - `generated-against-run-root` — currently the only field the runner
-  checks (the worktree-drift guard at `mo-manual-test-run.md` lines
-  61–71). May still match if the overseer reuses the same worktree
+  checks (the worktree-drift guard at `mi-manual-test-run.md` lines
+  61–71). May still match if the inspector reuses the same worktree
   path for cycle N+1, masking the staleness.
 
-Add a **plan-freshness gate** to `commands/mo-manual-test-plan.md` as
+Add a **plan-freshness gate** to `commands/mi-manual-test-plan.md` as
 a new **Step 1.5**, between the existing Step 1 (existing-plan probe
-+ §4.1 results auto-rotation) and Step 2 (overseer prompt dispatch).
++ §4.1 results auto-rotation) and Step 2 (inspector prompt dispatch).
 This placement is load-bearing: the existing "Existing plan present,
 `--from-resume` without `--force`" branch in Step 2 explicitly skips
 Steps 3–6 and jumps straight to Step 7 (see
-`commands/mo-manual-test-plan.md` line 89), so a gate placed at Step 3
+`commands/mi-manual-test-plan.md` line 89), so a gate placed at Step 3
 would never fire on the `--from-resume` reuse path — the very path
 most likely to encounter a stale plan from a prior cycle. The gate
 must run BEFORE Step 2's dispatch so every "use unchanged" branch
@@ -528,12 +528,12 @@ The prompt is read-only against `progress.md` — answer `n` continues
 without rotation, just like the existing "leave in place" branch. Answer
 `c` exits with `progress.md` byte-identical, matching the read-only-gates
 contract at the top of the execution section of
-`commands/mo-manual-test-plan.md`. Answer `y` defers actual rotation
+`commands/mi-manual-test-plan.md`. Answer `y` defers actual rotation
 to Step 4 (existing); Step 1.5 only sets an in-memory flag that the
 downstream branching consults.
 
-`/mo-manual-test-run` does NOT duplicate this check — it trusts that
-`/mo-manual-test-plan` (auto-fired by `/mo-continue`'s Resume Step 7, or
+`/mi-manual-test-run` does NOT duplicate this check — it trusts that
+`/mi-manual-test-plan` (auto-fired by `/mi-continue`'s Resume Step 7, or
 direct) ran first. The worktree-drift guard stays as a fast-fail backstop.
 
 ### 4.3 Activation-id mechanism
@@ -582,7 +582,7 @@ on read**, **required on new writes**. Specifically:
   a missing `results.generated-in-activation` as **non-matching**
   (i.e., rotate). This is the safe default: an unidentifiable
   activation is treated as cross-cycle.
-- The first `/mo-manual-test-plan` run after the change ships, on a
+- The first `/mi-manual-test-plan` run after the change ships, on a
   feature whose `progress.md.active` lacks `activation-id`, must
   populate the field before rendering the plan. Add a one-shot
   backfill at the top of Step 1: if `active.activation-id` is missing,
@@ -606,10 +606,10 @@ on read**, **required on new writes**. Specifically:
 
 **Renderers:**
 
-- `/mo-manual-test-plan` Step 5 (render) — `{{ACTIVATION_ID}}` is
+- `/mi-manual-test-plan` Step 5 (render) — `{{ACTIVATION_ID}}` is
   resolved via `progress.sh get activation-id`. Backfill (above)
   runs at Step 1 before this point.
-- `/mo-manual-test-run` Step 1 (resolve results file) — when
+- `/mi-manual-test-run` Step 1 (resolve results file) — when
   rendering from the template, `{{ACTIVATION_ID}}` is copied from the
   plan's `generated-in-activation` field, NOT re-read from
   `progress.md`. This is deliberate: it lets the runner detect when
@@ -621,7 +621,7 @@ on read**, **required on new writes**. Specifically:
 
 The `seed-family-id` preservation under `--force` (without
 `--new-seed-family`) takes on new meaning: failures auto-seeded into the
-new cycle's `overseer-review.md` carry the SAME seed-family-id as prior
+new cycle's `inspector-review.md` carry the SAME seed-family-id as prior
 cycles' seedings. This is desirable — re-failures of the same scenario
 remain idempotent across cycles via seed-id. No change needed to the
 seed-family-id mechanics; only the cross-cycle survival changes.
@@ -662,23 +662,23 @@ Already-rotated cycles have manual-test artifacts inside
 They are part of the immutable audit record and the new code never reads
 them as live state. The lookup helpers (`manual-test-plan-path`,
 `manual-test-results-path`) point at the live `test/` folder only;
-archived versions are inspected by the overseer manually when needed.
+archived versions are inspected by the inspector manually when needed.
 
 ## 6. Open questions
 
 ### 6.1 Abort behavior
 
-Should `/mo-abort-workflow` delete the test/ folder? Two readings:
+Should `/mi-abort-workflow` delete the test/ folder? Two readings:
 
 - **Keep it (recommended).** Abort means "this cycle didn't ship, reset
-  for retry" — but the manual-test work the overseer already did
+  for retry" — but the manual-test work the inspector already did
   (scenarios written, runs executed) is valuable across retries. Same
   rationale as keeping `blueprints/current/` intact on abort.
 - **Delete it.** Abort means "wipe everything this cycle produced." But
   if `blueprints/current/` and `decisions.md` survive, test/ surviving is
   consistent with that pattern.
 
-Plan currently goes with "keep it" (§2.2). Confirm with overseer before
+Plan currently goes with "keep it" (§2.2). Confirm with inspector before
 shipping.
 
 ### 6.2 `--discard-existing` semantics
@@ -702,7 +702,7 @@ Recommended: `test/`. Confirm before implementation.
 
 ## 7. Implementation order
 
-1. **Add `mo_test_dir` helper** in `scripts/internal/common.sh`.
+1. **Add `mi_test_dir` helper** in `scripts/internal/common.sh`.
 2. **Land the §4.3 activation-id mechanism** (must precede the
    manual-test command edits below — they read the field):
    - Add `activation-id` to `schemas/progress.schema.yaml` as an
@@ -725,22 +725,22 @@ Recommended: `test/`. Confirm before implementation.
 6. **Update commands** in this order — failures at any step before the
    doc updates fail safely because the helpers already point at the new
    path:
-   - `mo-manual-test-plan.md` — literal paths + activation-id
+   - `mi-manual-test-plan.md` — literal paths + activation-id
      backfill at top of Step 1 + Step 1 §4.1 auto-rotation
      (state-agnostic, activation-id guard) + Step 1.5 §4.2 freshness
      gate (the gate MUST go at Step 1.5, not Step 3; see §4.2 for
      why — Step 3 would never fire on the `--from-resume` reuse
      path) + Step 5 render populates `{{ACTIVATION_ID}}` from
      `progress.sh get activation-id`.
-   - `mo-manual-test-run.md` — literal paths + §4.1 Branch A
+   - `mi-manual-test-run.md` — literal paths + §4.1 Branch A
      pre-normalization fallback (state-agnostic, activation-id
      guard) + Step 1 results-render copies
      `generated-in-activation` from the plan's value, not from
      `progress.md`.
-   - `mo-complete-workflow.md` (Step 5 archive loop — most important).
-   - `mo-abort-workflow.md` (Step 4 rm list).
-   - `mo-continue.md` — every literal path under §2.2's audit gate.
-   - `mo-review.md`.
+   - `mi-complete-workflow.md` (Step 5 archive loop — most important).
+   - `mi-abort-workflow.md` (Step 4 rm list).
+   - `mi-continue.md` — every literal path under §2.2's audit gate.
+   - `mi-review.md`.
 7. **Audit gate** — run `rg "implementation/manual-test-(plan|results)"`
    across `commands/`, `scripts/`, `schemas/`, `templates/`, `docs/`.
    Every remaining hit must be a deliberate archived-history reference
@@ -755,7 +755,7 @@ Recommended: `test/`. Confirm before implementation.
 10. **Doctor extension** — add a `progress.schema.yaml` check for
     `activation-id` to `scripts/doctor.sh` (mirrors the existing
     `manual-test-state` / `manual-test-failure-policy` checks).
-11. **Run `/mo-doctor`** — confirm no checks regressed. Run a manual
+11. **Run `/mi-doctor`** — confirm no checks regressed. Run a manual
     end-to-end pass: generate plan, run a scenario, complete workflow,
     verify `test/` survives; then start a second cycle on the same
     feature and confirm §4.1 auto-rotates the prior results and §4.2
@@ -763,11 +763,11 @@ Recommended: `test/`. Confirm before implementation.
     abort-retry-without-new-commits path explicitly (the case the
     base-commit guard missed): start a run, pause it, abort, retry
     without making any commits, and confirm the prior results still
-    auto-rotate on the retry's `/mo-manual-test-plan`.
+    auto-rotate on the retry's `/mi-manual-test-plan`.
 
 ## 8. Verification
 
-- After `/mo-complete-workflow` on a feature with a completed manual
+- After `/mi-complete-workflow` on a feature with a completed manual
   test, confirm:
   - `workflow-stream/<feature>/test/manual-test-plan.md` exists.
   - `workflow-stream/<feature>/test/manual-test-results.md` exists.
@@ -776,40 +776,40 @@ Recommended: `test/`. Confirm before implementation.
     or `manual-test-plan.history/`.
   - `workflow-stream/<feature>/blueprints/history/v[N+1]/implementation/`
     DOES contain the other archived artifacts
-    (`overseer-review.md`, `change-summary.md`, `grounding-report.md`,
+    (`inspector-review.md`, `change-summary.md`, `grounding-report.md`,
     `review-context.md`, `diagrams/`).
-- After `/mo-abort-workflow` on a feature with manual-test artifacts,
+- After `/mi-abort-workflow` on a feature with manual-test artifacts,
   confirm `test/` survives intact.
-- After a fresh `/mo-manual-test-plan` against a feature whose `test/`
+- After a fresh `/mi-manual-test-plan` against a feature whose `test/`
   folder carries a prior cycle's plan, confirm the "existing plan"
   prompt branches fire correctly and that `--force` rotates into
   `test/manual-test-plan.history/<timestamp>/`.
-- `/mo-export-bundle` against a feature with a `test/` folder emits the
+- `/mi-export-bundle` against a feature with a `test/` folder emits the
   `## Tests run / manual checks` section, and the body-scrub strips
   the new `test/` paths to `<an internal record>`.
 - **Cross-cycle §4.1 verification (state: complete).** After cycle N
   completes (results file at `state: complete` survives in `test/`),
   start cycle N+1 on the same feature and reach stage 5:
-  - `/mo-manual-test-plan` (any invocation) auto-rotates the prior
+  - `/mi-manual-test-plan` (any invocation) auto-rotates the prior
     `manual-test-results.md` into
     `test/manual-test-results.history/<timestamp>/manual-test-results.md`
     and prints the `^info:` line.
-  - The fresh `/mo-manual-test-run` Branch A no longer hits the
+  - The fresh `/mi-manual-test-run` Branch A no longer hits the
     `state: complete` refusal.
 - **Cross-cycle §4.1 verification (state: in-progress).** Pause cycle
   N mid-run (results file at `state: in-progress` with a non-null
-  `current-scenario` cursor), then `/mo-abort-workflow` to end cycle
+  `current-scenario` cursor), then `/mi-abort-workflow` to end cycle
   N without finalizing. Start cycle N+1 on the same feature:
   - `active.base-commit` for cycle N+1 differs from
     `plan.generated-from-base-commit`.
-  - `/mo-manual-test-plan` (any invocation) auto-rotates the prior
+  - `/mi-manual-test-plan` (any invocation) auto-rotates the prior
     in-progress results, NOT just complete ones.
-  - The fresh `/mo-manual-test-run` Branch A does NOT silently resume
+  - The fresh `/mi-manual-test-run` Branch A does NOT silently resume
     from the stale cursor.
 - **Same-activation protection verification.** Within a single
   activation (same `active.activation-id`):
-  - Pause mid-run, then re-enter via `/mo-continue` →
-    `/mo-manual-test-run` MUST resume from the cursor (no rotation).
+  - Pause mid-run, then re-enter via `/mi-continue` →
+    `/mi-manual-test-run` MUST resume from the cursor (no rotation).
   - Finalize a run (`state: complete`), then re-enter → `--seed-only`
     refusal MUST fire (no rotation).
   - Both cases verify the activation-id clause correctly protects
@@ -820,27 +820,27 @@ Recommended: `test/`. Confirm before implementation.
   - Start cycle N, generate a manual-test plan, run scenarios so
     `manual-test-results.md` exists (either `state: in-progress`
     after a pause or `state: complete` after finalization).
-  - `/mo-abort-workflow` — retry mode (no `--drop-feature` flag) so
+  - `/mi-abort-workflow` — retry mode (no `--drop-feature` flag) so
     `active.feature` is preserved and stage resets to 2.
   - **Do not make any new commits.** Re-enter the workflow via
-    `/mo-continue` → `/mo-plan-implementation` etc. so cycle N+1
+    `/mi-continue` → `/mi-plan-implementation` etc. so cycle N+1
     activates at the same git HEAD.
   - Confirm `active.activation-id` was re-minted (compare to the
     previous value captured before abort).
   - Confirm `active.base-commit` is unchanged (this is the case the
     earlier base-commit guard would have missed).
-  - Run `/mo-manual-test-plan` (any invocation form). The §4.1 Step
+  - Run `/mi-manual-test-plan` (any invocation form). The §4.1 Step
     1 rotation MUST fire because activation-id differs, even though
     base-commit matches. The prior `manual-test-results.md` is
     moved into `test/manual-test-results.history/<timestamp>/`.
-  - Run `/mo-manual-test-run`. Branch A MUST treat the results file
+  - Run `/mi-manual-test-run`. Branch A MUST treat the results file
     as absent (rendering a fresh one from template) rather than
     resuming the stale cursor or hitting the `state: complete`
     refusal.
 - **In-flight cycle backward-compatibility verification.** For a
   feature whose `progress.md.active` was created before this change
   ships (no `activation-id` field):
-  - First `/mo-manual-test-plan` invocation triggers the §4.3
+  - First `/mi-manual-test-plan` invocation triggers the §4.3
     backfill at top of Step 1; `progress.sh get activation-id`
     returns a value afterward.
   - Subsequent invocations preserve that value (immutability).
@@ -850,9 +850,9 @@ Recommended: `test/`. Confirm before implementation.
 - **Cross-cycle §4.2 verification.** With a surviving plan from cycle
   N whose `requirements-id` / `generated-from-base-commit` no longer
   match cycle N+1:
-  - Direct `/mo-manual-test-plan` (no `--from-resume`, no `--force`)
+  - Direct `/mi-manual-test-plan` (no `--from-resume`, no `--force`)
     prompts on mismatch with `y/n/c` options.
-  - `/mo-continue`'s Resume Step 7 auto-firing `/mo-manual-test-plan --from-resume`
+  - `/mi-continue`'s Resume Step 7 auto-firing `/mi-manual-test-plan --from-resume`
     also surfaces the mismatch prompt (because §4.2 explicitly does
     NOT suppress it under `--from-resume`).
   - `--force` skips the prompt and regenerates as today.

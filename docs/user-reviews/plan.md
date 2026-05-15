@@ -1,37 +1,37 @@
-# PR-Review Analysis — `/mo-analyze-review` — Plan & Design
+# PR-Review Analysis — `/mi-analyze-review` — Plan & Design
 
 **Status:** Pre-implementation. The open decisions in §11 should be confirmed before
 work begins.
 
 **Target version:** `v0.10.0` (new minor — adds a command, two agents, two scripts, two
-templates, two schemas; modifies `/mo-continue`, `/mo-apply-impact`, and the write-hook).
+templates, two schemas; modifies `/mi-continue`, `/mi-apply-impact`, and the write-hook).
 
 ---
 
 ## 1. Motivation & summary
 
 When a feature ships, human reviewers leave comments on its GitHub PR. Today those
-comments are handled ad-hoc in chat, outside the millwright-overseer workflow — no
+comments are handled ad-hoc in chat, outside the millwright-inspector workflow — no
 audit trail, no structured triage, and nothing feeds back into how the millwright
 implements the *next* feature.
 
 This feature adds a self-contained loop:
 
-1. The overseer points the millwright at a PR (or a single review comment).
+1. The inspector points the millwright at a PR (or a single review comment).
 2. The millwright fetches every review comment, analyzes each against the real
    codebase, and writes a **report** — one block per comment, each either a
    **proposed fix** (comment is valid) or a **proposed reply** (comment is not valid).
-3. The overseer reads the report and **marks** the blocks they want acted on —
+3. The inspector reads the report and **marks** the blocks they want acted on —
    exactly the checkbox-marking gesture used for todo-list items — and may add notes.
-4. `/mo-continue` drives the apply step: the millwright applies the marked fixes,
+4. `/mi-continue` drives the apply step: the millwright applies the marked fixes,
    and (after explicit confirmation) posts the marked replies to GitHub.
 5. After fixing, the millwright distills **lessons learned** from the *valid*
-   comments into `millwright-overseer/lessons-learned.md`.
+   comments into `millwright-inspector/lessons-learned.md`.
 6. `lessons-learned.md` is referenced from every future `config.md`, so the
    planning and implementation chains consult it and stop repeating past mistakes.
 
 The role split is unchanged: the **millwright** analyzes, proposes, fixes, and
-distills lessons; the **overseer** decides which proposals are acted on. The
+distills lessons; the **inspector** decides which proposals are acted on. The
 millwright never self-approves — the marking gate is mandatory, mirroring the
 stage-2 / stage-5 / stage-6 gates.
 
@@ -41,9 +41,9 @@ stage-2 / stage-5 / stage-6 gates.
 
 | Decision | Outcome |
 | --- | --- |
-| What happens to a proposed reply | **Post on overseer mark.** A marked `action: reply` block is posted to GitHub by the apply step — gated behind an explicit confirmation prompt, since it is an external, visible write. Unmarked reply blocks are drafts only. |
+| What happens to a proposed reply | **Post on inspector mark.** A marked `action: reply` block is posted to GitHub by the apply step — gated behind an explicit confirmation prompt, since it is an external, visible write. Unmarked reply blocks are drafts only. |
 | How `lessons-learned.md` reaches future workflows | **Reference by path.** `config.md` gets a `## Lessons learned` section containing the resolved path; the chains are instructed to read the file. The content is *not* inlined, so `config.md` stays small. |
-| Whether `/mo-analyze-review` needs an active workflow | **No.** It runs standalone on any PR URL. After writing the report it prints a reminder that the overseer may turn the report into a journal entry and start a normal workflow from it if the changes are large. |
+| Whether `/mi-analyze-review` needs an active workflow | **No.** It runs standalone on any PR URL. After writing the report it prints a reminder that the inspector may turn the report into a journal entry and start a normal workflow from it if the changes are large. |
 | Which comment kinds are in scope (formerly open decision D4) | **All three kinds**, each with its own fetch source, resolution model, and reply mechanics — see §4a. The kinds are: line-level **review comments**, review **summary bodies**, and general PR **issue comments**. They do *not* share one reply endpoint, so the report carries an explicit `comment-kind` field. |
 
 ---
@@ -51,22 +51,22 @@ stage-2 / stage-5 / stage-6 gates.
 ## 3. End-to-end flow
 
 ```
-overseer: /mo-analyze-review https://github.com/acme/web/pull/812
+inspector: /mi-analyze-review https://github.com/acme/web/pull/812
    │
    ├─ parse URL → owner, repo, PR #, optional comment/review id
    ├─ preflight: gh installed + authenticated; cwd repo remote matches owner/repo
    ├─ fetch comments  (GraphQL reviewThreads for line comments + isResolved;
    │                   REST for review summary bodies and issue comments)
-   ├─ create timestamped session  millwright-overseer/pr-reviews/acme-web-pr812/<ts>/
+   ├─ create timestamped session  millwright-inspector/pr-reviews/acme-web-pr812/<ts>/
    ├─ spawn review-comment-analyst sub-agent (reads the codebase)
    └─ write report.md  (status: awaiting-marks)
          │
          ▼
-overseer: opens report.md, flips  [ ] → [x]  on the blocks to act on,
-          optionally edits verdict/action, adds overseer-notes
+inspector: opens report.md, flips  [ ] → [x]  on the blocks to act on,
+          optionally edits verdict/action, adds inspector-notes
          │
          ▼
-overseer: /mo-continue
+inspector: /mi-continue
    │
    ├─ pre-dispatch check finds a pr-reviews/**/report.md with
    │  status: awaiting-marks  OR  status: partial
@@ -81,21 +81,21 @@ overseer: /mo-continue
    └─ done
          │
          ▼
-next feature's /mo-apply-impact regenerates config.md
-   └─ writes  ## Lessons learned  →  path: millwright-overseer/lessons-learned.md
+next feature's /mi-apply-impact regenerates config.md
+   └─ writes  ## Lessons learned  →  path: millwright-inspector/lessons-learned.md
          the planning + implementation chains read it before writing code
 ```
 
 ---
 
-## 4. New command — `/mo-analyze-review`
+## 4. New command — `/mi-analyze-review`
 
-**File:** `commands/mo-analyze-review.md`
+**File:** `commands/mi-analyze-review.md`
 
 **Usage:**
 
 ```
-/mo-analyze-review <github-pr-or-comment-url>
+/mi-analyze-review <github-pr-or-comment-url>
 ```
 
 ### Step 1 — Parse the URL
@@ -114,19 +114,19 @@ Reject non-GitHub URLs and non-PR URLs with a usage message.
 ### Step 2 — Preflight
 
 1. `gh` must be installed and authenticated (`gh auth status`). If not, print the
-   install/auth hint and exit. (`gh` is added to `mo-doctor` — see §10.)
+   install/auth hint and exit. (`gh` is added to `mi-doctor` — see §10.)
 2. **Repository guard.** The current working directory must be inside a git repo
    whose default remote (`origin`, or the `gh`-resolved default) points at the same
-   `owner/repo` as the URL. On mismatch, refuse — the overseer is in the wrong
+   `owner/repo` as the URL. On mismatch, refuse — the inspector is in the wrong
    checkout. This guard matters because the command is *standalone*: unlike the
    workflow commands it cannot lean on the active-quest worktree fingerprint in
-   `scripts/internal/common.sh` (`mo_assert_worktree_match`, common.sh:325), which
+   `scripts/internal/common.sh` (`mi_assert_worktree_match`, common.sh:325), which
    is keyed to workflow state. The repo guard is the standalone equivalent.
 3. **PR head guard.** The repo match is not sufficient — the `review-comment-analyst`
    judges each comment against the code in the working directory, so the working
    tree must be on the PR's head commit. Compare `git rev-parse HEAD` to the PR's
    `headRefOid` (`gh pr view <pr> --json headRefOid`); on mismatch, refuse and tell
-   the overseer to `gh pr checkout <pr>` first. A dirty worktree
+   the inspector to `gh pr checkout <pr>` first. A dirty worktree
    (`git status --porcelain` non-empty) is a **warning** — local edits can skew the
    review — but not a hard refusal.
 
@@ -161,7 +161,7 @@ Sessions are **timestamped** to keep re-runs from colliding:
 
 Before creating a new session, `pr-review.sh` scans this PR's existing sessions for
 a report whose `status` is `awaiting-marks` or `partial` (i.e. still in progress).
-If one exists, refuse and point the overseer at it — there must be at most one live
+If one exists, refuse and point the inspector at it — there must be at most one live
 report per PR. Completed (`applied`) sessions are retained as history.
 
 ### Step 5 — Analyze (sub-agent)
@@ -175,15 +175,15 @@ returns one structured block per comment.
 Render `<session>/report.md` from `templates/pr-review-report.md.tmpl` (§5),
 frontmatter `status: awaiting-marks`.
 
-### Step 7 — Hand back to the overseer
+### Step 7 — Hand back to the inspector
 
 Print a summary (N comments by kind, X proposed fixes, Y proposed replies) and:
 
 ```
-Report ready: millwright-overseer/pr-reviews/acme-web-pr812/<ts>/report.md
-  • Mark  [ ] → [x]  on each block you want acted on, then run /mo-continue.
+Report ready: millwright-inspector/pr-reviews/acme-web-pr812/<ts>/report.md
+  • Mark  [ ] → [x]  on each block you want acted on, then run /mi-continue.
   • Tip: if the marked work is large, you can copy this report into a
-    journal/ entry and run /mo-run to handle it as a full workflow instead.
+    journal/ entry and run /mi-run to handle it as a full workflow instead.
 ```
 
 ---
@@ -243,7 +243,7 @@ One block per review comment. For each block:
       - action: reply → the drafted reply is posted to GitHub (after you confirm).
   • Leave `[ ]` to skip the comment entirely (no fix, no reply).
   • You may edit `verdict`/`action` if you disagree with the millwright, and
-    add free text under `overseer-notes`. Then run /mo-continue.
+    add free text under `inspector-notes`. Then run /mi-continue.
 
 ## Comments
 
@@ -267,53 +267,53 @@ One block per review comment. For each block:
     <what the millwright will change, and which files>
 - proposed-reply: |                    # present when action: reply
     <drafted reply text to post on GitHub>
-- overseer-notes: |                    # overseer fills in; optional
+- inspector-notes: |                    # inspector fills in; optional
 - status:             open             # open → applied | replied | skipped
                                        #      | reply-failed | reply-declined
                                        #      | fix-failed | fix-blocked
 ```
 
-**Marking semantics** — identical gesture to todo-list marking, so the overseer
+**Marking semantics** — identical gesture to todo-list marking, so the inspector
 learns it once:
 
 - `### PR-NNN — [x]` → the block is acted on (`fix` applied, or `reply` posted).
 - `### PR-NNN — [ ]` → skipped; `status` becomes `skipped` after the apply step.
-- The overseer may rewrite `verdict`/`action`; **`action` is authoritative** for
+- The inspector may rewrite `verdict`/`action`; **`action` is authoritative** for
   what the apply step does (the millwright's verdict is only advisory once edited).
-- `overseer-notes` is passed verbatim into the fixer sub-agent's prompt.
+- `inspector-notes` is passed verbatim into the fixer sub-agent's prompt.
 
 **Report status lifecycle:**
 
 - `awaiting-marks` — fresh; the apply step has never run.
 - `partial` — the apply step ran, but ≥1 marked block did not reach a terminal
   state. Non-terminal block states: `reply-failed` (post failed), `reply-declined`
-  (overseer declined to post), `fix-failed` (the fixer could not apply the patch or
+  (inspector declined to post), `fix-failed` (the fixer could not apply the patch or
   hit a test failure), `fix-blocked` (the fixer returned `blocked` — e.g. ambiguous
-  instruction). `/mo-continue` keeps picking the report up so retries remain
+  instruction). `/mi-continue` keeps picking the report up so retries remain
   reachable.
 - `applied` — every marked block reached a **terminal** state: `applied`, `replied`,
   or `skipped`. Unmarked blocks are `skipped`.
 
 A `partial` report leaves its non-terminal blocks still marked `[x]`; on the next
-`/mo-continue` those — and only those — are retried (terminal blocks are skipped by
+`/mi-continue` those — and only those — are retried (terminal blocks are skipped by
 the collector, §6.2 step 2). To drop a stuck block without acting on it, the
-overseer un-marks it (`[x]` → `[ ]`); the next `/mo-continue`'s normalization step
+inspector un-marks it (`[x]` → `[ ]`); the next `/mi-continue`'s normalization step
 (§6.2 step 2) retires it to `skipped`, which lets the report finalize.
 
 A `pr-review.sh canonicalize` sub-command (mirroring `review.sh canonicalize`)
-auto-assigns `PR-NNN` ids and validates the block shape on `/mo-continue`.
+auto-assigns `PR-NNN` ids and validates the block shape on `/mi-continue`.
 
 ---
 
-## 6. `/mo-continue` integration — PR-Review Apply Handler
+## 6. `/mi-continue` integration — PR-Review Apply Handler
 
-`/mo-continue` is the universal dispatcher; the user wants it to drive the apply
+`/mi-continue` is the universal dispatcher; the user wants it to drive the apply
 step. PR-review work has no active quest, so it is added as a **pre-dispatch check**
 that runs *before* the existing 7-way Step-2 router.
 
 ### 6.1 Pre-dispatch check
 
-At the top of `mo-continue` Step 2, scan for any report with frontmatter
+At the top of `mi-continue` Step 2, scan for any report with frontmatter
 `status: awaiting-marks` **or** `status: partial`. The `pr-reviews/` directory may
 not exist yet, so guard first: `[[ -d "$data_root/pr-reviews" ]]` — if absent,
 treat it as "no reports" and fall straight through to the existing dispatcher.
@@ -326,12 +326,12 @@ aborting the command before the normal dispatch.
 - **None found** → fall through to the existing dispatch unchanged.
 - **Exactly one found, no active workflow** → route to the PR-Review Apply Handler (§6.2).
 - **More than one PR-review report found** → list them (PR number + timestamp +
-  status) and ask the overseer to pick.
-- **One PR-review report *and* an active workflow** → ambiguous intent. `/mo-continue`
+  status) and ask the inspector to pick.
+- **One PR-review report *and* an active workflow** → ambiguous intent. `/mi-continue`
   never guesses between a workflow stage and a PR-review apply. It prints both
-  candidates as a numbered list and asks the overseer to reply with a choice **in
+  candidates as a numbered list and asks the inspector to reply with a choice **in
   chat** — the slash command is mid-execution and pauses for the reply, the same way
-  the stage-3 drift prompt and other handlers already pause for overseer input.
+  the stage-3 drift prompt and other handlers already pause for inspector input.
   The reply (`1`/`2`, or `workflow`/`pr-review`) selects the route; no re-invocation
   or argument flag is needed. *(See open decision D1.)*
 
@@ -342,16 +342,16 @@ aborting the command before the normal dispatch.
    - *Guard a fresh report.* Count marked (`[x]`) blocks **before** normalizing. If
      the report's frontmatter `status` is `awaiting-marks` and zero blocks are
      marked, print "No blocks marked — mark the blocks you want acted on, then
-     re-run /mo-continue" and exit with the report **unchanged**. This stops a
-     no-op `/mo-continue` on a fresh report from normalizing every `[ ] + open`
+     re-run /mi-continue" and exit with the report **unchanged**. This stops a
+     no-op `/mi-continue` on a fresh report from normalizing every `[ ] + open`
      block to `skipped` and finalizing the whole report as `applied`. The guard is
      scoped to `awaiting-marks` only — a `partial` report must still flow into
      normalization below, since un-marking a stuck block is the intended way to
      retire it.
    - *Normalize.* Any **unmarked** (`[ ]`) block in a non-terminal `status`
      (`open`, `reply-failed`, `reply-declined`, `fix-failed`, `fix-blocked`) is set
-     to `skipped`. This is how the overseer drops a stuck block — un-mark it and the
-     next `/mo-continue` retires it.
+     to `skipped`. This is how the inspector drops a stuck block — un-mark it and the
+     next `/mi-continue` retires it.
    - *Collect.* Gather every **marked** (`[x]`) block whose `status` is non-terminal
      — those are the actionable set. Blocks already terminal (`applied`, `replied`,
      `skipped`) are excluded even if still marked `[x]`, so a `partial` re-run never
@@ -370,40 +370,40 @@ aborting the command before the normal dispatch.
      step may run in a different session than the analysis). This guard applies to
      reply-only runs too — `pr-review.sh post-reply` must target the right repo.
    - *Only when fix blocks exist:* refuse if the working tree is dirty (ask the
-     overseer to stash or commit), then `gh pr checkout <N>` to land fixes on the
+     inspector to stash or commit), then `gh pr checkout <N>` to land fixes on the
      PR's head branch. `gh pr checkout` resolves cross-fork PRs; if it produces a
      detached or fork-tracking branch, surface that rather than committing blindly.
-     If the PR is merged or closed, warn and ask the overseer to confirm a target
+     If the PR is merged or closed, warn and ask the inspector to confirm a target
      branch. **A reply-only run skips this bullet entirely** — replies need only
      GitHub API access, not a clean tree or a checkout.
 5. **Apply fixes** *(skipped when there are no fix blocks)*. Spawn the
-   `pr-review-fixer` sub-agent (§7.2) with all fix blocks + their `overseer-notes`.
+   `pr-review-fixer` sub-agent (§7.2) with all fix blocks + their `inspector-notes`.
    It edits source, commits per the repo's convention, and returns a per-block
-   outcome. Fixes are **committed, not pushed** — pushing stays the overseer's call.
+   outcome. Fixes are **committed, not pushed** — pushing stays the inspector's call.
    Per-block outcome → block `status`:
    - applied cleanly → `applied` (the fix's own changes are committed).
    - patch could not be applied / introduced a test failure → `fix-failed`, block
      stays marked `[x]` for retry.
    - fixer returned `blocked` (ambiguous instruction, missing context) → `fix-blocked`,
-     block stays marked `[x]`; the fixer's reason is surfaced to the overseer so they
-     can clarify `overseer-notes` before retrying.
+     block stays marked `[x]`; the fixer's reason is surfaced to the inspector so they
+     can clarify `inspector-notes` before retrying.
 
    **Clean-worktree invariant.** A `fix-failed` / `fix-blocked` return must leave
    **no uncommitted changes** for that block — the fixer reverts its partial edits
    before returning the failure (only cleanly-applied fixes are committed). If the
    fixer cannot restore a clean tree, it must **halt the whole handler**, report the
    dirty files, and not proceed to other blocks — a stranded dirty checkout makes
-   the next `/mo-continue` retry unsafe. The fixer's return states the worktree
+   the next `/mi-continue` retry unsafe. The fixer's return states the worktree
    condition explicitly (`Worktree: clean` or `Worktree: dirty — <files>`).
 6. **Post replies** *(skipped when there are no reply blocks)*. For each
    **actionable reply block** (marked `[x]` *and* non-terminal — never a
-   terminal-but-still-marked `replied` block), show the overseer the exact reply
+   terminal-but-still-marked `replied` block), show the inspector the exact reply
    text and target, and ask for explicit confirmation. On `yes`, post via
    `pr-review.sh post-reply`, which **branches on `comment-kind`** (§4a):
    `review-comment` → threaded reply endpoint; `review-summary` / `issue-comment` →
    new PR conversation comment quoting the original. Outcomes per block:
    - posted OK → block `status: replied`.
-   - overseer declined → block `status: reply-declined`, stays marked `[x]`.
+   - inspector declined → block `status: reply-declined`, stays marked `[x]`.
    - post failed (network/permission) → block `status: reply-failed`, stays marked,
      the failure is reported per block.
 7. **Distill lessons.** Append lessons to `lessons-learned.md` (§8) **only for
@@ -417,7 +417,7 @@ aborting the command before the normal dispatch.
      `status: applied`.
    - If **any** block is still non-terminal (`open`, `reply-failed`,
      `reply-declined`, `fix-failed`, `fix-blocked`) → report `status: partial`, so
-     `/mo-continue` keeps the report reachable for retry.
+     `/mi-continue` keeps the report reachable for retry.
    Because step 2's normalization already retired every unmarked non-terminal block
    to `skipped`, a leftover `open` block here can only be a marked one — there is no
    path that marks the report `applied` while an unmarked block still says `open`.
@@ -443,7 +443,7 @@ aborting the command before the normal dispatch.
 
 - **Model / effort:** `sonnet` / high.
 - **Job:** Apply the marked `action: fix` blocks to the checked-out PR branch,
-  honoring `overseer-notes`, and commit. Then, for each *valid* fix it applied,
+  honoring `inspector-notes`, and commit. Then, for each *valid* fix it applied,
   distill a one-paragraph lesson (what went wrong + the rule to follow next time).
 - **Constraints:** Edits source freely; commits only cleanly-applied fixes; must
   not push; must not touch workflow artifacts. **Clean-worktree invariant** — a
@@ -456,14 +456,14 @@ aborting the command before the normal dispatch.
   these onto block `status` (§6.2 step 5).
 
 *(Alternative considered: reuse `review-iteration-runner`. Rejected — that agent is
-bound to stage-6 `overseer-review.md` IR findings and the brainstorming chain;
+bound to stage-6 `inspector-review.md` IR findings and the brainstorming chain;
 PR-review fixes are a different scope and a different artifact. See open decision D2.)*
 
 ---
 
 ## 8. `lessons-learned.md`
 
-**Location:** `<data_root>/lessons-learned.md` — top level of the `millwright-overseer/`
+**Location:** `<data_root>/lessons-learned.md` — top level of the `millwright-inspector/`
 data root, sibling to `journal/`, `quest/`, `workflow-stream/`, `pr-reviews/`.
 
 **Template:** `templates/lessons-learned.md.tmpl` · **Schema:** `schemas/lessons-learned.schema.yaml`
@@ -505,7 +505,7 @@ Add a new section immediately after `<!-- auto:end -->` (i.e. before `## GIT BRA
 ```markdown
 ## Lessons learned
 
-<!-- Regenerated by mo-apply-impact. Cumulative lessons from past PR reviews.
+<!-- Regenerated by mi-apply-impact. Cumulative lessons from past PR reviews.
      The planning and implementation chains MUST read this file before writing
      code, to avoid repeating mistakes flagged in earlier reviews. -->
 - path: {{LESSONS_LEARNED_PATH}}
@@ -515,7 +515,7 @@ This section sits **outside** the `auto:start/auto:end` entry-budget block — i
 a single fixed pointer, not a discovered skill/rule, so it does not consume the
 ≤10-entry budget that is paid on every primer load.
 
-### 9.2 Generation change — `mo-apply-impact` / `docs/blueprint-regeneration.md`
+### 9.2 Generation change — `mi-apply-impact` / `docs/blueprint-regeneration.md`
 
 The config.md generation step gains: resolve `<data_root>/lessons-learned.md`.
 
@@ -528,7 +528,7 @@ The config.md generation step gains: resolve `<data_root>/lessons-learned.md`.
 `config.md` is already loaded into every chain primer, so the new section
 propagates automatically. To make the chains actually *act* on it, add one
 instruction line to `templates/primer.md.tmpl` (and/or the planning prompt in
-`mo-plan-implementation`): "If `config.md` lists a Lessons learned path, read that
+`mi-plan-implementation`): "If `config.md` lists a Lessons learned path, read that
 file before writing plans or code."
 
 ### 9.4 Schema — no change
@@ -536,7 +536,7 @@ file before writing plans or code."
 `schemas/config.schema.yaml` validates `config.md`'s **frontmatter only**; it does
 not validate body sections. The `## Lessons learned` section is body content, so
 the schema is *not* the right enforcement point and is left unchanged. The section's
-presence and shape are guaranteed by the `mo-apply-impact` generation step (§9.2),
+presence and shape are guaranteed by the `mi-apply-impact` generation step (§9.2),
 which is deterministic. (If body-level validation is wanted later, it belongs in a
 body-aware check in the write-hook, not in the frontmatter schema — out of scope
 for v1.)
@@ -549,7 +549,7 @@ for v1.)
 
 | Path | Purpose |
 | --- | --- |
-| `commands/mo-analyze-review.md` | The new command (§4). |
+| `commands/mi-analyze-review.md` | The new command (§4). |
 | `agents/review-comment-analyst.md` | Analyzes PR comments (§7.1). |
 | `agents/pr-review-fixer.md` | Applies marked fixes, distills lessons (§7.2). |
 | `templates/pr-review-report.md.tmpl` | Report scaffold (§5). |
@@ -563,14 +563,14 @@ for v1.)
 
 | Path | Change |
 | --- | --- |
-| `commands/mo-continue.md` | Pre-dispatch PR-review check + PR-Review Apply Handler (§6). |
-| `commands/mo-apply-impact.md` | config.md generation writes the `## Lessons learned` section (§9.2). |
+| `commands/mi-continue.md` | Pre-dispatch PR-review check + PR-Review Apply Handler (§6). |
+| `commands/mi-apply-impact.md` | config.md generation writes the `## Lessons learned` section (§9.2). |
 | `docs/blueprint-regeneration.md` | Document the config.md `## Lessons learned` step. |
 | `templates/config.md.tmpl` | New `## Lessons learned` section (§9.1). |
 | `templates/primer.md.tmpl` | One line: read the lessons-learned file if config.md lists it (§9.3). |
 | `hooks/validate-on-write.sh` | **Add cases** to the hard-coded path→schema dispatch for `*/pr-reviews/*/report.md` → `pr-review-report.schema.yaml` and `*/lessons-learned.md` → `lessons-learned.schema.yaml`. Unknown files currently exit unvalidated, so the new schemas are *not* picked up automatically. |
-| `commands/mo-doctor.md` + `scripts/doctor.sh` | Add a `gh` (GitHub CLI) dependency + auth check. |
-| `commands/mo-init.md` | Optionally scaffold `pr-reviews/` (or leave it created on demand). |
+| `commands/mi-doctor.md` + `scripts/doctor.sh` | Add a `gh` (GitHub CLI) dependency + auth check. |
+| `commands/mi-init.md` | Optionally scaffold `pr-reviews/` (or leave it created on demand). |
 | `.claude-plugin/plugin.json` | Version bump to `0.10.0`. |
 | `docs/sub-agent-profiles/plan.md` | Register the two new agents. |
 
@@ -589,28 +589,28 @@ than rely on the hook:
   after each appended entry.
 
 The hook cases added to `validate-on-write.sh` still matter — they cover the
-overseer's *manual* edits to `report.md` (marking, `verdict`/`action`/`overseer-notes`
+inspector's *manual* edits to `report.md` (marking, `verdict`/`action`/`inspector-notes`
 changes), which do go through the `Edit` tool.
 
 ---
 
 ## 11. Open decisions
 
-### D1 — `/mo-continue` behavior when a workflow *and* a PR-review report are both live
+### D1 — `/mi-continue` behavior when a workflow *and* a PR-review report are both live
 
-§6.1 has `/mo-continue` **pause and ask** the overseer (numbered list, chat reply)
+§6.1 has `/mi-continue` **pause and ask** the inspector (numbered list, chat reply)
 when an active workflow and an in-progress PR-review report coexist. The capture
 mechanism is the same mid-command pause the stage-3 drift prompt already uses — no
-new argument parsing on `/mo-continue`. Alternatives if that is unwanted:
+new argument parsing on `/mi-continue`. Alternatives if that is unwanted:
 (a) always prefer the workflow stage; (b) always prefer the PR-review apply;
-(c) keep the apply step in a dedicated `/mo-apply-review` command and leave
-`/mo-continue` untouched. The author asked for `/mo-continue`, so (c) is not the
-default — confirm the ask-the-overseer behavior vs. a fixed precedence.
+(c) keep the apply step in a dedicated `/mi-apply-review` command and leave
+`/mi-continue` untouched. The author asked for `/mi-continue`, so (c) is not the
+default — confirm the ask-the-inspector behavior vs. a fixed precedence.
 
 ### D2 — Reuse `review-iteration-runner` vs. a new `pr-review-fixer` agent
 
 This plan proposes a new agent (§7.2) because the existing runner is bound to the
-stage-6 `overseer-review.md` IR loop. If the two are judged close enough, the
+stage-6 `inspector-review.md` IR loop. If the two are judged close enough, the
 runner could be generalized instead, at the cost of coupling two workflows.
 
 ### D3 — `lessons-learned.md` growth
@@ -626,29 +626,29 @@ for v1 but should be acknowledged before the file gets large.
 
 ## 12. Edge cases
 
-- **No comments / all resolved** — `mo-analyze-review` writes an empty report and
+- **No comments / all resolved** — `mi-analyze-review` writes an empty report and
   says so; nothing to mark.
 - **`gh` not installed or not authenticated** — preflight refuses with an install hint.
 - **Invalid / non-PR / inaccessible URL** — refuse with a usage message.
 - **cwd repo does not match the URL's `owner/repo`** — refuse (wrong checkout), at
   both analysis time and apply time.
 - **Single-comment URL whose comment is stale or deleted** — skip with a note in the report.
-- **Overseer marks nothing on a fresh report** — the §6.2 step-2 guard prints
+- **Inspector marks nothing on a fresh report** — the §6.2 step-2 guard prints
   "No blocks marked" and exits with the `awaiting-marks` report unchanged (it does
   *not* normalize-then-finalize, which would wrongly close the report as `applied`).
 - **`verdict`/`action` edited into contradiction** (e.g. `verdict: valid` + `action: reply`)
   — `action` wins; the apply step does what `action` says.
 - **Dirty working tree with actionable fix blocks** — refuse before `gh pr checkout`;
-  ask the overseer to stash or commit first. Reply-only runs do not require a clean
+  ask the inspector to stash or commit first. Reply-only runs do not require a clean
   tree and are not blocked by this.
 - **Cross-fork PR** — `gh pr checkout` may produce a fork-tracking or detached
   branch; surface it before committing rather than assuming a local branch.
-- **PR already merged/closed** — warn; ask the overseer to confirm a target branch
+- **PR already merged/closed** — warn; ask the inspector to confirm a target branch
   before fixes are applied. Do not auto-create a branch.
 - **Reply post fails or is declined** — block goes `reply-failed` / `reply-declined`,
-  report goes `partial`, and `/mo-continue` keeps the report reachable so the
-  overseer can retry (or un-mark to drop it).
-- **Re-running `mo-analyze-review` on the same PR** — refused while an
+  report goes `partial`, and `/mi-continue` keeps the report reachable so the
+  inspector can retry (or un-mark to drop it).
+- **Re-running `mi-analyze-review` on the same PR** — refused while an
   `awaiting-marks`/`partial` report exists; otherwise a new timestamped session dir
   is created and prior `applied` sessions are kept as history.
 - **`review-summary` / `issue-comment` marked `action: reply`** — posted as a new
@@ -663,15 +663,15 @@ for v1 but should be acknowledged before the file gets large.
    and `scripts/lessons.sh`.
 2. Templates + schemas for `report.md` and `lessons-learned.md`; wire the two new
    cases into `hooks/validate-on-write.sh`.
-3. `commands/mo-analyze-review.md` + `agents/review-comment-analyst.md` — end-to-end
+3. `commands/mi-analyze-review.md` + `agents/review-comment-analyst.md` — end-to-end
    up to a written report (includes the repo guard).
-4. `agents/pr-review-fixer.md` + the `/mo-continue` pre-dispatch check and
+4. `agents/pr-review-fixer.md` + the `/mi-continue` pre-dispatch check and
    PR-Review Apply Handler (repo/worktree guards + checkout).
 5. Reply-posting (`pr-review.sh post-reply`, kind-branched) with the confirmation
    prompt and the `partial`/retry state machine.
 6. Lessons distillation + `lessons-learned.md` append.
 7. `config.md` template + generation changes + primer instruction.
-8. `mo-doctor` `gh` check, `docs/sub-agent-profiles/plan.md` registration, version bump.
+8. `mi-doctor` `gh` check, `docs/sub-agent-profiles/plan.md` registration, version bump.
 
 Each numbered step is independently testable; steps 1–3 deliver the report-writing
 half of the feature before any apply logic exists.
