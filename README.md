@@ -20,11 +20,22 @@ Edits to the source are picked up by `/reload-plugins` — no reinstall.
 
 ### Marketplace install (end-user)
 
+Run these in Claude Code:
+
 ```
-/plugin marketplace add <source-containing-this-plugin>
-/plugin install millwright-inspector-development-machine@<alias>
+/plugin marketplace add Eminakkoc/Millwright-Inspector-Development-Machine
+/plugin install millwright-inspector-development-machine@millwright-inspector
 /reload-plugins
 ```
+
+`/plugin marketplace add` takes the GitHub `owner/repo` shorthand for any public
+repo; the marketplace name (`millwright-inspector`) and plugin name come from
+[`.claude-plugin/marketplace.json`](./.claude-plugin/marketplace.json). You can
+also run `/plugin` on its own for an interactive browse-and-install menu.
+
+Plugin commands are namespaced — invoke them as
+`/millwright-inspector-development-machine:mi-<command>`, or type
+`/mi-<command>` and pick the match from the slash-command menu.
 
 Either way, after the plugin loads run `/mi-init` once — it installs any missing CLI deps (yq, pyyaml, etc.) after a single y/n, shows you the `/plugin marketplace add` + `/plugin install` commands for superpowers (can't auto-run those from Bash), and scaffolds the `millwright-inspector/` workspace folders.
 
