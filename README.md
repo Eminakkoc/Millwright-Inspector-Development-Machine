@@ -1,8 +1,12 @@
+<p align="center">
+  <img src="./mi-logo.svg" alt="Millwright Inspector logo" width="200">
+</p>
+
 # millwright-inspector-development-machine
 
 An agentic workflow system for Claude Code where an AI "millwright" writes all the code and a human "inspector" reviews each stage's output. The workflow produces an auditable trail of requirements, specs, plans, diagrams, and reviews for every feature.
 
-See [`docs/workflow-spec.md`](./docs/workflow-spec.md) for the full specification and [`docs/diagrams/workflow-sequence.svg`](./docs/diagrams/workflow-sequence.svg) for the end-to-end sequence diagram.
+See [`docs/millwright-inspector-project.md`](./docs/millwright-inspector-project.md) for the full specification and [`docs/diagrams/workflow-sequence.svg`](./docs/diagrams/workflow-sequence.svg) for the end-to-end sequence diagram.
 
 ## Installation
 
@@ -128,7 +132,7 @@ These exist for non-happy-path situations; you don't need them in the normal flo
 
 After stage 8, if more features are queued, the millwright auto-fires `/mi-apply-impact` for the next one (back to stage 2). If the queue empties but `[ ] TODO` items remain, you're prompted to mark the next batch and `/mi-continue` (re-entering stage 1.5; the same per-cycle quest subfolder stays active). When everything is done — queue empty AND no `[ ] TODO` items left — `/mi-complete-workflow` archives the active-quest pointer (the cycle's subfolder under `quest/<slug>/` is preserved as a historical record), then run `/mi-run` again to start a new cycle.
 
-For the full prose walkthrough with every nuance (preflight checks, ingest decision flow, stage-by-stage details), see [Quickstart](#quickstart) below or [`docs/workflow-spec.md`](./docs/workflow-spec.md).
+For the full prose walkthrough with every nuance (preflight checks, ingest decision flow, stage-by-stage details), see [Quickstart](#quickstart) below or [`docs/millwright-inspector-project.md`](./docs/millwright-inspector-project.md).
 
 ## Quickstart
 
@@ -146,7 +150,7 @@ For the full prose walkthrough with every nuance (preflight checks, ingest decis
 
 Inspector touchpoints per feature shrink to: `/mi-continue` ×2 at stage 1.5, `/mi-continue` after blueprint review, planning-mode pick, `/mi-continue` ×2 (or ×3 with findings), review-mode pick, optional diagram-refresh y/n, and optional edits to `inspector-review.md`. Launcher commands remain invokable manually for recovery (e.g. after `/mi-abort-workflow`).
 
-See `docs/workflow-spec.md` for the full stage-by-stage reference.
+See `docs/millwright-inspector-project.md` for the full stage-by-stage reference.
 
 ## Command list
 
