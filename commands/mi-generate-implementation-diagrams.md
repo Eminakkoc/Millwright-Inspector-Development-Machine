@@ -6,7 +6,7 @@ description: Render diagrams of the implementation (commit range base-commit..HE
 
 Generates the single set of diagrams the inspector reviews at stage 5. Each diagram shows the **implemented** behaviour of `base-commit..HEAD` with **pre-existing** participants, classes, and flows kept in view as framed/shaded context so the inspector can spot what changed at a glance.
 
-**Main-read budget (stage 4).** Allowed in main: `progress.md`, drift-probe filesystem state, the sub-agent's return summary, and the `.puml` file listing for the README write. Forbidden in main: diff hunks, change-summary.md body composition, and PlantUML source generation — delegated to `subagent_type: millwright-inspector-development-machine:implementation-analyst` (Phase 3.1) under the per-event prompt gate. The change-summary cache check (`commits.sh change-summary-fresh`) runs in main only as a freshness probe to set the `summary_state` flag passed into the sub-agent prompt; main does not read the body. See `docs/workflow-spec.md` § "Main-read budget gates by stage" for the canonical table.
+**Main-read budget (stage 4).** Allowed in main: `progress.md`, drift-probe filesystem state, the sub-agent's return summary, and the `.puml` file listing for the README write. Forbidden in main: diff hunks, change-summary.md body composition, and PlantUML source generation — delegated to `subagent_type: millwright-inspector-development-machine:implementation-analyst` (Phase 3.1) under the per-event prompt gate. The change-summary cache check (`commits.sh change-summary-fresh`) runs in main only as a freshness probe to set the `summary_state` flag passed into the sub-agent prompt; main does not read the body. See `docs/millwright-inspector-project.md` § "Main-read budget gates by stage" for the canonical table.
 
 ## Execution
 
@@ -154,7 +154,7 @@ Identify which diagram subjects are affected by the commit range. Sources for th
 
 Re-render the affected subjects only. Overwrite their seeded `.puml` files in `<diagrams_dir>` using the existing-vs-new convention against the `<base_commit>` baseline. Leave unchanged subjects (no entries in the affected set) as the seeded stage-2 versions — those subjects had no implementation work this cycle. A 30-file change touching only `src/payments/` should re-render only the payments-related diagrams.
 
-**Diagram set caps** (per `docs/workflow-spec.md` § "Diagram conventions"):
+**Diagram set caps** (per `docs/millwright-inspector-project.md` § "Diagram conventions"):
 
 - `use-case-<feature>.puml` — mandatory, exactly one. Implemented capabilities with framed actors that pre-existed.
 - `sequence-<flow>.puml` — one per significant implemented flow, targeting 2–3 total per feature. Render 1 only when the implementation genuinely has a single significant flow; never render more than 3 (if more than 3 candidates exist, pick the most diff-worthy; surface a decomposition signal under `Findings / risks` if the count keeps creeping up).

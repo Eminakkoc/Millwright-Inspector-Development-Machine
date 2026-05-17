@@ -1,0 +1,68 @@
+@startuml stage-2-blueprints
+title Stage 2 — Blueprint Generation  (/mi-apply-impact)\nMain context vs. codebase-grounder and blueprint-diagrammer
+
+skinparam defaultFontName "Helvetica"
+skinparam shadowing false
+skinparam rectangleBorderColor #888888
+skinparam ArrowColor #555555
+
+legend top left
+  |<#FFF3CD>| Main-agent context |
+  |<#D6EAF8>| Fresh sub-agent context |
+  |<#E8DAEF>| Persisted artifact store (disk) |
+  |<#D4EDDA>| Written this stage |
+  |<#FADBD8>| Return summary read by main |
+endlegend
+
+package "Persisted artifact store" #E8DAEF {
+  artifact "progress.md (active block)" as PROG
+  artifact "summary.md" as SUM
+  artifact "todo-list.md" as TODO
+  artifact "project codebase (HEAD)" as CODE
+}
+
+package "MAIN AGENT context" #FFF3CD {
+  rectangle "Loaded directly:\n• progress.md — active feature pointer\n• summary.md — ACTIVE feature section\n  + cross-cutting constraints ONLY\n• todo-list.md — active-feature item IDs\n\nComposes requirements.md & config.md from\nthe summary section + the grounding summary.\nNever reads the codebase itself at stage 2." as MAIN
+}
+
+package "Sub-agent: codebase-grounder  (Step A)\n(model: sonnet · tools: Read,Write,Edit,Bash,Grep)" #D6EAF8 {
+  rectangle "Injected via spawn prompt:\n• in-scope todo IDs\n• folder allowlist for seam classification\n• cycle-flavor rule order\nReads: HEAD codebase (<=5 files / item, grep-first)\n  -- the heavy reads stay in this disposable context\nWrites: implementation/grounding-report.md ONLY\n  (it does NOT write requirements.md)" as GR
+}
+
+package "Sub-agent: blueprint-diagrammer  (Step C)\n(model: sonnet · tools: Read,Write,Edit,Bash,Grep,PlantUML MCP)" #D6EAF8 {
+  rectangle "Injected via spawn prompt:\n• requirements.md Goals items\n• grounding-report seam classification\n  (tells the agent WHERE to look)\nReads: HEAD source to confirm the blue\n  'existing' layer (never from prose)\nWrites: blueprints/current/diagrams/*.puml" as BD
+}
+
+package "Written this stage" #D4EDDA {
+  artifact "implementation/grounding-report.md" as GRO
+  artifact "blueprints/current/requirements.md" as REQ
+  artifact "blueprints/current/config.md" as CFG
+  artifact "blueprints/current/diagrams/\n  use-case / sequence / structural .puml" as DIA
+}
+
+PROG --> MAIN
+SUM --> MAIN : active section only
+TODO --> MAIN
+
+MAIN --> GR : 1. spawn (Step A)
+TODO --> GR : in-scope IDs
+CODE --> GR : seam reads
+GR --> GRO : 2. writes
+GR --> MAIN : 3. seam + cycle-flavor summary #FADBD8
+
+GRO --> MAIN : 4. main reads compact report
+MAIN --> REQ : 5. authors requirements.md\n(from summary section + grounding report)
+MAIN --> CFG : authors config.md
+
+MAIN --> BD : spawn (Step C)
+REQ --> BD : Goals items
+GRO --> BD : seam classification
+CODE --> BD : confirm existing layer
+BD --> DIA
+BD --> MAIN : .puml paths + purposes #FADBD8
+
+note bottom of MAIN
+  Inspector reviews the blueprints, then types /mi-continue.
+  P0 /clear gate recommended before Stage 3.
+end note
+@enduml

@@ -1,0 +1,83 @@
+@startuml overview
+title Millwright Inspector — Context Map Overview\nMain-agent context vs. fresh sub-agent context, per stage
+
+skinparam defaultFontName "Helvetica"
+skinparam shadowing false
+skinparam rectangleBorderColor #888888
+skinparam ArrowColor #555555
+
+legend top left
+  | Colour | Meaning |
+  |<#FFF3CD>| Main-agent context (persists across the stage) |
+  |<#D6EAF8>| Fresh sub-agent context (spawned empty, dies on return) |
+  |<#D4EDDA>| Persisted artifact written this stage |
+  |<#FADBD8>| Sub-agent return summary (~1k tokens) read by main |
+endlegend
+
+rectangle "STAGE 1 — Quest Generation  (/mi-run)" as S1 {
+  rectangle "Main context\n• journal/<topic>/ files (<=100KB each)\n• artifact templates" as S1M #FFF3CD
+  rectangle "sub: journal-file-digester / -folder-digester\n(spawned only for oversized journal input)\ninjected: ONE oversized file  OR  one whole journal folder" as S1S #D6EAF8
+  rectangle "writes: quest/<slug>/{todo-list, summary,\nprogress, reference}.md" as S1O #D4EDDA
+  S1M --> S1S : spawn (oversized only)
+  S1S --> S1M : digest summary #FADBD8
+  S1M --> S1O
+}
+
+rectangle "STAGE 1.5 — Pre-flight selection + ordering  (/mi-continue)" as S15 {
+  rectangle "Main context\n• todo-list.md (inspector [x] (assignee) marks)\n• progress.md\n• queue-rationale.md (emerging)" as S15M #FFF3CD
+  rectangle "sub: dependency-mapper\ninjected: PENDING todo items + cross-feature\ncodebase reads (<=5 files / feature)" as S15S #D6EAF8
+  rectangle "writes: queue-rationale.md (proposed order)" as S15O #D4EDDA
+  S15M --> S15S : spawn (option 1B)
+  S15S --> S15M : ordered-queue proposal #FADBD8
+  S15M --> S15O
+}
+
+rectangle "STAGE 2 — Blueprint Generation  (/mi-apply-impact)" as S2 {
+  rectangle "Main context\n• progress.md (active block)\n• summary.md — active feature + cross-cutting\n• todo-list.md — active-feature items" as S2M #FFF3CD
+  rectangle "sub: codebase-grounder\ninjected: in-scope todo IDs, folder allowlist,\ncycle-flavor rules + HEAD codebase (<=5 files/item)" as S2S1 #D6EAF8
+  rectangle "sub: blueprint-diagrammer\ninjected: requirements.md Goals +\ngrounding-report seam class + HEAD source" as S2S2 #D6EAF8
+  rectangle "writes: grounding-report.md,\nrequirements.md, config.md, diagrams/*.puml" as S2O #D4EDDA
+  S2M --> S2S1 : spawn
+  S2S1 --> S2M : grounding summary #FADBD8
+  S2M --> S2S2 : spawn
+  S2S2 --> S2M : diagram paths #FADBD8
+  S2M --> S2O
+}
+
+rectangle "STAGE 3 — Implementation  (/mi-plan-implementation)" as S3 {
+  rectangle "Main context\n• progress.md (active block)\n• writes blueprints/current/primer.md" as S3M #FFF3CD
+  rectangle "ISOLATED implementation chain (brainstorming mode)\nor direct mode in main session\nrequired first read: primer.md\non-demand: requirements.md, config.md,\nsummary.md (feature section), todo-list.md" as S3S #D6EAF8
+  rectangle "writes: source code, commits base-commit..HEAD" as S3O #D4EDDA
+  S3M --> S3S : hand off
+  S3S --> S3O
+}
+
+rectangle "STAGE 4 — Implementation Diagrams  (resume handler)" as S4 {
+  rectangle "Main context\n• progress.md (active block)\n• diff metadata (base-commit..HEAD)" as S4M #FFF3CD
+  rectangle "sub: implementation-analyst  (model: opus)\ninjected: base-commit..HEAD diff, bounded code reads,\nblueprints/current/diagrams/*.puml (seed), requirements.md" as S4S #D6EAF8
+  rectangle "writes: change-summary.md,\nimplementation/diagrams/*.puml" as S4O #D4EDDA
+  S4M --> S4S : spawn
+  S4S --> S4M : change summary + drift findings #FADBD8
+  S4M --> S4O
+}
+
+rectangle "STAGE 5 — Inspector Review" as S5 {
+  rectangle "Main context\n• progress.md (active block)\n• inspector writes implementation/inspector-review.md\n(no sub-agent — inspector authors findings)" as S5M #FFF3CD
+}
+
+rectangle "STAGE 6 — Review Session  (/mi-review)" as S6 {
+  rectangle "Main context\n• inspector-review.md (findings / IR-NNN)\n• review-context.md" as S6M #FFF3CD
+  rectangle "sub: review-iteration-runner  (per iteration, model: opus)\ninjected: open IR-NNN findings, requirements.md,\nconfig.md, affected source files" as S6S #D6EAF8
+  rectangle "writes: source edits + commits,\nIR-NNN status updates" as S6O #D4EDDA
+  S6M --> S6S : spawn (per iteration)
+  S6S --> S6M : resolved IR-IDs + cascades #FADBD8
+  S6M --> S6O
+}
+
+S1 -[hidden]down-> S15
+S15 -[hidden]down-> S2
+S2 -[hidden]down-> S3
+S3 -[hidden]down-> S4
+S4 -[hidden]down-> S5
+S5 -[hidden]down-> S6
+@enduml

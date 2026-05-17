@@ -7,7 +7,7 @@ argument-hint: "<journal-folder> [<journal-folder>...] [--archive-active]"
 
 **Stage 1 launcher.** Reads a caller-specified list of `journal/` sub-folders (topics to base this workflow on), creates a per-cycle subfolder under `quest/`, generates **three** of the cycle's files inside it (`todo-list.md`, `summary.md`, `progress.md`), and points `quest/active.md` at the new subfolder. Then prompts the inspector to mark PENDING items.
 
-**Main-read budget (stage 1).** Allowed in main: journal files (per Step 2.5 size policy — large files and many-small-folders delegated to fresh sub-agents). Forbidden in main: source code. See `docs/workflow-spec.md` § "Main-read budget gates by stage" for the canonical table.
+**Main-read budget (stage 1).** Allowed in main: journal files (per Step 2.5 size policy — large files and many-small-folders delegated to fresh sub-agents). Forbidden in main: source code. See `docs/millwright-inspector-project.md` § "Main-read budget gates by stage" for the canonical table.
 
 The fourth cycle file, `queue-rationale.md`, is written later by `/mi-continue`'s Pre-flight Step 2B at stage 1.5 — its absence is what the dispatcher in `commands/mi-continue.md` keys on to distinguish "selections still pending promotion" (Step 2A) from "queue-order proposal is awaiting inspector confirmation" (Step 2B). Creating it during `/mi-run` would skip Step 2A entirely.
 
@@ -411,4 +411,4 @@ Do not advance past this point inside `mi-run` itself. `/mi-continue`'s Pre-flig
 
 ## Delegation (optional)
 
-When Step 2.5 flags large files (any file > 100 KB or total > 500 KB), per-file summarization is a good delegation candidate (see `docs/workflow-spec.md` § "Delegation guidance"). One sub-agent per oversized file, capability tier "general reasoning, medium effort". Each sub-agent reads its assigned file once and writes a digest into a scratch path the millwright then weaves into `summary.md`'s feature sections and `## Sources`. Files below threshold stay in-context — delegation overhead is not worth it.
+When Step 2.5 flags large files (any file > 100 KB or total > 500 KB), per-file summarization is a good delegation candidate (see `docs/millwright-inspector-project.md` § "Delegation guidance"). One sub-agent per oversized file, capability tier "general reasoning, medium effort". Each sub-agent reads its assigned file once and writes a digest into a scratch path the millwright then weaves into `summary.md`'s feature sections and `## Sources`. Files below threshold stay in-context — delegation overhead is not worth it.

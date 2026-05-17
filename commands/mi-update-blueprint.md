@@ -442,7 +442,7 @@ If `decisions_body` is empty (no decisions or all-placeholder), skip the fold-in
 
 #### Step 4e — Regenerate diagrams
 
-Generate diagrams into `$data_root/workflow-stream/$active_feature/blueprints/current/diagrams/` (default `data_root` is `millwright-inspector`) per `docs/workflow-spec.md` § "Diagram conventions":
+Generate diagrams into `$data_root/workflow-stream/$active_feature/blueprints/current/diagrams/` (default `data_root` is `millwright-inspector`) per `docs/millwright-inspector-project.md` § "Diagram conventions":
 
 - **Mandatory**: one `use-case-<feature>.puml`.
 - **Conditional**: 2–3 `sequence-<flow>.puml`, one per significant end-to-end flow in the regenerated `requirements.md`. Render 1 only if the implementation genuinely has a single flow; never more than 3.
@@ -468,7 +468,7 @@ $CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh validate "$diagrams_readme" diagrams-
 
 This satisfies `blueprints.sh check-current`'s `diagrams-readme-blueprint` validation requirement (the README's `requirements-id` must match `requirements.md.id`). The `id:` field follows Rule 2 of the workflow spec (every canonical artifact carries a UUID).
 
-**Apply the existing-vs-new framing convention** (see `docs/workflow-spec.md` § "Diagram conventions" and the canonical PlantUML snippets in `commands/mi-generate-implementation-diagrams.md` § "Existing-vs-new convention"). Mid-cycle blueprint regeneration is implementation-driven, so the baseline matches the stage-4 implementation diagrams: `existing` = the codebase at `active.base-commit`; `new` = `base-commit..HEAD`. The requirements-level diagrams under `blueprints/current/diagrams/` and the implementation-level diagrams under `implementation/diagrams/` should look very similar after this command runs — that's intentional, since both are now describing the same implemented reality through the same visual convention. They diverge again only when subsequent brainstorming/review work shifts requirements before the next rotation.
+**Apply the existing-vs-new framing convention** (see `docs/millwright-inspector-project.md` § "Diagram conventions" and the canonical PlantUML snippets in `commands/mi-generate-implementation-diagrams.md` § "Existing-vs-new convention"). Mid-cycle blueprint regeneration is implementation-driven, so the baseline matches the stage-4 implementation diagrams: `existing` = the codebase at `active.base-commit`; `new` = `base-commit..HEAD`. The requirements-level diagrams under `blueprints/current/diagrams/` and the implementation-level diagrams under `implementation/diagrams/` should look very similar after this command runs — that's intentional, since both are now describing the same implemented reality through the same visual convention. They diverge again only when subsequent brainstorming/review work shifts requirements before the next rotation.
 
 #### Step 4f — Regenerate `primer.md`
 
@@ -525,4 +525,4 @@ Tell the inspector:
 
 ## Delegation (optional)
 
-When `change-summary.md` needs regeneration in Step 4a and the diff touches many areas, the body-fill is a good delegation candidate (see `docs/workflow-spec.md` § "Delegation guidance"). One sub-agent at "strong code-analysis, high effort" tier; output artifact is `implementation/change-summary.md`; the chat reply stays under 20 lines per the contract. The millwright then proceeds with Step 4b reading from the just-written artifact. When the cache is fresh, no delegation is needed.
+When `change-summary.md` needs regeneration in Step 4a and the diff touches many areas, the body-fill is a good delegation candidate (see `docs/millwright-inspector-project.md` § "Delegation guidance"). One sub-agent at "strong code-analysis, high effort" tier; output artifact is `implementation/change-summary.md`; the chat reply stays under 20 lines per the contract. The millwright then proceeds with Step 4b reading from the just-written artifact. When the cache is fresh, no delegation is needed.

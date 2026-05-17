@@ -1,0 +1,55 @@
+@startuml stage-3-implementation
+title Stage 3 — Implementation  (/mi-plan-implementation)\nMain context vs. the isolated implementation chain
+
+skinparam defaultFontName "Helvetica"
+skinparam shadowing false
+skinparam rectangleBorderColor #888888
+skinparam ArrowColor #555555
+
+legend top left
+  |<#FFF3CD>| Main-agent context |
+  |<#D6EAF8>| Isolated chain context (separate session) |
+  |<#E8DAEF>| Persisted artifact store (disk) |
+  |<#D4EDDA>| Written this stage |
+endlegend
+
+package "Persisted artifact store" #E8DAEF {
+  artifact "blueprints/current/requirements.md" as REQ
+  artifact "blueprints/current/config.md\n(Skills/Rules auto-block, GIT BRANCH,\n Lessons learned, Inspector Additions)" as CFG
+  artifact "summary.md (feature section)" as SUM
+  artifact "todo-list.md" as TODO
+  artifact "lessons-learned.md (if exists)" as LL
+}
+
+package "MAIN AGENT context" #FFF3CD {
+  rectangle "At launch the millwright:\n• reads progress.md (active block)\n• composes blueprints/current/primer.md\n  (active scope, Goals excerpt, journal context,\n   likely-relevant skills/rules)\n• sets branch / base-commit / planning-mode\n  in progress.md\n• hands off to the chain (or runs direct mode)" as MAIN
+}
+
+package "Implementation chain\n(brainstorming mode = ISOLATED session;\n direct mode = runs inside main)" #D6EAF8 {
+  rectangle "Required first read:\n• primer.md\n\nOn-demand canonical fallbacks (when gaps surface):\n• requirements.md\n• config.md\n• summary.md (active feature section)\n• todo-list.md\n• lessons-learned.md (mandatory before planning)" as CHAIN
+}
+
+package "Written this stage" #D4EDDA {
+  artifact "blueprints/current/primer.md" as PRIMER
+  artifact "project source code +\ncommits  base-commit..HEAD" as SRC
+}
+
+MAIN --> PRIMER : compose at launch
+MAIN --> CHAIN : hand off
+
+PRIMER --> CHAIN : required first read
+REQ ..> CHAIN : on demand
+CFG ..> CHAIN : on demand
+SUM ..> CHAIN : on demand
+TODO ..> CHAIN : on demand
+LL ..> CHAIN : on demand
+
+CHAIN --> SRC : implement + commit
+
+note bottom of CHAIN
+  Inspector exits the chain and types /mi-continue
+  to resume the main agent at Stage 4.
+  In brainstorming mode the chain's reads never
+  enter main context.
+end note
+@enduml

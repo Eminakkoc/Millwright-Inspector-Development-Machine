@@ -1,0 +1,52 @@
+@startuml stage-6-review
+title Stage 6 — Review Session  (/mi-review)\nMain context vs. the review-iteration-runner sub-agent
+
+skinparam defaultFontName "Helvetica"
+skinparam shadowing false
+skinparam rectangleBorderColor #888888
+skinparam ArrowColor #555555
+
+legend top left
+  |<#FFF3CD>| Main-agent context |
+  |<#D6EAF8>| Fresh sub-agent context (one per iteration) |
+  |<#E8DAEF>| Persisted artifact store (disk) |
+  |<#D4EDDA>| Written this stage |
+  |<#FADBD8>| Return summary read by main |
+endlegend
+
+package "Persisted artifact store" #E8DAEF {
+  artifact "implementation/inspector-review.md\n(### IR-NNN findings: verdict, scope,\n proposed-action)" as IR
+  artifact "blueprints/current/requirements.md" as REQ
+  artifact "blueprints/current/config.md" as CFG
+  artifact "project source code" as SRC
+}
+
+package "MAIN AGENT context" #FFF3CD {
+  rectangle "Loaded directly:\n• inspector-review.md — open IR-NNN findings\n• review-context.md — compact stage-6 primer\n  (active scope, goals, implemented surface,\n   open-findings cheat sheet)\n\nRuns one review iteration per spawn,\nlooping until inspector types `approve`." as MAIN
+}
+
+package "Sub-agent: review-iteration-runner\n(per iteration · model: opus\n tools: Read,Write,Edit,Bash,Grep,Skill)" #D6EAF8 {
+  rectangle "Injected context:\n• the open IR-NNN findings to address\n• requirements.md / config.md (scope reference)\n• affected source files\n\nPicks smallest scope tier that resolves each:\n  fix -> re-implement -> re-plan -> re-spec\nInvokes cascade Skills (writing-plans,\nbrainstorming) when scope > fix.\nWrites: source edits + commits,\n        IR-NNN status updates via review.sh" as RIR
+}
+
+package "Written this stage" #D4EDDA {
+  artifact "project source edits + commits" as EDITS
+  artifact "implementation/inspector-review.md\n(IR-NNN statuses updated)" as IRU
+}
+
+IR --> MAIN : read
+MAIN --> RIR : spawn (per iteration)
+IR --> RIR : open findings
+REQ --> RIR : scope reference
+CFG --> RIR : scope reference
+SRC --> RIR : reads affected files
+RIR --> EDITS
+RIR --> IRU
+RIR --> MAIN : resolved IR-IDs + unresolved cascades #FADBD8
+
+note bottom of MAIN
+  Inspector types `approve` to end the loop,
+  then /mi-continue advances to Stage 7 (review completion)
+  and Stage 8 (/mi-complete-workflow archival).
+end note
+@enduml

@@ -264,7 +264,7 @@ You are a fresh sub-agent invoked from `mi-apply-impact` Step C to frame and ren
 
 **Output destination:** write `.puml` source files into <diagrams_dir>. Do NOT write README.md (main writes that after you return).
 
-**Diagram set caps** (per `docs/workflow-spec.md` § "Diagram conventions"):
+**Diagram set caps** (per `docs/millwright-inspector-project.md` § "Diagram conventions"):
 
 - **Mandatory**: one `use-case-<feature>.puml` use-case diagram.
 - **Conditional**: one `sequence-<flow>.puml` per significant end-to-end flow from the Goals items, targeting 2–3 total per feature. Render 1 only when the feature genuinely has a single significant flow; **never render more than 3** (if more than 3 candidates exist, pick the most diff-worthy and describe the rest in the Goals prose; if you find yourself wanting 4+, surface a decomposition request under `Findings / risks`).

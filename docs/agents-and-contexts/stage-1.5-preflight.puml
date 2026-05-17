@@ -1,0 +1,49 @@
+@startuml stage-1-5-preflight
+title Stage 1.5 — Pre-flight selection + ordering  (/mi-continue)\nMain context vs. the dependency-mapper sub-agent
+
+skinparam defaultFontName "Helvetica"
+skinparam shadowing false
+skinparam rectangleBorderColor #888888
+skinparam ArrowColor #555555
+
+legend top left
+  |<#FFF3CD>| Main-agent context |
+  |<#D6EAF8>| Fresh sub-agent context |
+  |<#E8DAEF>| Persisted artifact store (disk) |
+  |<#D4EDDA>| Written this stage |
+  |<#FADBD8>| Return summary read by main |
+endlegend
+
+package "Persisted artifact store" #E8DAEF {
+  artifact "todo-list.md\n(inspector has marked items [x] (assignee))" as TODO
+  artifact "progress.md" as PROG
+  artifact "project codebase (HEAD)" as CODE
+}
+
+package "MAIN AGENT context" #FFF3CD {
+  rectangle "Loaded directly:\n• todo-list.md — promotes marked items to PENDING\n• progress.md — workflow state\n• queue-rationale.md — being drafted\n\nDelegates cross-feature codebase analysis\nrather than reading the codebase itself" as MAIN
+}
+
+package "Sub-agent: dependency-mapper\n(model: sonnet · tools: Read,Bash,Grep)\nspawned in Step 2A / 4c (option 1B)" #D6EAF8 {
+  rectangle "Injected context:\n• the PENDING todo items (candidate features)\n• cross-feature codebase reads\n  (<=5 files per feature: import chains,\n   shared modules, schema dependencies)\n\nOutput: text proposal only — no file write" as DM
+}
+
+package "Written this stage — quest/<slug>/" #D4EDDA {
+  artifact "queue-rationale.md\n(## Batch N: proposed ordered queue,\n status: draft -> confirmed)" as QR
+  artifact "progress.md\n(queue: [...] populated)" as PROG2
+}
+
+TODO --> MAIN : read
+PROG --> MAIN : read
+MAIN --> DM : spawn
+TODO --> DM : inject PENDING items
+CODE --> DM : bounded dependency reads
+DM --> MAIN : 2-3 sentence order proposal #FADBD8
+MAIN --> QR
+MAIN --> PROG2
+
+note bottom of MAIN
+  Pre-flight then auto-fires /mi-apply-impact
+  to enter Stage 2 for the first queued feature.
+end note
+@enduml

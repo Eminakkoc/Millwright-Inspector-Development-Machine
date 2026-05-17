@@ -6,7 +6,7 @@ description: Generate blueprints/current/ for the active feature — requirement
 
 **Stage 2 launcher.** Pops the next feature off the queue, creates its `progress.md`, and generates the blueprint artifacts (requirements, config, diagrams).
 
-**Main-read budget (stage 2).** Allowed in main: `summary.md` (active feature section + cross-cutting), generated artifacts. Forbidden in main: (a) codebase grounding pass — delegated to `subagent_type: millwright-inspector-development-machine:codebase-grounder` (Phase 2.1) which writes `implementation/grounding-report.md`; (b) diagram framing + render — delegated to `subagent_type: millwright-inspector-development-machine:blueprint-diagrammer` (Step C of `docs/blueprint-regeneration.md`) which writes `.puml` sources into `blueprints/current/diagrams/`. Main writes only the `diagrams/README.md` after the sub-agent returns. See `docs/workflow-spec.md` § "Main-read budget gates by stage" for the canonical table.
+**Main-read budget (stage 2).** Allowed in main: `summary.md` (active feature section + cross-cutting), generated artifacts. Forbidden in main: (a) codebase grounding pass — delegated to `subagent_type: millwright-inspector-development-machine:codebase-grounder` (Phase 2.1) which writes `implementation/grounding-report.md`; (b) diagram framing + render — delegated to `subagent_type: millwright-inspector-development-machine:blueprint-diagrammer` (Step C of `docs/blueprint-regeneration.md`) which writes `.puml` sources into `blueprints/current/diagrams/`. Main writes only the `diagrams/README.md` after the sub-agent returns. See `docs/millwright-inspector-project.md` § "Main-read budget gates by stage" for the canonical table.
 
 ## Invocation
 
@@ -122,7 +122,7 @@ data_root="$($CLAUDE_PLUGIN_ROOT/scripts/data-root.sh)"
 grounding_report="$data_root/workflow-stream/$active_feature/implementation/grounding-report.md"
 requirements_path="$data_root/workflow-stream/$active_feature/blueprints/current/requirements.md"
 
-# Signal 1: any in-scope item is greenfield. Per docs/workflow-spec.md:597,
+# Signal 1: any in-scope item is greenfield. Per docs/millwright-inspector-project.md § 6.2,
 # cycle flavor is per-item in the report body, not persisted as a single
 # overall classification — grep the body lines.
 signal_greenfield=0

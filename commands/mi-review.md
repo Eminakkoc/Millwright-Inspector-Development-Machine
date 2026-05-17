@@ -6,7 +6,7 @@ description: Launch a brainstorming review session for the active feature. Reads
 
 **Review-loop driver.** Reads `inspector-review.md`, collects all open findings, and runs the review loop in main with one fresh sub-agent per iteration (brainstorming mode, Step 3a) or directly in main with no sub-agent dispatch (direct mode, Step 3b). Each iteration addresses the currently-open findings, asks the inspector for `approve` / `go again` / `abort`, and either exits or loops. Brainstorming mode's sub-agents handle cascade-scoped findings (`re-spec`, `re-plan`) inside their own context — those reads do not accumulate in main.
 
-**Main-read budget (stage 6).** Allowed in main: `review-context.md`, `inspector-review.md` (open IR-IDs only via `review.sh list-open-summaries` excerpt — Phase 6.5). Forbidden in main: source reads for findings — delegated to per-iteration sub-agent in brainstorming mode (Phase 1.3) unless `direct` mode is selected AND all findings are scope=`fix` (Phase 1.2 auto-routing). See `docs/workflow-spec.md` § "Main-read budget gates by stage" for the canonical table.
+**Main-read budget (stage 6).** Allowed in main: `review-context.md`, `inspector-review.md` (open IR-IDs only via `review.sh list-open-summaries` excerpt — Phase 6.5). Forbidden in main: source reads for findings — delegated to per-iteration sub-agent in brainstorming mode (Phase 1.3) unless `direct` mode is selected AND all findings are scope=`fix` (Phase 1.2 auto-routing). See `docs/millwright-inspector-project.md` § "Main-read budget gates by stage" for the canonical table.
 
 **`mi-review` does NOT advance past stage 6, and does NOT auto-fire `/mi-complete-workflow`.** After the loop exits via `approve`, the inspector types `/mi-continue` to resume mi-workflow; the post-review-session Review-Resume Handler in `/mi-continue` finalizes (advances 6 → 7 and auto-fires `/mi-complete-workflow`).
 
@@ -411,7 +411,7 @@ After Step 3a (brainstorming) or Step 3b (direct), stop driving the mi-workflow.
 
 Brainstorming mode (Step 3a) **delegates by default**: every iteration spawns one fresh sub-agent that addresses the currently-open findings and returns a structured summary. This is the dominant context-optimization win in the entire mi-workflow — it caps per-iteration main-context growth at the sub-agent's return summary regardless of how many findings or cascade scopes are involved.
 
-The earlier "cluster sub-agents for >5 findings" pattern (still mentioned in `docs/workflow-spec.md` § "Delegation guidance") is now redundant in brainstorming mode — Step 3a's per-iteration sub-agent handles arbitrary finding counts inside its own context. Cluster delegation is only relevant in direct mode if a single iteration has >5 findings AND the inspector explicitly wants per-cluster sub-agents instead of one in-main pass; in practice, switching to brainstorming mode is simpler.
+The earlier "cluster sub-agents for >5 findings" pattern (still mentioned in `docs/millwright-inspector-project.md` § "Delegation guidance") is now redundant in brainstorming mode — Step 3a's per-iteration sub-agent handles arbitrary finding counts inside its own context. Cluster delegation is only relevant in direct mode if a single iteration has >5 findings AND the inspector explicitly wants per-cluster sub-agents instead of one in-main pass; in practice, switching to brainstorming mode is simpler.
 
 ## Notes
 

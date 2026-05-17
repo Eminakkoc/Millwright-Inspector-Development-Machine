@@ -6,7 +6,7 @@ description: Finalize the active feature's workflow — archive blueprints, clea
 
 **Stage 8 finalizer.** Archives the blueprint into `history/`, clears the implementation folder, resets `progress.md`, and advances the workflow queue to the next feature.
 
-**Main-read budget (stage 8).** Allowed in main: `change-summary.md` (cached), archived blueprint files. The current implementation only rotates and archives — there is no codebase regeneration walk at stage 8 (the next feature's stage 2 builds the next `current/`). If a future change introduces stage-8 regeneration, it should be delegated to a fresh sub-agent per Phase 2.1's pattern. See `docs/workflow-spec.md` § "Main-read budget gates by stage" for the canonical table.
+**Main-read budget (stage 8).** Allowed in main: `change-summary.md` (cached), archived blueprint files. The current implementation only rotates and archives — there is no codebase regeneration walk at stage 8 (the next feature's stage 2 builds the next `current/`). If a future change introduces stage-8 regeneration, it should be delegated to a fresh sub-agent per Phase 2.1's pattern. See `docs/millwright-inspector-project.md` § "Main-read budget gates by stage" for the canonical table.
 
 ## Invocation
 
