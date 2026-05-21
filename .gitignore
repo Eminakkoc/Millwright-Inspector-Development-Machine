@@ -1,2 +1,5 @@
 .DS_Store
 tmp
+# Scratch space for manual testing of the plugin (see feature/test-plugin/).
+# Anything under feature/ stays local to a developer's machine.
+feature/
