@@ -20,6 +20,10 @@
     "plantuml": {
       "command": "plantuml-mcp-server",
       "args": []
+    },
+    "codex": {
+      "command": "codex",
+      "args": ["mcp-server"]
     }
   },
   "userConfig": {
