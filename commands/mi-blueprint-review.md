@@ -7,7 +7,7 @@ description: Orchestrate a full blueprint review on a markdown file: initial con
 ## Usage
 
 ```
-/mi-blueprint-review <agent> <max-consistency-iter> <max-item-iter> <file-path> [--batch-size N]
+/mi-blueprint-review <agent> <max-consistency-iter> <max-item-iter> <file-path> [--batch-size N] [--scope <heading>]
 ```
 
 | Param | Meaning |
@@ -17,6 +17,7 @@ description: Orchestrate a full blueprint review on a markdown file: initial con
 | `<max-item-iter>` | Max iterations PER item review. |
 | `<file-path>` | Markdown file. Edits in place. |
 | `--batch-size N` | Optional; defaults to 5. Maximum items reviewed in parallel per batch. Hard cap on total items: `MAX_ITEMS_PER_REVIEW=20`. |
+| `--scope <heading>` | Optional. Restrict Phase 2 enumeration to items under the named `## <heading>` section only. Without this flag, the reviewer enumerates every reviewable item in the file. The stage-2 auto-fire (see `commands/mi-apply-impact.md` Step B.5) passes `--scope "Goals (this cycle)"` so Planned and Non-goals items aren't reviewed per-item. |
 
 ## Preconditions
 
@@ -34,21 +35,21 @@ max_c="${2:-}"
 max_i="${3:-}"
 file="${4:-}"
 batch_size=5
-for arg in "${@:5}"; do
-  case "$arg" in
-    --batch-size=*) batch_size="${arg#--batch-size=}" ;;
-    --batch-size) ;;  # next token, handled below
-  esac
-done
-# Also handle the space-separated form
+scope=""  # empty = review all items; otherwise the ## heading text (e.g. "Goals (this cycle)")
 i=5
 while [[ $i -le $# ]]; do
-  [[ "${!i}" == "--batch-size" ]] && { ((i++)); batch_size="${!i}"; }
+  arg="${!i}"
+  case "$arg" in
+    --batch-size=*) batch_size="${arg#--batch-size=}" ;;
+    --batch-size)   ((i++)); batch_size="${!i}" ;;
+    --scope=*)      scope="${arg#--scope=}" ;;
+    --scope)        ((i++)); scope="${!i}" ;;
+  esac
   ((i++))
 done
 
 [[ -n "$agent" && -n "$max_c" && -n "$max_i" && -n "$file" ]] || {
-  echo "usage: /mi-blueprint-review <agent> <max-consistency-iter> <max-item-iter> <file> [--batch-size N]" >&2
+  echo "usage: /mi-blueprint-review <agent> <max-consistency-iter> <max-item-iter> <file> [--batch-size N] [--scope <heading>]" >&2
   exit 64
 }
 [[ -f "$file" && -w "$file" ]] || { echo "error: file not found or not writable: $file" >&2; exit 1; }
@@ -67,11 +68,23 @@ Spawn the `blueprint-consistency-reviewer` sub-agent exactly as `/mi-blueprint-r
 
 ### Step 3 — Phase 2: item enumeration
 
+Render the enumeration prompt by substituting placeholders in `templates/blueprint-reviewer-prompt-enumerate.md.tmpl`. The two scope-related placeholders depend on whether `--scope` was given:
+
+| `--scope` value | `{{SCOPE_INSTRUCTION}}` | `{{SCOPE_EMPTY_HINT}}` |
+| --- | --- | --- |
+| unset (review all) | `Enumerate every reviewable item in the file, regardless of section.` | (empty string) |
+| set (e.g. `"Goals (this cycle)"`) | `Enumerate ONLY items that appear under the heading "## <scope>" — skip every other section of the file, including any other top-level headings. If the named heading doesn't exist, return an empty array.` | ` (or if the heading "## <scope>" doesn't exist)` |
+
 ```bash
-# Render the enumeration prompt.
-enum_template="$CLAUDE_PLUGIN_ROOT/templates/blueprint-reviewer-prompt-enumerate.md.tmpl"
 file_content="$(cat "$file")"
-# Substitute placeholders. (Use a here-doc approach because file_content can be large.)
+if [[ -z "$scope" ]]; then
+  scope_instruction="Enumerate every reviewable item in the file, regardless of section."
+  scope_empty_hint=""
+else
+  scope_instruction="Enumerate ONLY items that appear under the heading \"## $scope\" — skip every other section of the file, including any other top-level headings. If the named heading doesn't exist, return an empty array."
+  scope_empty_hint=" (or if the heading \"## $scope\" doesn't exist)"
+fi
+# Substitute placeholders. (Use a python heredoc since file_content can be large.)
 ```
 
 Send the rendered prompt to the reviewer MCP tool directly from main (no sub-agent — this is a small, one-shot call). Capture the response. Parse the fenced ` ```json ... ``` ` block into a JSON array of `[{id, anchor_line, occurrence_index}]`.

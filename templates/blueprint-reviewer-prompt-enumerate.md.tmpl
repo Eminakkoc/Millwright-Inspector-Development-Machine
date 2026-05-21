@@ -3,6 +3,10 @@ item. An "item" is a distinct unit of specification — typically a bullet under
 top-level section like `## Goals`, `## Items`, `## Tasks`, etc. Items usually have
 an id prefix in bold (e.g. **PAY-001**) but may not.
 
+## Scoping
+
+{{SCOPE_INSTRUCTION}}
+
 For each item, return:
 - `id` — the item's explicit id (e.g. "PAY-001"); if none, assign `item-1`, `item-2`, … in document order.
 - `anchor_line` — the **exact, verbatim, byte-for-byte** first line of the item as
@@ -29,7 +33,7 @@ Return ONLY a JSON array, fenced as ```json ... ```:
   { "id": "GEN-002", "anchor_line": "- Description:", "occurrence_index": 2 }
 ]
 
-Return an empty array if the file has no reviewable items.
+Return an empty array if the file has no reviewable items {{SCOPE_EMPTY_HINT}}.
 
 File path: {{FILE_PATH}}
 File content:
