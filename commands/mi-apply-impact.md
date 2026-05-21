@@ -125,7 +125,9 @@ sys.exit(1)
 '; then
   requirements_path="$data_root/workflow-stream/$active_feature/blueprints/current/requirements.md"
   # Invoke the orchestrator (defaults: codex, 3 consistency iters, 5 item iters).
-  /mi-blueprint-review codex 3 5 "$requirements_path"
+  # --scope restricts per-item enumeration to Goals only — Planned and Non-goals
+  # items don't need per-item review (see docs/blueprints-review/plan.md §O1).
+  /mi-blueprint-review codex 3 5 "$requirements_path" --scope "Goals (this cycle)"
   review_status="auto-reviewed by codex; any remaining findings are inline as \`<!-- REVIEW-FINDING -->\` comments"
 else
   echo "warning: codex MCP unavailable — skipping stage-2 blueprint review" >&2
