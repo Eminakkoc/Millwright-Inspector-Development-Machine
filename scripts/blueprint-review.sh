@@ -168,14 +168,54 @@ PYEOF
   alloc-final-id)
     file="${1:-}"
     [[ -n "$file" && -f "$file" ]] || { echo "usage: $0 alloc-final-id <file>" >&2; exit 64; }
+    # Lifetime-monotonic: read `last-finding-id` from YAML frontmatter, increment,
+    # write back, emit the new id. Falls back to scanning the body when the
+    # frontmatter field is absent (first-ever allocation on a file).
+    #
+    # NOTE: this subcommand is state-mutating — it updates the file's frontmatter.
+    # Callers should treat it as "allocate-and-commit", not a read-only query.
     python3 - "$file" <<'PYEOF'
 import sys, re
-with open(sys.argv[1], encoding="utf-8", errors="replace") as f:
+path = sys.argv[1]
+with open(path, encoding="utf-8", errors="replace") as f:
     raw = f.read()
-m = re.match(r'^---\n.*?\n---\n', raw, re.DOTALL)
-body = raw[m.end():] if m else raw
-ns = [int(m.group(1)) for m in re.finditer(r'\bid:\s*F-(\d+)\b', body)]
-print(f"F-{(max(ns) + 1) if ns else 1:03d}")
+
+m = re.match(r'^(---\n)(.*?)(\n---\n)', raw, re.DOTALL)
+if not m:
+    # No frontmatter: fall back to body scan only. Emit the next id but do
+    # NOT write back (there's nowhere to write to).
+    body_ns = [int(x.group(1)) for x in re.finditer(r'\bid:\s*F-(\d+)\b', raw)]
+    next_n = (max(body_ns) + 1) if body_ns else 1
+    print(f"F-{next_n:03d}")
+    sys.exit(0)
+
+fm_open, fm_body, fm_close = m.group(1), m.group(2), m.group(3)
+body = raw[m.end():]
+
+# Read existing last-finding-id (lifetime counter).
+lf = re.search(r'(?m)^last-finding-id:\s*F-(\d+)\s*$', fm_body)
+
+if lf:
+    next_n = int(lf.group(1)) + 1
+    new_fm_body = re.sub(
+        r'(?m)^last-finding-id:\s*F-\d+\s*$',
+        f"last-finding-id: F-{next_n:03d}",
+        fm_body,
+        count=1,
+    )
+else:
+    # First-ever allocation. Bootstrap from the highest F-NNN currently in the
+    # body (if any) so we don't reuse retired ids, and add the field to
+    # frontmatter.
+    body_ns = [int(x.group(1)) for x in re.finditer(r'\bid:\s*F-(\d+)\b', body)]
+    next_n = (max(body_ns) + 1) if body_ns else 1
+    # Append the new field at the end of the existing frontmatter body.
+    new_fm_body = fm_body.rstrip("\n") + f"\nlast-finding-id: F-{next_n:03d}"
+
+new_raw = fm_open + new_fm_body + fm_close + body
+with open(path, "w", encoding="utf-8") as f:
+    f.write(new_raw)
+print(f"F-{next_n:03d}")
 PYEOF
     ;;
 

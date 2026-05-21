@@ -210,9 +210,9 @@ Every finding is encoded as exactly one HTML comment placed adjacent to the offe
 - `phase: item` findings are placed immediately after the offending line within the item's content (e.g., after the bullet under `## Goals (this cycle)`).
 - `phase: consistency` findings are placed at the top of the file, above the first top-level heading, in a single contiguous block. They are not interleaved with content, because by definition they are cross-item.
 
-**Id uniqueness.** `id: F-NNN` is unique per file *and* monotonically increasing. Assignment is split by sub-agent type — see §5.5 for the full rule:
-- **Consistency sub-agent (always serial)** assigns final `F-NNN` ids directly when it writes findings into the file. No temporary-id step.
-- **Item sub-agent (parallel-capable)** emits temporary ids of the form `T<instance>-<n>`; the orchestrator/command rewrites them to final `F-NNN` during serialized write-back in main.
+**Id uniqueness.** `id: F-NNN` is unique per file *and* **lifetime-monotonic** — once an id is allocated it is never reused, even after the corresponding finding is resolved and its `REVIEW-FINDING` comment removed. The counter is persisted in the file's YAML frontmatter as `last-finding-id: F-NNN`; `scripts/blueprint-review.sh alloc-final-id` reads, increments, writes back, and returns the new id atomically. See §5.5 for the full rule. Assignment is split by sub-agent type:
+- **Consistency sub-agent (always serial)** assigns final `F-NNN` ids directly when it writes findings into the file (via `alloc-final-id`). No temporary-id step.
+- **Item sub-agent (parallel-capable)** emits temporary ids of the form `T<instance>-<n>`; the orchestrator/command rewrites them to final `F-NNN` (via `alloc-final-id`) during serialized write-back in main.
 
 **No frontmatter changes.** The reviewed file's YAML frontmatter (e.g., `requirements.md`'s `id`, `todo-list-id`, `commits`) is **never touched** by the reviewer or fixer. The reviewer is told this explicitly; the sub-agent validates it after each iteration.
 
@@ -282,10 +282,12 @@ Phase 2's enumeration produces a single canonical descriptor used everywhere dow
 
 ### 5.5 Finding id assignment
 
-Final `F-NNN` ids are unique per file and monotonically increasing. Assignment is split by sub-agent type to match the dual write-ownership model (§9):
+Final `F-NNN` ids are unique per file and **lifetime-monotonic**. The counter lives in the file's YAML frontmatter as `last-finding-id: F-NNN` (see `schemas/requirements.schema.yaml`); `scripts/blueprint-review.sh alloc-final-id <file>` is the single authoritative allocator — it reads `last-finding-id`, increments, writes it back, and returns the new id in one atomic operation. Once an id is allocated it never gets reused, even after the finding is resolved and its `REVIEW-FINDING` comment removed. This preserves audit-trail continuity across iterations and runs.
 
-- **Consistency sub-agent (always serial; writes the file directly).** Assigns final `F-NNN` ids itself, with **no temporary-id intermediate step**. Each iteration: scan the file for the current highest `F-NNN`, increment for each new finding, embed the final id directly in the `REVIEW-FINDING` block, write the file. Safe because no parallel sub-agent can race the scan-and-write for the same file.
-- **Item sub-agent (parallel-capable; read-only on the file).** Receives a `sub_agent_instance_id` (e.g., `T1`, `T2`, …) in its spawn prompt and emits new findings with **temporary ids** of the form `T<instance>-<n>` (e.g., `T3-2` = instance 3's second new finding). It returns these `tmp_id` values inside `new_region`. During serialized write-back in main, the orchestrator/command scans the file's *current* highest `F-NNN` and rewrites each `tmp_id` inside the next `new_region` to a monotonic `F-NNN` before the `Edit` is applied — so each region replacement's findings are consecutively numbered against the file's running max.
+Assignment is split by sub-agent type to match the dual write-ownership model (§9):
+
+- **Consistency sub-agent (always serial; writes the file directly).** Calls `alloc-final-id` per new finding and embeds the returned `F-NNN` directly in the `REVIEW-FINDING` block. No temporary-id intermediate step. Safe because no parallel sub-agent can race the allocator for the same file.
+- **Item sub-agent (parallel-capable; read-only on the file).** Receives a `sub_agent_instance_id` (e.g., `T1`, `T2`, …) in its spawn prompt and emits new findings with **temporary ids** of the form `T<instance>-<n>` (e.g., `T3-2` = instance 3's second new finding). It returns these `tmp_id` values inside `new_region`. During serialized write-back in main, the orchestrator/command calls `alloc-final-id` per tmp_id (in order) and substitutes the returned `F-NNN` inside `new_region` before the `Edit` is applied. The allocator's atomic read-modify-write semantics handle the per-item ordering correctly even though sub-agents ran in parallel.
 - **Standalone `/mi-blueprint-review-item` mode A**: identical to the parallel case — the command performs the same `tmp_id → F-NNN` rewrite in main before writing. Uniform code path.
 - **Standalone `/mi-blueprint-review-item` mode B**: `tmp_id` values appear in the printed terminal output. Because no file persists, terminal output keeps the `T<instance>-<n>` ids — they are scoped to this single invocation and have no continuity with anything else. (If we later want `F-NNN` in the terminal output for readability, the command can do a final rewrite pass before printing; defer to D8 in §13.)
 

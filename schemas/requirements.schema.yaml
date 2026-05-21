@@ -38,3 +38,14 @@ properties:
         msg:
           type: string
           minLength: 1
+  last-finding-id:
+    type: string
+    pattern: "^F-[0-9]+$"
+    description: |
+      Lifetime-monotonic counter for blueprint-review finding IDs (see
+      docs/blueprints-review/plan.md §5.5 and §O2). Tracks the highest
+      F-NNN ever allocated against this file, even after the
+      corresponding finding has been resolved and its REVIEW-FINDING
+      comment removed. Maintained by `scripts/blueprint-review.sh
+      alloc-final-id` — readers should not modify it manually. Absent
+      on files that have never been reviewed.
