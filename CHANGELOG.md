@@ -1,5 +1,67 @@
 # Changelog
 
+## 1.2.1 — Blueprints review: convergence + audit-trail fixes from Scenario-1 testing
+
+Polish pass on the v1.2.0 reviewer loop after a manual end-to-end test surfaced
+that every loop hit max-iter (the reviewer kept finding new things; the fixer
+kept introducing new issues). Tightens reviewer scope, adds early-exit on
+convergence, switches to id-based reconciliation, and makes finding ids
+lifetime-monotonic.
+
+### What changed
+
+- **Reviewer prompt templates** (`templates/blueprint-reviewer-prompt-{consistency,item}.md.tmpl`):
+  - **Tighter scope (I3).** Reviewers now flag ONLY issues where two reasonable
+    implementations would meaningfully diverge in observable behavior. Style
+    nits and "could be tighter" feedback are out of scope unless they cause
+    ambiguity. Per-iteration cap of 3 findings (top-by-severity) keeps loops
+    tractable.
+  - **Id-based reconciliation (O7).** Reviewer now returns
+    `{existing: [...], new: [...]}` instead of a flat findings array. For each
+    existing finding (passed in via a new `{{EXISTING_FINDINGS}}` placeholder),
+    the reviewer returns `status: still-present | resolved | refined`. The
+    sub-agent processes deterministically by id instead of doing fuzzy
+    content-similarity match.
+
+- **Reviewer sub-agents** (`agents/blueprint-{consistency,item}-reviewer.md`):
+  - **Stop-on-stable (I1).** After iter 2, if the reviewer's `new` array is
+    empty AND every existing finding is `still-present`, exit early with
+    `Result: partial; reason: stable`. The loop has converged at "these
+    findings exist and the fixer can't resolve them" — further iterations
+    cost without progress.
+  - **Severity-stratified completion (I2).** After iter 2, if no high
+    findings (kept or new) AND no new mediums (only stable ones remain),
+    exit with `Result: partial; reason: stable-medium`. Inspector tolerance
+    for stable mediums is high — surface and continue.
+  - Findings/risks now carries a `reason:` line on every partial exit so the
+    orchestrator can choose the right user-facing message.
+
+- **Orchestrator `--scope <heading>` flag (O1).** `/mi-blueprint-review` now
+  accepts `--scope "Goals (this cycle)"` to restrict per-item enumeration to
+  one section. Stage-2 auto-fire (`mi-apply-impact` Step B.5) passes
+  `--scope "Goals (this cycle)"` so Planned + Non-goals items aren't reviewed
+  per-item. Standalone invocation without `--scope` enumerates everything
+  (preserves general-file utility).
+
+- **Lifetime-monotonic F-NNN ids (O2).** New optional `last-finding-id: F-NNN`
+  field in `schemas/requirements.schema.yaml`. `scripts/blueprint-review.sh
+  alloc-final-id` reads, increments, writes back, and emits the new id
+  atomically — id space is now lifetime-monotonic so resolved findings don't
+  free up their ids. Bootstraps from existing body F-NNN max when the field
+  is absent.
+
+### Migration notes
+
+- v1.2.0 files without `last-finding-id` in frontmatter are auto-handled —
+  `alloc-final-id` bootstraps the field on first call after upgrade.
+- The reviewer prompt's output shape changed from a JSON array to a JSON
+  object. Any external consumer of the reviewer-tool output needs to handle
+  both shapes during the transition (the design's only consumers are the
+  reviewer sub-agents themselves, which have been updated atomically).
+
+See `feature/test-plugin/reports/findings-and-improvements.md` (gitignored)
+for the detailed analysis that motivated this release.
+
 ## 1.2.0 — Blueprints review: AI-driven consistency + per-item review
 
 Adds three slash commands and two reviewer sub-agents that use an external coding agent (Codex first) via MCP to review markdown spec files (especially `requirements.md` at stage 2) for cross-item consistency and per-item completeness. Findings live inline in the reviewed file as `<!-- REVIEW-FINDING -->` HTML comments; resolved findings are cleaned up automatically.
