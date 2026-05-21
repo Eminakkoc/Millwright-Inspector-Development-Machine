@@ -218,6 +218,16 @@ If `head_branch` is non-empty and is NOT `main`, `master`, or `HEAD` (detached) 
 
 If HEAD is `main`/`master`/detached, leave the section unfilled — `/mi-plan-implementation` will prompt the inspector at stage 3.
 
+## Step B.5 — Auto-review
+
+After writing `config.md` and before generating diagrams, `mi-apply-impact` auto-invokes `/mi-blueprint-review codex 3 5` against the newly-written `requirements.md`. This is a quality gate using an external coding agent (Codex by default) as the reviewer; the millwright (Claude) is the fixer. Findings live inline in `requirements.md` as `<!-- REVIEW-FINDING -->` comments; resolved ones are cleaned up automatically. See `docs/blueprints-review/plan.md` for the full design.
+
+If the codex MCP server is unavailable, the review is skipped and a warning is printed. The rest of stage 2 continues normally.
+
+## Step B.6 — Drift surfacing
+
+If the review rewrote `requirements.md`, `mi-apply-impact` diffs it against the active cycle's `summary.md` and `todo-list.md` and surfaces a heads-up message. The millwright does not auto-edit either file. The inspector reads the heads-up, optionally edits, and proceeds.
+
 ## Step C — Generate requirement-level diagrams (AI work)
 
 ### Step C.0 — Per-event diagram prompt (stage 2)

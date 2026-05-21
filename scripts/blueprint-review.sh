@@ -7,6 +7,7 @@
 #   enumerate <file> <items.json> # (added in Task 1.4)
 #   parse-findings <file>         # (added in Task 1.5)
 #   alloc-final-id <file>         # (added in Task 1.5)
+#   diff-drift <req> <sum> <todo> <feature>  # (added in Task 5.2)
 
 set -euo pipefail
 
@@ -175,6 +176,52 @@ m = re.match(r'^---\n.*?\n---\n', raw, re.DOTALL)
 body = raw[m.end():] if m else raw
 ns = [int(m.group(1)) for m in re.finditer(r'\bid:\s*F-(\d+)\b', body)]
 print(f"F-{(max(ns) + 1) if ns else 1:03d}")
+PYEOF
+    ;;
+
+  diff-drift)
+    requirements="${1:-}"
+    summary="${2:-}"
+    todo="${3:-}"
+    feature="${4:-}"
+    [[ -n "$requirements" && -n "$summary" && -n "$todo" && -n "$feature" ]] || {
+      echo "usage: $0 diff-drift <requirements.md> <summary.md> <todo-list.md> <feature>" >&2
+      exit 64
+    }
+    python3 - "$requirements" "$summary" "$todo" "$feature" <<'PYEOF'
+import sys, re
+req, summary, todo, feature = sys.argv[1:]
+
+def read(p):
+    try:
+        with open(p, encoding="utf-8", errors="replace") as f: return f.read()
+    except FileNotFoundError:
+        return ""
+
+req_text = read(req)
+sum_text = read(summary)
+todo_text = read(todo)
+
+# Extract item ids from requirements.md's Goals section.
+req_goals = re.search(r'^## Goals \(this cycle\).*?(?=^## |\Z)', req_text, re.DOTALL | re.MULTILINE)
+goal_items = []
+if req_goals:
+    for m in re.finditer(r'\*\*([A-Z]+-\d+)\*\*\s*[—\-:]\s*(.+?)(?=\n\s*-|\n##|\Z)', req_goals.group(0), re.DOTALL):
+        goal_items.append((m.group(1), m.group(2).strip().splitlines()[0]))
+
+# For each goal item id, check if its one-line description is present in
+# summary.md (active feature section) and todo-list.md.
+drift = []
+sum_section = re.search(rf'^## Feature: {re.escape(feature)}.*?(?=^## |\Z)', sum_text, re.DOTALL | re.MULTILINE)
+for id_, desc in goal_items:
+    short = desc[:60]
+    first_word = short.split()[0] if short.split() else ""
+    if sum_section and first_word and first_word not in sum_section.group(0):
+        drift.append(f"  - {id_}: requirements.md mentions \"{short}…\" — not found in summary.md's feature section")
+    if id_ in todo_text and first_word and first_word not in todo_text:
+        drift.append(f"  - {id_}: requirements.md description differs from todo-list.md description")
+
+print("\n".join(drift))
 PYEOF
     ;;
 

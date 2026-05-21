@@ -105,6 +105,58 @@ active_item_ids="$($CLAUDE_PLUGIN_ROOT/scripts/todo.sh list PENDING --feature "$
 
 Pass `$active_feature` and `$active_item_ids` through to the shared steps. The shared runbook handles: computing `$planned_ids`, initializing frontmatter, writing the three requirements body sections, scanning skills/rules for the config auto-block, pre-filling the GIT BRANCH section from HEAD, and rendering use-case/sequence/class diagrams with the PlantUML MCP.
 
+After completing Steps A and B of `docs/blueprint-regeneration.md` (requirements + config generation) and before Step C (diagrams), execute Steps B.5 and B.6:
+
+#### Step B.5 — Auto-invoke `/mi-blueprint-review` on the new `requirements.md`
+
+This is a non-blocking quality gate: an external coding agent (Codex by default) reviews `requirements.md` for consistency and per-item completeness before the inspector sees the blueprint. Findings live inline in the file as `<!-- REVIEW-FINDING -->` comments; resolved ones are cleaned up automatically.
+
+```bash
+# Skip if codex MCP server is unavailable — graceful degradation per
+# docs/blueprints-review/plan.md §10.2.
+if "$CLAUDE_PLUGIN_ROOT/scripts/doctor.sh" --format=json | python3 -c '
+import sys, json
+status = json.load(sys.stdin)
+results = status.get("results", [])
+for r in results:
+    if r.get("name") == "codex" and r.get("present"):
+        sys.exit(0)
+sys.exit(1)
+'; then
+  requirements_path="$data_root/workflow-stream/$active_feature/blueprints/current/requirements.md"
+  # Invoke the orchestrator (defaults: codex, 3 consistency iters, 5 item iters).
+  /mi-blueprint-review codex 3 5 "$requirements_path"
+else
+  echo "warning: codex MCP unavailable — skipping stage-2 blueprint review" >&2
+fi
+```
+
+#### Step B.6 — Surface drift in `summary.md` and `todo-list.md`
+
+If the review rewrote `requirements.md`, surface any drift in the cycle's `summary.md` and `todo-list.md` as a heads-up to the inspector. The millwright does NOT auto-edit either file — `summary.md` is millwright-territory but auto-editing without consent feels surprising, and `todo-list.md` is strictly inspector-territory.
+
+```bash
+quest_dir="$($CLAUDE_PLUGIN_ROOT/scripts/quest.sh dir)"
+summary_path="$quest_dir/summary.md"
+todo_path="$quest_dir/todo-list.md"
+requirements_path="$data_root/workflow-stream/$active_feature/blueprints/current/requirements.md"
+
+drift_report="$($CLAUDE_PLUGIN_ROOT/scripts/blueprint-review.sh diff-drift \
+  "$requirements_path" "$summary_path" "$todo_path" "$active_feature" 2>/dev/null || true)"
+
+if [[ -n "$drift_report" ]]; then
+  echo
+  echo "The blueprint review rewrote requirements.md. Possible drift in adjacent files:"
+  echo "$drift_report"
+  echo
+  echo "Optional: edit summary.md and todo-list.md to match before typing /mi-continue. Or proceed — neither file blocks stage 3."
+fi
+```
+
+Note: `scripts/blueprint-review.sh diff-drift` is a small helper — see `scripts/blueprint-review.sh` for the implementation. It surfaces possible drift, never blocks.
+
+After Step B.6, proceed to Step C (diagram generation) from `docs/blueprint-regeneration.md`.
+
 ### Step 3 — Hand off (no stage advance)
 
 Do NOT call `progress.sh advance` here — `progress.sh activate` (Step 1) already set `current-stage=2`, which represents "blueprints generated, awaiting inspector approval." Stage 2 → 3 is owned by `/mi-plan-implementation` (which calls `progress.sh advance 2` after branch validation, todo promotion, and base-commit capture). Calling `advance 2` here would cause `/mi-plan-implementation` to fail with a stage mismatch on the next step.
@@ -178,6 +230,6 @@ fi
 
 Tell the inspector (append `$effort_suggestion` only when non-empty):
 
-> "Blueprints generated for `$active_feature` at `workflow-stream/$active_feature/blueprints/current/`. Review `requirements.md`, `config.md`, and `diagrams/`. If adjustments are needed, edit the files directly — pay attention to `config.md`'s `## GIT BRANCH` section (declare the feature branch there if it isn't pre-filled). When ready, type **`/mi-continue`** — the Approve Handler in `mi-continue.md` will validate the blueprint files and auto-launch `mi-plan-implementation`.${effort_suggestion}"
+> "Blueprints generated for `$active_feature` at `workflow-stream/$active_feature/blueprints/current/`. The blueprint was auto-reviewed by `codex` and any remaining findings are inline as `<!-- REVIEW-FINDING -->` comments. Review `requirements.md`, `config.md`, and `diagrams/`. When ready, type **`/mi-continue`**.${effort_suggestion}"
 
 Then stop and wait for the inspector to type `/mi-continue`. Do NOT auto-advance to stage 3 without that signal — this is the mandatory review gate. The Approve Handler in `commands/mi-continue.md` (current-stage = 2) handles the rest: blueprint sanity check, then auto-fire of `/mi-plan-implementation`.
