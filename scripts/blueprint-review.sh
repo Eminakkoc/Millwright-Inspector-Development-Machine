@@ -4,7 +4,7 @@
 #
 # Subcommands:
 #   resolve-tool <agent>          # → MCP tool name for the agent argument
-#   enumerate <file>              # (added in Task 1.4)
+#   enumerate <file> <items.json> # (added in Task 1.4)
 #   parse-findings <file>         # (added in Task 1.5)
 #   alloc-final-id <file>         # (added in Task 1.5)
 
@@ -30,7 +30,7 @@ case "$cmd" in
         ;;
       *)
         echo "error: agent '$agent' is not supported. Supported: codex" >&2
-        exit 1
+        exit 64
         ;;
     esac
     ;;
@@ -123,7 +123,7 @@ PYEOF
     [[ -n "$file" && -f "$file" ]] || { echo "usage: $0 parse-findings <file>" >&2; exit 64; }
     python3 - "$file" <<'PYEOF'
 import sys, re, json
-with open(sys.argv[1]) as f:
+with open(sys.argv[1], encoding="utf-8", errors="replace") as f:
     text = f.read()
 # Each block: <!-- REVIEW-FINDING\n     id: F-001\n     severity: high\n     ... \n-->
 pattern = re.compile(r'<!--\s*REVIEW-FINDING\s*(.*?)\s*-->', re.DOTALL)
@@ -131,10 +131,34 @@ out = []
 for m in pattern.finditer(text):
     body = m.group(1)
     fields = {}
-    for line in body.splitlines():
-        if ':' in line:
-            k, _, v = line.partition(':')
-            fields[k.strip()] = v.strip()
+    lines = body.splitlines()
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        stripped = line.strip()
+        if ':' not in stripped:
+            i += 1
+            continue
+        key, _, val = stripped.partition(':')
+        key = key.strip()
+        val = val.strip()
+        if val == '|':
+            # Collect subsequent lines as a multi-line scalar.
+            # Stop when the next line is itself a "key: ..." form.
+            block_lines = []
+            i += 1
+            while i < len(lines):
+                next_line = lines[i]
+                next_stripped = next_line.strip()
+                # If this looks like a new top-level key, stop.
+                if re.match(r'^[a-zA-Z_-]+:', next_stripped):
+                    break
+                block_lines.append(next_stripped)
+                i += 1
+            fields[key] = '\n'.join(block_lines).strip()
+        else:
+            fields[key] = val
+            i += 1
     out.append(fields)
 print(json.dumps(out, indent=2))
 PYEOF
@@ -145,9 +169,11 @@ PYEOF
     [[ -n "$file" && -f "$file" ]] || { echo "usage: $0 alloc-final-id <file>" >&2; exit 64; }
     python3 - "$file" <<'PYEOF'
 import sys, re
-with open(sys.argv[1]) as f:
-    text = f.read()
-ns = [int(m.group(1)) for m in re.finditer(r'\bid:\s*F-(\d+)\b', text)]
+with open(sys.argv[1], encoding="utf-8", errors="replace") as f:
+    raw = f.read()
+m = re.match(r'^---\n.*?\n---\n', raw, re.DOTALL)
+body = raw[m.end():] if m else raw
+ns = [int(m.group(1)) for m in re.finditer(r'\bid:\s*F-(\d+)\b', body)]
 print(f"F-{(max(ns) + 1) if ns else 1:03d}")
 PYEOF
     ;;
