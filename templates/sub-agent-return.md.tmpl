@@ -1,3 +1,13 @@
+<!-- Optional: Payload JSON extension. Use only when the calling command needs a
+     structured JSON payload from this sub-agent. See
+     docs/sub-agent-return-contract.md § "Payload JSON extension".
+
+Payload JSON:
+```json
+{ "...": "..." }
+```
+
+-->
 # Sub-agent return contract
 
 This template defines the **canonical return shape** that every fresh sub-agent invoked from a mi-workflow command MUST produce. The contract exists to prevent sub-agent summaries from growing into long prose narratives that slowly recreate the main-context bloat that delegation was meant to avoid.

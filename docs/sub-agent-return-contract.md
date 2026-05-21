@@ -75,6 +75,45 @@ When writing a sub-agent prompt for any of the call sites above:
 
 If any item fails, tighten the prompt before invoking. A loose prompt is the fastest way to recreate the bloat.
 
+## Payload JSON extension
+
+Some sub-agents need to hand back **structured machine-readable data** to the calling
+command, not just file paths. The canonical contract above does not include a
+"structured payload" channel — `Main should read` is a list of paths, not bytes —
+so this extension defines a named, fenced block placed **BEFORE** the standard
+fields. Calling commands that opt in know to parse it; calling commands that don't
+opt in can safely ignore it (the standard fields still parse correctly).
+
+Shape (outer fence uses four backticks so the inner `\`\`\`json` block is unambiguous):
+
+````
+Payload JSON:
+```json
+{ "key": "value", ... }
+```
+
+Result: success | partial | blocked
+Artifacts changed:
+...
+````
+
+Rules:
+
+- The block starts with the literal line `Payload JSON:` followed by a
+  triple-backtick `json`-tagged fenced code block carrying exactly one JSON
+  object. Parsers MUST tolerate optional whitespace inside the fence; the
+  fences and the `json` tag are mandatory.
+- The block is **mandatory** on `Result: success` and `Result: partial`. It is
+  allowed-but-not-required on `Result: blocked` (a blocked sub-agent may
+  legitimately have no payload to return).
+- The block appears exactly once per return; if a sub-agent emits multiple
+  blocks, parsers use the first.
+- All standard contract fields below the payload remain unchanged.
+
+First adopter: `agents/blueprint-item-reviewer.md` (see
+`docs/blueprints-review/plan.md` §6.2). Other sub-agents needing a structured
+payload should follow this same shape.
+
 ## Related
 
 - `templates/sub-agent-return.md.tmpl` — canonical template (source of truth)
