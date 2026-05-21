@@ -126,8 +126,10 @@ sys.exit(1)
   requirements_path="$data_root/workflow-stream/$active_feature/blueprints/current/requirements.md"
   # Invoke the orchestrator (defaults: codex, 3 consistency iters, 5 item iters).
   /mi-blueprint-review codex 3 5 "$requirements_path"
+  review_status="auto-reviewed by codex; any remaining findings are inline as \`<!-- REVIEW-FINDING -->\` comments"
 else
   echo "warning: codex MCP unavailable — skipping stage-2 blueprint review" >&2
+  review_status="(blueprint review skipped — codex MCP unavailable)"
 fi
 ```
 
@@ -230,6 +232,6 @@ fi
 
 Tell the inspector (append `$effort_suggestion` only when non-empty):
 
-> "Blueprints generated for `$active_feature` at `workflow-stream/$active_feature/blueprints/current/`. The blueprint was auto-reviewed by `codex` and any remaining findings are inline as `<!-- REVIEW-FINDING -->` comments. Review `requirements.md`, `config.md`, and `diagrams/`. When ready, type **`/mi-continue`**.${effort_suggestion}"
+> "Blueprints generated for `$active_feature` at `workflow-stream/$active_feature/blueprints/current/`. The blueprint was ${review_status}. Review `requirements.md`, `config.md`, and `diagrams/`. When ready, type **`/mi-continue`**.${effort_suggestion}"
 
 Then stop and wait for the inspector to type `/mi-continue`. Do NOT auto-advance to stage 3 without that signal — this is the mandatory review gate. The Approve Handler in `commands/mi-continue.md` (current-stage = 2) handles the rest: blueprint sanity check, then auto-fire of `/mi-plan-implementation`.

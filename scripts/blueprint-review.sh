@@ -218,7 +218,15 @@ for id_, desc in goal_items:
     first_word = short.split()[0] if short.split() else ""
     if sum_section and first_word and first_word not in sum_section.group(0):
         drift.append(f"  - {id_}: requirements.md mentions \"{short}…\" — not found in summary.md's feature section")
-    if id_ in todo_text and first_word and first_word not in todo_text:
+    # Scope the first-word check to the specific line containing this item id,
+    # not the whole todo file — avoids false negatives from word collisions
+    # across unrelated items.
+    todo_line = ""
+    for line in todo_text.splitlines():
+        if id_ in line:
+            todo_line = line
+            break
+    if todo_line and first_word and first_word not in todo_line:
         drift.append(f"  - {id_}: requirements.md description differs from todo-list.md description")
 
 print("\n".join(drift))
