@@ -310,6 +310,15 @@ hints_gh() {
 JSON
 }
 
+hints_codex() {
+  cat <<'JSON'
+{
+  "darwin": "brew install codex",
+  "linux": "see https://github.com/openai/codex"
+}
+JSON
+}
+
 # ---------- Run checks ----------------------------------------------------
 
 # REQUIRED
@@ -341,6 +350,21 @@ check_cli rtk false              "$(hints_rtk)"
 # OPTIONAL ingest — docling powers /mi-ingest (non-text journal files → sibling .md).
 # Safe to omit for text-only journals.
 check_cli docling false "$(hints_docling)"
+
+# OPTIONAL — codex CLI + mcp-server subcommand (used by blueprint-review commands).
+# Missing codex disables stage-2 auto-review but the rest of the workflow is unaffected.
+if command -v codex >/dev/null 2>&1; then
+  codex_version="$(codex --version 2>/dev/null | head -1 || echo 'unknown')"
+  if codex mcp-server --help >/dev/null 2>&1; then
+    record "codex" cli false true "$codex_version" '{}'
+  else
+    # Binary exists but the mcp-server subcommand is missing — this CLI is too
+    # old / wrong build.
+    record "codex" cli false false "$codex_version (no mcp-server)" "$(hints_codex)"
+  fi
+else
+  record "codex" cli false false "" "$(hints_codex)"
+fi
 
 # REQUIRED skills — stage 3 of the workflow hands off to brainstorming → writing-plans →
 # executing-plans / subagent-driven-development → finishing-a-development-branch. Each must
