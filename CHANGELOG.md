@@ -1,5 +1,27 @@
 # Changelog
 
+## 1.2.0 — Blueprints review: AI-driven consistency + per-item review
+
+Adds three slash commands and two reviewer sub-agents that use an external coding agent (Codex first) via MCP to review markdown spec files (especially `requirements.md` at stage 2) for cross-item consistency and per-item completeness. Findings live inline in the reviewed file as `<!-- REVIEW-FINDING -->` HTML comments; resolved findings are cleaned up automatically.
+
+### What changed
+
+- **New commands** under `commands/`:
+  - `/mi-blueprint-review-consistency <agent> <max-iter> <file>` — whole-file consistency loop.
+  - `/mi-blueprint-review-item <agent> <max-iter> <file:item-id | content>` — per-item loop, two modes (file-anchored / stateless).
+  - `/mi-blueprint-review <agent> <max-c-iter> <max-i-iter> <file>` — orchestrator: consistency → per-item batched → final consistency.
+- **New sub-agents** under `agents/`:
+  - `blueprint-consistency-reviewer` — serial; writes the file directly.
+  - `blueprint-item-reviewer` — strictly read-only (`tools:` contains only the reviewer MCP tool); returns region replacements via a Payload JSON extension to the sub-agent return contract.
+- **New script** `scripts/blueprint-review.sh` with subcommands: `resolve-tool`, `enumerate` (deterministic offset computation from reviewer-supplied `{id, anchor_line, occurrence_index}`), `parse-findings`, `alloc-final-id`, `diff-drift`.
+- **Three new templates** under `templates/` for the consistency, per-item, and enumeration reviewer prompts.
+- **Stage-2 integration:** `mi-apply-impact` now auto-invokes the orchestrator on `requirements.md` between `config.md` generation and diagram generation. Skipped gracefully when codex MCP is unavailable; handoff message reflects the actual run/skip state.
+- **`docs/sub-agent-return-contract.md`** gains a "Payload JSON extension" section documenting the fenced-block pattern for sub-agents that need to hand back structured data.
+- **`scripts/doctor.sh`** gains a `mcp:codex` check (non-blocking).
+- **`plugin.json`** declares the `codex` MCP server (`codex mcp-server`).
+
+See [`docs/blueprints-review/plan.md`](./docs/blueprints-review/plan.md) and [`docs/blueprints-review/implementation.md`](./docs/blueprints-review/implementation.md) for full design and implementation history.
+
 ## 1.1.0 — Folder linking: journal ↔ quest ↔ workflow-stream
 
 ID-based links now tie the three workflow folder trees together, so a quest

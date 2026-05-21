@@ -173,6 +173,14 @@ See `docs/millwright-inspector-project.md` for the full stage-by-stage reference
 | `/mi-update-todo-list`       | inspector   | Add / cancel / change state on todo items (state-machine safe).            |
 | `/mi-sidequest`              | inspector   | Mid-workflow Q&A or small fix via an isolated side-quest sub-agent; `--write` for source edits. |
 
+**Blueprint review (v1.2.0+):**
+
+- `/mi-blueprint-review-consistency <agent> <max-iter> <file>` — run a whole-file consistency review loop using an external coding agent (Codex by default).
+- `/mi-blueprint-review-item <agent> <max-iter> <file:item-id | content>` — review a single item, in place or stateless.
+- `/mi-blueprint-review <agent> <max-c-iter> <max-i-iter> <file>` — orchestrator: consistency → per-item batched → final consistency. Auto-fires at stage 2 against `requirements.md` (codex, 3, 5 defaults).
+
+See [`docs/blueprints-review/plan.md`](docs/blueprints-review/plan.md) for the design.
+
 Commands marked **auto** are fired by the millwright on the preceding inspector gate (see the Quickstart). They remain invokable manually for recovery.
 
 ## Configuration

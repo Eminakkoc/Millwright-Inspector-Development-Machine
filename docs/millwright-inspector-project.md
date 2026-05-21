@@ -667,6 +667,7 @@ stage — the single most useful view of the workflow's blast radius.
 | Inspector | `quest/<active-slug>/todo-list.md` | Marks items `[x]` and adds `(assignee)` tags. | 1.5 |
 | Inspector | `/mi-continue` ×2 | Pre-flight Step 2A (`pend-selected`, propose order); Step 2B (write `queue-rationale.md`, reorder, auto-fire `/mi-apply-impact`). | 1.5 → 2 |
 | Millwright (auto) | `/mi-apply-impact` | `progress.sh activate`; generate `blueprints/current/`; pre-fill `## GIT BRANCH`. | 2 |
+| Millwright (auto) | `/mi-blueprint-review` (auto-fired in stage 2 by `mi-apply-impact`) | Reviewer-fixer loop on `requirements.md` via Codex MCP; findings inline as `<!-- REVIEW-FINDING -->`. | 2 |
 | Inspector | `blueprints/current/` | Reviews requirements / config / diagrams; may edit `## GIT BRANCH` and `## Inspector Additions`. | 2 |
 | Inspector | `/mi-continue` | Approve Handler validates blueprints, fires the `stage-2-to-3` clear-point gate, auto-fires `/mi-plan-implementation`. | 2 → 3 |
 | Millwright (auto) | `/mi-plan-implementation` | PENDING→IMPLEMENTING; capture `base-commit`; write `primer.md`; ask for `planning-mode`. | 3 |
@@ -760,6 +761,9 @@ end`, and a fresh subfolder is created.
 - *Step B* — scan `.claude/skills/` and `.claude/rules/`; write `config.md`'s auto-block
   (≤ 10 entries / ≤ 2 lines each; `## Skills`, `## Rules`, `## Load on demand`); pre-fill
   `## GIT BRANCH` from HEAD when non-trunk; preserve `## Inspector Additions` verbatim.
+
+After Steps A and B, `mi-apply-impact` auto-invokes `/mi-blueprint-review` (Codex by default) to review `requirements.md` for consistency and per-item completeness, then surfaces any drift in `summary.md` / `todo-list.md`. Diagrams (Step C) are generated last, after the review. See `docs/blueprints-review/plan.md`.
+
 - *Step C* — delegate diagram rendering to the `blueprint-diagrammer` sub-agent: a
   mandatory `use-case-<feature>.puml`, 2–3 `sequence-<flow>.puml`, and at most one optional
   structural diagram (`class-` OR `component-`, never both — fires only on `backend`/`mixed`
