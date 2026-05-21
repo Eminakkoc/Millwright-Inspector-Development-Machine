@@ -1,5 +1,43 @@
 # Changelog
 
+## 1.2.3 — Blueprints review: iteration-aware depth (comprehensive iter 1, differential iter 2+)
+
+Cuts "discovery" findings — pre-existing ambiguities the reviewer didn't
+surface in iter 1 because of v1.2.1's terseness cap, which then appeared as
+confusing "new" findings in iter 2 and pushed the loop toward max-iter.
+
+### What changed
+
+- **Both reviewer prompt templates** (`templates/blueprint-reviewer-prompt-{consistency,item}.md.tmpl`):
+  Replaced the unconditional "prefer 1-3 findings, cap at 3" instruction with
+  iteration-aware depth:
+  - **Iter 1 — comprehensive sweep.** Surface EVERY finding that meets the
+    "implementations diverge" calibration. No count cap. Missing something here
+    means it shows up in iter 2 as a fake-new finding.
+  - **Iter 2 or later — differential focus, cap 4 new findings.** Focus on
+    re-evaluating existing findings (via the reconciliation contract) and on
+    issues the fix step introduced. Pre-existing ambiguities should not appear
+    as "new" — they should have been caught in iter 1.
+
+### Why
+
+v1.2.1's terseness cap was a blunt fix for v1.2.0's noisy iter 1. After v1.2.1's
+calibration ("two implementations would meaningfully diverge") landed, the noise
+was already gone but the cap remained. The cap was now suppressing real findings
+in iter 1, which surfaced as "new" findings in iter 2 — looking like cascades
+but actually being discoveries.
+
+REPORT-2 (v1.2.1) Phase 1 iter 2 found PAY-001/PAY-004 unknown-event scope
+ambiguity. That issue existed in iter-1's file; codex simply didn't flag it
+because the cap pushed it below the visible threshold. v1.2.3's comprehensive
+iter 1 should catch it up front.
+
+### What this can't fix
+
+True cascades — findings caused by the fixer rewriting content that did not
+exist in iter 1 — are unaffected. Those need I4 (inspector-mediated marking)
+or structural changes. v1.2.3 only tackles Discovery findings.
+
 ## 1.2.2 — Blueprints review: relax stop-on-stable to accept `refined`
 
 Bug-fix release surfaced by the v1.2.1 Scenario-1 re-test (REPORT-2).
