@@ -1,0 +1,38 @@
+You are a parser. Read the attached markdown file and identify every reviewable
+item. An "item" is a distinct unit of specification — typically a bullet under a
+top-level section like `## Goals`, `## Items`, `## Tasks`, etc. Items usually have
+an id prefix in bold (e.g. **PAY-001**) but may not.
+
+For each item, return:
+- `id` — the item's explicit id (e.g. "PAY-001"); if none, assign `item-1`, `item-2`, … in document order.
+- `anchor_line` — the **exact, verbatim, byte-for-byte** first line of the item as
+  it appears in the file. Copy it; do not paraphrase, summarize, or normalize
+  whitespace. A downstream script locates this line via exact substring match
+  to compute byte offsets — any deviation will cause the item to be dropped.
+- `occurrence_index` — a **1-based** integer indicating which occurrence of
+  `anchor_line` this item is, counting from the start of the file body. The
+  vast majority of items have a unique `anchor_line` and `occurrence_index = 1`.
+  Only set it higher when the same anchor_line repeats in the file — e.g., two
+  items that both start with `- Description:`. In that case the earlier one has
+  `occurrence_index = 1`, the next `2`, and so on. **You must return items in
+  document order** so the script can cross-validate the occurrence indices.
+
+DO NOT return byte offsets, line numbers, or item content. The script computes
+those deterministically from `anchor_line` + `occurrence_index`.
+
+Return ONLY a JSON array, fenced as ```json ... ```:
+
+[
+  { "id": "PAY-001", "anchor_line": "- **PAY-001** — add a service under `services/` for webhook capture.", "occurrence_index": 1 },
+  { "id": "PAY-002", "anchor_line": "- **PAY-002** — extend the existing CartService to accept bulk-add requests.", "occurrence_index": 1 },
+  { "id": "GEN-001", "anchor_line": "- Description:", "occurrence_index": 1 },
+  { "id": "GEN-002", "anchor_line": "- Description:", "occurrence_index": 2 }
+]
+
+Return an empty array if the file has no reviewable items.
+
+File path: {{FILE_PATH}}
+File content:
+---
+{{FILE_CONTENT}}
+---
