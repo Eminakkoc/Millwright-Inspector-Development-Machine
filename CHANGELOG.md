@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.2.2 — Blueprints review: relax stop-on-stable to accept `refined`
+
+Bug-fix release surfaced by the v1.2.1 Scenario-1 re-test (REPORT-2).
+
+### What changed
+
+- **Both reviewer sub-agents** (`agents/blueprint-{consistency,item}-reviewer.md`): the stop-on-stable predicate now reads `every existing has status ∈ {still-present, refined}` instead of the stricter `every existing has status == still-present`. Same change applied to stable-medium-only (clause c).
+
+### Why
+
+In the v1.2.1 re-test, codex sometimes returned `refined` for an existing finding — same underlying issue, sharpened wording. The strict predicate treated `refined` as "not stable", forcing the loop to `max-iter` even though no new findings appeared. `refined` is operationally equivalent to `still-present` for loop-convergence purposes (the reviewer is just polishing, not finding new content).
+
+Verified against the captured iter-2 reviewer responses from REPORT-2: all 4 per-item loops now exit `stable` instead of 2 of 4 hitting `max-iter`. Exit signal is now correctly "loop converged, can't auto-fix" rather than the ambiguous "out of budget".
+
 ## 1.2.1 — Blueprints review: convergence + audit-trail fixes from Scenario-1 testing
 
 Polish pass on the v1.2.0 reviewer loop after a manual end-to-end test surfaced

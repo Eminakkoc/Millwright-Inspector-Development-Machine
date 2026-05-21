@@ -62,9 +62,9 @@ Compute these counts from the reconciled state:
 
 **(a) Success** — if `new_high + new_medium + kept_high + kept_medium == 0`, exit with `Result: success`.
 
-**(b) Stop-on-stable** — if iteration ≥ 2 AND `new == []` AND every entry in `existing` has `status == still-present`, exit with `Result: partial; reason: stable`. The loop has converged at "these findings exist and cannot be auto-fixed by the fixer step". Further iterations won't make progress.
+**(b) Stop-on-stable** — if iteration ≥ 2 AND `new == []` AND every entry in `existing` has `status ∈ {still-present, refined}`, exit with `Result: partial; reason: stable`. The loop has converged at "these findings exist and cannot be auto-fixed by the fixer step". `refined` counts as stable because it's the same underlying issue with sharpened wording, not a new finding. Further iterations won't make progress.
 
-**(c) Stable-medium-only** — if iteration ≥ 2 AND `new_high == 0` AND `kept_high == 0` AND every kept medium has `status == still-present` (no new mediums introduced this iter), exit with `Result: partial; reason: stable-medium`. The remaining mediums are stable ambiguities the inspector can resolve manually; not worth more iterations.
+**(c) Stable-medium-only** — if iteration ≥ 2 AND `new_high == 0` AND `kept_high == 0` AND every kept medium has `status ∈ {still-present, refined}` (no new mediums introduced this iter), exit with `Result: partial; reason: stable-medium`. The remaining mediums are stable ambiguities the inspector can resolve manually; not worth more iterations.
 
 ### 7. Max-iter check
 If iteration ≥ `max_iterations`, exit with `Result: partial; reason: max-iter`.

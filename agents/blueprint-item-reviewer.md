@@ -63,9 +63,9 @@ Compute:
 
 **(a) Success** — `new_high + new_medium + kept_high + kept_medium == 0` → `Result: success`.
 
-**(b) Stop-on-stable** — iteration ≥ 2 AND `new == []` AND every `existing` is `still-present` → `Result: partial; reason: stable`. The loop has converged.
+**(b) Stop-on-stable** — iteration ≥ 2 AND `new == []` AND every `existing` is `still-present` OR `refined` → `Result: partial; reason: stable`. The loop has converged. `refined` counts as stable because it's the same underlying issue with sharpened wording, not a new finding.
 
-**(c) Stable-medium-only** — iteration ≥ 2 AND `new_high == 0` AND `kept_high == 0` AND every kept medium has `status == still-present` (no new mediums) → `Result: partial; reason: stable-medium`.
+**(c) Stable-medium-only** — iteration ≥ 2 AND `new_high == 0` AND `kept_high == 0` AND every kept medium has `status ∈ {still-present, refined}` (no new mediums) → `Result: partial; reason: stable-medium`.
 
 ### 6. Max-iter check
 If iteration ≥ `max_iterations`, exit with `Result: partial; reason: max-iter`.
