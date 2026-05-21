@@ -84,7 +84,7 @@ so this extension defines a named, fenced block placed **BEFORE** the standard
 fields. Calling commands that opt in know to parse it; calling commands that don't
 opt in can safely ignore it (the standard fields still parse correctly).
 
-Shape (outer fence uses four backticks so the inner `\`\`\`json` block is unambiguous):
+Shape (outer fence uses four backticks; per CommonMark, a fenced code block can only be closed by a run of *at least* as many fence characters as it opened with, so the inner triple-backtick `json` block cannot accidentally close the outer four-backtick fence):
 
 ````
 Payload JSON:
