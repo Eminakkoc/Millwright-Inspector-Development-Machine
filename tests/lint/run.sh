@@ -61,6 +61,17 @@ report "no stale 'mo:' prefix / sync-marker" "$m"
 m=$(git grep -nE '(^|[^A-Za-z])Mo-[a-z]' -- "${EXCLUDES[@]}" || true)
 report "no stale 'Mo-' prose tokens" "$m"
 
+# --- blueprint-item-reviewer read-only invariant ----------------------------
+# The agent must list ONLY mcp__codex__codex in its tools: frontmatter.
+# Adding Read/Write/Edit/Bash/Grep would break the read-only isolation guarantee.
+bir="agents/blueprint-item-reviewer.md"
+bir_tools=$(git show "HEAD:$bir" | awk '/^tools:/{print; exit}')
+bad=""
+for tok in Read Write Edit Bash Grep; do
+  echo "$bir_tools" | grep -qF "$tok" && bad="${bad}${tok} "
+done
+report "blueprint-item-reviewer tools: contains no filesystem tools (Read/Write/Edit/Bash/Grep)" "$bad"
+
 echo
 if [[ "$fail" -ne 0 ]]; then
   echo "rename lint guard FAILED — rename the tokens above to the inspector/mi names" >&2
