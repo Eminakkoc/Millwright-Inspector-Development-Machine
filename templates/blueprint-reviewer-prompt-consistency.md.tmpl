@@ -55,8 +55,9 @@ Output ONLY a JSON object, fenced as ```json ... ```, with exactly this shape:
     {
       "id": "F-NNN",
       "status": "still-present" | "resolved" | "refined",
-      "refined_finding": "...",
-      "refined_suggested_fix": "..."
+      "resolved_by_change": "<required only when status=resolved>",
+      "refined_finding": "<required only when status=refined>",
+      "refined_suggested_fix": "<required only when status=refined>"
     }
   ],
   "new": [
@@ -74,10 +75,15 @@ Output ONLY a JSON object, fenced as ```json ... ```, with exactly this shape:
 Rules for the `existing` array:
 - Emit one entry per existing finding listed below — do not skip any.
 - `status: "still-present"` — the underlying issue persists unchanged. Omit
-  `refined_finding` / `refined_suggested_fix`.
-- `status: "resolved"` — the underlying issue has been addressed (the fix
-  worked, or the surrounding content changed to make the finding moot).
-  Omit refined fields.
+  `refined_finding`, `refined_suggested_fix`, and `resolved_by_change`.
+- `status: "resolved"` — the underlying issue has been **concretely** addressed
+  by a SPECIFIC change in the file content. You **MUST** include a
+  `resolved_by_change:` field naming the exact edit that addressed it
+  (e.g., `"AUD-007 now defines retention timestamp as server-side ingest
+  time in UTC"`). Do NOT mark resolved if the file simply gained unrelated
+  content, even if that content makes the original ambiguity feel less
+  prominent. If you cannot point at a specific edit that addresses the
+  finding's `suggested-fix`, the status is `still-present`, not `resolved`.
 - `status: "refined"` — the issue still exists but your understanding of it
   has sharpened (e.g., narrower scope, better fix proposal). Include
   `refined_finding` and `refined_suggested_fix`.

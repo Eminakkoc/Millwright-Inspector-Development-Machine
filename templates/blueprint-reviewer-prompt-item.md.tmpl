@@ -54,8 +54,9 @@ Output ONLY a JSON object, fenced as ```json ... ```, with exactly this shape:
     {
       "id": "<id>",
       "status": "still-present" | "resolved" | "refined",
-      "refined_finding": "...",
-      "refined_suggested_fix": "..."
+      "resolved_by_change": "<required only when status=resolved>",
+      "refined_finding": "<required only when status=refined>",
+      "refined_suggested_fix": "<required only when status=refined>"
     }
   ],
   "new": [
@@ -73,8 +74,14 @@ Output ONLY a JSON object, fenced as ```json ... ```, with exactly this shape:
 Rules for the `existing` array:
 - Emit one entry per existing finding listed below — do not skip any.
 - `status: "still-present"` — the underlying issue persists unchanged. Omit
-  `refined_finding` / `refined_suggested_fix`.
-- `status: "resolved"` — the underlying issue has been addressed.
+  `refined_finding`, `refined_suggested_fix`, and `resolved_by_change`.
+- `status: "resolved"` — the underlying issue has been **concretely** addressed
+  by a SPECIFIC change in the content. You **MUST** include
+  `resolved_by_change:` naming the exact edit (e.g., `"AUD-001 now defines
+  the required JSON schema with field list and timestamp format"`). Do NOT
+  mark resolved if surrounding content changed without addressing the
+  finding's `suggested-fix`. If you cannot point at a specific edit, the
+  status is `still-present`, not `resolved`.
 - `status: "refined"` — the issue still exists but your understanding has
   sharpened. Include refined fields.
 

@@ -7,14 +7,16 @@ description: Run a per-item review loop using an external coding agent (Codex by
 ## Usage
 
 ```
-/mi-blueprint-review-item <agent> <max-iterations> <file-path>:<item-id>      # mode A: file-anchored
-/mi-blueprint-review-item <agent> <max-iterations> <content>                  # mode B: stateless
+/mi-blueprint-review-item <agent> <max-iterations> <file-path>:<item-id> [--reasoning-effort <low|medium|high>]      # mode A: file-anchored
+/mi-blueprint-review-item <agent> <max-iterations> <content>             [--reasoning-effort <low|medium|high>]      # mode B: stateless
 ```
+
+`--reasoning-effort` defaults to `medium` (see `commands/mi-blueprint-review.md` for the rationale).
 
 To support file paths containing colons (rare on macOS, common on Windows), this command also accepts the alternative form:
 
 ```
-/mi-blueprint-review-item <agent> <max-iterations> --file <path> --item <id>
+/mi-blueprint-review-item <agent> <max-iterations> --file <path> --item <id> [--reasoning-effort <low|medium|high>]
 ```
 
 ## Execution
@@ -57,6 +59,21 @@ if [[ -z "$mode" ]]; then
   content="${*:3}"
   mode="content"
 fi
+
+# Parse --reasoning-effort flag (works in either mode).
+reasoning_effort="medium"
+for arg in "$@"; do
+  case "$arg" in
+    --reasoning-effort=*) reasoning_effort="${arg#--reasoning-effort=}" ;;
+  esac
+done
+# Also handle the space-separated form
+prev=""
+for arg in "$@"; do
+  [[ "$prev" == "--reasoning-effort" ]] && reasoning_effort="$arg"
+  prev="$arg"
+done
+[[ "$reasoning_effort" =~ ^(low|medium|high)$ ]] || { echo "error: --reasoning-effort must be low, medium, or high" >&2; exit 64; }
 ```
 
 ### Step 2 — Mode A: enumerate the single item
@@ -85,6 +102,7 @@ Inputs:
 - max_iterations: <MAX_ITER>
 - agent: <AGENT>
 - reviewer_tool_name: <REVIEWER_TOOL>
+- reasoning_effort: <REASONING_EFFORT>     (low|medium|high; pass through to MCP tool on every call)
 - sub_agent_instance_id: T1
 
 Return the Payload JSON block first, then the standard contract fields.
@@ -102,6 +120,7 @@ Inputs:
 - max_iterations: <MAX_ITER>
 - agent: <AGENT>
 - reviewer_tool_name: <REVIEWER_TOOL>
+- reasoning_effort: <REASONING_EFFORT>     (low|medium|high; pass through to MCP tool on every call)
 - sub_agent_instance_id: T1
 
 Return the Payload JSON block first, then the standard contract fields.

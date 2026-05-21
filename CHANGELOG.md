@@ -1,5 +1,47 @@
 # Changelog
 
+## 1.2.4 — Blueprints review: tighten `resolved` criterion + reasoning_effort plumbing
+
+Two fixes from the v1.2.3 Scenario-2 (20-item) stress test (REPORT-4).
+
+### F4 — Tightened `resolved` criterion in the reconciliation contract
+
+In REPORT-4's Phase 1 iter 2, codex marked finding F-006 as `resolved` despite
+no edit actually addressing it. Likely cause: with whole-file context + an
+existing-findings list, the reviewer could rationalize "the broader spec is
+now clearer" as resolution even when the finding's `suggested-fix` was never
+applied.
+
+Fix: both reviewer prompt templates now require `status: "resolved"` to
+include a `resolved_by_change:` field naming the exact edit that addressed
+the finding. The instruction is explicit: "if you cannot point at a specific
+edit that addresses the finding's `suggested-fix`, the status is
+`still-present`, not `resolved`".
+
+Both sub-agents now downgrade `resolved → still-present` if `resolved_by_change`
+is missing or empty, as a defensive guard against legacy reviewers that
+don't follow the new contract.
+
+### G3 — `--reasoning-effort` plumbing; default `medium`
+
+REPORT-4's full-run cost projection at the agent file's `effort: high` is
+~60-80 min wall-clock and ~800k-1M tokens for a 20-item spec. That's wrong
+for an auto-fire from stage 2.
+
+Fix: added `--reasoning-effort <low|medium|high>` flag to:
+- `/mi-blueprint-review` (orchestrator)
+- `/mi-blueprint-review-consistency` (singleton)
+- `/mi-blueprint-review-item` (singleton, both modes)
+
+Default is `medium` everywhere. The flag is plumbed through spawn prompts to
+both sub-agents (`reasoning_effort` input field) and from there to every
+reviewer MCP call. `mi-apply-impact` Step B.5's auto-fire of the orchestrator
+inherits the default; no caller change needed.
+
+Note: `effort:` in the agent files' frontmatter (Claude's own reasoning effort)
+is unchanged — that controls the sub-agent's orchestration work, not the
+reviewer agent's depth.
+
 ## 1.2.3 — Blueprints review: iteration-aware depth (comprehensive iter 1, differential iter 2+)
 
 Cuts "discovery" findings — pre-existing ambiguities the reviewer didn't

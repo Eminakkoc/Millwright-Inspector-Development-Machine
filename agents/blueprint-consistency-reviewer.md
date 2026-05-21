@@ -16,6 +16,7 @@ You write the reviewed file directly each iteration. This is safe because consis
 - `max_iterations` — positive integer; maximum reviewer calls in this loop.
 - `agent` — reviewer agent name (e.g. `codex`).
 - `reviewer_tool_name` — the exact MCP tool you must call (e.g. `mcp__codex__codex`).
+- `reasoning_effort` — `low | medium | high` (default `medium`). Pass this to the reviewer MCP tool as the `reasoning_effort` parameter on every call this iteration runs. Lower effort = faster + cheaper; higher = more thorough but often unnecessary for spec review (REPORT-1/2/3/4 in `feature/test-plugin/reports/` demonstrate that `low` already produces high-quality findings).
 
 ## Loop body (per iteration)
 
@@ -38,7 +39,9 @@ Substitute placeholders in `templates/blueprint-reviewer-prompt-consistency.md.t
   If no existing consistency findings, emit `(none)`.
 
 ### 4. Call the reviewer
-Call the reviewer MCP tool (`reviewer_tool_name`) with the rendered prompt. Parse the JSON object — shape is `{existing: [...], new: [...]}` (see the template's "Reconciliation contract"). On parse failure: retry once with a clarifying suffix; on second failure, return `Result: blocked`.
+Call the reviewer MCP tool (`reviewer_tool_name`) with the rendered prompt **and `reasoning_effort: <value>` parameter** set from the spawn input. Parse the JSON object — shape is `{existing: [...], new: [...]}` (see the template's "Reconciliation contract"). On parse failure: retry once with a clarifying suffix; on second failure, return `Result: blocked`.
+
+When processing the `existing` array, treat `status: "resolved"` as authoritative ONLY if the entry includes a non-empty `resolved_by_change` field. If `resolved_by_change` is missing or empty, downgrade to `still-present` for safety — this is the v1.2.4 F4 guard against false-positive resolved status the v1.2.3 Scenario-2 test surfaced (see `feature/test-plugin/reports/REPORT-4.md`).
 
 ### 5. Apply the reconciliation to the file
 For each entry in `existing`:

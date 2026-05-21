@@ -18,6 +18,7 @@ description: Orchestrate a full blueprint review on a markdown file: initial con
 | `<file-path>` | Markdown file. Edits in place. |
 | `--batch-size N` | Optional; defaults to 5. Maximum items reviewed in parallel per batch. Hard cap on total items: `MAX_ITEMS_PER_REVIEW=20`. |
 | `--scope <heading>` | Optional. Restrict Phase 2 enumeration to items under the named `## <heading>` section only. Without this flag, the reviewer enumerates every reviewable item in the file. The stage-2 auto-fire (see `commands/mi-apply-impact.md` Step B.5) passes `--scope "Goals (this cycle)"` so Planned and Non-goals items aren't reviewed per-item. |
+| `--reasoning-effort <low\|medium\|high>` | Optional. Reasoning effort passed to the reviewer MCP tool for every call (Phase 1, Phase 2, Phase 3, Phase 4). Defaults to `medium`. Use `low` for fast/cheap iteration; `high` is rarely worth it for spec review — Scenario-1 testing at `low` already produced high-quality findings, and `high` roughly doubles wall-clock and token cost (see `docs/blueprints-review/plan.md` §O4 / REPORT-4). |
 
 ## Preconditions
 
@@ -36,22 +37,26 @@ max_i="${3:-}"
 file="${4:-}"
 batch_size=5
 scope=""  # empty = review all items; otherwise the ## heading text (e.g. "Goals (this cycle)")
+reasoning_effort="medium"  # G3: medium is the right default; high is wasteful for spec review.
 i=5
 while [[ $i -le $# ]]; do
   arg="${!i}"
   case "$arg" in
-    --batch-size=*) batch_size="${arg#--batch-size=}" ;;
-    --batch-size)   ((i++)); batch_size="${!i}" ;;
-    --scope=*)      scope="${arg#--scope=}" ;;
-    --scope)        ((i++)); scope="${!i}" ;;
+    --batch-size=*)      batch_size="${arg#--batch-size=}" ;;
+    --batch-size)        ((i++)); batch_size="${!i}" ;;
+    --scope=*)           scope="${arg#--scope=}" ;;
+    --scope)             ((i++)); scope="${!i}" ;;
+    --reasoning-effort=*) reasoning_effort="${arg#--reasoning-effort=}" ;;
+    --reasoning-effort)   ((i++)); reasoning_effort="${!i}" ;;
   esac
   ((i++))
 done
 
 [[ -n "$agent" && -n "$max_c" && -n "$max_i" && -n "$file" ]] || {
-  echo "usage: /mi-blueprint-review <agent> <max-consistency-iter> <max-item-iter> <file> [--batch-size N] [--scope <heading>]" >&2
+  echo "usage: /mi-blueprint-review <agent> <max-consistency-iter> <max-item-iter> <file> [--batch-size N] [--scope <heading>] [--reasoning-effort <low|medium|high>]" >&2
   exit 64
 }
+[[ "$reasoning_effort" =~ ^(low|medium|high)$ ]] || { echo "error: --reasoning-effort must be low, medium, or high" >&2; exit 64; }
 [[ -f "$file" && -w "$file" ]] || { echo "error: file not found or not writable: $file" >&2; exit 1; }
 
 reviewer_tool="$($CLAUDE_PLUGIN_ROOT/scripts/blueprint-review.sh resolve-tool "$agent")" || exit 1
@@ -60,7 +65,7 @@ MAX_ITEMS_PER_REVIEW=20
 
 ### Step 2 — Phase 1: initial consistency loop
 
-Spawn the `blueprint-consistency-reviewer` sub-agent exactly as `/mi-blueprint-review-consistency` does. Parameters: `file`, `max_c`, `agent`, `reviewer_tool`.
+Spawn the `blueprint-consistency-reviewer` sub-agent exactly as `/mi-blueprint-review-consistency` does. Parameters: `file`, `max_c`, `agent`, `reviewer_tool`, `reasoning_effort` (G3).
 
 - On `success`: continue to Step 3.
 - On `partial` (max-iter): prompt `y/n`. On `y`: re-spawn the same sub-agent with the same parameters and the file's current state. On `n`: continue to Step 3 with the remaining findings inline.

@@ -18,12 +18,13 @@ Mode A (file-anchored):
 - `original_region`: the verbatim bytes of the item.
 - `max_iterations`: positive integer.
 - `agent`, `reviewer_tool_name`.
+- `reasoning_effort`: `low | medium | high` (default `medium`). Passed to the reviewer MCP tool on every call as the `reasoning_effort` parameter.
 - `sub_agent_instance_id`: a small token like `T1`, `T2`, …, used as a temporary-id prefix for **new** findings.
 
 Mode B (stateless):
 - `mode`: `content`
 - `content`: raw string.
-- `max_iterations`, `agent`, `reviewer_tool_name`, `sub_agent_instance_id` (same as mode A).
+- `max_iterations`, `agent`, `reviewer_tool_name`, `reasoning_effort`, `sub_agent_instance_id` (same as mode A).
 
 ## Loop body (per iteration; operates on `working_copy`, initialized from `original_region` or `content`)
 
@@ -43,7 +44,9 @@ Substitute placeholders in `templates/blueprint-reviewer-prompt-item.md.tmpl`:
   If no existing findings, emit `(none)`.
 
 ### 3. Call the reviewer
-Call the reviewer MCP tool (`reviewer_tool_name`). Parse the JSON object — shape is `{existing: [...], new: [...]}`. On parse failure: retry once with a clarifying suffix; on second failure, return `Result: blocked`.
+Call the reviewer MCP tool (`reviewer_tool_name`) **with `reasoning_effort: <value>` parameter** set from the spawn input. Parse the JSON object — shape is `{existing: [...], new: [...]}`. On parse failure: retry once with a clarifying suffix; on second failure, return `Result: blocked`.
+
+When processing the `existing` array, treat `status: "resolved"` as authoritative ONLY if the entry includes a non-empty `resolved_by_change` field. If `resolved_by_change` is missing or empty, downgrade to `still-present` for safety — this is the v1.2.4 F4 guard against false-positive resolved status.
 
 ### 4. Apply the reconciliation to working_copy
 For each entry in `existing`:

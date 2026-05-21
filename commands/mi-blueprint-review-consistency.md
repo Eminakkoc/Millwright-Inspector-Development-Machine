@@ -7,7 +7,7 @@ description: Run a whole-file consistency review loop using an external coding a
 ## Usage
 
 ```
-/mi-blueprint-review-consistency <agent> <max-iterations> <file-path>
+/mi-blueprint-review-consistency <agent> <max-iterations> <file-path> [--reasoning-effort <low|medium|high>]
 ```
 
 | Param | Meaning |
@@ -15,6 +15,7 @@ description: Run a whole-file consistency review loop using an external coding a
 | `<agent>` | Reviewer agent name. Currently supported: `codex`. |
 | `<max-iterations>` | Positive integer. Maximum reviewer calls in this loop. |
 | `<file-path>` | Path to a markdown file. Edits in place. |
+| `--reasoning-effort` | Optional. Defaults to `medium`. Reviewer reasoning effort. `low` is fast/cheap; `high` is rarely worth it for spec review. |
 
 ## Preconditions
 
@@ -30,12 +31,22 @@ set -euo pipefail
 agent="${1:-}"
 max_iter="${2:-}"
 file="${3:-}"
+reasoning_effort="medium"
+i=4
+while [[ $i -le $# ]]; do
+  case "${!i}" in
+    --reasoning-effort=*) reasoning_effort="${!i#--reasoning-effort=}" ;;
+    --reasoning-effort)   ((i++)); reasoning_effort="${!i}" ;;
+  esac
+  ((i++))
+done
 [[ -n "$agent" && -n "$max_iter" && -n "$file" ]] || {
-  echo "usage: /mi-blueprint-review-consistency <agent> <max-iterations> <file-path>" >&2
+  echo "usage: /mi-blueprint-review-consistency <agent> <max-iterations> <file-path> [--reasoning-effort <low|medium|high>]" >&2
   exit 64
 }
 [[ -f "$file" && -w "$file" ]] || { echo "error: file not found or not writable: $file" >&2; exit 1; }
 [[ "$max_iter" =~ ^[0-9]+$ && "$max_iter" -ge 1 ]] || { echo "error: max-iterations must be a positive integer" >&2; exit 64; }
+[[ "$reasoning_effort" =~ ^(low|medium|high)$ ]] || { echo "error: --reasoning-effort must be low, medium, or high" >&2; exit 64; }
 
 reviewer_tool="$($CLAUDE_PLUGIN_ROOT/scripts/blueprint-review.sh resolve-tool "$agent")" || exit 1
 ```
@@ -52,6 +63,7 @@ Inputs:
 - max_iterations: <MAX_ITER>
 - agent: <AGENT>
 - reviewer_tool_name: <REVIEWER_TOOL>
+- reasoning_effort: <REASONING_EFFORT>     (one of low|medium|high; pass through to the reviewer MCP tool on every call)
 
 Follow agents/blueprint-consistency-reviewer.md exactly. Return only the structured contract output.
 ```
