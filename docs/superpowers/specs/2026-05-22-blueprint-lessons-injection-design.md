@@ -171,8 +171,16 @@ touch any other frontmatter field.
 Required reads:
 
 1. <lessons_path> — every ## L-NNN block in lessons-learned.md.
-2. <quest_dir>/summary.md — read `## Cross-cutting constraints` and
-   `## Feature: <active_feature>` ONLY. Do not read other features' sections.
+2. <quest_dir>/todo-list.md — read the active todo items (PENDING-tagged
+   IDs and descriptions for the "<active_feature>" feature), plus the
+   feature's TODO-tagged backlog items. These IDs (e.g. PAY-001, AUD-002)
+   are what every relevance tie-back binds to. requirements.md does not
+   exist yet — todo-list.md is the authoritative source of item IDs at
+   this point in stage 2.
+3. <quest_dir>/summary.md — read `## Cross-cutting constraints` and
+   `## Feature: <active_feature>` ONLY. Do not read other features'
+   sections. summary.md does not generally list item IDs — it gives the
+   feature-level context behind those IDs.
 
 For each ## L-NNN block, judge blueprint-creation relevance:
 
@@ -188,9 +196,17 @@ For each ## L-NNN block, judge blueprint-creation relevance:
   ## Lessons learned pointer.
 
 For every lesson you select, write a one-line `relevance:` reason that ties
-it to a concrete concern in this cycle (a Goals item id, a cross-cutting
-constraint, or a feature concern from summary.md). If you cannot articulate
-a tie-back in one line, drop the lesson — non-tied lessons add noise.
+it to a concrete concern in this cycle. Valid tie-backs are:
+
+  - an active todo item id (PENDING-tagged for this cycle), OR
+  - a planned todo item id (TODO-tagged for this feature, surfaced in the
+    ## Planned (future cycles) section of the upcoming requirements.md), OR
+  - a cross-cutting constraint from summary.md's `## Cross-cutting
+    constraints`, OR
+  - a feature-level concern from summary.md's `## Feature: <active_feature>`.
+
+If you cannot articulate a tie-back to one of those four anchors in one
+line, drop the lesson — non-tied lessons add noise.
 
 Write the body of <blueprint_lessons_path> using Edit, replacing the
 template body placeholder. Body format:
@@ -350,16 +366,26 @@ reads `<blueprint_lessons_path>`. If `selected-count > 0`, the
 `## Selected lessons` body sits in main's context for the rest of Step A
 (writing Goals / Planned / Non-goals).
 
-After main writes `requirements.md`, it backfills the cross-reference:
+After main writes `requirements.md`, it backfills the cross-reference. The
+backfill is **guarded on the artifact existing** because the no-lessons-file
+path of §5.1 skips both the init and the spawn — there is nothing to backfill
+into in that case. Without the guard, `frontmatter.sh set` runs Python
+`open(path)` against a missing file (`scripts/internal/common.sh:178+`),
+which propagates non-zero and aborts `mi-apply-impact` under `set -e`:
 
 ```bash
-requirements_id="$($CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get \
-  "$dest" id)"
-$CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh set \
-  "$blueprint_lessons_path" requirements-id "$requirements_id"
+if [[ -f "$blueprint_lessons_path" ]]; then
+  requirements_id="$($CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get \
+    "$dest" id)"
+  $CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh set \
+    "$blueprint_lessons_path" requirements-id "$requirements_id" \
+    || echo "warning: requirements-id backfill failed for blueprint-lessons.md" >&2
+fi
 ```
 
-This satisfies Rule 2 (documents cross-link via UUIDs).
+When the artifact is present, this satisfies Rule 2 (documents cross-link
+via UUIDs). When absent, the back-reference is intentionally skipped — there
+is no consumer for it.
 
 ### 7.2 `codebase-grounder` spawn prompt
 
@@ -443,14 +469,21 @@ workflow-neutral: when invoked manually on an arbitrary markdown file, no
 sibling exists, `lessons_block` is empty, and the reviewer prompts render
 exactly as they do today.
 
-`/mi-blueprint-review-consistency` and `/mi-blueprint-review-item` (the
-single-purpose variants invoked manually) get the same treatment: they
-compute `lessons_block` via the same sibling-detection rule and pass it
-into the sub-agent spawn prompt. When invoked on a file with no sibling
-lessons artifact (the common case for manual invocation outside the
-workflow), `lessons_block` is empty.
+`/mi-blueprint-review-consistency` (always file-anchored) and
+`/mi-blueprint-review-item` (Mode A, file-anchored) compute `lessons_block`
+via the same sibling-detection rule and pass it into the sub-agent spawn
+prompt. When invoked on a file with no sibling lessons artifact (the
+common case for manual invocation outside the workflow), `lessons_block`
+is empty.
 
-No new positional command parameters on the orchestrator.
+`/mi-blueprint-review-item` Mode B is **stateless** — the command takes raw
+content as input, with no file path (see `commands/mi-blueprint-review-item.md:57-61`).
+Sibling-detection has no anchor in that mode, so Mode B **always** passes
+`lessons_block=""` to the item reviewer sub-agent. This matches Mode B's
+existing "no continuity with anything else" stance: tmp-ids aren't rewritten
+to `F-NNN`, no file writes happen, and now no lessons context is injected.
+
+No new positional command parameters on either orchestrator.
 
 ## 8. Error handling
 
@@ -461,7 +494,7 @@ the existing Step B.5.
 | Failure | Behavior |
 | --- | --- |
 | `lessons-learned.md` missing | Skip `lessons-filter` entirely. `blueprint-lessons.md` is not written. Consumers detect its absence and skip injection. Stage 2 continues unchanged. |
-| `lessons-filter` returns `blocked` | Warn (`"warning: lessons-filter unavailable — skipping blueprint-lessons injection"`), continue without artifact. |
+| `lessons-filter` returns `blocked` | Warn (`"warning: lessons-filter blocked — leaving zero-count blueprint-lessons.md; no injection this cycle"`). Leave the initialized zero-count artifact in place. Consumers short-circuit on `selected-count == 0`; no explicit cleanup is required. The artifact still rotates to history at stage 8, recording that a filter attempt happened and produced nothing usable. |
 | `lessons-filter` returns `partial` with usable output | Accept the partial artifact; trust the schema-validated content. |
 | `blueprint-lessons.md` fails schema validation | PostToolUse hook blocks the turn. Main must surface the error and either rerun the sub-agent or proceed without lessons. Standard mi-workflow invariant. |
 | `requirements-id` backfill fails (e.g., file disappeared) | Warn, continue. The missing back-reference is recoverable; the lessons content is already on disk. |
