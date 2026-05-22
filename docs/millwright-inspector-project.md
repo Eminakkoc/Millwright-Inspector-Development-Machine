@@ -426,6 +426,7 @@ workflow-stream/<feature>/
 │   ├── review-context.md     # compact stage-6 review primer
 │   ├── change-summary.md     # cached analysis of base-commit..HEAD (cache-keyed reuse)
 │   ├── grounding-report.md   # stage-2 codebase-grounding snapshot (seam classification)
+│   ├── blueprint-lessons.md  # stage-2 filtered lessons from lessons-learned.md (selected-count gating injection)
 │   └── diagrams/             # implementation render, with existing-vs-new framing
 └── test/                  # feature-permanent — survives stage 8 and abort
     ├── manual-test-plan.md
@@ -445,8 +446,8 @@ Four regions:
    findings and implementation-side artifacts during the cycle. At stage 8 the live
    folder is **moved** (not deleted) into `history/v[N+1]/implementation/`, so every
    finding (including deferred `status: open` ones), the review-context snapshot, the
-   change-summary, the grounding-report, and the implementation diagrams survive as a
-   permanent audit record. `/mi-abort-workflow` clears the live `implementation/` (an
+   change-summary, the grounding-report, the filtered blueprint-lessons artifact, and the
+   implementation diagrams survive as a permanent audit record. `/mi-abort-workflow` clears the live `implementation/` (an
    aborted cycle has no committed work to archive).
 3. **`test/`** — *feature-permanent*. Home for the optional stage-5 manual-testing
    sub-flow. The folder is **not** rotated at stage 8 and **not** deleted on abort, so a
@@ -666,7 +667,7 @@ stage — the single most useful view of the workflow's blast radius.
 | Millwright | `quest/<active-slug>/{todo-list,summary,progress,reference}.md` + `quest/active.md` | Writes four stage-1 files into the new subfolder; updates the pointer; `active=null`. | 1 |
 | Inspector | `quest/<active-slug>/todo-list.md` | Marks items `[x]` and adds `(assignee)` tags. | 1.5 |
 | Inspector | `/mi-continue` ×2 | Pre-flight Step 2A (`pend-selected`, propose order); Step 2B (write `queue-rationale.md`, reorder, auto-fire `/mi-apply-impact`). | 1.5 → 2 |
-| Millwright (auto) | `/mi-apply-impact` | `progress.sh activate`; generate `blueprints/current/`; pre-fill `## GIT BRANCH`. | 2 |
+| Millwright (auto) | `/mi-apply-impact` | `progress.sh activate`; lessons-filter Pre-Step A; generate `blueprints/current/`; pre-fill `## GIT BRANCH`. | 2 |
 | Millwright (auto) | `/mi-blueprint-review` (auto-fired in stage 2 by `mi-apply-impact`) | Reviewer-fixer loop on `requirements.md` via Codex MCP; findings inline as `<!-- REVIEW-FINDING -->`. | 2 |
 | Inspector | `blueprints/current/` | Reviews requirements / config / diagrams; may edit `## GIT BRANCH` and `## Inspector Additions`. | 2 |
 | Inspector | `/mi-continue` | Approve Handler validates blueprints, fires the `stage-2-to-3` clear-point gate, auto-fires `/mi-plan-implementation`. | 2 → 3 |
@@ -1430,13 +1431,14 @@ profile returns per `docs/sub-agent-return-contract.md` with a ≤ 1k-token retu
 (`Result`, `Artifacts changed`, `Commits`, `Findings / risks`, `Main should read`);
 detailed evidence belongs in artifact files, not the return. The `blueprint-item-reviewer`
 profile additionally emits a **Payload JSON** block before the standard fields (see the
-contract doc's "Payload JSON extension" section). There are **13 profiles**:
+contract doc's "Payload JSON extension" section). There are **14 profiles**:
 
 | Profile | Model / effort | Spawned by | Output |
 | --- | --- | --- | --- |
 | `journal-file-digester` | haiku / low | `mi-run` Step 2.5 Tier 1 — one oversized journal file (> 100 KB) | digest in the return body — read-only, no file writes |
 | `journal-folder-digester` | haiku / medium | `mi-run` Step 2.5 Tier 2 — one journal subfolder (> 5 files AND > 40 KB) | writes `quest/<active-slug>/.scratch/folder-digest-<folder>.md` |
 | `dependency-mapper` | sonnet / medium | `mi-continue` Pre-flight Step 4c (stage 1.5) | a 2–3 sentence ordering proposal — no file writes; main composes `queue-rationale.md` |
+| `lessons-filter` | sonnet / medium | `mi-apply-impact` Pre-Step A (stage 2) | reads `lessons-learned.md`, picks blueprint-relevant entries for the active feature, and fills `implementation/blueprint-lessons.md`. Read-only on the source lessons file; main owns artifact init and all frontmatter fields except `selected-count` |
 | `codebase-grounder` | sonnet / high | `mi-apply-impact` Step A (stage 2) | writes `implementation/grounding-report.md`; sets `seam-classification`. ≤ 5 files per todo |
 | `blueprint-diagrammer` | sonnet / high | `mi-apply-impact` Step C (stage 2) | writes `.puml` sources into `blueprints/current/diagrams/` (has the PlantUML MCP tools) |
 | `implementation-analyst` | opus / high | `mi-generate-implementation-diagrams` / `mi-draw-diagrams` (stage 4) | writes `implementation/change-summary.md`; re-renders `implementation/diagrams/` |
