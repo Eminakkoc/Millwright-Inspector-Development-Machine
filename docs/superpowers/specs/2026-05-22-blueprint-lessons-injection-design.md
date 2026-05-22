@@ -334,9 +334,12 @@ Read by main while composing `requirements.md`; injected into
 `blueprint-item-reviewer` prompts.
 
 ## Selected lessons
-
-<!-- filled by the lessons-filter sub-agent; empty when selected-count=0 -->
 ```
+
+No placeholder comment under `## Selected lessons` — the body is literally
+empty until the sub-agent fills it. This keeps "empty body" a clean string
+predicate for both consumers (the codex-side `lessons_block` builder) and
+Test 7 (which asserts emptiness after the blocked-recovery clobber).
 
 **Body format:**
 
@@ -378,11 +381,17 @@ which propagates non-zero and aborts `mi-apply-impact` under `set -e`:
 
 ```bash
 if [[ -f "$blueprint_lessons_path" ]]; then
+  # Guard both calls — under set -e, a failed `get` would abort
+  # mi-apply-impact before reaching the `set` warn-on-failure.
   requirements_id="$($CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get \
-    "$dest" id)"
-  $CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh set \
-    "$blueprint_lessons_path" requirements-id "$requirements_id" \
-    || echo "warning: requirements-id backfill failed for blueprint-lessons.md" >&2
+    "$dest" id 2>/dev/null || true)"
+  if [[ -n "$requirements_id" ]]; then
+    $CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh set \
+      "$blueprint_lessons_path" requirements-id "$requirements_id" \
+      || echo "warning: requirements-id backfill failed for blueprint-lessons.md" >&2
+  else
+    echo "warning: could not read requirements-id from $dest; skipping blueprint-lessons backfill" >&2
+  fi
 fi
 ```
 
@@ -499,7 +508,7 @@ the existing Step B.5.
 | `lessons-learned.md` missing | Skip `lessons-filter` entirely. `blueprint-lessons.md` is not written. Consumers detect its absence and skip injection. Stage 2 continues unchanged. |
 | `lessons-filter` returns `blocked` | The sub-agent has `Edit` + `Bash` tools and may have partially mutated the body and/or set `selected-count > 0` before blocking. Main must **clobber any partial state** to satisfy "no injection this cycle." Re-run `frontmatter.sh init blueprint-lessons` against the same path, which overwrites the file with the canonical zero-count template (selected-count=0, empty body). Then warn (`"warning: lessons-filter blocked — reset blueprint-lessons.md to zero-count; no injection this cycle"`). The reset artifact still rotates to history at stage 8 with `selected-count: 0`, recording that a filter attempt happened and was discarded. |
 | `lessons-filter` returns `partial` with usable output | Accept the partial artifact; trust the schema-validated content. |
-| `blueprint-lessons.md` fails schema validation | PostToolUse hook blocks the turn. Main must surface the error and either rerun the sub-agent or proceed without lessons. Standard mi-workflow invariant. |
+| `blueprint-lessons.md` fails schema validation | PostToolUse hook blocks the turn. Treat the artifact as untrusted (it may be malformed YAML or have inconsistent fields, so consumers reading `selected-count` cannot rely on it). Recover the same way as the `blocked` row: re-run `frontmatter.sh init blueprint-lessons` against the same path to clobber the bad state back to the canonical zero-count template, then warn (`"warning: lessons-filter wrote an invalid artifact — reset blueprint-lessons.md to zero-count; no injection this cycle"`) and continue. Standard mi-workflow invariant otherwise (no silent acceptance of invalid frontmatter). |
 | `requirements-id` backfill fails (e.g., file disappeared) | Warn, continue. The missing back-reference is recoverable; the lessons content is already on disk. |
 | `mi-apply-impact` re-entered mid-stage-2 (check-current = 2, partial) WITH `blueprint-lessons.md` already present | See §8.1 below for the explicit `--force` cleanup. Without `--force`, the existing artifact is reused as-is and the sub-agent is not re-spawned. |
 | `/mi-blueprint-review` invoked manually on a non-blueprint file | Sibling-detection finds no `../../implementation/blueprint-lessons.md`. `LESSONS_BLOCK` renders empty. Existing behavior preserved. |
