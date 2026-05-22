@@ -52,12 +52,15 @@ work.
 ```
 mi-apply-impact (stage 2)
   ├─ Step Pre-A:
+  │     [GUARD] if <data_root>/lessons-learned.md does not exist, skip the whole step.
   │     main initializes workflow-stream/<feature>/implementation/blueprint-lessons.md
-  │       with frontmatter.sh init blueprint-lessons (selected-count=0, requirements-id=null)
+  │       with frontmatter.sh init blueprint-lessons (selected-count=0, requirements-id=null,
+  │       lessons-source-mtime set by main from stat)
   │     spawns lessons-filter sub-agent
   │       reads:  <data_root>/lessons-learned.md
   │               quest/<active-slug>/summary.md (active feature + cross-cutting)
   │       writes: body of blueprint-lessons.md + updates selected-count via frontmatter.sh set
+  │       (main owns id, feature, requirements-id, lessons-source-mtime)
   │
   ├─ Step A: main composes requirements.md
   │     reads:  blueprint-lessons.md (when present, selected-count > 0)
@@ -70,10 +73,13 @@ mi-apply-impact (stage 2)
   ├─ Step B: main writes config.md (unchanged by this spec)
   │
   ├─ Step B.5: /mi-blueprint-review codex 3 5 ...
-  │     consistency-reviewer prompt template: {{LESSONS_BLOCK}} populated when
-  │       a sibling implementation/blueprint-lessons.md exists with selected > 0
-  │     item-reviewer prompt template: same {{LESSONS_BLOCK}} populated the
-  │       same way
+  │     orchestrator computes lessons_block string via sibling-detection
+  │       (../../implementation/blueprint-lessons.md, selected-count > 0)
+  │     orchestrator passes lessons_block as a new spawn input to:
+  │       - blueprint-consistency-reviewer (Phases 1 + 4)
+  │       - blueprint-item-reviewer (Phase 3)
+  │     each reviewer sub-agent substitutes {{LESSONS_BLOCK}} when rendering
+  │       its own template (renders happen inside the sub-agents, not in main)
   │
   └─ Step C: blueprint-diagrammer (unchanged — no lessons injection)
 ```
@@ -103,33 +109,49 @@ input (lessons file + one feature section of summary.md) and a structured
 output. `effort: medium` keeps the per-lesson judgments tight without burning
 budget. Tools are `Read` (for sources), `Edit` (for the body of the
 pre-initialized artifact), and `Bash` (for `scripts/frontmatter.sh set` to
-update `selected-count` and `lessons-source-mtime`).
+update `selected-count` only — `lessons-source-mtime` is owned by main, see
+§5.1).
 
-### 5.1 Main pre-initializes the artifact
+### 5.1 Main pre-initializes the artifact (guarded on lessons-learned.md presence)
 
 Following the `grounding-report.md` pattern in `docs/blueprint-regeneration.md`
 Step A: main creates `blueprint-lessons.md` with valid frontmatter before
 spawning the sub-agent, so the file is writable by Edit and the PostToolUse
 hook is satisfied on every intermediate save.
 
+The init is **guarded on the source file existing**. `scripts/lessons.sh path`
+returns a path unconditionally — it does not check existence — so the guard
+must live at the call site:
+
 ```bash
 impl_dir="$data_root/workflow-stream/$active_feature/implementation"
-mkdir -p "$impl_dir"
 blueprint_lessons_path="$impl_dir/blueprint-lessons.md"
 lessons_path="$($CLAUDE_PLUGIN_ROOT/scripts/lessons.sh path)"
-lessons_mtime="$(stat -f %m "$lessons_path" 2>/dev/null \
-                 || stat -c %Y "$lessons_path" 2>/dev/null \
-                 || echo 0)"
-$CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh init blueprint-lessons \
-  "$blueprint_lessons_path" \
-  "FEATURE=$active_feature" \
-  "LESSONS_SOURCE_MTIME=$lessons_mtime" \
-  "SELECTED_COUNT=0"
+
+if [[ ! -f "$lessons_path" ]]; then
+  # No lessons-learned.md yet — skip the artifact and the sub-agent entirely.
+  # Consumers (main Step A, codebase-grounder, /mi-blueprint-review) check
+  # for the file's existence and degrade gracefully (§8).
+  echo "info: lessons-learned.md not present; skipping blueprint-lessons injection"
+else
+  mkdir -p "$impl_dir"
+  lessons_mtime="$(stat -f %m "$lessons_path" 2>/dev/null \
+                   || stat -c %Y "$lessons_path" 2>/dev/null \
+                   || echo 0)"
+  $CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh init blueprint-lessons \
+    "$blueprint_lessons_path" \
+    "FEATURE=$active_feature" \
+    "LESSONS_SOURCE_MTIME=$lessons_mtime" \
+    "SELECTED_COUNT=0"
+  # Spawn the sub-agent (§5.2) only on this branch.
+fi
 ```
 
 `requirements-id` is initialized to `null` by the template; main backfills it
 after writing `requirements.md` (see §7.1). `selected-count=0` is a placeholder
-the sub-agent overwrites via `frontmatter.sh set`.
+the sub-agent overwrites via `frontmatter.sh set`. `lessons-source-mtime` is
+set by main at init time and **never updated by the sub-agent** — main is the
+sole owner of that field (Finding 4 fix).
 
 ### 5.2 Spawn prompt template
 
@@ -140,9 +162,11 @@ You are a fresh sub-agent invoked from mi-apply-impact's Pre-Step A. Your job
 is to filter <data_root>/lessons-learned.md to the lessons that should
 influence the blueprint for the "<active_feature>" feature in this cycle.
 
-Main has already created <blueprint_lessons_path> with valid frontmatter.
-You fill the body and update two frontmatter fields. You do NOT create the
-file from scratch.
+Main has already created <blueprint_lessons_path> with valid frontmatter
+(id, feature, requirements-id=null, lessons-source-mtime, selected-count=0).
+Your job is to fill the body and update exactly ONE frontmatter field —
+`selected-count`. You do NOT create the file from scratch and you do NOT
+touch any other frontmatter field.
 
 Required reads:
 
@@ -187,12 +211,13 @@ template body placeholder. Body format:
   (repeat per selected L-ID; when zero are selected, keep the
   ## Selected lessons heading with an empty body)
 
-Then update the frontmatter:
+Then update the single frontmatter field you own — `selected-count`:
 
   scripts/frontmatter.sh set <blueprint_lessons_path> selected-count <N>
 
-(lessons-source-mtime was set by main at init time and does not need updating
-unless you re-read lessons-learned.md.)
+Do NOT touch `lessons-source-mtime`, `feature`, `requirements-id`, or `id` —
+main owns those. `lessons-source-mtime` reflects the source-file mtime at
+spawn time and stays that way for the lifetime of this artifact.
 
 Finally validate:
 
@@ -265,9 +290,13 @@ properties:
     description: Number of L-IDs picked. 0 is valid (the artifact exists but injects no content).
 ```
 
-**Frontmatter init template** — `templates/blueprint-lessons.md.tmpl`,
-registered in `scripts/frontmatter.sh`'s init dispatch as a new
-`blueprint-lessons` type. Mirrors the existing `grounding-report` flow:
+**Frontmatter init template** — `templates/blueprint-lessons.md.tmpl`. No
+`scripts/frontmatter.sh` change is required: the script loads
+`templates/${tmpl_name}.md.tmpl` directly and auto-validates against
+`schemas/${tmpl_name}.schema.yaml` if a matching schema exists
+(`scripts/frontmatter.sh:20-35`). Creating the template file and the schema
+file under matching names is sufficient. Mirrors the existing
+`grounding-report` flow:
 
 ```markdown
 ---
@@ -356,20 +385,23 @@ that budget — same treatment as `summary.md`.
 
 ### 7.3 Codex review templates (`/mi-blueprint-review`)
 
-Add a `{{LESSONS_BLOCK}}` placeholder to both reviewer prompt templates under
-`templates/`:
+The two reviewer sub-agents (`blueprint-consistency-reviewer` and
+`blueprint-item-reviewer`) render their own prompt templates from inside the
+sub-agent (see `agents/blueprint-consistency-reviewer.md:30` and
+`agents/blueprint-item-reviewer.md:35`). The orchestrator does not render the
+final reviewer prompt itself — it only passes inputs through the spawn prompt.
 
-- the consistency-reviewer prompt template (used in Phases 1 and 4)
-- the item-reviewer prompt template (used in Phase 3)
+Wiring must therefore split across three surfaces:
 
-`commands/mi-blueprint-review.md` renders `{{LESSONS_BLOCK}}` before dispatch.
-The render logic:
+**(a) Orchestrator computes `lessons_block` once.** In `commands/mi-blueprint-review.md`,
+before dispatching Phase 1 / Phase 3 / Phase 4, resolve a single
+`lessons_block` string:
 
 ```
 1. Resolve <file>'s directory. If it ends in `.../blueprints/current` AND a
    sibling `../../implementation/blueprint-lessons.md` exists, read its
    frontmatter `selected-count`.
-2. If selected-count > 0, render LESSONS_BLOCK as:
+2. If selected-count > 0, set lessons_block to:
 
      ## Lessons from prior PR reviews to honor
 
@@ -378,16 +410,47 @@ The render logic:
 
      <verbatim ## Selected lessons body from blueprint-lessons.md>
 
-3. Otherwise, render LESSONS_BLOCK as the empty string.
+3. Otherwise, set lessons_block to the empty string.
 ```
 
-The sibling-detection rule keeps `/mi-blueprint-review` workflow-neutral: it
-still works on arbitrary markdown files when invoked manually, and the lessons
-block only appears when the file under review is a real
-`blueprints/current/requirements.md` with a sibling lessons artifact.
+Compute once; reuse across all Phase 1 / 3 / 4 spawns in this command run.
 
-No new command parameters; the placeholder is fully self-resolving from the
-existing `<file>` argument.
+**(b) Spawn prompts carry `lessons_block` to each reviewer sub-agent.** Add
+`lessons_block` as a new input on both reviewer sub-agents'
+`## Inputs (from the spawn prompt)` section:
+
+- `agents/blueprint-consistency-reviewer.md` — add a new bullet:
+  > `lessons_block` — opaque markdown string to substitute as
+  > `{{LESSONS_BLOCK}}` in the reviewer prompt template. May be empty.
+
+- `agents/blueprint-item-reviewer.md` — same new bullet under both Mode A and
+  Mode B input lists.
+
+**(c) Sub-agents substitute `{{LESSONS_BLOCK}}` when rendering.** Add
+`{{LESSONS_BLOCK}}` to both reviewer prompt templates under `templates/`:
+
+- `templates/blueprint-reviewer-prompt-consistency.md.tmpl`
+- `templates/blueprint-reviewer-prompt-item.md.tmpl`
+
+Update each sub-agent's "Render the reviewer prompt" step (step 3 in
+`blueprint-consistency-reviewer.md`, step 2 in `blueprint-item-reviewer.md`)
+to substitute `{{LESSONS_BLOCK}}` from the `lessons_block` spawn input,
+alongside the existing `{{ITERATION}}` / `{{FILE_CONTENT}}` / `{{EXISTING_FINDINGS}}`
+substitutions.
+
+The sibling-detection rule (step (a)) keeps `/mi-blueprint-review`
+workflow-neutral: when invoked manually on an arbitrary markdown file, no
+sibling exists, `lessons_block` is empty, and the reviewer prompts render
+exactly as they do today.
+
+`/mi-blueprint-review-consistency` and `/mi-blueprint-review-item` (the
+single-purpose variants invoked manually) get the same treatment: they
+compute `lessons_block` via the same sibling-detection rule and pass it
+into the sub-agent spawn prompt. When invoked on a file with no sibling
+lessons artifact (the common case for manual invocation outside the
+workflow), `lessons_block` is empty.
+
+No new positional command parameters on the orchestrator.
 
 ## 8. Error handling
 
@@ -402,8 +465,48 @@ the existing Step B.5.
 | `lessons-filter` returns `partial` with usable output | Accept the partial artifact; trust the schema-validated content. |
 | `blueprint-lessons.md` fails schema validation | PostToolUse hook blocks the turn. Main must surface the error and either rerun the sub-agent or proceed without lessons. Standard mi-workflow invariant. |
 | `requirements-id` backfill fails (e.g., file disappeared) | Warn, continue. The missing back-reference is recoverable; the lessons content is already on disk. |
-| `mi-apply-impact` re-entered mid-stage-2 (check-current = 2, partial) WITH `blueprint-lessons.md` already present | If `--force`: clear it with the rest of `implementation/` and regenerate. Otherwise: reuse as-is. The filter is cheap enough that `--force` always re-runs it. |
+| `mi-apply-impact` re-entered mid-stage-2 (check-current = 2, partial) WITH `blueprint-lessons.md` already present | See §8.1 below for the explicit `--force` cleanup. Without `--force`, the existing artifact is reused as-is and the sub-agent is not re-spawned. |
 | `/mi-blueprint-review` invoked manually on a non-blueprint file | Sibling-detection finds no `../../implementation/blueprint-lessons.md`. `LESSONS_BLOCK` renders empty. Existing behavior preserved. |
+
+### 8.1 Explicit `--force` cleanup for `implementation/`
+
+`commands/mi-apply-impact.md:85-89` today clears only
+`blueprints/current/*` when `--force` is passed against a partial state. The
+`implementation/` directory is left untouched. With this spec, stage-2
+artifacts now live in **both** directories:
+
+- `blueprints/current/` — `requirements.md`, `config.md`, `diagrams/`
+- `implementation/` — `grounding-report.md`, `blueprint-lessons.md`
+
+If `--force` regenerates only the blueprint side, stale `grounding-report.md`
+and/or `blueprint-lessons.md` survive and feed Step A against the freshly
+regenerated requirements — a silent inconsistency.
+
+The fix is scoped to **stage-2-generated implementation artifacts only**.
+After clearing `blueprints/current/*` on the `--force` path,
+`mi-apply-impact` also removes the stage-2 inputs that this command owns
+under `implementation/`:
+
+```bash
+impl_dir="$data_root/workflow-stream/$active_feature/implementation"
+# Stage-2 owns these two artifacts. Other implementation/ entries are owned
+# by later stages (inspector-review.md by stage 5, review-context.md /
+# change-summary.md / diagrams/ by stage 4/6) — do NOT touch them, even on
+# --force: a partial stage-2 re-entry must not destroy mid-cycle stage-5+
+# state if the inspector happens to be combining `--force` with a stale
+# `implementation/` from a prior aborted run.
+for stage2_artifact in grounding-report.md blueprint-lessons.md; do
+  [[ -e "$impl_dir/$stage2_artifact" ]] && rm -f "$impl_dir/$stage2_artifact"
+done
+```
+
+**Note on stage scoping.** Even though check-current=2 typically means the
+inspector aborted partway through stage 2 (so stages 5+ artifacts would not
+exist yet), the cleanup is intentionally allowlisted rather than wholesale.
+A wholesale `rm -rf "$impl_dir"/*` could silently destroy work in pathological
+re-entry scenarios (e.g., a workflow that survived a stage-7 failure into a
+forced stage-2 redo). Allowlisting keeps the blast radius scoped to what
+this command authored.
 
 ## 9. Lifecycle
 
@@ -416,6 +519,11 @@ the existing Step B.5.
   `/mi-update-blueprint` is a flagged follow-up.
 - **Archived:** rotated into `history/v[N+1]/implementation/blueprint-lessons.md`
   at stage 8 by `mi-complete-workflow`, alongside `grounding-report.md`.
+  `mi-complete-workflow.md`'s archive loop is an **explicit allowlist** of
+  filenames (`commands/mi-complete-workflow.md:234`); `blueprint-lessons.md`
+  must be added to that list. The historical-snapshot prose immediately below
+  the loop (`commands/mi-complete-workflow.md:242`) must also be updated to
+  mention the new artifact.
 - **Cleared:** by `/mi-abort-workflow`, alongside the rest of
   `implementation/`.
 
@@ -463,23 +571,43 @@ plan-writing.
 
 **Modified:**
 
-- `commands/mi-apply-impact.md` — add Pre-Step A invoking `lessons-filter`;
-  add the `requirements-id` backfill after Step A's requirements write.
+- `commands/mi-apply-impact.md`:
+  - Add Pre-Step A: guard on `lessons-learned.md` existence, `frontmatter.sh
+    init blueprint-lessons`, spawn the `lessons-filter` sub-agent (§5.1).
+  - Add the `requirements-id` backfill after Step A writes `requirements.md`
+    (§7.1).
+  - Extend the `--force` cleanup path to remove stage-2 implementation
+    artifacts (§8.1).
 - `docs/blueprint-regeneration.md` — Step A: add `blueprint-lessons.md` read
   for main; add the `## Lessons to honor` block to the `codebase-grounder`
-  spawn-prompt template.
-- `commands/mi-blueprint-review.md` — render `{{LESSONS_BLOCK}}` from the
-  sibling-detection rule before dispatch.
-- The consistency-reviewer and item-reviewer prompt templates under
-  `templates/` — add `{{LESSONS_BLOCK}}` placeholder.
-- `scripts/frontmatter.sh` (or its template dispatch) — add `blueprint-lessons`
-  type.
+  spawn-prompt template (§7.2).
+- `commands/mi-blueprint-review.md` — compute `lessons_block` via
+  sibling-detection (§7.3 step a) and pass it as a spawn input to every
+  reviewer sub-agent in Phase 1 / 3 / 4.
+- `commands/mi-blueprint-review-consistency.md`,
+  `commands/mi-blueprint-review-item.md` — same sibling-detection +
+  spawn-input wiring for the single-purpose variants (§7.3 final paragraph).
+- `agents/blueprint-consistency-reviewer.md`,
+  `agents/blueprint-item-reviewer.md` — add `lessons_block` to
+  `## Inputs (from the spawn prompt)`; update the "Render the reviewer prompt"
+  step to substitute `{{LESSONS_BLOCK}}` from that input (§7.3 step c).
+- `templates/blueprint-reviewer-prompt-consistency.md.tmpl`,
+  `templates/blueprint-reviewer-prompt-item.md.tmpl` — add the
+  `{{LESSONS_BLOCK}}` placeholder at the appropriate position (§7.3 step c).
+- `commands/mi-complete-workflow.md` — add `blueprint-lessons.md` to the
+  archive allowlist at line 234, and update the historical-snapshot prose at
+  line 242 to mention the new artifact (§9).
 - `docs/millwright-inspector-project.md` — document the new artifact and the
   new sub-agent in the appropriate sections (workflow-stream layout, sub-agent
   list).
 
 **Unchanged:**
 
+- `scripts/frontmatter.sh` — no code change required. The script already
+  loads `templates/${tmpl_name}.md.tmpl` by name and auto-validates against
+  `schemas/${tmpl_name}.schema.yaml` if a matching schema exists
+  (`scripts/frontmatter.sh:20-35`). Adding the new template + schema files
+  under matching names is sufficient.
 - `scripts/lessons.sh` — no new subcommand; the filter sub-agent reads the file
   via `lessons.sh path` and standard file IO.
 - `pr-review-fixer` agent — no changes; `lessons-learned.md` schema unchanged.
