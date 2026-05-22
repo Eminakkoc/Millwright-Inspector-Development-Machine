@@ -94,6 +94,99 @@ fi
 
 If the queue is empty AND `active` was null, `progress.sh activate` errors out — tell the inspector and stop. Branch is declared per-feature in `config.md`'s `## GIT BRANCH` section (written later in this command) and validated at stage 3; `/mi-plan-implementation` will persist it into `active.branch`.
 
+### Step 1.5 — Lessons-filter Pre-Step A
+
+Filter `lessons-learned.md` for blueprint-creation-relevant entries before
+the runbook's main work begins, so main writing `requirements.md` and the
+delegated `codebase-grounder` both have the filtered set in scope. The
+filtered artifact also serves the stage-2 codex review at Step B.5.
+
+The whole step is **guarded on `lessons-learned.md` existing**. `scripts/lessons.sh path`
+returns a resolved path unconditionally — it does not check existence — so
+the guard lives at this call site.
+
+```bash
+data_root="$($CLAUDE_PLUGIN_ROOT/scripts/data-root.sh)"
+impl_dir="$data_root/workflow-stream/$active_feature/implementation"
+blueprint_lessons_path="$impl_dir/blueprint-lessons.md"
+lessons_path="$($CLAUDE_PLUGIN_ROOT/scripts/lessons.sh path)"
+
+if [[ ! -f "$lessons_path" ]]; then
+  echo "info: lessons-learned.md not present; skipping blueprint-lessons injection"
+else
+  mkdir -p "$impl_dir"
+  lessons_mtime="$(stat -f %m "$lessons_path" 2>/dev/null \
+                   || stat -c %Y "$lessons_path" 2>/dev/null \
+                   || echo 0)"
+  # Integer-valued fields use the !RAW! sentinel from
+  # scripts/internal/common.sh so the renderer interpolates them verbatim
+  # rather than wrapping them as YAML strings — required because the
+  # schema types lessons-source-mtime and selected-count as integer.
+  "$CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh" init blueprint-lessons \
+    "$blueprint_lessons_path" \
+    "FEATURE=$active_feature" \
+    "LESSONS_SOURCE_MTIME=!RAW!$lessons_mtime" \
+    "SELECTED_COUNT=!RAW!0"
+
+  # Spawn the lessons-filter sub-agent. The prompt below substitutes the
+  # placeholders with the concrete values from this caller context.
+  #
+  # Sub-agent: agents/lessons-filter.md (subagent_type:
+  # millwright-inspector-development-machine:lessons-filter).
+  #
+  # Spawn prompt template:
+  #
+  #   You are invoked from mi-apply-impact's Pre-Step A. Filter
+  #   <lessons_path> to the blueprint-creation-relevant entries for the
+  #   "<active_feature>" feature this cycle. Main has already created
+  #   <blueprint_lessons_path> with valid frontmatter; you fill the body and
+  #   update only `selected-count`. Follow agents/lessons-filter.md
+  #   exactly.
+  #
+  #   Inputs:
+  #   - active_feature: <active_feature>
+  #   - lessons_path: <lessons_path>
+  #   - quest_dir: <quest_dir>
+  #   - blueprint_lessons_path: <blueprint_lessons_path>
+  #
+  #   Return per the sub-agent's return contract.
+fi
+```
+
+After the sub-agent returns, recover from `blocked` or schema-validation
+failures by clobbering the artifact back to the canonical zero-count
+template. Both failure modes leave the artifact in an untrusted state
+(partial body, mutated `selected-count`, or invalid frontmatter); the same
+`frontmatter.sh init` re-run resets it:
+
+```bash
+# Run after the sub-agent return is parsed. Conditional on the artifact
+# existing (skips cleanly on the no-lessons-file path above).
+if [[ -f "$blueprint_lessons_path" ]]; then
+  if [[ "${lessons_filter_result:-success}" == "blocked" ]]; then
+    echo "warning: lessons-filter blocked — reset blueprint-lessons.md to zero-count; no injection this cycle" >&2
+    "$CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh" init blueprint-lessons \
+      "$blueprint_lessons_path" \
+      "FEATURE=$active_feature" \
+      "LESSONS_SOURCE_MTIME=!RAW!$lessons_mtime" \
+      "SELECTED_COUNT=!RAW!0"
+  elif ! "$CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh" validate \
+            "$blueprint_lessons_path" blueprint-lessons >/dev/null 2>&1; then
+    echo "warning: lessons-filter wrote an invalid artifact — reset blueprint-lessons.md to zero-count; no injection this cycle" >&2
+    "$CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh" init blueprint-lessons \
+      "$blueprint_lessons_path" \
+      "FEATURE=$active_feature" \
+      "LESSONS_SOURCE_MTIME=!RAW!$lessons_mtime" \
+      "SELECTED_COUNT=!RAW!0"
+  fi
+fi
+```
+
+`$lessons_filter_result` is the `Result:` line from the sub-agent return.
+Parse it before the recovery block runs.
+
+Once the recovery (if any) completes, fall through to Step 2.
+
 ### Step 2 — Regenerate `blueprints/current/` content
 
 The content flow — write `requirements.md`, write `config.md` (auto-block + GIT BRANCH pre-fill), and generate diagrams — lives in [`docs/blueprint-regeneration.md`](../docs/blueprint-regeneration.md). Follow its Steps A, B, C with this caller context:
