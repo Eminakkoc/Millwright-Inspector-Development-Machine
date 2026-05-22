@@ -25,6 +25,17 @@ data_root="$($CLAUDE_PLUGIN_ROOT/scripts/data-root.sh)"
 
 Read `$quest_dir/todo-list.md` and `$quest_dir/summary.md` (the journal digest from stage 1). Do NOT read `journal/` directly — the cycle's `summary.md` is the authoritative digest; stage 2 is purely quest-driven.
 
+**Optional: read `blueprint-lessons.md` when present.** If Pre-Step A wrote a
+`blueprint-lessons.md` for this feature (i.e. `lessons-learned.md` existed at
+stage entry), read its `## Selected lessons` body before composing the
+requirements body. The frontmatter `selected-count` indicates whether the
+section is worth reading — when `selected-count > 0`, the lessons should
+inform Goals / Planned / Non-goals wording. The artifact lives at
+`workflow-stream/<active_feature>/implementation/blueprint-lessons.md`.
+
+When the artifact does not exist (no-lessons-file path) or `selected-count == 0`,
+skip this read — there are no applicable lessons.
+
 `summary.md` is feature-indexed. Read **only** `## Cross-cutting constraints`, `## Out-of-scope`, and `## Feature: <$active_feature>` — other features' sections belong to other cycles. The `features:` frontmatter lists what's available; if `$active_feature` isn't in there, that's a stage-1 quality issue and should be surfaced rather than backfilled.
 
 Also gather the backlog set:
@@ -167,6 +178,35 @@ Then write the requirements body with **three clearly-labeled scope sections**:
 **Critical distinction:** "Planned (future cycles)" items WILL be implemented — just later. The design of this cycle must accommodate them. "Non-goals" items are truly out of scope and can be assumed away.
 
 **Note on scope of `todo-item-ids`.** The array captures the items that *initiated* the current cycle — not every concern discovered during brainstorming. Scope expansions that surface mid-cycle land in the requirements body but do not retroactively invent new todo ids; manage those via `/mi-update-todo-list add ... IMPLEMENTING`.
+
+### Step A — backfill the blueprint-lessons cross-reference (when present)
+
+If the Pre-Step A lessons-filter ran (i.e. `lessons-learned.md` existed at
+stage entry), backfill the freshly-written `requirements.md`'s id into
+`blueprint-lessons.md`'s `requirements-id` field so the two artifacts
+cross-link per Rule 2 of the workflow spec. Skip when the artifact was
+never created (no-lessons-file path).
+
+Both calls are guarded: `frontmatter.sh get` runs under `set -e`, so an
+unguarded failure would abort `mi-apply-impact` before the warn-on-failure
+on the `set` call could fire.
+
+```bash
+if [[ -f "$blueprint_lessons_path" ]]; then
+  requirements_id="$("$CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh" get \
+    "$dest" id 2>/dev/null || true)"
+  if [[ -n "$requirements_id" ]]; then
+    "$CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh" set \
+      "$blueprint_lessons_path" requirements-id "$requirements_id" \
+      || echo "warning: requirements-id backfill failed for blueprint-lessons.md" >&2
+  else
+    echo "warning: could not read requirements-id from $dest; skipping blueprint-lessons backfill" >&2
+  fi
+fi
+```
+
+`$dest` is the `requirements.md` path from earlier in this step;
+`$blueprint_lessons_path` is the path computed in `mi-apply-impact.md` Step 1.5.
 
 ## Step B — Generate `config.md` (auto + manual sections)
 
