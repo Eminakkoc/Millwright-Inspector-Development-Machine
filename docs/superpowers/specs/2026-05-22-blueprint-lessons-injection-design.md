@@ -58,9 +58,12 @@ mi-apply-impact (stage 2)
   │       lessons-source-mtime set by main from stat)
   │     spawns lessons-filter sub-agent
   │       reads:  <data_root>/lessons-learned.md
+  │               quest/<active-slug>/todo-list.md (active feature: PENDING + TODO items)
   │               quest/<active-slug>/summary.md (active feature + cross-cutting)
   │       writes: body of blueprint-lessons.md + updates selected-count via frontmatter.sh set
   │       (main owns id, feature, requirements-id, lessons-source-mtime)
+  │     [BLOCKED RECOVERY] if sub-agent returns Result: blocked, main re-runs
+  │       frontmatter.sh init to clobber any partial state, restoring the zero-count empty artifact.
   │
   ├─ Step A: main composes requirements.md
   │     reads:  blueprint-lessons.md (when present, selected-count > 0)
@@ -494,7 +497,7 @@ the existing Step B.5.
 | Failure | Behavior |
 | --- | --- |
 | `lessons-learned.md` missing | Skip `lessons-filter` entirely. `blueprint-lessons.md` is not written. Consumers detect its absence and skip injection. Stage 2 continues unchanged. |
-| `lessons-filter` returns `blocked` | Warn (`"warning: lessons-filter blocked — leaving zero-count blueprint-lessons.md; no injection this cycle"`). Leave the initialized zero-count artifact in place. Consumers short-circuit on `selected-count == 0`; no explicit cleanup is required. The artifact still rotates to history at stage 8, recording that a filter attempt happened and produced nothing usable. |
+| `lessons-filter` returns `blocked` | The sub-agent has `Edit` + `Bash` tools and may have partially mutated the body and/or set `selected-count > 0` before blocking. Main must **clobber any partial state** to satisfy "no injection this cycle." Re-run `frontmatter.sh init blueprint-lessons` against the same path, which overwrites the file with the canonical zero-count template (selected-count=0, empty body). Then warn (`"warning: lessons-filter blocked — reset blueprint-lessons.md to zero-count; no injection this cycle"`). The reset artifact still rotates to history at stage 8 with `selected-count: 0`, recording that a filter attempt happened and was discarded. |
 | `lessons-filter` returns `partial` with usable output | Accept the partial artifact; trust the schema-validated content. |
 | `blueprint-lessons.md` fails schema validation | PostToolUse hook blocks the turn. Main must surface the error and either rerun the sub-agent or proceed without lessons. Standard mi-workflow invariant. |
 | `requirements-id` backfill fails (e.g., file disappeared) | Warn, continue. The missing back-reference is recoverable; the lessons content is already on disk. |
@@ -592,6 +595,37 @@ plan-writing.
 6. **Manual `/mi-blueprint-review` on arbitrary file.** Invoke the command on a
    markdown file outside any `blueprints/current/`. Assert: `LESSONS_BLOCK`
    renders empty; no errors.
+
+7. **lessons-filter blocked → no injection.** Seed `lessons-learned.md` with a
+   blueprint-relevant lesson, then force the sub-agent to return `Result: blocked`
+   (e.g. via a test harness that intercepts the spawn and writes a partial body
+   plus `selected-count: 2` before returning blocked). Run `mi-apply-impact`.
+   Assert: `blueprint-lessons.md` exists with `selected-count: 0` and an empty
+   `## Selected lessons` body (the recovery clobber ran); codex review prompts
+   contain no rendered lessons block; the warning string from §8 was printed.
+
+8. **`--force` clears stage-2 implementation artifacts.** Create a partial
+   stage-2 state (check-current=2): a `grounding-report.md` and a
+   `blueprint-lessons.md` from a prior run, plus partial `blueprints/current/`.
+   Run `mi-apply-impact --force`. Assert: both
+   `implementation/grounding-report.md` and `implementation/blueprint-lessons.md`
+   are removed before regeneration; other `implementation/` entries (if any —
+   create a sentinel file like `inspector-review.md`) are **preserved** (the
+   allowlisted cleanup must not touch later-stage artifacts).
+
+9. **Guarded `requirements-id` backfill.** Run the no-lessons-file path (Test 1
+   conditions) and confirm `mi-apply-impact` runs cleanly through Step A and
+   beyond — no `set -e` abort from the `frontmatter.sh set` call against a
+   missing artifact. Independently, on the lessons-present path (Test 3), the
+   backfill succeeds and the `requirements-id` field flips from `null` to the
+   real UUID.
+
+10. **/mi-blueprint-review-item Mode B forces empty `lessons_block`.** Invoke
+    `/mi-blueprint-review-item codex 3 "<raw content>"` (Mode B, no file path,
+    even if a `blueprint-lessons.md` exists somewhere in the workspace).
+    Assert: `lessons_block` passed to the spawn prompt is the empty string;
+    the rendered reviewer prompt contains no `## Lessons from prior PR reviews
+    to honor` block.
 
 ## 11. Files touched
 
