@@ -63,9 +63,49 @@ reviewer_tool="$($CLAUDE_PLUGIN_ROOT/scripts/blueprint-review.sh resolve-tool "$
 MAX_ITEMS_PER_REVIEW=20
 ```
 
+### Step 1.5 — Resolve lessons_block via sibling-detection
+
+Compute the lessons block string once, before any phase spawns a sub-agent.
+The block is non-empty only when `<file>` sits inside a `blueprints/current/`
+directory AND a sibling `../../implementation/blueprint-lessons.md` exists
+AND its `selected-count > 0`. Otherwise the block is empty and the reviewer
+prompts render exactly as they did before this feature.
+
+```bash
+lessons_block=""
+file_dir="$(cd "$(dirname "$file")" && pwd)"
+if [[ "$file_dir" == */blueprints/current ]]; then
+  feature_dir="$(cd "$file_dir/../.." && pwd)"
+  artifact="$feature_dir/implementation/blueprint-lessons.md"
+  if [[ -f "$artifact" ]]; then
+    selected_count="$("$CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh" get \
+      "$artifact" selected-count 2>/dev/null || echo 0)"
+    if [[ "$selected_count" =~ ^[1-9][0-9]*$ ]]; then
+      lessons_body="$(awk '/^## Selected lessons$/{flag=1; next} flag' "$artifact")"
+      lessons_block="$(cat <<EOF
+## Lessons from prior PR reviews to honor
+
+Use these as additional review criteria — flag any item in this blueprint that contradicts one of these lessons.
+
+$lessons_body
+EOF
+)"
+    fi
+  fi
+fi
+```
+
+`$lessons_block` is then passed verbatim into every Phase 1, Phase 3, and
+Phase 4 sub-agent spawn prompt under the input name `lessons_block`. Each
+sub-agent substitutes it into `{{LESSONS_BLOCK}}` per its `## Inputs` block.
+When the value is empty, the substitution rule drops the placeholder line
+entirely so the rendered prompt has no stray blank line.
+
 ### Step 2 — Phase 1: initial consistency loop
 
 Spawn the `blueprint-consistency-reviewer` sub-agent exactly as `/mi-blueprint-review-consistency` does. Parameters: `file`, `max_c`, `agent`, `reviewer_tool`, `reasoning_effort` (G3).
+
+Parameters passed to the sub-agent: `file`, `max_c`, `agent`, `reviewer_tool`, `reasoning_effort` (G3), and `lessons_block` (from Step 1.5 — empty unless the file under review has a sibling blueprint-lessons.md with selected-count > 0).
 
 - On `success`: continue to Step 3.
 - On `partial` (max-iter): prompt `y/n`. On `y`: re-spawn the same sub-agent with the same parameters and the file's current state. On `n`: continue to Step 3 with the remaining findings inline.
@@ -111,6 +151,8 @@ If the resolved descriptor count exceeds `MAX_ITEMS_PER_REVIEW`, print:
 If the count is 0 (free-form spec with no items), skip Step 4 entirely and proceed to Step 5.
 
 ### Step 4 — Phase 3: per-item batched review
+
+Parameters passed to each `blueprint-item-reviewer` sub-agent spawn: `file`, `descriptor`, `instance_id`, `max_i`, `agent`, `reviewer_tool`, `reasoning_effort` (G3), and `lessons_block` (from Step 1.5 — empty unless the file under review has a sibling blueprint-lessons.md with selected-count > 0).
 
 ```python
 # pseudocode for the orchestrator's batching loop
@@ -166,6 +208,8 @@ When all batches complete, proceed to Step 5.
 ### Step 5 — Phase 4: final consistency loop
 
 Identical to Step 2. Catches contradictions introduced by item-level rewrites in Step 4.
+
+Parameters passed to the sub-agent: `file`, `max_c`, `agent`, `reviewer_tool`, `reasoning_effort` (G3), and `lessons_block` (from Step 1.5 — empty unless the file under review has a sibling blueprint-lessons.md with selected-count > 0).
 
 - On `success`: continue to Step 6.
 - On `partial` (max-iter): prompt `y/n` per Step 2. Continue to Step 6 either way.

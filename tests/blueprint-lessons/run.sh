@@ -106,6 +106,90 @@ else
 fi
 rm -rf "$force_tmpdir"
 
+# ---- Task 11: sibling-detection contract ---------------------------------
+
+# The contract: given a file path under .../blueprints/current/, the
+# sibling lessons artifact lives at ../../implementation/blueprint-lessons.md.
+# When selected-count > 0, lessons_block is non-empty; otherwise empty.
+
+sibling_lessons_block() {
+  # Mirrors the resolution rule that lives inside commands/mi-blueprint-review.md.
+  local file="$1"
+  local dir
+  dir="$(cd "$(dirname "$file")" && pwd)"
+  [[ "$dir" == */blueprints/current ]] || { echo ""; return 0; }
+  local feature_dir
+  feature_dir="$(cd "$dir/../.." && pwd)"
+  local artifact="$feature_dir/implementation/blueprint-lessons.md"
+  [[ -f "$artifact" ]] || { echo ""; return 0; }
+  local count
+  count="$("$REPO_ROOT/scripts/frontmatter.sh" get "$artifact" selected-count 2>/dev/null || echo 0)"
+  if [[ "$count" =~ ^[1-9][0-9]*$ ]]; then
+    # Extract the body under `## Selected lessons`.
+    local body
+    body="$(awk '/^## Selected lessons$/{flag=1; next} flag' "$artifact")"
+    printf "## Lessons from prior PR reviews to honor\n\nUse these as additional review criteria — flag any item in this blueprint that contradicts one of these lessons.\n\n%s" "$body"
+  else
+    echo ""
+  fi
+}
+
+t="sibling-detection: arbitrary file outside blueprints/current → empty"
+sibling_tmpdir="$(mktemp -d)"
+echo "# arbitrary" > "$sibling_tmpdir/random.md"
+out="$(sibling_lessons_block "$sibling_tmpdir/random.md")"
+if [[ -z "$out" ]]; then ok "$t"; else ng "$t" "expected empty, got: $out"; fi
+rm -rf "$sibling_tmpdir"
+
+t="sibling-detection: blueprints/current with no sibling artifact → empty"
+sibling_tmpdir="$(mktemp -d)"
+mkdir -p "$sibling_tmpdir/feature/blueprints/current"
+echo "# requirements" > "$sibling_tmpdir/feature/blueprints/current/requirements.md"
+out="$(sibling_lessons_block "$sibling_tmpdir/feature/blueprints/current/requirements.md")"
+if [[ -z "$out" ]]; then ok "$t"; else ng "$t" "expected empty, got: $out"; fi
+rm -rf "$sibling_tmpdir"
+
+t="sibling-detection: blueprints/current with selected-count=0 sibling → empty"
+sibling_tmpdir="$(mktemp -d)"
+mkdir -p "$sibling_tmpdir/feature/blueprints/current" "$sibling_tmpdir/feature/implementation"
+echo "# requirements" > "$sibling_tmpdir/feature/blueprints/current/requirements.md"
+MI_PLUGIN_ROOT="$REPO_ROOT" "$REPO_ROOT/scripts/frontmatter.sh" init blueprint-lessons \
+  "$sibling_tmpdir/feature/implementation/blueprint-lessons.md" \
+  "FEATURE=feature" "LESSONS_SOURCE_MTIME=!RAW!1000" "SELECTED_COUNT=!RAW!0" >/dev/null 2>&1
+out="$(sibling_lessons_block "$sibling_tmpdir/feature/blueprints/current/requirements.md")"
+if [[ -z "$out" ]]; then ok "$t"; else ng "$t" "expected empty, got: $out"; fi
+rm -rf "$sibling_tmpdir"
+
+t="sibling-detection: selected-count=2 sibling → non-empty with honor heading"
+sibling_tmpdir="$(mktemp -d)"
+mkdir -p "$sibling_tmpdir/feature/blueprints/current" "$sibling_tmpdir/feature/implementation"
+echo "# requirements" > "$sibling_tmpdir/feature/blueprints/current/requirements.md"
+cat > "$sibling_tmpdir/feature/implementation/blueprint-lessons.md" <<'EOF'
+---
+id: 12345678-1234-4234-8234-123456789012
+feature: feature
+requirements-id: null
+lessons-source-mtime: 1000
+selected-count: 2
+---
+
+# Blueprint-relevant lessons
+
+## Selected lessons
+
+### L-001 — Goals must name the seam
+- relevance: applies to PAY-001
+- lesson: name the seam, don't describe behavior abstractly
+EOF
+out="$(sibling_lessons_block "$sibling_tmpdir/feature/blueprints/current/requirements.md")"
+if [[ "$out" == *"Lessons from prior PR reviews to honor"* ]] \
+   && [[ "$out" == *"L-001 — Goals must name the seam"* ]]; then
+  ok "$t"
+else
+  ng "$t" "did not find honor heading or lesson body in output"
+fi
+rm -rf "$sibling_tmpdir"
+
 # ---- Summary --------------------------------------------------------------
 
 printf "\n%d passed, %d failed\n" "$pass" "$fail"
