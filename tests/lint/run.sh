@@ -12,6 +12,10 @@
 #   hooks/validate-on-write.sh legacy-path branch — the hook deliberately
 #                             pattern-matches the old review-file name in
 #                             order to hard-reject writes to it
+#   docs/millwright-inspector-project.md "Hard-rejected" prose — the project
+#                             doc names the legacy `overseer-review.md` path
+#                             once when documenting which writes the hook
+#                             rejects
 #
 # Each check captures output with `|| true` so a clean tree (git grep exits
 # non-zero on no matches) does not itself fail the guard.
@@ -35,7 +39,8 @@ report() {
 # --- overseer -> inspector -------------------------------------------------
 old="over""seer"
 m=$(git grep -in "$old" -- "${EXCLUDES[@]}" \
-  | grep -vE "^hooks/validate-on-write\.sh:[0-9]+:.*${old}-review\.md" || true)
+  | grep -vE "^hooks/validate-on-write\.sh:[0-9]+:.*${old}-review\.md" \
+  | grep -vE "^docs/millwright-inspector-project\.md:[0-9]+:.*legacy path.*${old}-review\.md" || true)
 report "no stale '$old' references" "$m"
 
 # --- mo-* command tokens (slash and bare) ----------------------------------
