@@ -107,6 +107,7 @@ the guard lives at this call site.
 
 ```bash
 data_root="$($CLAUDE_PLUGIN_ROOT/scripts/data-root.sh)"
+quest_dir="$($CLAUDE_PLUGIN_ROOT/scripts/quest.sh dir)"
 impl_dir="$data_root/workflow-stream/$active_feature/implementation"
 blueprint_lessons_path="$impl_dir/blueprint-lessons.md"
 lessons_path="$($CLAUDE_PLUGIN_ROOT/scripts/lessons.sh path)"
