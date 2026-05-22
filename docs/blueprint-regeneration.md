@@ -78,7 +78,9 @@ $CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh init grounding-report "$report_dest" 
 
 `SEAM_CLASSIFICATION=mixed` is a placeholder; the sub-agent recomputes and overwrites it via `frontmatter.sh set` after analyzing the seam.
 
-**Spawn the sub-agent.** Invoke `Agent` with `subagent_type: millwright-inspector-development-machine:codebase-grounder`. Compose the prompt from the template below. Substitute `<placeholder>` literals with concrete values from the caller context.
+**Spawn the sub-agent.** Invoke `Agent` with `subagent_type: millwright-inspector-development-machine:codebase-grounder`. Compose the prompt from the template below. Substitute `<placeholder>` literals with concrete values from the caller context. Notable substitutions:
+
+- <blueprint_lessons_path>: the path computed in `commands/mi-apply-impact.md` Step 1.5. Pass the empty string if Pre-Step A was skipped (no lessons-learned.md).
 
 Sub-agent prompt template:
 
@@ -89,6 +91,19 @@ You are a fresh sub-agent invoked from `mi-apply-impact` Step A to do the stage-
 
 1. <quest_dir>/todo-list.md — find the items in scope this cycle: <comma-separated active_item_ids>. Read each item's description.
 2. <quest_dir>/summary.md — read `## Cross-cutting constraints` and `## Feature: <active_feature>` sections.
+
+**Lessons from prior PR reviews (filtered for blueprint relevance):**
+
+The file <blueprint_lessons_path> contains lessons selected from
+lessons-learned.md that may apply to this cycle's blueprint. Read its
+`## Selected lessons` section before classifying seams or picking
+pre-existing components. Each lesson's `relevance:` line ties it to a
+specific concern in this cycle.
+
+If <blueprint_lessons_path> does not exist or its `selected-count` is 0,
+skip this read — there are no applicable lessons. Do not count this read
+against the per-item file budget; the artifact is a small intake file
+(~1–4 KB), not a seam read.
 
 **Your task — for each item id in scope:**
 
