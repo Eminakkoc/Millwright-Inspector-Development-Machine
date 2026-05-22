@@ -1,0 +1,77 @@
+$schema: "http://json-schema.org/draft-07/schema#"
+$id: millwright-inspector-development-machine/blueprint-lessons.schema.yaml
+title: workflow-stream/<feature>/implementation/blueprint-lessons.md frontmatter
+description: >
+  Stage-2 filtered-lessons artifact. Written by the `lessons-filter` sub-agent
+  spawned from /mi-apply-impact's Pre-Step A. The artifact lists the
+  lessons-learned.md entries deemed blueprint-relevant for the active
+  feature; consumers (main composing requirements.md, codebase-grounder,
+  the codex blueprint reviewers) read it before working.
+
+  Lifecycle matches the rest of `implementation/`: archived at stage 8 to
+  blueprints/history/v[N+1]/implementation/blueprint-lessons.md; cleared by
+  /mi-abort-workflow with the rest of the live implementation folder.
+
+  UUID pattern accepts any RFC 4122 version (v1-v8) with a valid variant
+  nibble, matching the project's permissive policy for workflow schemas.
+
+type: object
+additionalProperties: false
+required:
+  - id
+  - feature
+  - requirements-id
+  - lessons-source-mtime
+  - selected-count
+
+properties:
+  id:
+    type: string
+    pattern: "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"
+    description: UUID for cross-references; minted via scripts/uuid.sh.
+
+  feature:
+    type: string
+    minLength: 1
+    pattern: "^[a-z0-9][a-z0-9-]*$"
+    description: >
+      Kebab-case feature name; mirrors the workflow-stream/<feature>/ folder
+      that contains this artifact's parent implementation/ directory.
+
+  requirements-id:
+    oneOf:
+      - type: "null"
+      - type: string
+        pattern: "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"
+    description: >
+      Back-reference to requirements.md's id. Null at first write (the
+      artifact is created before requirements.md exists); backfilled by
+      main after Step A writes requirements.md.
+
+  lessons-source-mtime:
+    type: integer
+    minimum: 0
+    description: >
+      Epoch seconds of lessons-learned.md at filter time. Lets a future
+      cache check spot a stale artifact. Owned by main; never updated by
+      the lessons-filter sub-agent.
+
+  selected-count:
+    type: integer
+    minimum: 0
+    description: >
+      Number of ## L-NNN entries the sub-agent picked. 0 is valid — it
+      means a filter attempt happened and yielded no blueprint-relevant
+      lessons (or was reset by a blocked/schema-fail recovery). Consumers
+      short-circuit on selected-count == 0.
+
+  contributors:
+    type: array
+    items:
+      type: string
+    description: Optional list of contributors (sub-agent + main typically).
+
+  date:
+    type: string
+    format: date
+    description: Optional ISO-8601 date the artifact was generated.
