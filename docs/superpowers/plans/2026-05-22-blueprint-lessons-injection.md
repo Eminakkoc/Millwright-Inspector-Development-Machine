@@ -292,14 +292,21 @@ Append to `tests/blueprint-lessons/run.sh` (immediately before the `# ---- Summa
 ```bash
 # ---- Task 2: template init -----------------------------------------------
 
+# Note: integer-valued frontmatter fields must be passed with the !RAW!
+# sentinel documented in scripts/internal/common.sh — the default
+# `mi_render_template` path encodes every value through yaml.safe_dump,
+# which would quote "1716336000" / "0" as YAML strings and fail
+# schema validation (selected-count + lessons-source-mtime are typed
+# `integer` in the schema).
+
 t="template: init renders valid frontmatter with required tokens"
 init_tmpdir="$(mktemp -d)"
 init_dest="$init_tmpdir/blueprint-lessons.md"
 if MI_PLUGIN_ROOT="$REPO_ROOT" "$REPO_ROOT/scripts/frontmatter.sh" init blueprint-lessons \
      "$init_dest" \
      "FEATURE=payments" \
-     "LESSONS_SOURCE_MTIME=1716336000" \
-     "SELECTED_COUNT=0" >/dev/null 2>&1; then
+     "LESSONS_SOURCE_MTIME=!RAW!1716336000" \
+     "SELECTED_COUNT=!RAW!0" >/dev/null 2>&1; then
   if MI_PLUGIN_ROOT="$REPO_ROOT" "$REPO_ROOT/scripts/frontmatter.sh" validate \
        "$init_dest" blueprint-lessons >/dev/null 2>&1; then
     ok "$t"
@@ -317,8 +324,8 @@ init_dest="$init_tmpdir/blueprint-lessons.md"
 MI_PLUGIN_ROOT="$REPO_ROOT" "$REPO_ROOT/scripts/frontmatter.sh" init blueprint-lessons \
   "$init_dest" \
   "FEATURE=payments" \
-  "LESSONS_SOURCE_MTIME=1716336000" \
-  "SELECTED_COUNT=0" >/dev/null 2>&1
+  "LESSONS_SOURCE_MTIME=!RAW!1716336000" \
+  "SELECTED_COUNT=!RAW!0" >/dev/null 2>&1
 # Extract everything after the `## Selected lessons` heading. Body must be
 # whitespace-only.
 body="$(awk '/^## Selected lessons$/{flag=1; next} flag' "$init_dest")"
@@ -590,11 +597,15 @@ else
   lessons_mtime="$(stat -f %m "$lessons_path" 2>/dev/null \
                    || stat -c %Y "$lessons_path" 2>/dev/null \
                    || echo 0)"
+  # Integer-valued fields use the !RAW! sentinel from
+  # scripts/internal/common.sh so the renderer interpolates them verbatim
+  # rather than wrapping them as YAML strings — required because the
+  # schema types lessons-source-mtime and selected-count as integer.
   "$CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh" init blueprint-lessons \
     "$blueprint_lessons_path" \
     "FEATURE=$active_feature" \
-    "LESSONS_SOURCE_MTIME=$lessons_mtime" \
-    "SELECTED_COUNT=0"
+    "LESSONS_SOURCE_MTIME=!RAW!$lessons_mtime" \
+    "SELECTED_COUNT=!RAW!0"
 
   # Spawn the lessons-filter sub-agent. The prompt below substitutes the
   # placeholders with the concrete values from this caller context.
@@ -636,16 +647,16 @@ if [[ -f "$blueprint_lessons_path" ]]; then
     "$CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh" init blueprint-lessons \
       "$blueprint_lessons_path" \
       "FEATURE=$active_feature" \
-      "LESSONS_SOURCE_MTIME=$lessons_mtime" \
-      "SELECTED_COUNT=0"
+      "LESSONS_SOURCE_MTIME=!RAW!$lessons_mtime" \
+      "SELECTED_COUNT=!RAW!0"
   elif ! "$CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh" validate \
             "$blueprint_lessons_path" blueprint-lessons >/dev/null 2>&1; then
     echo "warning: lessons-filter wrote an invalid artifact — reset blueprint-lessons.md to zero-count; no injection this cycle" >&2
     "$CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh" init blueprint-lessons \
       "$blueprint_lessons_path" \
       "FEATURE=$active_feature" \
-      "LESSONS_SOURCE_MTIME=$lessons_mtime" \
-      "SELECTED_COUNT=0"
+      "LESSONS_SOURCE_MTIME=!RAW!$lessons_mtime" \
+      "SELECTED_COUNT=!RAW!0"
   fi
 fi
 ```
@@ -1124,7 +1135,7 @@ mkdir -p "$sibling_tmpdir/feature/blueprints/current" "$sibling_tmpdir/feature/i
 echo "# requirements" > "$sibling_tmpdir/feature/blueprints/current/requirements.md"
 MI_PLUGIN_ROOT="$REPO_ROOT" "$REPO_ROOT/scripts/frontmatter.sh" init blueprint-lessons \
   "$sibling_tmpdir/feature/implementation/blueprint-lessons.md" \
-  "FEATURE=feature" "LESSONS_SOURCE_MTIME=1000" "SELECTED_COUNT=0" >/dev/null 2>&1
+  "FEATURE=feature" "LESSONS_SOURCE_MTIME=!RAW!1000" "SELECTED_COUNT=!RAW!0" >/dev/null 2>&1
 out="$(sibling_lessons_block "$sibling_tmpdir/feature/blueprints/current/requirements.md")"
 if [[ -z "$out" ]]; then ok "$t"; else ng "$t" "expected empty, got: $out"; fi
 rm -rf "$sibling_tmpdir"
