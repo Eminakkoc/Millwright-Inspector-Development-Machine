@@ -20,11 +20,13 @@ Mode A (file-anchored):
 - `agent`, `reviewer_tool_name`.
 - `reasoning_effort`: `low | medium | high` (default `medium`). Passed to the reviewer MCP tool on every call as the `reasoning_effort` parameter.
 - `sub_agent_instance_id`: a small token like `T1`, `T2`, …, used as a temporary-id prefix for **new** findings.
+- `lessons_block` — opaque markdown string to substitute as `{{LESSONS_BLOCK}}` in the reviewer prompt template. May be empty. In Mode A the orchestrator computes it via sibling-detection; in Mode B it is **always empty** (Mode B has no file anchor for sibling-detection).
 
 Mode B (stateless):
 - `mode`: `content`
 - `content`: raw string.
 - `max_iterations`, `agent`, `reviewer_tool_name`, `reasoning_effort`, `sub_agent_instance_id` (same as mode A).
+- `lessons_block` — opaque markdown string to substitute as `{{LESSONS_BLOCK}}` in the reviewer prompt template. May be empty. In Mode A the orchestrator computes it via sibling-detection; in Mode B it is **always empty** (Mode B has no file anchor for sibling-detection).
 
 ## Loop body (per iteration; operates on `working_copy`, initialized from `original_region` or `content`)
 
@@ -42,6 +44,7 @@ Substitute placeholders in `templates/blueprint-reviewer-prompt-item.md.tmpl`:
   - T1-2 (medium): Dispatch behavior underspecified.
   ```
   If no existing findings, emit `(none)`.
+- `{{LESSONS_BLOCK}}` = substitute from the `lessons_block` spawn input. When `lessons_block` is the empty string, **remove the entire line** the placeholder sits on (no stray blank line) so the rendered prompt looks identical to a pre-feature run. When non-empty (Mode A only — Mode B always passes empty), the value is inserted verbatim with its own `## Lessons from prior PR reviews to honor` heading.
 
 ### 3. Call the reviewer
 Call the reviewer MCP tool (`reviewer_tool_name`) **with `reasoning_effort: <value>` parameter** set from the spawn input. Parse the JSON object — shape is `{existing: [...], new: [...]}`. On parse failure: retry once with a clarifying suffix; on second failure, return `Result: blocked`.
