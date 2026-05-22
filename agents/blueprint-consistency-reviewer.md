@@ -17,6 +17,7 @@ You write the reviewed file directly each iteration. This is safe because consis
 - `agent` — reviewer agent name (e.g. `codex`).
 - `reviewer_tool_name` — the exact MCP tool you must call (e.g. `mcp__codex__codex`).
 - `reasoning_effort` — `low | medium | high` (default `medium`). Pass this to the reviewer MCP tool as the `reasoning_effort` parameter on every call this iteration runs. Lower effort = faster + cheaper; higher = more thorough but often unnecessary for spec review (REPORT-1/2/3/4 in `feature/test-plugin/reports/` demonstrate that `low` already produces high-quality findings).
+- `lessons_block` — opaque markdown string to substitute as `{{LESSONS_BLOCK}}` in the reviewer prompt template. May be empty. Computed by the orchestrator (`/mi-blueprint-review`, `/mi-blueprint-review-consistency`) via sibling-detection against the file under review.
 
 ## Loop body (per iteration)
 
@@ -37,6 +38,7 @@ Substitute placeholders in `templates/blueprint-reviewer-prompt-consistency.md.t
   - F-002 (medium): Terminology mismatch between PAY-006 and Non-goals.
   ```
   If no existing consistency findings, emit `(none)`.
+- `{{LESSONS_BLOCK}}` = substitute from the `lessons_block` spawn input. When `lessons_block` is the empty string, **remove the entire line** the placeholder sits on (do not leave a stray blank line) so the rendered prompt looks identical to a pre-feature run. When non-empty, the value is inserted verbatim — it already carries its own `## Lessons from prior PR reviews to honor` heading and surrounding context from the orchestrator.
 
 ### 4. Call the reviewer
 Call the reviewer MCP tool (`reviewer_tool_name`) with the rendered prompt **and `reasoning_effort: <value>` parameter** set from the spawn input. Parse the JSON object — shape is `{existing: [...], new: [...]}` (see the template's "Reconciliation contract"). On parse failure: retry once with a clarifying suffix; on second failure, return `Result: blocked`.
