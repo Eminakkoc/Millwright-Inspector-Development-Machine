@@ -51,6 +51,44 @@ done
 reviewer_tool="$($CLAUDE_PLUGIN_ROOT/scripts/blueprint-review.sh resolve-tool "$agent")" || exit 1
 ```
 
+### Step 1.5 — Resolve lessons_block via sibling-detection
+
+Compute the lessons block string once before spawning the sub-agent. The
+block is non-empty only when `<file>` sits inside a `blueprints/current/`
+directory AND a sibling `../../implementation/blueprint-lessons.md` exists
+AND its `selected-count > 0`. Otherwise the block is empty and the reviewer
+prompt renders exactly as it did before this feature.
+
+```bash
+lessons_block=""
+file_dir="$(cd "$(dirname "$file")" && pwd)"
+if [[ "$file_dir" == */blueprints/current ]]; then
+  feature_dir="$(cd "$file_dir/../.." && pwd)"
+  artifact="$feature_dir/implementation/blueprint-lessons.md"
+  if [[ -f "$artifact" ]]; then
+    selected_count="$("$CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh" get \
+      "$artifact" selected-count 2>/dev/null || echo 0)"
+    if [[ "$selected_count" =~ ^[1-9][0-9]*$ ]]; then
+      lessons_body="$(awk '/^## Selected lessons$/{flag=1; next} flag' "$artifact")"
+      lessons_block="$(cat <<EOF
+## Lessons from prior PR reviews to honor
+
+Use these as additional review criteria — flag any item in this blueprint that contradicts one of these lessons.
+
+$lessons_body
+EOF
+)"
+    fi
+  fi
+fi
+```
+
+`$lessons_block` is then passed verbatim into the sub-agent spawn prompt
+under the input name `lessons_block`. The sub-agent substitutes it into
+`{{LESSONS_BLOCK}}` per its `## Inputs` block. When empty, the substitution
+rule drops the placeholder line entirely so the rendered prompt has no
+stray blank line.
+
 ### Step 2 — Spawn the consistency reviewer
 
 Invoke the `Agent` tool with `subagent_type: millwright-inspector-development-machine:blueprint-consistency-reviewer`. Compose the spawn prompt from the template below (substitute literal values):
@@ -64,6 +102,7 @@ Inputs:
 - agent: <AGENT>
 - reviewer_tool_name: <REVIEWER_TOOL>
 - reasoning_effort: <REASONING_EFFORT>     (one of low|medium|high; pass through to the reviewer MCP tool on every call)
+- lessons_block: <LESSONS_BLOCK>     (from sibling-detection above; pass empty when no sibling artifact or selected-count=0)
 
 Follow agents/blueprint-consistency-reviewer.md exactly. Return only the structured contract output.
 ```
