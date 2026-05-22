@@ -231,7 +231,7 @@ if [[ "${branch_route:-III}" == "III" || "${branch_route:-}" == "0a" || "${branc
   # manual-test-plan.history/, manual-test-results.history/) live under
   # the sibling `test/` folder, which is feature-permanent and NOT
   # archived here. See docs/manual-testing-folder/plan.md.
-  for artifact in inspector-review.md review-context.md change-summary.md grounding-report.md; do
+  for artifact in inspector-review.md review-context.md change-summary.md grounding-report.md blueprint-lessons.md; do
     [[ -e "$impl_dir/$artifact" ]] && mv -n "$impl_dir/$artifact" "$archive_dir/$artifact"
   done
   [[ -d "$impl_dir/diagrams" ]] && mv -n "$impl_dir/diagrams" "$archive_dir/diagrams"
@@ -239,7 +239,7 @@ if [[ "${branch_route:-III}" == "III" || "${branch_route:-}" == "0a" || "${branc
 fi
 ```
 
-The historical snapshot is then complete: `blueprints/history/v${version}/` carries the rotated `requirements.md`, `config.md`, `diagrams/`, `primer.md`, `reason.md`, AND `implementation/` (review file, review-context, change-summary, grounding-report, implementation diagrams). PMs querying past cycles can read the full audit trail from this single folder per feature-version. The feature's manual-test history lives separately under `workflow-stream/<feature>/test/` and persists across cycles.
+The historical snapshot is then complete: `blueprints/history/v${version}/` carries the rotated `requirements.md`, `config.md`, `diagrams/`, `primer.md`, `reason.md`, AND `implementation/` (review file, review-context, change-summary, grounding-report, blueprint-lessons, implementation diagrams). PMs querying past cycles can read the full audit trail from this single folder per feature-version. The feature's manual-test history lives separately under `workflow-stream/<feature>/test/` and persists across cycles.
 
 ### Step 6 — Finish the active feature
 

@@ -190,6 +190,16 @@ else
 fi
 rm -rf "$sibling_tmpdir"
 
+# ---- Task 14: archive allowlist ------------------------------------------
+
+t="archive: blueprint-lessons.md is in the mi-complete-workflow allowlist"
+if grep -E '^\s+for artifact in .*\bblueprint-lessons\.md\b' \
+   "$REPO_ROOT/commands/mi-complete-workflow.md" >/dev/null 2>&1; then
+  ok "$t"
+else
+  ng "$t" "blueprint-lessons.md not found in mi-complete-workflow.md's archive loop"
+fi
+
 # ---- Summary --------------------------------------------------------------
 
 printf "\n%d passed, %d failed\n" "$pass" "$fail"
