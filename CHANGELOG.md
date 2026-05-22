@@ -1,5 +1,85 @@
 # Changelog
 
+## 1.3.0 — Blueprint-lessons injection at stage 2
+
+Stage 2 now consumes prior PR-review lessons. A new `lessons-filter` sub-agent
+spawned from `mi-apply-impact`'s Pre-Step A reads `lessons-learned.md`,
+picks blueprint-creation-relevant entries for the active feature, and writes
+`workflow-stream/<feature>/implementation/blueprint-lessons.md`. That artifact
+is then read by main (composing `requirements.md`), the `codebase-grounder`
+sub-agent, and the codex blueprint review (consistency + per-item phases via
+sibling-detection in the orchestrator and its two single-purpose variants).
+At stage 8 the artifact rotates into `history/v[N+1]/implementation/`
+alongside `grounding-report.md`.
+
+Before this release, `lessons-learned.md` was only consumed at stage 3 (via
+`config.md`'s `## Lessons learned` pointer). Blueprint-level mistakes the
+inspector had already caught in prior cycles could recur in fresh blueprints,
+and the codex blueprint review couldn't flag them either.
+
+### What changed
+
+- **New `lessons-filter` sub-agent** (`agents/lessons-filter.md`,
+  `haiku/medium`): reads `lessons-learned.md`, `todo-list.md`, and the
+  active feature's `summary.md` section. Each selected lesson must tie back
+  to one of four anchors: active todo id, planned todo id, cross-cutting
+  constraint, or feature-level concern. Lessons that can't be tied back are
+  dropped. Read-only on the source lessons file.
+
+- **New artifact** `workflow-stream/<feature>/implementation/blueprint-lessons.md`,
+  with schema (`schemas/blueprint-lessons.schema.yaml`) and init template
+  (`templates/blueprint-lessons.md.tmpl`). Main owns artifact init and every
+  frontmatter field (`id`, `feature`, `requirements-id`, `lessons-source-mtime`);
+  the sub-agent owns only `selected-count` and the body.
+
+- **`mi-apply-impact` Step 1.5**: guards on `lessons-learned.md` existence
+  (skip cleanly when absent), runs the filter sub-agent, and clobbers the
+  artifact via `frontmatter.sh init` re-run on `Result: blocked` or
+  schema-validation failure. The `--force` cleanup path now also removes
+  `grounding-report.md` and `blueprint-lessons.md` from `implementation/`
+  (allowlisted, not wholesale, to protect any stage-5+ state).
+
+- **`docs/blueprint-regeneration.md` Step A**: main reads
+  `blueprint-lessons.md` (when present, `selected-count > 0`) before
+  composing requirements. The `codebase-grounder` spawn-prompt template
+  gets a new "Lessons from prior PR reviews" reads block pointing at the
+  artifact. A new sub-step at the end of Step A backfills
+  `requirements-id` into `blueprint-lessons.md` via guarded `frontmatter.sh
+  get` + `set`.
+
+- **Codex review wiring** (`/mi-blueprint-review`,
+  `/mi-blueprint-review-consistency`, `/mi-blueprint-review-item`): each
+  command resolves a `lessons_block` string once via sibling-detection
+  against `<file>`'s blueprints/current parent → `../../implementation/blueprint-lessons.md`
+  → `selected-count > 0`. The block is passed as a new spawn input to the
+  consistency and per-item reviewer sub-agents, which substitute it into
+  the new `{{LESSONS_BLOCK}}` placeholder in their prompt templates. Empty
+  substitution drops the placeholder line entirely so pre-feature
+  rendering is preserved. `/mi-blueprint-review-item` Mode B (stateless
+  content, no file anchor) always passes empty.
+
+- **`mi-complete-workflow` archive allowlist**: extended to include
+  `blueprint-lessons.md` between `grounding-report.md` and `diagrams/`.
+  Historical-snapshot prose updated to match.
+
+### Testing
+
+11-case integration harness at `tests/blueprint-lessons/run.sh` covers
+schema validation, template init (including the `!RAW!` sentinel for
+integer fields), `--force` cleanup contract, sibling-detection across four
+branches, and the archive allowlist. Six manual-test scenarios documented
+in `docs/superpowers/plans/2026-05-22-blueprint-lessons-injection-manual-tests.md`
+cover the parts requiring a live model invocation (filter relevance
+judgment, blocked recovery). All six manual scenarios verified end-to-end
+against `feature/test-plugin/` before the release.
+
+### Project doc
+
+`docs/millwright-inspector-project.md` updated: §3.4 tree diagram and
+archive prose now list `blueprint-lessons.md`; §8.6 sub-agent profile table
+gains a `lessons-filter` row (profile count 13 → 14); §5 Roles × surface
+table's `/mi-apply-impact` row mentions `lessons-filter Pre-Step A`.
+
 ## 1.2.4 — Blueprints review: tighten `resolved` criterion + reasoning_effort plumbing
 
 Two fixes from the v1.2.3 Scenario-2 (20-item) stress test (REPORT-4).
