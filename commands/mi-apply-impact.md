@@ -86,6 +86,15 @@ else
       shopt -s dotglob nullglob
       for entry in "$curr"/*; do rm -rf "$entry"; done
       shopt -u dotglob nullglob
+      # Stage-2 also owns two artifacts under implementation/. Allowlisted
+      # cleanup so later-stage artifacts (inspector-review.md, review-context.md,
+      # change-summary.md, diagrams/) are preserved if the inspector happens to
+      # be combining --force with a stale implementation/ from a prior aborted
+      # run. See docs/superpowers/specs/2026-05-22-blueprint-lessons-injection-design.md §8.1.
+      impl="$data_root/workflow-stream/$active_feature/implementation"
+      for stage2_artifact in grounding-report.md blueprint-lessons.md; do
+        [[ -e "$impl/$stage2_artifact" ]] && rm -f "$impl/$stage2_artifact"
+      done
       $CLAUDE_PLUGIN_ROOT/scripts/blueprints.sh ensure-current "$active_feature"
       ;;
   esac

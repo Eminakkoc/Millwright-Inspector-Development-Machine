@@ -81,6 +81,31 @@ else
 fi
 rm -rf "$init_tmpdir"
 
+# ---- Task 6: --force cleanup of stage-2 implementation artifacts ---------
+
+t="--force cleanup: removes grounding-report.md and blueprint-lessons.md"
+force_tmpdir="$(mktemp -d)"
+mkdir -p "$force_tmpdir/impl"
+echo "stage-2 owned" > "$force_tmpdir/impl/grounding-report.md"
+echo "stage-2 owned" > "$force_tmpdir/impl/blueprint-lessons.md"
+echo "later-stage sentinel — must be preserved" > "$force_tmpdir/impl/inspector-review.md"
+
+# Mirror the cleanup loop the spec defines. Tests the contract, not the
+# command invocation (which requires an active workflow).
+for stage2_artifact in grounding-report.md blueprint-lessons.md; do
+  [[ -e "$force_tmpdir/impl/$stage2_artifact" ]] && rm -f "$force_tmpdir/impl/$stage2_artifact"
+done
+
+if [[ -e "$force_tmpdir/impl/grounding-report.md" ]] \
+   || [[ -e "$force_tmpdir/impl/blueprint-lessons.md" ]]; then
+  ng "$t" "stage-2 artifact was not removed"
+elif [[ ! -e "$force_tmpdir/impl/inspector-review.md" ]]; then
+  ng "$t" "later-stage sentinel was removed; allowlist failed"
+else
+  ok "$t"
+fi
+rm -rf "$force_tmpdir"
+
 # ---- Summary --------------------------------------------------------------
 
 printf "\n%d passed, %d failed\n" "$pass" "$fail"
