@@ -76,6 +76,39 @@ done
 [[ "$reasoning_effort" =~ ^(low|medium|high)$ ]] || { echo "error: --reasoning-effort must be low, medium, or high" >&2; exit 64; }
 ```
 
+### Step 1.5 — Resolve lessons_block (Mode A only)
+
+Mode B is stateless — it operates on raw content with no file anchor — so
+sibling-detection cannot apply. Mode B **always** passes an empty
+`lessons_block` to the item reviewer sub-agent. Mode A computes the same
+sibling-detection block as `commands/mi-blueprint-review.md` Step 1.5.
+
+```bash
+lessons_block=""
+if [[ "$mode" == "file" ]]; then
+  file_dir="$(cd "$(dirname "$file")" && pwd)"
+  if [[ "$file_dir" == */blueprints/current ]]; then
+    feature_dir="$(cd "$file_dir/../.." && pwd)"
+    artifact="$feature_dir/implementation/blueprint-lessons.md"
+    if [[ -f "$artifact" ]]; then
+      selected_count="$("$CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh" get \
+        "$artifact" selected-count 2>/dev/null || echo 0)"
+      if [[ "$selected_count" =~ ^[1-9][0-9]*$ ]]; then
+        lessons_body="$(awk '/^## Selected lessons$/{flag=1; next} flag' "$artifact")"
+        lessons_block="$(cat <<EOF
+## Lessons from prior PR reviews to honor
+
+Use these as additional review criteria — flag any item in this blueprint that contradicts one of these lessons.
+
+$lessons_body
+EOF
+)"
+      fi
+    fi
+  fi
+fi
+```
+
 ### Step 2 — Mode A: enumerate the single item
 
 If `mode=file`:
@@ -103,6 +136,7 @@ Inputs:
 - agent: <AGENT>
 - reviewer_tool_name: <REVIEWER_TOOL>
 - reasoning_effort: <REASONING_EFFORT>     (low|medium|high; pass through to MCP tool on every call)
+- lessons_block: <LESSONS_BLOCK>     (from Step 1.5 — empty unless sibling-detection found a populated artifact)
 - sub_agent_instance_id: T1
 
 Return the Payload JSON block first, then the standard contract fields.
@@ -121,6 +155,7 @@ Inputs:
 - agent: <AGENT>
 - reviewer_tool_name: <REVIEWER_TOOL>
 - reasoning_effort: <REASONING_EFFORT>     (low|medium|high; pass through to MCP tool on every call)
+- lessons_block:      (Mode B is stateless — always empty; the item reviewer ignores this for Mode B and renders the template with the placeholder removed)
 - sub_agent_instance_id: T1
 
 Return the Payload JSON block first, then the standard contract fields.
