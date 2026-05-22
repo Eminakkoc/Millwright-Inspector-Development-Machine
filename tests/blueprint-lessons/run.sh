@@ -42,6 +42,45 @@ else
   ok "$t"
 fi
 
+# ---- Task 2: template init -----------------------------------------------
+
+t="template: init renders valid frontmatter with required tokens"
+init_tmpdir="$(mktemp -d)"
+init_dest="$init_tmpdir/blueprint-lessons.md"
+if MI_PLUGIN_ROOT="$REPO_ROOT" "$REPO_ROOT/scripts/frontmatter.sh" init blueprint-lessons \
+     "$init_dest" \
+     "FEATURE=payments" \
+     "LESSONS_SOURCE_MTIME=!RAW!1716336000" \
+     "SELECTED_COUNT=!RAW!0" >/dev/null 2>&1; then
+  if MI_PLUGIN_ROOT="$REPO_ROOT" "$REPO_ROOT/scripts/frontmatter.sh" validate \
+       "$init_dest" blueprint-lessons >/dev/null 2>&1; then
+    ok "$t"
+  else
+    ng "$t" "init wrote a file that fails schema validation"
+  fi
+else
+  ng "$t" "init command itself failed"
+fi
+rm -rf "$init_tmpdir"
+
+t="template: ## Selected lessons body is literally empty after init"
+init_tmpdir="$(mktemp -d)"
+init_dest="$init_tmpdir/blueprint-lessons.md"
+MI_PLUGIN_ROOT="$REPO_ROOT" "$REPO_ROOT/scripts/frontmatter.sh" init blueprint-lessons \
+  "$init_dest" \
+  "FEATURE=payments" \
+  "LESSONS_SOURCE_MTIME=!RAW!1716336000" \
+  "SELECTED_COUNT=!RAW!0" >/dev/null 2>&1
+# Extract everything after the `## Selected lessons` heading. Body must be
+# whitespace-only.
+body="$(awk '/^## Selected lessons$/{flag=1; next} flag' "$init_dest")"
+if [[ -z "${body//[[:space:]]/}" ]]; then
+  ok "$t"
+else
+  ng "$t" "expected empty body, found: $body"
+fi
+rm -rf "$init_tmpdir"
+
 # ---- Summary --------------------------------------------------------------
 
 printf "\n%d passed, %d failed\n" "$pass" "$fail"
