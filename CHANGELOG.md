@@ -1,5 +1,90 @@
 # Changelog
 
+## 1.4.0 — Blueprint review token-reduction refit
+
+**Breaking CLI change.** Replaces v1.2.x's positional `<max-c-iter> <max-i-iter>` args
+with a single `--auto-iter N` flag (default `3`). Per-batch concurrency exposed via
+`--concurrency N` (default `3`). Default `--batch-size` reduced from `5` to `3`.
+
+Net effect on a 20-item stage-2 auto-fire (REPORT-4 baseline → v1.4 projection):
+codex calls drop ~107 → ~25; token cost drops ~1M → ~50k; wall-clock drops ~60–80 min
+→ ~10–15 min. Finding quality preserved (REPORT-4 evidence that iter-1 per-item review
+self-regulates at ~4 findings regardless of iteration budget).
+
+### What changed
+
+- **`mcp__codex__codex-reply` session continuation** for all rounds ≥ 2 within a single
+  review loop. Round 1 opens the session via `mcp__codex__codex`; rounds 2+ ship
+  delta-only prompts (the file / batch content lives in session state). When
+  `codex-reply` is unavailable (codex-cli < 0.130.0), sub-agents fall back to stateless
+  mode (~60% reduction instead of ~95%).
+- **Per-batch reviewer** (`agents/blueprint-batch-reviewer.md`) replaces the per-item
+  reviewer. One sub-agent per batch of 1..N items; one codex session per batch.
+  Standalone `/mi-blueprint-review-item` becomes a thin `batch_size=1` wrapper.
+- **Consolidated phase structure.** v1.2.x's initial consistency fix-loop is gone;
+  Phase D becomes the single fix-and-converge consistency pass that sees Phase C's
+  per-item findings as inline context. Phases run: A (preflight + summary build) → B
+  (enumerate) → C (per-batch parallel waves) → D (consistency) → F (persist) → G
+  (report).
+- **`review-history.md` sibling artifact** for cross-cycle memory. Co-located with
+  `requirements.md` in `blueprints/current/`; rotates with the blueprint at
+  `/mi-update-blueprint` and `/mi-complete-workflow` (via the wildcard
+  `blueprints.sh rotate` move — no special-case wiring). Append-only within a
+  blueprint version. Main builds a deterministic ≤ 1500-token summary
+  (`scripts/blueprint-review.sh build-summary`) for every reviewer session opener so
+  the reviewer avoids re-discovering resolved findings.
+- **Envelope trim** (~30–50% per-call prompt-size reduction):
+  - YAML frontmatter stripped from `{{FILE_CONTENT}}`.
+  - `{{EXISTING_FINDINGS}}` bullet list collapsed to a one-line pointer (single
+    source of truth: inline `<!-- REVIEW-FINDING -->` blocks).
+  - `{{LESSONS_BLOCK}}` removed from per-item / batch review (cross-item by nature —
+    Phase D's consistency pass catches lesson-violating findings).
+  - Reconciliation contract prose compressed (~110 lines → ~50).
+- **New `scripts/blueprint-review.sh` subcommands:** `build-summary` (deterministic
+  history-summary renderer with truncation invariant that protects unresolved-high
+  and current-item-tied resolved findings), `persist-findings` (append new + update
+  existing-to-resolved/dropped + recompute frontmatter counters).
+- **New schema + template + hook validation** for `review-history.md`.
+- **`mi-apply-impact` Step B.4** lazily inits `review-history.md` before Step B.5's
+  orchestrator auto-fire. Step B.5's CLI invocation collapses to the new shape;
+  defaults cover the rest. `--force` cleanup explicitly removes `review-history.md`.
+- **`mi-update-blueprint` and `mi-complete-workflow`** carry `review-history.md`
+  through rotation / archive alongside `requirements.md` (no code change — the
+  wildcard `blueprints.sh rotate` covers it; only descriptive prose updated).
+- **`mi-doctor` annotates the codex check** with codex-reply availability based on
+  installed codex-cli version (>= 0.130.0 gets the v1.4 cost-reduction path).
+
+### Removed
+
+- `agents/blueprint-item-reviewer.md` (replaced by `blueprint-batch-reviewer.md`)
+- `templates/blueprint-reviewer-prompt-item.md.tmpl` (replaced by
+  `blueprint-reviewer-prompt-batch.md.tmpl`)
+
+### Testing
+
+17-case integration harness at `tests/blueprint-review/run.sh` covers schema
+validation, init template, hook validation (positive + outside-data-root no-op),
+`build-summary` (filter / truncation / scope), and `persist-findings` (append / status
+update / counter recomputation). Seven manual scenarios in
+`docs/superpowers/plans/2026-05-23-blueprint-review-token-reduction-manual-tests.md`
+cover the live-codex paths (cold start, warm history, 20-item stress, single-item,
+mid-run abort, codex-unavailable, session-expiry fallback).
+
+### Migration
+
+- Breaking CLI change. No back-compat shim. Existing scripts invoking
+  `/mi-blueprint-review` must drop the two positional iter args.
+- Existing blueprints get a `review-history.md` lazily initialized on the first v1.4
+  run. No backfill of historical findings — they were never preserved before.
+- Reviewer prompt rendering changes shape; the multi-item `items[]` array in batch
+  reviewer responses is the new contract for any external consumer.
+
+See [`docs/blueprint-review-token-reduction/plan.md`](./docs/blueprint-review-token-reduction/plan.md) for
+the full design and [`docs/blueprint-review-token-reduction/phase-0-findings.md`](./docs/blueprint-review-token-reduction/phase-0-findings.md)
+for the verified `mcp__codex__codex-reply` MCP shape. The v1.2.x prior art
+([`docs/blueprints-review/plan.md`](./docs/blueprints-review/plan.md)) carries forward
+unchanged: item enumeration, canonical region descriptor, `alloc-final-id` semantics.
+
 ## 1.3.0 — Blueprint-lessons injection at stage 2
 
 Stage 2 now consumes prior PR-review lessons. A new `lessons-filter` sub-agent
