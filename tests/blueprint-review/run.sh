@@ -72,6 +72,40 @@ else
   ng "$t" "missing '# Review history' heading"
 fi
 
+# ---- Task 4: hook validation ----------------------------------------------
+
+# The hook reads JSON from stdin (Claude Code's tool-input shape) and gates on
+# the file path containing the configured data-root segment (default
+# `millwright-inspector`). We construct a path that satisfies both conditions.
+
+t="hook: review-history.md path triggers schema validation"
+tmp="$(mktemp -d)"
+trap 'rm -rf "$tmp"' EXIT
+mkdir -p "$tmp/millwright-inspector/workflow-stream/test-feat/blueprints/current"
+cp "$FIXTURES/schema-bad-counts/review-history.md" \
+   "$tmp/millwright-inspector/workflow-stream/test-feat/blueprints/current/review-history.md"
+target="$tmp/millwright-inspector/workflow-stream/test-feat/blueprints/current/review-history.md"
+hook_json="$(printf '{"tool_input":{"file_path":"%s"}}' "$target")"
+if CLAUDE_PLUGIN_ROOT="$REPO_ROOT" printf '%s' "$hook_json" \
+   | bash "$REPO_ROOT/hooks/validate-on-write.sh" >/dev/null 2>&1; then
+  ng "$t" "expected hook to block on bad review-history; it passed"
+else
+  ok "$t"
+fi
+
+t="hook: review-history.md outside data-root is no-op"
+mkdir -p "$tmp/not-mi-root/blueprints/current"
+cp "$FIXTURES/schema-bad-counts/review-history.md" \
+   "$tmp/not-mi-root/blueprints/current/review-history.md"
+outside_target="$tmp/not-mi-root/blueprints/current/review-history.md"
+hook_json2="$(printf '{"tool_input":{"file_path":"%s"}}' "$outside_target")"
+if CLAUDE_PLUGIN_ROOT="$REPO_ROOT" printf '%s' "$hook_json2" \
+   | bash "$REPO_ROOT/hooks/validate-on-write.sh" >/dev/null 2>&1; then
+  ok "$t"
+else
+  ng "$t" "expected hook to skip non-data-root paths"
+fi
+
 # ---- Summary --------------------------------------------------------------
 
 printf "\n--- summary: %d pass, %d fail ---\n" "$pass" "$fail"
