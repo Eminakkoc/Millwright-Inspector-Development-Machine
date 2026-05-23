@@ -42,6 +42,36 @@ else
   ok "$t"
 fi
 
+# ---- Task 3: init template ------------------------------------------------
+
+t="template: init produces a schema-valid file"
+tmp="$(mktemp -d)"
+trap 'rm -rf "$tmp"' EXIT
+if "$REPO_ROOT/scripts/frontmatter.sh" init review-history "$tmp/review-history.md" \
+   ID=$(uuidgen | tr 'A-Z' 'a-z') \
+   FEATURE=test-feat \
+   REQUIREMENTS_ID=$(uuidgen | tr 'A-Z' 'a-z') \
+   LAST_FINDING_ID=F-000 \
+   FINDING_COUNT_TOTAL='!RAW!0' \
+   FINDING_COUNT_UNRESOLVED='!RAW!0' \
+   LAST_REVIEW_AT=2026-05-23T00:00:00Z \
+   >/dev/null 2>&1; then
+  if "$REPO_ROOT/scripts/frontmatter.sh" validate "$tmp/review-history.md" review-history >/dev/null 2>&1; then
+    ok "$t"
+  else
+    ng "$t" "init produced an invalid file"
+  fi
+else
+  ng "$t" "init invocation failed"
+fi
+
+t="template: body contains expected heading"
+if grep -q "^# Review history" "$tmp/review-history.md" 2>/dev/null; then
+  ok "$t"
+else
+  ng "$t" "missing '# Review history' heading"
+fi
+
 # ---- Summary --------------------------------------------------------------
 
 printf "\n--- summary: %d pass, %d fail ---\n" "$pass" "$fail"
