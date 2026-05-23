@@ -1588,8 +1588,8 @@ This is a non-blocking quality gate: an external coding agent (Codex by default)
 if "$CLAUDE_PLUGIN_ROOT/scripts/doctor.sh" --format=json | python3 -c '
 import sys, json
 status = json.load(sys.stdin)
-results = status.get("results", [])
-for r in results:
+checks = status.get("checks", [])
+for r in checks:
     if r.get("name") == "codex" and r.get("present"):
         sys.exit(0)
 sys.exit(1)

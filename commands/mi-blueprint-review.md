@@ -25,6 +25,22 @@ description: Orchestrate a full blueprint review on a markdown file: initial con
 - Reviewer agent's MCP server reachable (`/mi-doctor`).
 - File exists and is writable.
 
+## Phase progression contract (READ BEFORE EXECUTING)
+
+This orchestrator runs FIVE phases in order: Phase 1 (Step 2) → Phase 2 (Step 3) → Phase 3 (Step 4) → Phase 4 (Step 5) → Phase 5 (Step 6). Every phase is **mandatory**. The only allowed early exits are the explicit branches listed below — nothing else.
+
+| Phase | Step | Allowed skip / early exit | NOT allowed |
+| --- | --- | --- | --- |
+| 1 — initial consistency | Step 2 | `blocked` from sub-agent → stop the whole orchestrator. | Skipping because Phase 1 returned `success` (Phase 1 success is the common case, not a reason to skip later phases). |
+| 2 — item enumeration | Step 3 | `enumerate` exits 2 → abort orchestrator. Descriptor count > `MAX_ITEMS_PER_REVIEW` → print refusal and stop. | Skipping Step 3 outright. |
+| 3 — per-item batched review | Step 4 | Descriptor count == 0 → skip Step 4 and jump to Step 5 (this is the **only** way to skip Step 4). | Skipping for cost, time, token budget, "the items look fine", or any other unilateral reason. Stopping after Phase 2 enumeration without spawning the item sub-agents. Pruning descriptors that the enumerator returned. |
+| 4 — final consistency | Step 5 | `blocked` from sub-agent → stop. | Skipping because Phase 3 found nothing actionable, because Phase 1 was clean, or because count was 0 (Phase 4 still runs in the count==0 case — it's the catch-all for cross-section contradictions). |
+| 5 — final report | Step 6 | (none) | Skipping. Every run ends with the Phase 5 report, even on early `blocked` exits, so the inspector knows what state the file is in. |
+
+If you find yourself about to deviate from this contract for a reason not in the "Allowed skip" column — STOP. The right action is to run the phase. Cost, token usage, wall-clock time, and "the previous phase was clean" are **never** valid skip conditions. If the inspector wants a cheaper run, they re-invoke with smaller `<max-consistency-iter>` / `<max-item-iter>` / `--reasoning-effort low` / `--scope` — not by you silently dropping phases.
+
+Announce each phase as you enter it (one short line: "Phase N — <name> — starting") so the inspector can see the progression and immediately notice if a phase was skipped.
+
 ## Execution
 
 ### Step 1 — Validate inputs and resolve constants
@@ -101,7 +117,9 @@ sub-agent substitutes it into `{{LESSONS_BLOCK}}` per its `## Inputs` block.
 When the value is empty, the substitution rule drops the placeholder line
 entirely so the rendered prompt has no stray blank line.
 
-### Step 2 — Phase 1: initial consistency loop
+### Step 2 — Phase 1: initial consistency loop **(MANDATORY)**
+
+Announce: `Phase 1 — initial consistency — starting`.
 
 Spawn the `blueprint-consistency-reviewer` sub-agent exactly as `/mi-blueprint-review-consistency` does. Parameters: `file`, `max_c`, `agent`, `reviewer_tool`, `reasoning_effort` (G3).
 
@@ -111,7 +129,9 @@ Parameters passed to the sub-agent: `file`, `max_c`, `agent`, `reviewer_tool`, `
 - On `partial` (max-iter): prompt `y/n`. On `y`: re-spawn the same sub-agent with the same parameters and the file's current state. On `n`: continue to Step 3 with the remaining findings inline.
 - On `blocked`: surface and stop the whole orchestrator.
 
-### Step 3 — Phase 2: item enumeration
+### Step 3 — Phase 2: item enumeration **(MANDATORY)**
+
+Announce: `Phase 2 — item enumeration — starting`.
 
 Render the enumeration prompt by substituting placeholders in `templates/blueprint-reviewer-prompt-enumerate.md.tmpl`. The two scope-related placeholders depend on whether `--scope` was given:
 
@@ -148,9 +168,13 @@ If the resolved descriptor count exceeds `MAX_ITEMS_PER_REVIEW`, print:
 
 …and stop.
 
-If the count is 0 (free-form spec with no items), skip Step 4 entirely and proceed to Step 5.
+If the count is 0 (free-form spec with no items), skip Step 4 entirely and proceed to Step 5. **This is the only condition under which Step 4 may be skipped** — see the Phase progression contract above.
 
-### Step 4 — Phase 3: per-item batched review
+### Step 4 — Phase 3: per-item batched review **(MANDATORY when descriptor count ≥ 1)**
+
+Announce: `Phase 3 — per-item review — starting (N descriptors, batch size B)`.
+
+You **MUST** spawn a `blueprint-item-reviewer` sub-agent for every descriptor returned by Step 3 (do not prune, do not sample, do not stop after Phase 2's enumeration "looks reasonable"). Cost, token usage, and wall-clock time are not valid reasons to skip — the Phase 1 consistency review and the Phase 3 per-item review catch different classes of bugs (Phase 1 = cross-item contradictions; Phase 3 = single-item ambiguities, missing acceptance criteria, under-specified constraints), so skipping Phase 3 silently degrades review coverage in a way the inspector cannot see. If the descriptor count is genuinely too large, the only correct action is the `MAX_ITEMS_PER_REVIEW` refusal in Step 3, not unilateral pruning here.
 
 Parameters passed to each `blueprint-item-reviewer` sub-agent spawn: `file`, `descriptor`, `instance_id`, `max_i`, `agent`, `reviewer_tool`, `reasoning_effort` (G3), and `lessons_block` (from Step 1.5 — empty unless the file under review has a sibling blueprint-lessons.md with selected-count > 0).
 
@@ -205,9 +229,11 @@ for batch_start in range(0, len(descriptors), batch_size):
 
 When all batches complete, proceed to Step 5.
 
-### Step 5 — Phase 4: final consistency loop
+### Step 5 — Phase 4: final consistency loop **(MANDATORY — runs even if Phase 3 was skipped)**
 
-Identical to Step 2. Catches contradictions introduced by item-level rewrites in Step 4.
+Announce: `Phase 4 — final consistency — starting`.
+
+Identical to Step 2. Catches contradictions introduced by item-level rewrites in Step 4 (and, when Phase 3 was skipped because count==0, still catches any cross-section drift that Phase 1's `partial` exit may have left behind). **Do not skip** because Phase 1 was clean, because Phase 3 made no changes, or because the file "looks fine after Phase 3" — every successful orchestrator run ends Phase 4 either with `success` or with the inspector explicitly answering the max-iter prompt.
 
 Parameters passed to the sub-agent: `file`, `max_c`, `agent`, `reviewer_tool`, `reasoning_effort` (G3), and `lessons_block` (from Step 1.5 — empty unless the file under review has a sibling blueprint-lessons.md with selected-count > 0).
 
@@ -215,7 +241,9 @@ Parameters passed to the sub-agent: `file`, `max_c`, `agent`, `reviewer_tool`, `
 - On `partial` (max-iter): prompt `y/n` per Step 2. Continue to Step 6 either way.
 - On `blocked`: surface and stop.
 
-### Step 6 — Phase 5: final report
+### Step 6 — Phase 5: final report **(MANDATORY)**
+
+Announce: `Phase 5 — final report — starting`.
 
 Inspect the file's current `<!-- REVIEW-FINDING -->` blocks (via `scripts/blueprint-review.sh parse-findings`):
 
