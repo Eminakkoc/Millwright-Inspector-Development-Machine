@@ -1,0 +1,44 @@
+$schema: "http://json-schema.org/draft-07/schema#"
+title: review-history
+description: Append-only review history for a single blueprint version. Sibling to requirements.md in blueprints/current/; rotates with the blueprint.
+type: object
+additionalProperties: false
+required:
+  - id
+  - feature
+  - requirements-id
+  - last-finding-id
+  - finding-count-total
+  - finding-count-unresolved
+  - last-review-at
+properties:
+  id:
+    type: string
+    pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    description: UUID v4 identifying this review-history.md instance.
+  feature:
+    type: string
+    pattern: "^[a-z0-9-]+$"
+    description: Feature slug (matches workflow-stream/<feature>/).
+  requirements-id:
+    oneOf:
+      - type: string
+        pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+      - type: "null"
+    description: Sibling requirements.md's id; nullable until backfilled in Phase A.
+  last-finding-id:
+    type: string
+    pattern: "^F-[0-9]{3,}$"
+    description: Lifetime-monotonic counter; bootstrap value is F-000.
+  finding-count-total:
+    type: integer
+    minimum: 0
+    description: Total findings ever appended.
+  finding-count-unresolved:
+    type: integer
+    minimum: 0
+    description: Findings currently in last-status != resolved.
+  last-review-at:
+    type: string
+    format: date-time
+    description: ISO-8601 UTC timestamp of the most recent persist pass.
