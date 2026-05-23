@@ -263,14 +263,17 @@ def render(u, r):
 block = render(unresolved, resolved)
 while len(block) > BUDGET_CHARS:
     if resolved:
-        resolved.pop()  # drop oldest resolved first
+        resolved.pop()  # drop oldest resolved first (sort is recency-desc, so [-1] is oldest)
     elif any(f["severity"] == "low" for f in unresolved):
-        # drop oldest low-severity unresolved
-        for i in range(len(unresolved) - 1, -1, -1):
-            if unresolved[i]["severity"] == "low":
+        # drop OLDEST low-severity unresolved. The unresolved list is sorted
+        # by (severity_rank, id_asc) — so lows live at the tail of the list,
+        # with the LOWEST id (oldest) appearing FIRST in the low range. Iterate
+        # forward and pop the first low found to drop the oldest one.
+        for i, f in enumerate(unresolved):
+            if f["severity"] == "low":
                 unresolved.pop(i); break
     else:
-        break  # accept overrun; never drop protected findings
+        break  # accept overrun; never drop unresolved high/medium (protected per spec §6.2)
     block = render(unresolved, resolved)
 
 print(block)

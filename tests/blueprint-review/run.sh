@@ -153,6 +153,24 @@ out="$("$REPO_ROOT/scripts/blueprint-review.sh" build-summary \
 # Rough check: output stays under 8000 characters (~1500 tokens × ~5 chars/token + scaffold)
 if [[ ${#out} -lt 8000 ]]; then ok "$t"; else ng "$t" "exceeded 8000 chars (${#out})"; fi
 
+t="build-summary: low-drop truncation removes OLDEST low (not newest)"
+# Regression for R2-A: the v1.4-test bug. When resolved bucket is empty AND the
+# unresolved-low bucket must be trimmed to fit budget, the loop should drop the
+# OLDEST low (lowest id) first, not the newest. Pre-fix it iterated from the end
+# and popped the first low it found there, which was the highest-id (newest) low
+# — the opposite of what the comment claimed.
+out="$("$REPO_ROOT/scripts/blueprint-review.sh" build-summary \
+       "$FIXTURES/summary-trunc-low/review-history.md" consistency 2>/dev/null)"
+if [[ ${#out} -lt 7500 ]] \
+   && grep -q "F-001" <<<"$out" \
+   && grep -q "F-002" <<<"$out" \
+   && grep -q "F-009" <<<"$out" \
+   && ! grep -q "F-005\b" <<<"$out"; then
+  ok "$t"
+else
+  ng "$t" "expected oldest low (F-005) dropped, newest low (F-009) kept; output ${#out} chars"
+fi
+
 # ---- Task 6: persist-findings ---------------------------------------------
 
 t="persist: append new finding bumps last-finding-id"
