@@ -165,6 +165,118 @@ print(json.dumps(out, indent=2))
 PYEOF
     ;;
 
+  build-summary)
+    history_file="${1:-}"
+    phase="${2:-}"
+    [[ -n "$history_file" && -n "$phase" ]] || { echo "usage: $0 build-summary <history-file> <phase> [--scope-id <id>]..." >&2; exit 64; }
+    [[ -f "$history_file" ]] || { echo "error: history file not found: $history_file" >&2; exit 1; }
+    [[ "$phase" =~ ^(consistency|batch)$ ]] || { echo "error: phase must be 'consistency' or 'batch'" >&2; exit 64; }
+    shift 2
+
+    scope_ids=()
+    while [[ $# -gt 0 ]]; do
+      case "$1" in
+        --scope-id)   scope_ids+=("${2:-}"); shift 2 ;;
+        --scope-id=*) scope_ids+=("${1#--scope-id=}"); shift ;;
+        *) echo "error: unknown arg: $1" >&2; exit 64 ;;
+      esac
+    done
+
+    python3 - "$history_file" "$phase" ${scope_ids[@]+"${scope_ids[@]}"} <<'PYEOF'
+import sys, re
+
+history_path = sys.argv[1]
+phase = sys.argv[2]
+scope_ids = set(sys.argv[3:])
+
+BUDGET_CHARS = 7500   # ~1500 tokens at ~5 chars/token average
+SEVERITY_RANK = {"high": 0, "medium": 1, "low": 2}
+
+with open(history_path, encoding="utf-8", errors="replace") as f:
+    text = f.read()
+
+# Strip frontmatter
+m = re.match(r'^---\n(.*?)\n---\n', text, re.DOTALL)
+body = text[m.end():] if m else text
+
+# Parse ## F-NNN sections
+findings = []
+section_re = re.compile(r'^## (F-\d{3,})\s*\n((?:(?!^## ).)*)', re.MULTILINE | re.DOTALL)
+for sm in section_re.finditer(body):
+    fid = sm.group(1)
+    sb = sm.group(2)
+    def field(name):
+        fm = re.search(rf'^- {re.escape(name)}:\s*(.+?)$', sb, re.MULTILINE)
+        return fm.group(1).strip() if fm else None
+    def field_multi(name):
+        fm = re.search(rf'^- {re.escape(name)}:\s*\|\n((?:    .+\n?)+)', sb, re.MULTILINE)
+        if not fm: return None
+        return "\n".join(l[4:] for l in fm.group(1).splitlines()).strip()
+    findings.append({
+        "id": fid,
+        "severity": field("severity") or "medium",
+        "phase": field("phase") or "item",
+        "target": field("target") or "file",
+        "last_status": field("last-status") or "still-present",
+        "last_status_at": field("last-status-at") or "",
+        "resolved_by_change": field("resolved_by_change") or "",
+        "finding": (field_multi("finding") or "").splitlines()[0] if field_multi("finding") else "",
+    })
+
+if not findings:
+    sys.exit(0)  # empty output
+
+# Relevance filter
+def relevant(f):
+    if phase == "consistency":
+        return True  # caller passes scope filtering separately; default to all
+    # batch: target must be in scope_ids OR file
+    return f["target"] in scope_ids or f["target"] == "file"
+
+relevant_findings = [f for f in findings if relevant(f)]
+if not relevant_findings:
+    sys.exit(0)
+
+unresolved = [f for f in relevant_findings if f["last_status"] != "resolved"]
+resolved   = [f for f in relevant_findings if f["last_status"] == "resolved"]
+
+unresolved.sort(key=lambda f: (SEVERITY_RANK.get(f["severity"], 3), f["id"]))
+resolved.sort(key=lambda f: f["last_status_at"], reverse=True)
+
+# Truncation invariant: protect unresolved-high + current-item-tied resolved
+def render(u, r):
+    out = ["## Prior review context (review-history.md)"]
+    if u:
+        out.append("")
+        out.append("Currently unresolved (verify still in spec; reconcile per the contract):")
+        for f in u:
+            out.append(f"- {f['id']} [{f['severity']}, {f['target']}]: {f['finding']}")
+    if r:
+        out.append("")
+        out.append("Recently resolved (do NOT re-flag unless underlying content has regressed):")
+        for f in r:
+            rbc = f["resolved_by_change"] or "(no resolution note)"
+            out.append(f"- {f['id']} [resolved {f['last_status_at'][:10]}, {f['target']}]: {rbc}")
+    out.append("")
+    return "\n".join(out)
+
+block = render(unresolved, resolved)
+while len(block) > BUDGET_CHARS:
+    if resolved:
+        resolved.pop()  # drop oldest resolved first
+    elif any(f["severity"] == "low" for f in unresolved):
+        # drop oldest low-severity unresolved
+        for i in range(len(unresolved) - 1, -1, -1):
+            if unresolved[i]["severity"] == "low":
+                unresolved.pop(i); break
+    else:
+        break  # accept overrun; never drop protected findings
+    block = render(unresolved, resolved)
+
+print(block)
+PYEOF
+    ;;
+
   alloc-final-id)
     file="${1:-}"
     [[ -n "$file" && -f "$file" ]] || { echo "usage: $0 alloc-final-id <file>" >&2; exit 64; }

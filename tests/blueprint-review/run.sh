@@ -106,6 +106,53 @@ else
   ng "$t" "expected hook to skip non-data-root paths"
 fi
 
+# ---- Task 5: build-summary ------------------------------------------------
+
+t="build-summary: empty history returns empty output"
+out="$("$REPO_ROOT/scripts/blueprint-review.sh" build-summary \
+       "$FIXTURES/summary-empty/review-history.md" consistency 2>/dev/null || true)"
+if [[ -z "$out" ]]; then ok "$t"; else ng "$t" "expected empty, got: $out"; fi
+
+t="build-summary: unresolved-only renders all unresolved"
+out="$("$REPO_ROOT/scripts/blueprint-review.sh" build-summary \
+       "$FIXTURES/summary-unresolved-only/review-history.md" consistency 2>/dev/null)"
+if grep -q "F-001" <<<"$out" && grep -q "F-002" <<<"$out" && grep -q "Currently unresolved" <<<"$out"; then
+  ok "$t"
+else
+  ng "$t" "missing expected ids or heading"
+fi
+
+t="build-summary: mixed renders both unresolved and resolved sections"
+out="$("$REPO_ROOT/scripts/blueprint-review.sh" build-summary \
+       "$FIXTURES/summary-mixed/review-history.md" consistency 2>/dev/null)"
+if grep -q "Currently unresolved" <<<"$out" \
+   && grep -q "Recently resolved" <<<"$out" \
+   && grep -q "F-002" <<<"$out" \
+   && grep -q "F-001" <<<"$out"; then
+  ok "$t"
+else
+  ng "$t" "missing one of the expected sections / ids"
+fi
+
+t="build-summary: batch filter scopes to named items"
+out="$("$REPO_ROOT/scripts/blueprint-review.sh" build-summary \
+       "$FIXTURES/summary-mixed/review-history.md" batch \
+       --scope-id PAY-001 --scope-id PAY-002 2>/dev/null)"
+# PAY-003 finding should be filtered out; PAY-001 + PAY-002 + file-level kept.
+if ! grep -q "F-003" <<<"$out" \
+   && grep -q "F-001" <<<"$out" \
+   && grep -q "F-002" <<<"$out"; then
+  ok "$t"
+else
+  ng "$t" "expected F-001/F-002/F-004 kept, F-003 filtered"
+fi
+
+t="build-summary: oversize history truncates to budget"
+out="$("$REPO_ROOT/scripts/blueprint-review.sh" build-summary \
+       "$FIXTURES/summary-oversize/review-history.md" consistency 2>/dev/null)"
+# Rough check: output stays under 8000 characters (~1500 tokens × ~5 chars/token + scaffold)
+if [[ ${#out} -lt 8000 ]]; then ok "$t"; else ng "$t" "exceeded 8000 chars (${#out})"; fi
+
 # ---- Summary --------------------------------------------------------------
 
 printf "\n--- summary: %d pass, %d fail ---\n" "$pass" "$fail"
