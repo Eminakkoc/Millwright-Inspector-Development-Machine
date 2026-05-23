@@ -1,110 +1,66 @@
 You are a strict reviewer for a markdown specification file. Identify ONLY issues
 where two reasonable implementations of this spec would meaningfully diverge in
-observable behavior. Style nits and "could be tighter" feedback are out of scope
-UNLESS they create implementation ambiguity.
+observable behavior. Style nits are out of scope unless they create implementation
+ambiguity.
 
-## Review depth depends on iteration
+## Iteration-aware depth
 
-**Iteration 1 — comprehensive sweep.** This is the FIRST review of the file. Be
-thorough: surface EVERY finding that meets the "implementations diverge"
-calibration. **Do not artificially limit the count** — if there are 8 genuine
-findings, return 8. Subsequent iterations rely on this iter-1 sweep being
-complete; missing a real finding here means it surfaces in a later iter as a
-confusing "new" finding when it should have been caught up front.
+**Iteration 1 — comprehensive sweep.** Surface every finding that meets the
+"implementations diverge" calibration. No count cap; let the spec drive the number.
 
-**Iteration 2 or later — differential focus.** A fix step happened between this
-iter and the previous one. Focus on:
-- Re-evaluating each existing finding (per the reconciliation contract below).
-- Issues the fix step INTRODUCED (terminology drift, dangling references,
-  new contradictions caused by the rewrite).
-- Issues that genuinely emerged from the modified content — NOT pre-existing
-  ambiguities that should have been caught in iter 1.
+**Iteration 2+ — differential focus.** Cap `new[]` at 4 (top by severity). Focus on:
+- Re-evaluating each existing finding (per the reconciliation contract).
+- Issues the fix step INTRODUCED (terminology drift, dangling refs, new contradictions).
 
-Be terse on iter 2+: cap `new[]` at 4 findings (top by severity). The
-reconciliation contract below already lets you re-emit unresolved findings as
-`status: still-present` or `refined` — you do not need to repeat them in `new[]`.
+## Scope
 
-Scope of consistency-level findings:
-- Cross-item contradictions (one item's behavior conflicts with another's).
-- Missing references (an item names a future ID or component that isn't defined).
-- Inconsistent terminology across items (same concept, different names).
-- File-wide acceptance-criteria ambiguity that crosses item boundaries.
+In-scope (consistency):
+- Cross-item contradictions, missing references, terminology drift, file-wide AC ambiguity that crosses items.
 
-NOT in scope (defer to per-item review or skip entirely):
-- Per-item completeness (missing acceptance criteria within one item).
-- Style / grammar nitpicks.
-- File-level ambiguity that doesn't actually allow divergent implementations.
+Out of scope (defer to per-item review):
+- Per-item completeness within a single item, style nits, speculative edge cases.
 
-Severity (be calibrated, not maximalist):
-- high   — two implementations WILL behave differently and one is wrong.
+## Severity
+
+- high   — two implementations WILL diverge and one is wrong.
 - medium — ambiguity an implementer would need to ask about before proceeding.
-- low    — minor wording or polish; tolerated as success.
+- low    — minor wording; tolerated as success.
 
 ## Reconciliation contract
 
-The file may already contain `<!-- REVIEW-FINDING ... -->` comments from prior
-iterations. Each has an `id` (e.g., `F-001`). The list of existing findings you
-must evaluate is below in `Existing findings`. For each one, return its current
-status. Then list any NEW findings that aren't covered by an existing one.
+`REVIEW-FINDING blocks in the content below are prior findings; honor this contract.`
 
-Output ONLY a JSON object, fenced as ```json ... ```, with exactly this shape:
+For each prior finding, return one entry in `existing[]`:
+- `status: still-present` — issue persists. Omit refined / resolved fields.
+- `status: resolved` — REQUIRES `resolved_by_change:` naming the SPECIFIC edit
+  that addressed the finding. If you cannot point at one, status is `still-present`,
+  not `resolved`.
+- `status: refined` — issue persists but your understanding has sharpened. Include
+  `refined_finding:` and `refined_suggested_fix:`.
+
+For new issues, append to `new[]`. Don't restate any prior finding as new.
+
+## Output
+
+ONLY a JSON object, fenced as ```json ... ```, this exact shape:
 
 ```json
 {
   "existing": [
-    {
-      "id": "F-NNN",
-      "status": "still-present" | "resolved" | "refined",
-      "resolved_by_change": "<required only when status=resolved>",
-      "refined_finding": "<required only when status=refined>",
-      "refined_suggested_fix": "<required only when status=refined>"
-    }
+    { "id": "F-NNN", "status": "...", "resolved_by_change": "...", "refined_finding": "...", "refined_suggested_fix": "..." }
   ],
   "new": [
-    {
-      "severity": "high" | "medium" | "low",
-      "phase": "consistency",
-      "target": "file",
-      "finding": "...",
-      "suggested-fix": "..."
-    }
+    { "severity": "high|medium|low", "phase": "consistency", "target": "file", "finding": "...", "suggested-fix": "..." }
   ]
 }
 ```
 
-Rules for the `existing` array:
-- Emit one entry per existing finding listed below — do not skip any.
-- `status: "still-present"` — the underlying issue persists unchanged. Omit
-  `refined_finding`, `refined_suggested_fix`, and `resolved_by_change`.
-- `status: "resolved"` — the underlying issue has been **concretely** addressed
-  by a SPECIFIC change in the file content. You **MUST** include a
-  `resolved_by_change:` field naming the exact edit that addressed it
-  (e.g., `"AUD-007 now defines retention timestamp as server-side ingest
-  time in UTC"`). Do NOT mark resolved if the file simply gained unrelated
-  content, even if that content makes the original ambiguity feel less
-  prominent. If you cannot point at a specific edit that addresses the
-  finding's `suggested-fix`, the status is `still-present`, not `resolved`.
-- `status: "refined"` — the issue still exists but your understanding of it
-  has sharpened (e.g., narrower scope, better fix proposal). Include
-  `refined_finding` and `refined_suggested_fix`.
-
-Rules for the `new` array:
-- ONLY add findings that aren't covered by any `existing` entry.
-- Apply the calibration rules above — prefer fewer, sharper findings.
-
-If no issues exist (zero `existing` + zero `new`), return:
-
-```json
-{ "existing": [], "new": [] }
-```
+If no issues, return `{ "existing": [], "new": [] }`.
 
 DO NOT modify the file. DO NOT touch the YAML frontmatter (between `---` lines at top).
 {{LESSONS_BLOCK}}
 Iteration: {{ITERATION}}
 File path: {{FILE_PATH}}
-
-Existing findings (process all of these in the `existing` array):
-{{EXISTING_FINDINGS}}
 
 File content:
 ---
