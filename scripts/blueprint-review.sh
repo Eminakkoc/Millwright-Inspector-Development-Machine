@@ -277,6 +277,120 @@ print(block)
 PYEOF
     ;;
 
+  persist-findings)
+    history_file="${1:-}"
+    input_json="${2:-}"
+    [[ -n "$history_file" && -n "$input_json" ]] || { echo "usage: $0 persist-findings <history-file> <input.json>" >&2; exit 64; }
+    [[ -f "$history_file" && -w "$history_file" ]] || { echo "error: history file not found or not writable: $history_file" >&2; exit 1; }
+    [[ -f "$input_json" ]] || { echo "error: input json not found: $input_json" >&2; exit 1; }
+
+    python3 - "$history_file" "$input_json" <<'PYEOF'
+import sys, re, json, datetime as dt
+
+history_path, input_path = sys.argv[1], sys.argv[2]
+with open(history_path, encoding="utf-8", errors="replace") as f:
+    raw = f.read()
+with open(input_path, encoding="utf-8") as f:
+    inputs = json.load(f)
+
+# Split frontmatter and body
+m = re.match(r'^(---\n)(.*?)(\n---\n)', raw, re.DOTALL)
+if not m:
+    print("error: history file has no frontmatter", file=sys.stderr); sys.exit(1)
+fm_open, fm_body, fm_close = m.group(1), m.group(2), m.group(3)
+body = raw[m.end():]
+
+# Extract current last-finding-id
+lid_match = re.search(r'(?m)^last-finding-id:\s*F-(\d+)\s*$', fm_body)
+next_n = (int(lid_match.group(1)) + 1) if lid_match else 1
+
+now_iso = dt.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+
+# Apply inputs
+allocated_last = lid_match.group(1) if lid_match else "000"
+for item in inputs:
+    status = item.get("status")
+    if status == "new":
+        # Allocate next id (override if input provides one and it matches expected)
+        new_id = item.get("id") or f"F-{next_n:03d}"
+        # Append a fresh section
+        finding_text = item.get("finding", "").strip()
+        fix_text = item.get("suggested_fix", "").strip()
+        section = f"""
+
+## {new_id}
+- severity: {item.get("severity", "medium")}
+- phase: {item.get("phase", "item")}
+- target: {item.get("target", "file")}
+- first-seen: {item.get("first_seen", now_iso)} (cycle {item.get("cycle_slug", "")}, iter {item.get("iter", 1)})
+- last-status: still-present
+- last-status-at: {item.get("first_seen", now_iso)}
+- finding: |
+    {finding_text}
+- suggested-fix: |
+    {fix_text}
+"""
+        body = body.rstrip() + section
+        m2 = re.match(r"F-(\d+)", new_id)
+        if m2:
+            allocated_last = m2.group(1)
+            next_n = int(allocated_last) + 1
+    elif status in ("resolved", "dropped"):
+        fid = item["id"]
+        ts = item.get("resolved_at") or item.get("dropped_at") or now_iso
+        # Locate the section
+        pat = re.compile(rf"(^## {re.escape(fid)}\s*\n)((?:(?!^## ).)*?)(?=^## |\Z)", re.MULTILINE | re.DOTALL)
+        sm = pat.search(body)
+        if not sm:
+            print(f"warning: finding {fid} not in history; skipped", file=sys.stderr)
+            continue
+        section_body = sm.group(2)
+        # Replace last-status line
+        section_body = re.sub(r"(?m)^- last-status:.*$", f"- last-status: {status}", section_body)
+        # Replace last-status-at line (insert if absent)
+        if re.search(r"(?m)^- last-status-at:", section_body):
+            section_body = re.sub(r"(?m)^- last-status-at:.*$", f"- last-status-at: {ts}", section_body)
+        else:
+            section_body = re.sub(r"(?m)(^- last-status:.*$)", rf"\1\n- last-status-at: {ts}", section_body)
+        # resolved_by_change (only for resolved)
+        if status == "resolved":
+            rbc = item.get("resolved_by_change", "")
+            if re.search(r"(?m)^- resolved_by_change:", section_body):
+                section_body = re.sub(r"(?m)^- resolved_by_change:.*$", f'- resolved_by_change: "{rbc}"', section_body)
+            else:
+                section_body = re.sub(r"(?m)(^- last-status-at:.*$)", rf'\1\n- resolved_by_change: "{rbc}"', section_body)
+        body = body[:sm.start()] + sm.group(1) + section_body + body[sm.end():]
+
+# Recompute counters
+all_ids = re.findall(r"(?m)^## (F-\d+)", body)
+statuses = {}
+for fid in all_ids:
+    pat = re.compile(rf"^## {re.escape(fid)}\s*\n((?:(?!^## ).)*)", re.MULTILINE | re.DOTALL)
+    sm = pat.search(body)
+    if sm:
+        st_m = re.search(r"(?m)^- last-status:\s*(\S+)", sm.group(1))
+        statuses[fid] = st_m.group(1) if st_m else "still-present"
+total = len(all_ids)
+unresolved = sum(1 for s in statuses.values() if s != "resolved" and s != "dropped")
+
+# Rewrite frontmatter
+def set_field(fm, name, value):
+    pat = re.compile(rf"(?m)^{re.escape(name)}:.*$")
+    if pat.search(fm):
+        return pat.sub(f"{name}: {value}", fm, count=1)
+    return fm.rstrip("\n") + f"\n{name}: {value}"
+
+fm_body = set_field(fm_body, "last-finding-id", f"F-{int(allocated_last):03d}")
+fm_body = set_field(fm_body, "finding-count-total", str(total))
+fm_body = set_field(fm_body, "finding-count-unresolved", str(unresolved))
+fm_body = set_field(fm_body, "last-review-at", now_iso)
+
+new_raw = fm_open + fm_body + fm_close + body
+with open(history_path, "w", encoding="utf-8") as f:
+    f.write(new_raw)
+PYEOF
+    ;;
+
   alloc-final-id)
     file="${1:-}"
     [[ -n "$file" && -f "$file" ]] || { echo "usage: $0 alloc-final-id <file>" >&2; exit 64; }

@@ -153,6 +153,42 @@ out="$("$REPO_ROOT/scripts/blueprint-review.sh" build-summary \
 # Rough check: output stays under 8000 characters (~1500 tokens × ~5 chars/token + scaffold)
 if [[ ${#out} -lt 8000 ]]; then ok "$t"; else ng "$t" "exceeded 8000 chars (${#out})"; fi
 
+# ---- Task 6: persist-findings ---------------------------------------------
+
+t="persist: append new finding bumps last-finding-id"
+tmp_p="$(mktemp -d)"
+trap 'rm -rf "$tmp_p"' EXIT
+cp "$FIXTURES/summary-mixed/review-history.md" "$tmp_p/h.md"
+"$REPO_ROOT/scripts/blueprint-review.sh" persist-findings "$tmp_p/h.md" \
+   "$FIXTURES/persist-input.json" >/dev/null 2>&1
+lid="$("$REPO_ROOT/scripts/frontmatter.sh" get "$tmp_p/h.md" last-finding-id 2>/dev/null)"
+if [[ "$lid" == "F-005" ]]; then ok "$t"; else ng "$t" "expected F-005 got $lid"; fi
+
+t="persist: status update flips F-002 to resolved"
+# awk extracts the F-002 section (between '## F-002' and the next '## ' heading)
+section_002="$(awk '/^## F-002/{flag=1;next} /^## /{flag=0} flag' "$tmp_p/h.md")"
+if grep -q 'last-status: resolved' <<<"$section_002"; then
+  ok "$t"
+else
+  ng "$t" "F-002 not marked resolved"
+fi
+
+t="persist: dropped status flips F-001 to dropped (was resolved)"
+section_001="$(awk '/^## F-001/{flag=1;next} /^## /{flag=0} flag' "$tmp_p/h.md")"
+if grep -q 'last-status: dropped' <<<"$section_001"; then
+  ok "$t"
+else
+  ng "$t" "F-001 not marked dropped"
+fi
+
+t="persist: finding-count-total recomputed"
+total="$("$REPO_ROOT/scripts/frontmatter.sh" get "$tmp_p/h.md" finding-count-total 2>/dev/null)"
+if [[ "$total" == "5" ]]; then ok "$t"; else ng "$t" "expected 5 got $total"; fi
+
+t="persist: finding-count-unresolved recomputed"
+unr="$("$REPO_ROOT/scripts/frontmatter.sh" get "$tmp_p/h.md" finding-count-unresolved 2>/dev/null)"
+if [[ "$unr" == "2" ]]; then ok "$t"; else ng "$t" "expected 2 got $unr"; fi
+
 # ---- Summary --------------------------------------------------------------
 
 printf "\n--- summary: %d pass, %d fail ---\n" "$pass" "$fail"
