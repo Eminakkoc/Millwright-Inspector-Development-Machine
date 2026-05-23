@@ -373,8 +373,8 @@ if "$REPO_ROOT/scripts/frontmatter.sh" init review-history "$tmp/review-history.
    FEATURE=test-feat \
    REQUIREMENTS_ID=$(uuidgen | tr 'A-Z' 'a-z') \
    LAST_FINDING_ID=F-000 \
-   FINDING_COUNT_TOTAL=0 \
-   FINDING_COUNT_UNRESOLVED=0 \
+   FINDING_COUNT_TOTAL='!RAW!0' \
+   FINDING_COUNT_UNRESOLVED='!RAW!0' \
    LAST_REVIEW_AT=2026-05-23T00:00:00Z \
    >/dev/null 2>&1; then
   if "$REPO_ROOT/scripts/frontmatter.sh" validate "$tmp/review-history.md" review-history >/dev/null 2>&1; then
@@ -412,8 +412,8 @@ id: {{ID}}
 feature: {{FEATURE}}
 requirements-id: {{REQUIREMENTS_ID}}
 last-finding-id: {{LAST_FINDING_ID}}
-finding-count-total: !RAW!{{FINDING_COUNT_TOTAL}}
-finding-count-unresolved: !RAW!{{FINDING_COUNT_UNRESOLVED}}
+finding-count-total: {{FINDING_COUNT_TOTAL}}
+finding-count-unresolved: {{FINDING_COUNT_UNRESOLVED}}
 last-review-at: {{LAST_REVIEW_AT}}
 ---
 
@@ -422,7 +422,7 @@ last-review-at: {{LAST_REVIEW_AT}}
 (no findings yet)
 ```
 
-The `!RAW!` sentinel marks integer fields — without it the renderer wraps the value in quotes, failing the schema's `type: integer` check. Pattern matches `templates/blueprint-lessons.md.tmpl`.
+**Note:** `!RAW!` is NOT in the template — it's prefixed at the call site, matching the convention used by `templates/blueprint-lessons.md.tmpl`. Callers of `scripts/frontmatter.sh init review-history ...` MUST pass integer values as `FINDING_COUNT_TOTAL='!RAW!0'` etc. Without the prefix, the renderer wraps the value in quotes and schema validation rejects it as a string-not-integer.
 
 - [ ] **Step 4: Run tests, verify they pass**
 
@@ -1765,8 +1765,8 @@ if [[ "$file_dir" == */blueprints/current ]]; then
       FEATURE=$(basename "$(cd "$file_dir/../.." && pwd)") \
       REQUIREMENTS_ID=$("$CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh" get "$file" id 2>/dev/null || echo null) \
       LAST_FINDING_ID=F-000 \
-      FINDING_COUNT_TOTAL=0 \
-      FINDING_COUNT_UNRESOLVED=0 \
+      FINDING_COUNT_TOTAL='!RAW!0' \
+      FINDING_COUNT_UNRESOLVED='!RAW!0' \
       LAST_REVIEW_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   fi
 fi
@@ -2150,8 +2150,8 @@ if [[ ! -f "$review_history" ]]; then
     FEATURE="$feature" \
     REQUIREMENTS_ID="${req_id:-null}" \
     LAST_FINDING_ID=F-000 \
-    FINDING_COUNT_TOTAL=0 \
-    FINDING_COUNT_UNRESOLVED=0 \
+    FINDING_COUNT_TOTAL='!RAW!0' \
+    FINDING_COUNT_UNRESOLVED='!RAW!0' \
     LAST_REVIEW_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 fi
 ```
