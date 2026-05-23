@@ -78,7 +78,7 @@ For each `new[]` entry:
 - Allocate a final `F-NNN` id via `scripts/blueprint-review.sh alloc-final-id "$file_path"`.
 - Append a fresh `REVIEW-FINDING` block at the top of the body (after frontmatter, before the first `## ` heading).
 
-Write the updated file via `Write`. Validate frontmatter byte-for-byte unchanged from your round's starting state. If changed: revert; retry once; on second failure → `Result: blocked`.
+Write the updated file via `Write`. Validate frontmatter byte-for-byte unchanged from your round's starting state — **with one exception**: `alloc-final-id` legitimately updates the `last-finding-id` field on every allocation (state-mutating per spec §5.5). The byte-equality rule is: every OTHER frontmatter field must be unchanged. If a field other than `last-finding-id` differs: revert; retry once; on second failure → `Result: blocked`.
 
 ### Session-expiry fallback
 

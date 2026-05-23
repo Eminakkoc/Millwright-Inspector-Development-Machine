@@ -189,6 +189,35 @@ t="persist: finding-count-unresolved recomputed"
 unr="$("$REPO_ROOT/scripts/frontmatter.sh" get "$tmp_p/h.md" finding-count-unresolved 2>/dev/null)"
 if [[ "$unr" == "2" ]]; then ok "$t"; else ng "$t" "expected 2 got $unr"; fi
 
+t="persist: last-finding-id tracks MAX on non-monotonic input order"
+# Regression for the v1.4-test bug: when inputs arrive non-monotonic (e.g.,
+# consistency findings F-013/14/15 BEFORE per-item F-001..F-012 because
+# consistency blocks live at the top of the spec body), allocated_last must
+# end at the MAX seen, not the last-seen.
+tmp_max="$(mktemp -d)"
+cp "$FIXTURES/schema-good/review-history.md" "$tmp_max/h.md"
+# Build non-monotonic input: F-005 first, then F-003, then F-008.
+cat > "$tmp_max/in.json" <<JSON
+[
+  {"id":"F-005","severity":"medium","phase":"consistency","target":"file","status":"new","first_seen":"2026-05-24T00:00:00Z","cycle_slug":"x","iter":1,"finding":"f5","suggested_fix":"x"},
+  {"id":"F-003","severity":"medium","phase":"item","target":"X-001","status":"new","first_seen":"2026-05-24T00:00:00Z","cycle_slug":"x","iter":1,"finding":"f3","suggested_fix":"x"},
+  {"id":"F-008","severity":"medium","phase":"item","target":"X-002","status":"new","first_seen":"2026-05-24T00:00:00Z","cycle_slug":"x","iter":1,"finding":"f8","suggested_fix":"x"}
+]
+JSON
+"$REPO_ROOT/scripts/blueprint-review.sh" persist-findings "$tmp_max/h.md" "$tmp_max/in.json" >/dev/null 2>&1
+lid_max="$("$REPO_ROOT/scripts/frontmatter.sh" get "$tmp_max/h.md" last-finding-id 2>/dev/null)"
+if [[ "$lid_max" == "F-008" ]]; then ok "$t"; else ng "$t" "expected F-008 (max), got $lid_max"; fi
+
+t="persist: last-review-at written quoted (yaml-safe)"
+# Regression for the v1.4-test bug: an unquoted ISO 8601 timestamp gets
+# auto-converted to a datetime by PyYAML, breaking jsonschema validation.
+if "$REPO_ROOT/scripts/frontmatter.sh" validate "$tmp_max/h.md" review-history >/dev/null 2>&1; then
+  ok "$t"
+else
+  ng "$t" "persist produced a file that fails review-history schema validation (likely unquoted timestamp)"
+fi
+rm -rf "$tmp_max"
+
 # ---- Summary --------------------------------------------------------------
 
 printf "\n--- summary: %d pass, %d fail ---\n" "$pass" "$fail"

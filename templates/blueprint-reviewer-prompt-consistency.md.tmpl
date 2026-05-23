@@ -30,7 +30,12 @@ Out of scope (defer to per-item review):
 
 `REVIEW-FINDING blocks in the content below are prior findings; honor this contract.`
 
-For each prior finding, return one entry in `existing[]`:
+**Scope filter.** The file may contain prior `REVIEW-FINDING` blocks with `phase: item`
+(produced by the per-item batch reviewer). Those belong to a different review pass —
+**do NOT emit `existing[]` entries for them**. Only acknowledge prior findings whose
+`phase` is `consistency`.
+
+For each prior `phase: consistency` finding, return one entry in `existing[]`:
 - `status: still-present` — issue persists. Omit refined / resolved fields.
 - `status: resolved` — REQUIRES `resolved_by_change:` naming the SPECIFIC edit
   that addressed the finding. If you cannot point at one, status is `still-present`,

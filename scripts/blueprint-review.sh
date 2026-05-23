@@ -333,8 +333,15 @@ for item in inputs:
         body = body.rstrip() + section
         m2 = re.match(r"F-(\d+)", new_id)
         if m2:
-            allocated_last = m2.group(1)
-            next_n = int(allocated_last) + 1
+            # Track MAX, not last-seen — inputs may arrive non-monotonic (e.g.,
+            # consistency findings F-013/14/15 before per-item F-001..F-012
+            # because consistency blocks live at the top of the spec body).
+            # Without this, last-finding-id can regress mid-run, breaking the
+            # lifetime-monotonic invariant the next alloc-final-id relies on.
+            candidate = int(m2.group(1))
+            if candidate > int(allocated_last):
+                allocated_last = m2.group(1).zfill(3)
+                next_n = candidate + 1
     elif status in ("resolved", "dropped"):
         fid = item["id"]
         ts = item.get("resolved_at") or item.get("dropped_at") or now_iso
@@ -383,7 +390,11 @@ def set_field(fm, name, value):
 fm_body = set_field(fm_body, "last-finding-id", f"F-{int(allocated_last):03d}")
 fm_body = set_field(fm_body, "finding-count-total", str(total))
 fm_body = set_field(fm_body, "finding-count-unresolved", str(unresolved))
-fm_body = set_field(fm_body, "last-review-at", now_iso)
+# Quote the timestamp — unquoted ISO 8601 values are auto-converted to datetime
+# objects by PyYAML during validation, which jsonschema can't JSON-serialize.
+# (The frontmatter.sh init renderer quotes scalars automatically; persist-findings
+# doesn't go through the renderer, so we quote explicitly here.)
+fm_body = set_field(fm_body, "last-review-at", f'"{now_iso}"')
 
 new_raw = fm_open + fm_body + fm_close + body
 with open(history_path, "w", encoding="utf-8") as f:
