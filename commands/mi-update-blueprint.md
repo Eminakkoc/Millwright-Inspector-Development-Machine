@@ -10,6 +10,8 @@ Manual inspector-triggered blueprint refresh. Rotates the current blueprint into
 - **The implementation** — codebase + `git diff base-commit..HEAD` — for `## Goals (this cycle)` content and the diagrams.
 - **The previous blueprint** (just rotated to `history/v[<version>]/`) — for sections the implementation alone can't reconstruct: `todo-item-ids` / `todo-list-id` (frontmatter), `## Planned (future cycles)`, `## Non-goals (out of scope)`, `## GIT BRANCH`, and `## Inspector Additions`.
 
+The v1.4 `review-history.md` sibling (when present) rotates alongside `requirements.md` into `history/v[<version>]/review-history.md` via the `blueprints.sh rotate` wildcard move — no special-case wiring required. The fresh `current/` after regeneration starts with a new empty `review-history.md` (lazily initialized by `/mi-blueprint-review` Phase A or by `mi-apply-impact` Step B.4 on the next stage-2 auto-fire).
+
 The journal and the active cycle's quest files (`quest/<active-slug>/todo-list.md`, `quest/<active-slug>/summary.md`, `journal/`) are **not** inputs. Mid-cycle refreshes consult only what's already in the workflow's own state — the implementation describes what was actually built; the previous blueprint carries everything else forward.
 
 Use this command when changes discussed during brainstorming or reviews need to be reflected in the blueprint and you don't want to wait for an auto-trigger (the post-chain drift prompt at stage 4 also calls this command).

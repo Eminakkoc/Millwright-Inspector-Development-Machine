@@ -66,16 +66,17 @@ report "no stale 'mo:' prefix / sync-marker" "$m"
 m=$(git grep -nE '(^|[^A-Za-z])Mo-[a-z]' -- "${EXCLUDES[@]}" || true)
 report "no stale 'Mo-' prose tokens" "$m"
 
-# --- blueprint-item-reviewer read-only invariant ----------------------------
-# The agent must list ONLY mcp__codex__codex in its tools: frontmatter.
-# Adding Read/Write/Edit/Bash/Grep would break the read-only isolation guarantee.
-bir="agents/blueprint-item-reviewer.md"
-bir_tools=$(git show "HEAD:$bir" | awk '/^tools:/{print; exit}')
+# --- blueprint-batch-reviewer read-only invariant (v1.4) ---------------------
+# The agent must list ONLY codex MCP tools (mcp__codex__codex, mcp__codex__codex-reply)
+# in its tools: frontmatter. Adding Read/Write/Edit/Bash/Grep would break the
+# read-only isolation guarantee.
+bbr="agents/blueprint-batch-reviewer.md"
+bbr_tools=$(git show "HEAD:$bbr" | awk '/^tools:/{print; exit}')
 bad=""
 for tok in Read Write Edit Bash Grep; do
-  echo "$bir_tools" | grep -qF "$tok" && bad="${bad}${tok} "
+  echo "$bbr_tools" | grep -qF "$tok" && bad="${bad}${tok} "
 done
-report "blueprint-item-reviewer tools: contains no filesystem tools (Read/Write/Edit/Bash/Grep)" "$bad"
+report "blueprint-batch-reviewer tools: contains no filesystem tools (Read/Write/Edit/Bash/Grep)" "$bad"
 
 echo
 if [[ "$fail" -ne 0 ]]; then
