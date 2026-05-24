@@ -95,6 +95,11 @@ else
       for stage2_artifact in grounding-report.md blueprint-lessons.md; do
         [[ -e "$impl_dir/$stage2_artifact" ]] && rm -f "$impl_dir/$stage2_artifact"
       done
+      # v1.5: review-history.md sibling lives under blueprints/current/ and gets
+      # cleared with the rest of current/ above, but be defensive in case the
+      # loop above changes — explicit remove keeps cleanup intent visible.
+      curr_review_history="$data_root/workflow-stream/$active_feature/blueprints/current/review-history.md"
+      [[ -e "$curr_review_history" ]] && rm -f "$curr_review_history"
       $CLAUDE_PLUGIN_ROOT/scripts/blueprints.sh ensure-current "$active_feature"
       ;;
   esac
@@ -208,7 +213,28 @@ active_item_ids="$($CLAUDE_PLUGIN_ROOT/scripts/todo.sh list PENDING --feature "$
 
 Pass `$active_feature` and `$active_item_ids` through to the shared steps. The shared runbook handles: computing `$planned_ids`, initializing frontmatter, writing the three requirements body sections, scanning skills/rules for the config auto-block, pre-filling the GIT BRANCH section from HEAD, and rendering use-case/sequence/class diagrams with the PlantUML MCP.
 
-After completing Steps A and B of `docs/blueprint-regeneration.md` (requirements + config generation) and before Step C (diagrams), execute Steps B.5 and B.6:
+After completing Steps A and B of `docs/blueprint-regeneration.md` (requirements + config generation) and before Step C (diagrams), execute Steps B.4, B.5, and B.6:
+
+#### Step B.4 — Initialize `review-history.md` (new in v1.5)
+
+The orchestrator at Step B.5 expects a sibling `review-history.md` to exist when `requirements.md` lives under `blueprints/current/`. It will lazily init the file itself, but doing it here gives a deterministic init point in the workflow (and ties `requirements-id` to the freshly-written `requirements.md` exactly once, rather than relying on a re-init lookup later).
+
+```bash
+review_history="$data_root/workflow-stream/$active_feature/blueprints/current/review-history.md"
+if [[ ! -f "$review_history" ]]; then
+  req_id="$("$CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh" get "$requirements_path" id 2>/dev/null)"
+  "$CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh" init review-history "$review_history" \
+    ID="$(uuidgen | tr 'A-Z' 'a-z')" \
+    FEATURE="$active_feature" \
+    REQUIREMENTS_ID="${req_id:-null}" \
+    LAST_FINDING_ID=F-000 \
+    FINDING_COUNT_TOTAL='!RAW!0' \
+    FINDING_COUNT_UNRESOLVED='!RAW!0' \
+    LAST_REVIEW_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+fi
+```
+
+Guarded on existence — re-runs of `mi-apply-impact` don't clobber an existing history (which carries unresolved findings from prior cycles that the v1.5 orchestrator's prompt-header summary will surface). `--force` cleanup above DOES wipe this file (intentional: a forced regen resets the review history along with everything else under `current/`).
 
 #### Step B.5 — Auto-invoke `/mi-blueprint-review` on the new `requirements.md`
 
@@ -227,10 +253,12 @@ for r in checks:
 sys.exit(1)
 '; then
   requirements_path="$data_root/workflow-stream/$active_feature/blueprints/current/requirements.md"
-  # Invoke the orchestrator (defaults: codex, 3 consistency iters, 5 item iters).
+  # v1.5 CLI: --auto-iter replaces positional <max-c-iter> <max-i-iter>. Defaults
+  # (--auto-iter 3, --batch-size 3, --concurrency 3, --reasoning-effort medium) are
+  # the right starting point for stage-2 auto-fire (see docs/blueprint-review-token-reduction/plan.md §11.1).
   # --scope restricts per-item enumeration to Goals only — Planned and Non-goals
-  # items don't need per-item review (see docs/blueprints-review/plan.md §O1).
-  /mi-blueprint-review codex 3 5 "$requirements_path" --scope "Goals (this cycle)"
+  # items don't need per-item review.
+  /mi-blueprint-review codex "$requirements_path" --scope "Goals (this cycle)" --reasoning-effort medium
   review_status="auto-reviewed by codex; any remaining findings are inline as \`<!-- REVIEW-FINDING -->\` comments"
 else
   echo "warning: codex MCP unavailable — skipping stage-2 blueprint review" >&2

@@ -1205,13 +1205,15 @@ inspector reviews a post-review `requirements.md` rather than the raw stage-2 ou
   Delegates to the `blueprint-consistency-reviewer` sub-agent (which writes the file
   directly — safe because consistency review is always serial).
 
-- **`/mi-blueprint-review-item <agent> <max-iter> <file>:<item-id> | <content> [--reasoning-effort <low|medium|high>]`**
-  — single per-item loop. Two modes: file-anchored (edits the file in place) and
-  stateless (prints results to terminal). Delegates to the `blueprint-item-reviewer`
+- **`/mi-blueprint-review-item <agent> <file>:<item-id> | <content> [--auto-iter N] [--reasoning-effort <low|medium|high>]`** (v1.5)
+  — single per-item review run through the v1.5 orchestrator as a `batch_size=1` batch.
+  Two modes: file-anchored (Mode A, edits the file in place) and stateless (Mode B,
+  prints results to terminal). Delegates to the `blueprint-batch-reviewer`
   sub-agent, which is **structurally read-only** — its `tools:` frontmatter contains
-  ONLY the reviewer MCP tool (no `Read`, `Write`, `Edit`, `Bash`, or `Grep`). The
-  calling command applies any region replacement in main via Edit-exact-match. This
-  lets the orchestrator run multiple item sub-agents in parallel without write
+  ONLY the codex MCP tools (`mcp__codex__codex`, `mcp__codex__codex-reply`; no `Read`,
+  `Write`, `Edit`, `Bash`, or `Grep`). The calling command applies any region
+  replacement in main via Edit-exact-match. This lets the orchestrator run multiple
+  batch sub-agents in parallel without write
   conflicts.
 
 - **`/mi-blueprint-review <agent> <max-c-iter> <max-i-iter> <file> [--batch-size N] [--scope <heading>] [--reasoning-effort <low|medium|high>]`**
@@ -1429,7 +1431,7 @@ Markdown file per profile with YAML frontmatter (`name`, `description`, `model`,
 `effort`, `tools`). Commands invoke them by name through the `Agent`/`Task` tool. Every
 profile returns per `docs/sub-agent-return-contract.md` with a ≤ 1k-token return body
 (`Result`, `Artifacts changed`, `Commits`, `Findings / risks`, `Main should read`);
-detailed evidence belongs in artifact files, not the return. The `blueprint-item-reviewer`
+detailed evidence belongs in artifact files, not the return. The `blueprint-batch-reviewer`
 profile additionally emits a **Payload JSON** block before the standard fields (see the
 contract doc's "Payload JSON extension" section). There are **14 profiles**:
 
@@ -1447,8 +1449,8 @@ contract doc's "Payload JSON extension" section). There are **14 profiles**:
 | `sidequest-writer` | sonnet | `/mi-sidequest --write` | answers + performs a small fix; edits project source only — workflow artifacts stay read-only |
 | `review-comment-analyst` | sonnet / high | `/mi-analyze-review` | appends one `### PR-NNN` block per comment to `report.md`; read-only on source |
 | `pr-review-fixer` | sonnet / high | `/mi-continue` PR-Review Apply Handler | applies marked fix blocks, commits them, appends lessons to `lessons-learned.md`; enforces a clean-worktree invariant |
-| `blueprint-consistency-reviewer` | opus / high | `/mi-blueprint-review-consistency` and `/mi-blueprint-review` phases 1/4 (v1.2.0+; §7.9) | runs one whole-file consistency loop, writing the reviewed file directly each iteration (safe — always serial). Exits on `success`, `stable`, `stable-medium`, or `max-iter`. |
-| `blueprint-item-reviewer` | opus / high | `/mi-blueprint-review-item` and `/mi-blueprint-review` phase 3 (v1.2.0+; §7.9) | runs one per-item review loop. **Structurally read-only** — `tools:` contains ONLY the reviewer MCP tool, no filesystem tools. Returns the final region + `remaining_findings` as a Payload JSON block; calling command applies via Edit-exact-match in main. |
+| `blueprint-consistency-reviewer` | opus / high | `/mi-blueprint-review-consistency` and `/mi-blueprint-review` Phase D (v1.5+; §7.9) | runs one whole-file consistency review, owning a single codex session (round 1 via `mcp__codex__codex`, rounds 2+ via `mcp__codex__codex-reply` with delta-only prompts). Writes the reviewed file directly between rounds (safe — always serial). Exits on `success`, `stable`, `stable-medium`, or `max-iter`. |
+| `blueprint-batch-reviewer` | opus / high | `/mi-blueprint-review` Phase C and `/mi-blueprint-review-item` (v1.5+; §7.9; replaces `blueprint-item-reviewer`) | runs one review on a batch of 1..N items, owning a single codex session per batch. **Structurally read-only** — `tools:` contains ONLY codex MCP tools (`mcp__codex__codex`, `mcp__codex__codex-reply`), no filesystem tools. Returns multi-item Payload JSON; calling command applies each item's region replacement via Edit-exact-match in main. |
 
 **Do NOT delegate** (these stay with main): workflow state mutations (`progress.sh`,
 `todo.sh`, `blueprints.sh`, `review.sh set-status` outside `review-iteration-runner`),

@@ -165,6 +165,246 @@ print(json.dumps(out, indent=2))
 PYEOF
     ;;
 
+  build-summary)
+    history_file="${1:-}"
+    phase="${2:-}"
+    [[ -n "$history_file" && -n "$phase" ]] || { echo "usage: $0 build-summary <history-file> <phase> [--scope-id <id>]..." >&2; exit 64; }
+    [[ -f "$history_file" ]] || { echo "error: history file not found: $history_file" >&2; exit 1; }
+    [[ "$phase" =~ ^(consistency|batch)$ ]] || { echo "error: phase must be 'consistency' or 'batch'" >&2; exit 64; }
+    shift 2
+
+    scope_ids=()
+    while [[ $# -gt 0 ]]; do
+      case "$1" in
+        --scope-id)   scope_ids+=("${2:-}"); shift 2 ;;
+        --scope-id=*) scope_ids+=("${1#--scope-id=}"); shift ;;
+        *) echo "error: unknown arg: $1" >&2; exit 64 ;;
+      esac
+    done
+
+    python3 - "$history_file" "$phase" ${scope_ids[@]+"${scope_ids[@]}"} <<'PYEOF'
+import sys, re
+
+history_path = sys.argv[1]
+phase = sys.argv[2]
+scope_ids = set(sys.argv[3:])
+
+BUDGET_CHARS = 7500   # ~1500 tokens at ~5 chars/token average
+SEVERITY_RANK = {"high": 0, "medium": 1, "low": 2}
+
+with open(history_path, encoding="utf-8", errors="replace") as f:
+    text = f.read()
+
+# Strip frontmatter
+m = re.match(r'^---\n(.*?)\n---\n', text, re.DOTALL)
+body = text[m.end():] if m else text
+
+# Parse ## F-NNN sections
+findings = []
+section_re = re.compile(r'^## (F-\d{3,})\s*\n((?:(?!^## ).)*)', re.MULTILINE | re.DOTALL)
+for sm in section_re.finditer(body):
+    fid = sm.group(1)
+    sb = sm.group(2)
+    def field(name):
+        fm = re.search(rf'^- {re.escape(name)}:\s*(.+?)$', sb, re.MULTILINE)
+        return fm.group(1).strip() if fm else None
+    def field_multi(name):
+        fm = re.search(rf'^- {re.escape(name)}:\s*\|\n((?:    .+\n?)+)', sb, re.MULTILINE)
+        if not fm: return None
+        return "\n".join(l[4:] for l in fm.group(1).splitlines()).strip()
+    findings.append({
+        "id": fid,
+        "severity": field("severity") or "medium",
+        "phase": field("phase") or "item",
+        "target": field("target") or "file",
+        "last_status": field("last-status") or "still-present",
+        "last_status_at": field("last-status-at") or "",
+        "resolved_by_change": field("resolved_by_change") or "",
+        "finding": (field_multi("finding") or "").splitlines()[0] if field_multi("finding") else "",
+    })
+
+if not findings:
+    sys.exit(0)  # empty output
+
+# Relevance filter
+def relevant(f):
+    if phase == "consistency":
+        return True  # caller passes scope filtering separately; default to all
+    # batch: target must be in scope_ids OR file
+    return f["target"] in scope_ids or f["target"] == "file"
+
+relevant_findings = [f for f in findings if relevant(f)]
+if not relevant_findings:
+    sys.exit(0)
+
+unresolved = [f for f in relevant_findings if f["last_status"] != "resolved"]
+resolved   = [f for f in relevant_findings if f["last_status"] == "resolved"]
+
+unresolved.sort(key=lambda f: (SEVERITY_RANK.get(f["severity"], 3), f["id"]))
+resolved.sort(key=lambda f: f["last_status_at"], reverse=True)
+
+# Truncation invariant: protect unresolved-high + current-item-tied resolved
+def render(u, r):
+    out = ["## Prior review context (review-history.md)"]
+    if u:
+        out.append("")
+        out.append("Currently unresolved (verify still in spec; reconcile per the contract):")
+        for f in u:
+            out.append(f"- {f['id']} [{f['severity']}, {f['target']}]: {f['finding']}")
+    if r:
+        out.append("")
+        out.append("Recently resolved (do NOT re-flag unless underlying content has regressed):")
+        for f in r:
+            rbc = f["resolved_by_change"] or "(no resolution note)"
+            out.append(f"- {f['id']} [resolved {f['last_status_at'][:10]}, {f['target']}]: {rbc}")
+    out.append("")
+    return "\n".join(out)
+
+block = render(unresolved, resolved)
+while len(block) > BUDGET_CHARS:
+    if resolved:
+        resolved.pop()  # drop oldest resolved first (sort is recency-desc, so [-1] is oldest)
+    elif any(f["severity"] == "low" for f in unresolved):
+        # drop OLDEST low-severity unresolved. The unresolved list is sorted
+        # by (severity_rank, id_asc) — so lows live at the tail of the list,
+        # with the LOWEST id (oldest) appearing FIRST in the low range. Iterate
+        # forward and pop the first low found to drop the oldest one.
+        for i, f in enumerate(unresolved):
+            if f["severity"] == "low":
+                unresolved.pop(i); break
+    else:
+        break  # accept overrun; never drop unresolved high/medium (protected per spec §6.2)
+    block = render(unresolved, resolved)
+
+print(block)
+PYEOF
+    ;;
+
+  persist-findings)
+    history_file="${1:-}"
+    input_json="${2:-}"
+    [[ -n "$history_file" && -n "$input_json" ]] || { echo "usage: $0 persist-findings <history-file> <input.json>" >&2; exit 64; }
+    [[ -f "$history_file" && -w "$history_file" ]] || { echo "error: history file not found or not writable: $history_file" >&2; exit 1; }
+    [[ -f "$input_json" ]] || { echo "error: input json not found: $input_json" >&2; exit 1; }
+
+    python3 - "$history_file" "$input_json" <<'PYEOF'
+import sys, re, json, datetime as dt
+
+history_path, input_path = sys.argv[1], sys.argv[2]
+with open(history_path, encoding="utf-8", errors="replace") as f:
+    raw = f.read()
+with open(input_path, encoding="utf-8") as f:
+    inputs = json.load(f)
+
+# Split frontmatter and body
+m = re.match(r'^(---\n)(.*?)(\n---\n)', raw, re.DOTALL)
+if not m:
+    print("error: history file has no frontmatter", file=sys.stderr); sys.exit(1)
+fm_open, fm_body, fm_close = m.group(1), m.group(2), m.group(3)
+body = raw[m.end():]
+
+# Extract current last-finding-id
+lid_match = re.search(r'(?m)^last-finding-id:\s*F-(\d+)\s*$', fm_body)
+next_n = (int(lid_match.group(1)) + 1) if lid_match else 1
+
+now_iso = dt.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+
+# Apply inputs
+allocated_last = lid_match.group(1) if lid_match else "000"
+for item in inputs:
+    status = item.get("status")
+    if status == "new":
+        # Allocate next id (override if input provides one and it matches expected)
+        new_id = item.get("id") or f"F-{next_n:03d}"
+        # Append a fresh section
+        finding_text = item.get("finding", "").strip()
+        fix_text = item.get("suggested_fix", "").strip()
+        section = f"""
+
+## {new_id}
+- severity: {item.get("severity", "medium")}
+- phase: {item.get("phase", "item")}
+- target: {item.get("target", "file")}
+- first-seen: {item.get("first_seen", now_iso)} (cycle {item.get("cycle_slug", "")}, iter {item.get("iter", 1)})
+- last-status: still-present
+- last-status-at: {item.get("first_seen", now_iso)}
+- finding: |
+    {finding_text}
+- suggested-fix: |
+    {fix_text}
+"""
+        body = body.rstrip() + section
+        m2 = re.match(r"F-(\d+)", new_id)
+        if m2:
+            # Track MAX, not last-seen — inputs may arrive non-monotonic (e.g.,
+            # consistency findings F-013/14/15 before per-item F-001..F-012
+            # because consistency blocks live at the top of the spec body).
+            # Without this, last-finding-id can regress mid-run, breaking the
+            # lifetime-monotonic invariant the next alloc-final-id relies on.
+            candidate = int(m2.group(1))
+            if candidate > int(allocated_last):
+                allocated_last = m2.group(1).zfill(3)
+                next_n = candidate + 1
+    elif status in ("resolved", "dropped"):
+        fid = item["id"]
+        ts = item.get("resolved_at") or item.get("dropped_at") or now_iso
+        # Locate the section
+        pat = re.compile(rf"(^## {re.escape(fid)}\s*\n)((?:(?!^## ).)*?)(?=^## |\Z)", re.MULTILINE | re.DOTALL)
+        sm = pat.search(body)
+        if not sm:
+            print(f"warning: finding {fid} not in history; skipped", file=sys.stderr)
+            continue
+        section_body = sm.group(2)
+        # Replace last-status line
+        section_body = re.sub(r"(?m)^- last-status:.*$", f"- last-status: {status}", section_body)
+        # Replace last-status-at line (insert if absent)
+        if re.search(r"(?m)^- last-status-at:", section_body):
+            section_body = re.sub(r"(?m)^- last-status-at:.*$", f"- last-status-at: {ts}", section_body)
+        else:
+            section_body = re.sub(r"(?m)(^- last-status:.*$)", rf"\1\n- last-status-at: {ts}", section_body)
+        # resolved_by_change (only for resolved)
+        if status == "resolved":
+            rbc = item.get("resolved_by_change", "")
+            if re.search(r"(?m)^- resolved_by_change:", section_body):
+                section_body = re.sub(r"(?m)^- resolved_by_change:.*$", f'- resolved_by_change: "{rbc}"', section_body)
+            else:
+                section_body = re.sub(r"(?m)(^- last-status-at:.*$)", rf'\1\n- resolved_by_change: "{rbc}"', section_body)
+        body = body[:sm.start()] + sm.group(1) + section_body + body[sm.end():]
+
+# Recompute counters
+all_ids = re.findall(r"(?m)^## (F-\d+)", body)
+statuses = {}
+for fid in all_ids:
+    pat = re.compile(rf"^## {re.escape(fid)}\s*\n((?:(?!^## ).)*)", re.MULTILINE | re.DOTALL)
+    sm = pat.search(body)
+    if sm:
+        st_m = re.search(r"(?m)^- last-status:\s*(\S+)", sm.group(1))
+        statuses[fid] = st_m.group(1) if st_m else "still-present"
+total = len(all_ids)
+unresolved = sum(1 for s in statuses.values() if s != "resolved" and s != "dropped")
+
+# Rewrite frontmatter
+def set_field(fm, name, value):
+    pat = re.compile(rf"(?m)^{re.escape(name)}:.*$")
+    if pat.search(fm):
+        return pat.sub(f"{name}: {value}", fm, count=1)
+    return fm.rstrip("\n") + f"\n{name}: {value}"
+
+fm_body = set_field(fm_body, "last-finding-id", f"F-{int(allocated_last):03d}")
+fm_body = set_field(fm_body, "finding-count-total", str(total))
+fm_body = set_field(fm_body, "finding-count-unresolved", str(unresolved))
+# Quote the timestamp — unquoted ISO 8601 values are auto-converted to datetime
+# objects by PyYAML during validation, which jsonschema can't JSON-serialize.
+# (The frontmatter.sh init renderer quotes scalars automatically; persist-findings
+# doesn't go through the renderer, so we quote explicitly here.)
+fm_body = set_field(fm_body, "last-review-at", f'"{now_iso}"')
+
+new_raw = fm_open + fm_body + fm_close + body
+with open(history_path, "w", encoding="utf-8") as f:
+    f.write(new_raw)
+PYEOF
+    ;;
+
   alloc-final-id)
     file="${1:-}"
     [[ -n "$file" && -f "$file" ]] || { echo "usage: $0 alloc-final-id <file>" >&2; exit 64; }

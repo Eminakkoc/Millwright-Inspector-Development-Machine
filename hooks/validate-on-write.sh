@@ -75,6 +75,7 @@ case "$file_path" in
   */blueprints/current/config.md)        schema="config" ;;
   */blueprints/current/primer.md)        schema="primer" ;;
   */blueprints/current/diagrams/README.md) schema="diagrams-readme-blueprint" ;;
+  */blueprints/current/review-history.md) schema="review-history" ;;
   */workflow-stream/*/decisions.md)      schema="decisions" ;;
   */implementation/inspector-review.md)   schema="review-file" ;;
   */implementation/overseer-review.md)

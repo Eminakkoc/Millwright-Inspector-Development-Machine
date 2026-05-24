@@ -1,0 +1,25 @@
+[
+  {
+    "id": "F-005",
+    "severity": "medium",
+    "phase": "item",
+    "target": "PAY-005",
+    "status": "new",
+    "first_seen": "2026-05-23T12:00:00Z",
+    "cycle_slug": "2026-05-23",
+    "iter": 1,
+    "finding": "PAY-005 has no acceptance criteria.",
+    "suggested_fix": "Add a measurable acceptance criterion."
+  },
+  {
+    "id": "F-002",
+    "status": "resolved",
+    "resolved_at": "2026-05-23T12:00:00Z",
+    "resolved_by_change": "audit_log Planned item added under §Planned"
+  },
+  {
+    "id": "F-001",
+    "status": "dropped",
+    "dropped_at": "2026-05-23T12:00:00Z"
+  }
+]
