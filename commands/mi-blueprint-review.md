@@ -250,7 +250,7 @@ Collect every `<!-- REVIEW-FINDING -->` block currently in the file via `scripts
 
 | In file? | In history? | Action |
 | --- | --- | --- |
-| yes | no | emit `status: new` entry with full body (severity, phase, target, finding, suggested-fix) |
+| yes | no | emit `status: new` entry with full body (`severity`, `phase`, `target`, `finding`, `suggested_fix` — all snake_case to match the v1.4 reviewer template contract; `persist-findings` reads `suggested_fix`) |
 | yes | yes | emit `status: still-present` entry (just timestamp bump; persist-findings is a no-op for these since status doesn't change, but the script still updates `last-review-at`) |
 | no | yes (with `last-status: still-present` or `refined`) | emit `status: dropped` entry — the finding's `REVIEW-FINDING` block was removed from the spec body (fixer resolved it, OR inspector manually deleted it without a `resolved_by_change` note) |
 | no | yes (with `last-status: resolved` or `dropped`) | no entry (no state change needed) |

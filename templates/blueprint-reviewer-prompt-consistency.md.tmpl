@@ -47,7 +47,7 @@ For new issues, append to `new[]`. Don't restate any prior finding as new.
 
 ## Output
 
-ONLY a JSON object, fenced as ```json ... ```, this exact shape:
+ONLY a JSON object, fenced as ```json ... ```, this exact shape. **All field names are snake_case. Match the names in the example below exactly — do not substitute kebab-case (e.g. write `suggested_fix`, not `suggested-fix`).**
 
 ```json
 {
@@ -55,7 +55,7 @@ ONLY a JSON object, fenced as ```json ... ```, this exact shape:
     { "id": "F-NNN", "status": "...", "resolved_by_change": "...", "refined_finding": "...", "refined_suggested_fix": "..." }
   ],
   "new": [
-    { "severity": "high|medium|low", "phase": "consistency", "target": "file", "finding": "...", "suggested-fix": "..." }
+    { "severity": "high|medium|low", "phase": "consistency", "target": "file", "finding": "...", "suggested_fix": "..." }
   ]
 }
 ```

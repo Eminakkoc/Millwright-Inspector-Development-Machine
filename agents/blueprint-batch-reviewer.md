@@ -113,7 +113,7 @@ Payload JSON:
       "original_region": "<exact bytes received>",
       "new_region": "<working_copy at exit>",
       "remaining_findings": [
-        { "id": "<tmp_id>", "severity": "...", "phase": "item", "target": "<item_id>", "finding": "...", "suggested-fix": "..." }
+        { "id": "<tmp_id>", "severity": "...", "phase": "item", "target": "<item_id>", "finding": "...", "suggested_fix": "..." }
       ]
     }
   ]

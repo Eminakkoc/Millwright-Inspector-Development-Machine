@@ -39,6 +39,8 @@ ONLY a JSON object, fenced as ```json ... ```, this exact shape. The `items` arr
 MUST contain exactly one entry per item in the input, keyed by `item_id`. Items with
 nothing to flag still appear with empty `existing` and `new` arrays.
 
+**All field names are snake_case. Match the names in the example below exactly — do not substitute kebab-case (e.g. write `suggested_fix`, not `suggested-fix`).**
+
 ```json
 {
   "items": [
@@ -48,7 +50,7 @@ nothing to flag still appear with empty `existing` and `new` arrays.
         { "id": "F-NNN-or-T1-N", "status": "...", "resolved_by_change": "...", "refined_finding": "...", "refined_suggested_fix": "..." }
       ],
       "new": [
-        { "severity": "high|medium|low", "phase": "item", "target": "<item_id>", "finding": "...", "suggested-fix": "..." }
+        { "severity": "high|medium|low", "phase": "item", "target": "<item_id>", "finding": "...", "suggested_fix": "..." }
       ]
     }
   ]

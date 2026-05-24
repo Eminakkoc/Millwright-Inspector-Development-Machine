@@ -631,7 +631,7 @@ Single-item review (`/mi-blueprint-review-item` or batch_size=1) uses the same t
       "original_region": "<exact bytes received>",
       "new_region":      "<final bytes after sub-agent's in-memory applies>",
       "remaining_findings": [
-        { "id": "T1-2", "severity": "medium", "finding": "...", "suggested-fix": "..." }
+        { "id": "T1-2", "severity": "medium", "finding": "...", "suggested_fix": "..." }
       ],
       "existing_transitions": [
         { "id": "F-007", "status": "resolved",      "resolved_by_change": "Added retry-with-backoff + dead-letter to publish-failure paragraph" },
