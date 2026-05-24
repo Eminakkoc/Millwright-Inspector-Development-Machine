@@ -10,7 +10,7 @@ description: Run a single whole-file consistency review (v1.5) — thin wrapper 
 /mi-blueprint-review-consistency <agent> <file-path> [--auto-iter N] [--reasoning-effort R]
 ```
 
-Defaults: `--auto-iter 3`, `--reasoning-effort medium`. No `--batch-size`, no `--scope`, no `--concurrency` — they don't apply to a consistency-only run.
+Defaults: `--auto-iter 5`, `--reasoning-effort medium`. No `--batch-size`, no `--scope`, no `--concurrency` — they don't apply to a consistency-only run.
 
 ## Preconditions
 
@@ -25,7 +25,7 @@ Defaults: `--auto-iter 3`, `--reasoning-effort medium`. No `--batch-size`, no `-
 set -euo pipefail
 agent="${1:-}"
 file="${2:-}"
-auto_iter=3
+auto_iter=5
 reasoning_effort="medium"
 i=3
 while [[ $i -le $# ]]; do

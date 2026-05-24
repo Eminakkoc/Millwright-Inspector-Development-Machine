@@ -16,7 +16,7 @@ description: Orchestrate a token-reduced blueprint review (v1.5) — Phase A (pr
 | --- | --- | --- |
 | `<agent>` | (required) | Reviewer agent name. Currently `codex`. |
 | `<file-path>` | (required) | Markdown file. Edits in place. |
-| `--auto-iter N` | 3 | Per-batch / per-consistency-pass round budget. `1` = find-only (no fix step). |
+| `--auto-iter N` | 5 | Per-batch / per-consistency-pass round budget. `1` = find-only (no fix step). |
 | `--batch-size N` | 3 | Items per batch in Phase C. |
 | `--scope <heading>` | (none) | Restrict Phase B enumeration to items under `## <heading>` only. |
 | `--reasoning-effort R` | medium | Round-1 codex effort (via `config.model_reasoning_effort`). Locked per session; rounds 2+ inherit it. |
@@ -51,7 +51,7 @@ Announce each phase as you enter it (one short line: `Phase X — <name> — sta
 set -euo pipefail
 agent="${1:-}"
 file="${2:-}"
-auto_iter=3
+auto_iter=5
 batch_size=3
 scope=""
 reasoning_effort="medium"

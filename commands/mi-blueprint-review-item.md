@@ -13,7 +13,7 @@ description: Run a single-item review (v1.5) — thin wrapper around Phase A + B
 
 Also accepts the explicit form `--file <path> --item <id>` for paths containing colons.
 
-Defaults: `--auto-iter 3`, `--reasoning-effort medium`.
+Defaults: `--auto-iter 5`, `--reasoning-effort medium`.
 
 ## Preconditions
 
@@ -28,7 +28,7 @@ Defaults: `--auto-iter 3`, `--reasoning-effort medium`.
 set -euo pipefail
 agent="${1:-}"
 arg2="${2:-}"
-auto_iter=3
+auto_iter=5
 reasoning_effort="medium"
 
 [[ -n "$agent" && -n "$arg2" ]] || {
