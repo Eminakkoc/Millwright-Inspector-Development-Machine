@@ -1,5 +1,5 @@
 ---
-description: Run a single-item review (v1.4) — thin wrapper around Phase A + B(single-item) + C(batch=1) + F + G of /mi-blueprint-review. Mode A edits the file; Mode B is stateless (prints to terminal). See docs/blueprint-review-token-reduction/plan.md.
+description: Run a single-item review (v1.5) — thin wrapper around Phase A + B(single-item) + C(batch=1) + F + G of /mi-blueprint-review. Mode A edits the file; Mode B is stateless (prints to terminal). See docs/blueprint-review-token-reduction/plan.md.
 ---
 
 # /mi-blueprint-review-item

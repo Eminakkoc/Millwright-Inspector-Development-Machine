@@ -1,12 +1,12 @@
 # Changelog
 
-## 1.4.0 — Blueprint review token-reduction refit
+## 1.5.0 — Blueprint review token-reduction refit
 
 **Breaking CLI change.** Replaces v1.2.x's positional `<max-c-iter> <max-i-iter>` args
 with a single `--auto-iter N` flag (default `3`). Per-batch concurrency exposed via
 `--concurrency N` (default `3`). Default `--batch-size` reduced from `5` to `3`.
 
-Net effect on a 20-item stage-2 auto-fire (REPORT-4 baseline → v1.4 projection):
+Net effect on a 20-item stage-2 auto-fire (REPORT-4 baseline → v1.5 projection):
 codex calls drop ~107 → ~25; token cost drops ~1M → ~50k; wall-clock drops ~60–80 min
 → ~10–15 min. Finding quality preserved (REPORT-4 evidence that iter-1 per-item review
 self-regulates at ~4 findings regardless of iteration budget).
@@ -52,7 +52,7 @@ self-regulates at ~4 findings regardless of iteration budget).
   through rotation / archive alongside `requirements.md` (no code change — the
   wildcard `blueprints.sh rotate` covers it; only descriptive prose updated).
 - **`mi-doctor` annotates the codex check** with codex-reply availability based on
-  installed codex-cli version (>= 0.130.0 gets the v1.4 cost-reduction path).
+  installed codex-cli version (>= 0.130.0 gets the v1.5 cost-reduction path).
 
 ### Removed
 
@@ -74,7 +74,7 @@ mid-run abort, codex-unavailable, session-expiry fallback).
 
 - Breaking CLI change. No back-compat shim. Existing scripts invoking
   `/mi-blueprint-review` must drop the two positional iter args.
-- Existing blueprints get a `review-history.md` lazily initialized on the first v1.4
+- Existing blueprints get a `review-history.md` lazily initialized on the first v1.5
   run. No backfill of historical findings — they were never preserved before.
 - Reviewer prompt rendering changes shape; the multi-item `items[]` array in batch
   reviewer responses is the new contract for any external consumer.

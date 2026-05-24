@@ -6,7 +6,7 @@
 
 ## Decision
 
-✅ **Plan proceeds as designed.** Session continuation works as expected; the v1.4 cost-reduction strategy is viable.
+✅ **Plan proceeds as designed.** Session continuation works as expected; the v1.5 cost-reduction strategy is viable.
 
 ## Round-1 response shape (`mcp__codex__codex`)
 
@@ -31,7 +31,7 @@ Example (from the actual probe):
 
 Required: `prompt: string`.
 
-Notable optional parameters used by v1.4:
+Notable optional parameters used by v1.5:
 - `sandbox: "read-only" | "workspace-write" | "danger-full-access"` — review calls should use `"read-only"` (codex must not write files).
 - `approval-policy: "untrusted" | "on-failure" | "on-request" | "never"` — review calls should use `"never"` (no inline approval prompts).
 - `config: object` — free-form. `reasoning_effort` is passed here as **`model_reasoning_effort`** (see below).
@@ -66,9 +66,9 @@ Required: `threadId: string`, `prompt: string`.
 - ❌ No `reasoning_effort` / `config` parameter — session-wide settings are locked from the round-1 call.
 - ❌ No `sandbox` / `approval-policy` override.
 - ❌ No `model` override.
-- The deprecated `conversationId` field is still accepted (back-compat alias for `threadId`); v1.4 uses `threadId`.
+- The deprecated `conversationId` field is still accepted (back-compat alias for `threadId`); v1.5 uses `threadId`.
 
-**Implication for the plan:** The v1.4 spec text saying "pass `reasoning_effort` on every call" is **incorrect for rounds 2+**. The right interpretation is: `reasoning_effort` is set once at session open (round 1's `config.model_reasoning_effort`) and persists for the life of the thread. Sub-agents must pass `reasoning_effort` only to round 1; rounds 2+ inherit it from session state.
+**Implication for the plan:** The v1.5 spec text saying "pass `reasoning_effort` on every call" is **incorrect for rounds 2+**. The right interpretation is: `reasoning_effort` is set once at session open (round 1's `config.model_reasoning_effort`) and persists for the life of the thread. Sub-agents must pass `reasoning_effort` only to round 1; rounds 2+ inherit it from session state.
 
 ## Session-expiry / invalid-thread behavior
 
@@ -84,9 +84,9 @@ The sub-agents' session-expiry fallback (defined in `agents/blueprint-{consisten
 
 ⚠ **Not tested in this run.** Verifying idle-expiry behavior requires waiting ~5+ minutes between rounds, which exceeds the Phase 0 budget for a single probe pass. Defer to manual Scenario E (mid-run abort) variant or a dedicated probe later.
 
-Conservative assumption for v1.4: treat any error containing `"Session not found"` as expiry and fall back to stateless mode for that round. If empirical use shows sessions expire faster than expected (e.g., < 1 min), revisit the codex configuration (`session_ttl` or similar) before increasing `--auto-iter`.
+Conservative assumption for v1.5: treat any error containing `"Session not found"` as expiry and fall back to stateless mode for that round. If empirical use shows sessions expire faster than expected (e.g., < 1 min), revisit the codex configuration (`session_ttl` or similar) before increasing `--auto-iter`.
 
-## Adjustments to the v1.4 plan
+## Adjustments to the v1.5 plan
 
 Two text edits are needed in the spec / plan but not implementation:
 

@@ -1,5 +1,5 @@
 ---
-description: Orchestrate a token-reduced blueprint review (v1.4) — Phase A (preflight + summary build) → B (enumerate) → C (per-batch parallel review) → D (single consistency pass) → F (persist to review-history.md) → G (report). Uses mcp__codex__codex for round 1 and mcp__codex__codex-reply for rounds 2+. See docs/blueprint-review-token-reduction/plan.md.
+description: Orchestrate a token-reduced blueprint review (v1.5) — Phase A (preflight + summary build) → B (enumerate) → C (per-batch parallel review) → D (single consistency pass) → F (persist to review-history.md) → G (report). Uses mcp__codex__codex for round 1 and mcp__codex__codex-reply for rounds 2+. See docs/blueprint-review-token-reduction/plan.md.
 ---
 
 # /mi-blueprint-review
@@ -85,7 +85,7 @@ done
 [[ -f "$file" && -w "$file" ]] || { echo "error: file not found or not writable: $file" >&2; exit 1; }
 
 reviewer_tool="$($CLAUDE_PLUGIN_ROOT/scripts/blueprint-review.sh resolve-tool "$agent")" || exit 1
-reviewer_reply_tool="mcp__${agent}__${agent}-reply"   # v1.4 convention; matches Phase 0 finding
+reviewer_reply_tool="mcp__${agent}__${agent}-reply"   # v1.5 convention; matches Phase 0 finding
 MAX_ITEMS_PER_REVIEW=20
 ```
 
@@ -250,7 +250,7 @@ Collect every `<!-- REVIEW-FINDING -->` block currently in the file via `scripts
 
 | In file? | In history? | Action |
 | --- | --- | --- |
-| yes | no | emit `status: new` entry with full body (`severity`, `phase`, `target`, `finding`, `suggested_fix` — all snake_case to match the v1.4 reviewer template contract; `persist-findings` reads `suggested_fix`) |
+| yes | no | emit `status: new` entry with full body (`severity`, `phase`, `target`, `finding`, `suggested_fix` — all snake_case to match the v1.5 reviewer template contract; `persist-findings` reads `suggested_fix`) |
 | yes | yes | emit `status: still-present` entry (just timestamp bump; persist-findings is a no-op for these since status doesn't change, but the script still updates `last-review-at`) |
 | no | yes (with `last-status: still-present` or `refined`) | emit `status: dropped` entry — the finding's `REVIEW-FINDING` block was removed from the spec body (fixer resolved it, OR inspector manually deleted it without a `resolved_by_change` note) |
 | no | yes (with `last-status: resolved` or `dropped`) | no entry (no state change needed) |
@@ -284,6 +284,6 @@ Cleanup: `rm -f /tmp/mi-*.$$.*`.
 
 ## See also
 
-- `docs/blueprint-review-token-reduction/plan.md` — v1.4 design.
+- `docs/blueprint-review-token-reduction/plan.md` — v1.5 design.
 - `docs/blueprints-review/plan.md` — v1.2.x prior art (item enumeration, canonical region descriptor, `alloc-final-id` semantics unchanged).
 - `commands/mi-blueprint-review-consistency.md`, `commands/mi-blueprint-review-item.md` — standalone variants.

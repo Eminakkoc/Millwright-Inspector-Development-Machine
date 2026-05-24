@@ -80,7 +80,7 @@ For each scenario, capture in the writeup:
 **Run:** `/mi-blueprint-review codex <file>`
 
 **Verify:**
-- `mi-doctor` flags codex as unavailable (with the v1.4 codex-reply note absent).
+- `mi-doctor` flags codex as unavailable (with the v1.5 codex-reply note absent).
 - The orchestrator surfaces an actionable error early (before any file mutation) and exits cleanly.
 - No file mutations (`requirements.md` unchanged; `review-history.md` untouched).
 

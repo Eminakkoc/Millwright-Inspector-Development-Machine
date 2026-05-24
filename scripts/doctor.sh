@@ -354,7 +354,7 @@ check_cli docling false "$(hints_docling)"
 # OPTIONAL — codex CLI + mcp-server subcommand (used by blueprint-review commands).
 # Missing codex disables stage-2 auto-review but the rest of the workflow is unaffected.
 #
-# v1.4 token-reduction refit (docs/blueprint-review-token-reduction/plan.md) additionally
+# v1.5 token-reduction refit (docs/blueprint-review-token-reduction/plan.md) additionally
 # depends on the mcp__codex__codex-reply tool for session continuation. That tool was
 # introduced in codex-cli 0.130.0. Older codex versions still work — the sub-agents fall
 # back to stateless mode (each round = fresh codex call, ~60% reduction instead of ~95%) —
@@ -371,7 +371,7 @@ if command -v codex >/dev/null 2>&1; then
       if printf '%s\n%s\n' "0.130.0" "$codex_num" | sort -V -C 2>/dev/null; then
         codex_reply_note=" (codex-reply available)"
       else
-        codex_reply_note=" (codex-reply unavailable; v1.4 review falls back to stateless mode — upgrade to 0.130.0+ for ~95% token reduction)"
+        codex_reply_note=" (codex-reply unavailable; v1.5 review falls back to stateless mode — upgrade to 0.130.0+ for ~95% token reduction)"
       fi
     fi
     record "codex" cli false true "${codex_version}${codex_reply_note}" '{}'

@@ -2,7 +2,7 @@
 
 **Status:** Pre-implementation. Phase 0 (`mcp__codex__codex-reply` shape verification) must precede any other work.
 
-**Target version:** `v1.4.0` (minor — breaking CLI change documented; replaces one sub-agent, reshapes another, consolidates two prompt templates into one, adds one artifact + schema + script subcommands).
+**Target version:** `v1.5.0` (minor — breaking CLI change documented; replaces one sub-agent, reshapes another, consolidates two prompt templates into one, adds one artifact + schema + script subcommands).
 
 **Supersedes parts of:** `docs/blueprints-review/plan.md` (v1.2.x design). The original orchestration, sub-agent split, and per-iteration loop semantics are replaced by the design below. Item enumeration (§5.4 of v1.2.x), the canonical region descriptor, `alloc-final-id`, the YAML `<!-- REVIEW-FINDING -->` inline format, and the file-mutation contract (§9 of v1.2.x) carry forward unchanged.
 
@@ -22,7 +22,7 @@ This refit cuts the structural cost while preserving the existing finding qualit
 
 **Headline numbers (20-item file, new defaults `--auto-iter 3 --batch-size 3`):**
 
-| Metric | v1.2.x worst case | v1.4 worst case | v1.4 best case |
+| Metric | v1.2.x worst case | v1.5 worst case | v1.5 best case |
 | --- | ---: | ---: | ---: |
 | Codex calls | 107 | 25 | 9 |
 | Token cost (rough) | ~1M | ~50k | ~40k |
@@ -147,9 +147,9 @@ Standalone commands (`/mi-blueprint-review-consistency`, `/mi-blueprint-review-i
 
 ---
 
-## 4. Phase mapping: v1.2.x → v1.4
+## 4. Phase mapping: v1.2.x → v1.5
 
-| v1.2.x | v1.4 | What changes |
+| v1.2.x | v1.5 | What changes |
 | --- | --- | --- |
 | Phase 1 — initial consistency fix-loop | **gone** | Its work folds into Phase A preflight (history read) + Phase D (the single consistency loop after per-item). |
 | Phase 2 — item enumeration | **Phase B** | Effectively unchanged. |
@@ -521,7 +521,7 @@ for wave in chunks(batches, size=concurrency):
 
 ### 7.8 Max-iter inspector prompt (carried forward from v1.2.x)
 
-v1.2.x prompts the inspector `y/n` for "another loop?" whenever a loop exits via max-iter with unresolved high/medium findings. v1.4 preserves that escape hatch, adapted to the batched/aggregated shape.
+v1.2.x prompts the inspector `y/n` for "another loop?" whenever a loop exits via max-iter with unresolved high/medium findings. v1.5 preserves that escape hatch, adapted to the batched/aggregated shape.
 
 **Firing sites:**
 
@@ -720,7 +720,7 @@ Removed. The single-item path is `blueprint-batch-reviewer` with `items: [single
 # v1.2.x
 /mi-blueprint-review <agent> <max-consistency-iter> <max-item-iter> <file> [--batch-size N] [--scope X] [--reasoning-effort R]
 
-# v1.4
+# v1.5
 /mi-blueprint-review <agent> <file> [--auto-iter N] [--batch-size N] [--scope X] [--reasoning-effort R] [--concurrency N]
 ```
 
@@ -735,14 +735,14 @@ Defaults: `--auto-iter 3 --batch-size 3 --concurrency 3 --reasoning-effort mediu
 /mi-blueprint-review-consistency <agent> <max-iterations> <file> [--reasoning-effort R]
 /mi-blueprint-review-item <agent> <max-iterations> <file>:<id> [--reasoning-effort R]
 
-# v1.4
+# v1.5
 /mi-blueprint-review-consistency <agent> <file> [--auto-iter N] [--reasoning-effort R]
 /mi-blueprint-review-item <agent> <file>:<id> [--auto-iter N] [--reasoning-effort R]
 ```
 
 Both become thin wrappers — `-consistency` runs Phase A + B + D + F + G; `-item` runs Phase A + B (single-item) + C (batch=1) + F + G.
 
-Phase B is required even for `-consistency` (one cheap codex enumeration call): it produces the `file_item_ids` list that drives the summary builder's truncation-invariant protection (§6.2). Without it, the protection set is empty and the summary cannot tell "AUD-013 still in the spec, keep its resolution context" apart from "AUD-013 was removed, drop it." For `-item`, Phase B already runs in v1.2.x to compute the anchor for the single item; v1.4 additionally extracts `file_item_ids = [<that one id>]` for the summary scope.
+Phase B is required even for `-consistency` (one cheap codex enumeration call): it produces the `file_item_ids` list that drives the summary builder's truncation-invariant protection (§6.2). Without it, the protection set is empty and the summary cannot tell "AUD-013 still in the spec, keep its resolution context" apart from "AUD-013 was removed, drop it." For `-item`, Phase B already runs in v1.2.x to compute the anchor for the single item; v1.5 additionally extracts `file_item_ids = [<that one id>]` for the summary scope.
 
 ### 10.3 `mi-apply-impact` Step B.5 auto-fire
 
@@ -823,7 +823,7 @@ Defaulting to "Skip" is acceptable if the inspector aborts the prompt (Ctrl-C). 
 
 **Detecting caller**: the orchestrator checks the `MI_BLUEPRINT_REVIEW_AUTO_FIRE` env var (set by `mi-apply-impact` Step B.5 before invoking `/mi-blueprint-review`). When set, the gate falls through silently on missing codex (B.5 already gated; this is defense in depth and should not happen). When unset, the gate prompts.
 
-**No CLI flag for non-interactive mode.** A `--no-prompt` flag is deliberately omitted in v1.4 — the only known non-interactive caller is `mi-apply-impact` Step B.5, and that path uses the env-var signal above. If future callers need a non-interactive skip, add it then.
+**No CLI flag for non-interactive mode.** A `--no-prompt` flag is deliberately omitted in v1.5 — the only known non-interactive caller is `mi-apply-impact` Step B.5, and that path uses the env-var signal above. If future callers need a non-interactive skip, add it then.
 
 **Test coverage.** §13.2 adds a test for the gate (mocked doctor.sh `present: false` → skip path; `present: true` → no-op fast path; `MI_BLUEPRINT_REVIEW_AUTO_FIRE=1` → silent-skip without prompt).
 
@@ -931,8 +931,8 @@ Existing cases from `docs/blueprints-review/plan.md` §12 carry forward. Net-new
 | `commands/mi-complete-workflow.md` | Archive allowlist extension (§11.3). |
 | `scripts/doctor.sh` | `codex-reply` probe (§11.4). |
 | `hooks/validate-on-write.sh` | Validate `review-history.md` path against schema. |
-| `.claude-plugin/plugin.json` | Bump version to `1.4.0`. |
-| `CHANGELOG.md` | New entry under `## 1.4.0`. |
+| `.claude-plugin/plugin.json` | Bump version to `1.5.0`. |
+| `CHANGELOG.md` | New entry under `## 1.5.0`. |
 | `README.md` | Brief update to the commands section. |
 
 ### 14.3 Removed files
@@ -985,6 +985,6 @@ Each numbered step is a candidate plan step for writing-plans.
 | D2 | Whether to allow `--auto-iter 0` (find-only, no fix step) | Useful for "give me the review but don't touch the file." Recommended: yes; trivial to add. |
 | D3 | Whether to add a `--re-loop-marked` flag for inspector-mediated iteration | Inspector marks specific `<!-- REVIEW-FINDING -->` blocks with `<!-- REVIEW-ACK: refix -->`; a second pass re-runs only marked items. Defer to v1.5 if `--auto-iter 3` proves enough. |
 | D4 | Whether the summary should include `phase: consistency` findings in per-item batch summaries | Currently yes (file-level findings included). Trade ~50–100 tokens per batch for cross-item anchoring. Could scope strictly to per-item. |
-| D5 | Whether to emit a structured `blueprint-review-result.json` next to the file at orchestrator exit | Useful for CI / downstream tooling. Out of scope for v1.4; revisit. |
-| D6 | Whether to keep `agents/blueprint-item-reviewer.md` as a deprecated alias | Probably no — clean break; the file is removed in v1.4. |
+| D5 | Whether to emit a structured `blueprint-review-result.json` next to the file at orchestrator exit | Useful for CI / downstream tooling. Out of scope for v1.5; revisit. |
+| D6 | Whether to keep `agents/blueprint-item-reviewer.md` as a deprecated alias | Probably no — clean break; the file is removed in v1.5. |
 | D7 | Whether `mi-doctor`'s `codex-reply` probe should be blocking (fail mi-doctor) or just warning | Recommended: warning. Stateless fallback still works. |

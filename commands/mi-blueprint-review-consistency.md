@@ -1,5 +1,5 @@
 ---
-description: Run a single whole-file consistency review (v1.4) — thin wrapper around Phase A + D + F + G of /mi-blueprint-review. One codex session per loop; rounds 2+ via codex-reply. See docs/blueprint-review-token-reduction/plan.md.
+description: Run a single whole-file consistency review (v1.5) — thin wrapper around Phase A + D + F + G of /mi-blueprint-review. One codex session per loop; rounds 2+ via codex-reply. See docs/blueprint-review-token-reduction/plan.md.
 ---
 
 # /mi-blueprint-review-consistency

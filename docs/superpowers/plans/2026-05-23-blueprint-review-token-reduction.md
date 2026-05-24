@@ -10,7 +10,7 @@
 
 **Spec:** `docs/blueprint-review-token-reduction/plan.md`. Cite section numbers from there in commit messages (e.g., `feat(blueprint-review): build-summary subcommand per §6.2`).
 
-**Breaking change:** v1.2.x positional args (`<max-c-iter> <max-i-iter>`) replaced by `--auto-iter`. No back-compat shim; v1.4.0 minor bump documents the break.
+**Breaking change:** v1.2.x positional args (`<max-c-iter> <max-i-iter>`) replaced by `--auto-iter`. No back-compat shim; v1.5.0 minor bump documents the break.
 
 ---
 
@@ -40,8 +40,8 @@
 - `commands/mi-apply-impact.md` — add Step A.5 (init `review-history.md`); update Step B.5 CLI line; extend `--force` cleanup allowlist.
 - `commands/mi-update-blueprint.md` — carry `review-history.md` through rotation.
 - `commands/mi-complete-workflow.md` — archive allowlist extension.
-- `.claude-plugin/plugin.json` — version → `1.4.0`.
-- `CHANGELOG.md` — new entry under `## 1.4.0`.
+- `.claude-plugin/plugin.json` — version → `1.5.0`.
+- `CHANGELOG.md` — new entry under `## 1.5.0`.
 - `README.md` — brief commands section update.
 - `docs/millwright-inspector-project.md` — note the new artifact + sub-agent rename.
 
@@ -164,7 +164,7 @@ Create `tests/blueprint-review/run.sh`:
 
 ```bash
 #!/usr/bin/env bash
-# run.sh — integration smoke tests for the v1.4 blueprint review refit.
+# run.sh — integration smoke tests for the v1.5 blueprint review refit.
 #
 # Each test exits 0 on PASS and a unique non-zero on FAIL so partial-suite
 # results stay actionable. Tests are additive: later tasks append blocks
@@ -1654,11 +1654,11 @@ Note the existing structure (Step 1 validate, Step 1.5 lessons_block, Step 2 Pha
 
 - [ ] **Step 2: Replace the command file**
 
-Overwrite `commands/mi-blueprint-review.md` with the new v1.4 orchestrator:
+Overwrite `commands/mi-blueprint-review.md` with the new v1.5 orchestrator:
 
 ````markdown
 ---
-description: Orchestrate a token-reduced blueprint review (v1.4): preflight + summary build → enumerate → per-batch review (parallel waves) → single consistency pass → persist to review-history.md → report. Uses mcp__codex__codex for round 1 and mcp__codex__codex-reply for rounds 2+. See docs/blueprint-review-token-reduction/plan.md.
+description: Orchestrate a token-reduced blueprint review (v1.5): preflight + summary build → enumerate → per-batch review (parallel waves) → single consistency pass → persist to review-history.md → report. Uses mcp__codex__codex for round 1 and mcp__codex__codex-reply for rounds 2+. See docs/blueprint-review-token-reduction/plan.md.
 ---
 
 # /mi-blueprint-review
@@ -1744,7 +1744,7 @@ done
 [[ -f "$file" && -w "$file" ]] || { echo "error: file not found or not writable: $file" >&2; exit 1; }
 
 reviewer_tool="$($CLAUDE_PLUGIN_ROOT/scripts/blueprint-review.sh resolve-tool "$agent")" || exit 1
-reviewer_reply_tool="mcp__${agent}__${agent}-reply"   # v1.4 convention; matches Phase 0 finding
+reviewer_reply_tool="mcp__${agent}__${agent}-reply"   # v1.5 convention; matches Phase 0 finding
 MAX_ITEMS_PER_REVIEW=20
 ```
 
@@ -1917,7 +1917,7 @@ Or: `"No high/medium findings remain (Success)"` if inline count is zero.
 
 ## See also
 
-- `docs/blueprint-review-token-reduction/plan.md` — v1.4 design.
+- `docs/blueprint-review-token-reduction/plan.md` — v1.5 design.
 - `docs/blueprints-review/plan.md` — v1.2.x prior art (item enumeration, canonical region descriptor, `alloc-final-id` semantics unchanged).
 - `commands/mi-blueprint-review-consistency.md`, `commands/mi-blueprint-review-item.md` — standalone variants.
 ````
@@ -1934,7 +1934,7 @@ grep -c "^## " commands/mi-blueprint-review.md   # should print 5+ (Usage, Preco
 ```bash
 git add commands/mi-blueprint-review.md
 git commit -m "$(cat <<'EOF'
-feat(mi-blueprint-review): v1.4 orchestrator (token-reduction refit)
+feat(mi-blueprint-review): v1.5 orchestrator (token-reduction refit)
 
 Replaces v1.2.x's 5-phase fix-loop architecture with Phase A (preflight + summary) → B (enumerate) → C (per-batch parallel waves via codex-reply) → D (single consistency pass via codex-reply) → F (persist to review-history.md) → G (report). Breaking CLI change: --auto-iter replaces <max-c-iter> <max-i-iter>. Per spec §3, §4, §10.1.
 
@@ -1956,7 +1956,7 @@ Overwrite `commands/mi-blueprint-review-consistency.md`:
 
 ```markdown
 ---
-description: Run a single whole-file consistency review (v1.4) — thin wrapper around Phase A + D + F + G of /mi-blueprint-review. One codex session per loop; rounds 2+ via codex-reply.
+description: Run a single whole-file consistency review (v1.5) — thin wrapper around Phase A + D + F + G of /mi-blueprint-review. One codex session per loop; rounds 2+ via codex-reply.
 ---
 
 # /mi-blueprint-review-consistency
@@ -2034,7 +2034,7 @@ OR
 ```bash
 git add commands/mi-blueprint-review-consistency.md
 git commit -m "$(cat <<'EOF'
-feat(mi-blueprint-review-consistency): v1.4 wrapper
+feat(mi-blueprint-review-consistency): v1.5 wrapper
 
 Thin wrapper around Phase A + D + F + G. Breaking CLI change matches the orchestrator. Per spec §10.2.
 
@@ -2056,7 +2056,7 @@ Overwrite `commands/mi-blueprint-review-item.md`:
 
 ```markdown
 ---
-description: Run a single-item review (v1.4) — thin wrapper around Phase A + B(single-item) + C(batch=1) + F + G. Mode A edits the file; Mode B is stateless (prints to terminal).
+description: Run a single-item review (v1.5) — thin wrapper around Phase A + B(single-item) + C(batch=1) + F + G. Mode A edits the file; Mode B is stateless (prints to terminal).
 ---
 
 # /mi-blueprint-review-item
@@ -2110,7 +2110,7 @@ Spawn `blueprint-batch-reviewer` with `mode=content`, `items=[{item_id: "(unname
 ```bash
 git add commands/mi-blueprint-review-item.md
 git commit -m "$(cat <<'EOF'
-feat(mi-blueprint-review-item): v1.4 wrapper
+feat(mi-blueprint-review-item): v1.5 wrapper
 
 Single-item review built as batch_size=1. Same Phase A + C + F + G path as a regular batch run. Breaking CLI change matches the orchestrator. Per spec §10.2.
 
@@ -2139,7 +2139,7 @@ Identify: Pre-Step A line, Step A end (`requirements.md` exists), Step B.5 CLI i
 After Step A's final substep (where `requirements.md` exists), before Step B, add:
 
 ```markdown
-### Step A.5 — Initialize review-history.md (new in v1.4)
+### Step A.5 — Initialize review-history.md (new in v1.5)
 
 ```bash
 review_history="$blueprint_dir/review-history.md"
@@ -2179,7 +2179,7 @@ Find the existing cleanup block (lessons-filter added it for `implementation/`).
 impl_files_to_clean=("grounding-report.md" "blueprint-lessons.md")
 # ... existing logic ...
 
-# v1.4 addition: current/ cleanup (review-history.md only)
+# v1.5 addition: current/ cleanup (review-history.md only)
 current_files_to_clean=("review-history.md")
 for f in "${current_files_to_clean[@]}"; do
   path="$blueprint_dir/$f"
@@ -2199,7 +2199,7 @@ git add commands/mi-apply-impact.md
 git commit -m "$(cat <<'EOF'
 feat(mi-apply-impact): wire review-history.md init + new orchestrator CLI
 
-Adds Step A.5 (lazy init of review-history.md). Updates Step B.5 to v1.4 orchestrator CLI (collapsed args; defaults cover the rest). Extends --force cleanup to remove review-history.md. Per spec §11.1.
+Adds Step A.5 (lazy init of review-history.md). Updates Step B.5 to v1.5 orchestrator CLI (collapsed args; defaults cover the rest). Extends --force cleanup to remove review-history.md. Per spec §11.1.
 
 Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 EOF
@@ -2340,13 +2340,13 @@ Identify the existing `mcp:codex` probe block (added in v1.2.0).
 After the existing `mcp:codex` check (verifies `codex mcp-server --help` succeeds), add:
 
 ```bash
-# v1.4 — verify codex-reply tool name. Non-blocking; warning only.
+# v1.5 — verify codex-reply tool name. Non-blocking; warning only.
 if command -v codex >/dev/null 2>&1; then
   if codex --help 2>/dev/null | grep -q "mcp-server"; then
     # Try a 1-shot stdio handshake that lists tools (low-friction probe — no auth).
     if codex mcp-server <<< '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' 2>/dev/null \
        | grep -q "codex-reply"; then
-      echo "  ✓ mcp__codex__codex-reply available (v1.4 cost-reduction path)"
+      echo "  ✓ mcp__codex__codex-reply available (v1.5 cost-reduction path)"
     else
       echo "  ⚠ mcp__codex__codex-reply not detected — blueprint review falls back to stateless mode (~60% savings instead of ~95%)"
     fi
@@ -2581,13 +2581,13 @@ head -10 CHANGELOG.md
 Edit `CHANGELOG.md`. Insert at the very top (before the existing `## 1.3.0` entry):
 
 ```markdown
-## 1.4.0 — Blueprint review token-reduction refit
+## 1.5.0 — Blueprint review token-reduction refit
 
 **Breaking CLI change.** Replaces v1.2.x's positional `<max-c-iter> <max-i-iter>` args
 with a single `--auto-iter N` flag (default `3`). Per-batch concurrency exposed via
 `--concurrency N` (default `3`). Default `--batch-size` reduced from `5` to `3`.
 
-Net effect on a 20-item stage-2 auto-fire (REPORT-4 baseline → v1.4 projection):
+Net effect on a 20-item stage-2 auto-fire (REPORT-4 baseline → v1.5 projection):
 codex calls drop ~107 → ~25; token cost drops ~1M → ~50k; wall-clock drops ~60–80
 min → ~10–15 min. Finding quality preserved (REPORT-4 evidence that iter-1 per-item
 review self-regulates at ~4 findings regardless of iteration budget).
@@ -2652,7 +2652,7 @@ mid-run abort, codex-unavailable).
 - Breaking CLI change. No back-compat shim. Existing scripts invoking
   `/mi-blueprint-review` must drop the two positional iter args.
 - Existing blueprints get a `review-history.md` lazily initialized on the first
-  v1.4 run. No backfill of historical findings — they were never preserved before.
+  v1.5 run. No backfill of historical findings — they were never preserved before.
 - Reviewer prompt rendering changes shape; any external consumer of the codex
   reviewer JSON output needs to handle the multi-item `items` array shape for
   per-item review.
@@ -2667,9 +2667,9 @@ canonical region descriptor, `alloc-final-id` semantics unchanged).
 ```bash
 git add CHANGELOG.md
 git commit -m "$(cat <<'EOF'
-docs(changelog): v1.4.0 — blueprint review token-reduction refit
+docs(changelog): v1.5.0 — blueprint review token-reduction refit
 
-Release notes for the v1.4 refit: ~95% token reduction via codex-reply session continuation, per-batch reviewer, phase consolidation, review-history.md cross-cycle memory, prompt envelope trim. Breaking CLI change documented.
+Release notes for the v1.5 refit: ~95% token reduction via codex-reply session continuation, per-batch reviewer, phase consolidation, review-history.md cross-cycle memory, prompt envelope trim. Breaking CLI change documented.
 
 Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 EOF
@@ -2691,14 +2691,14 @@ cat .claude-plugin/plugin.json
 
 - [ ] **Step 2: Bump version**
 
-Edit `.claude-plugin/plugin.json`. Change the `"version"` field from `"1.3.0"` (or whatever it currently is) to `"1.4.0"`. Preserve all other fields exactly.
+Edit `.claude-plugin/plugin.json`. Change the `"version"` field from `"1.3.0"` (or whatever it currently is) to `"1.5.0"`. Preserve all other fields exactly.
 
 - [ ] **Step 3: Commit**
 
 ```bash
 git add .claude-plugin/plugin.json
 git commit -m "$(cat <<'EOF'
-chore(plugin): bump version to 1.4.0
+chore(plugin): bump version to 1.5.0
 
 Blueprint review token-reduction refit. See CHANGELOG.md.
 
@@ -2735,14 +2735,14 @@ Update the three `/mi-blueprint-review*` command synopses to reflect the new CLI
 + /mi-blueprint-review-item <agent> <file>:<id> [--auto-iter N] [--reasoning-effort R]
 ```
 
-If README has a short description line per command, update those too to mention the v1.4 behavior (single-session, session-continued iteration; review-history.md sibling artifact).
+If README has a short description line per command, update those too to mention the v1.5 behavior (single-session, session-continued iteration; review-history.md sibling artifact).
 
 - [ ] **Step 3: Commit**
 
 ```bash
 git add README.md
 git commit -m "$(cat <<'EOF'
-docs(readme): update blueprint-review command synopses for v1.4
+docs(readme): update blueprint-review command synopses for v1.5
 
 Reflects the breaking CLI change (--auto-iter replaces positional iter args) and the new --concurrency flag.
 
@@ -2764,7 +2764,7 @@ EOF
 grep -n "blueprint-item-reviewer\|sub-agent profile\|profile count" docs/millwright-inspector-project.md
 ```
 
-The project doc tracks every sub-agent in a profile table (the blueprint-lessons feature changed "profile count 13 → 14"). v1.4 doesn't add a sub-agent, but it renames one (`blueprint-item-reviewer` → `blueprint-batch-reviewer`) and changes its description.
+The project doc tracks every sub-agent in a profile table (the blueprint-lessons feature changed "profile count 13 → 14"). v1.5 doesn't add a sub-agent, but it renames one (`blueprint-item-reviewer` → `blueprint-batch-reviewer`) and changes its description.
 
 - [ ] **Step 2: Rename and update the row**
 
@@ -2794,7 +2794,7 @@ git add docs/millwright-inspector-project.md
 git commit -m "$(cat <<'EOF'
 docs(project): rename blueprint-item-reviewer; document review-history.md
 
-Reflects v1.4 sub-agent rename (item-reviewer → batch-reviewer) and adds review-history.md to the blueprints/current/ artifact list. Per spec §14.2.
+Reflects v1.5 sub-agent rename (item-reviewer → batch-reviewer) and adds review-history.md to the blueprints/current/ artifact list. Per spec §14.2.
 
 Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 EOF
@@ -2812,7 +2812,7 @@ After completing all tasks above:
 - [ ] `tests/lint/run.sh` runs green (no regressions).
 - [ ] `tests/blueprint-lessons/run.sh` runs green (regression check on the v1.3 feature).
 - [ ] `git status` is clean (no uncommitted changes).
-- [ ] `.claude-plugin/plugin.json` reflects `1.4.0`.
+- [ ] `.claude-plugin/plugin.json` reflects `1.5.0`.
 - [ ] Phase 0 findings doc (`docs/blueprint-review-token-reduction/phase-0-findings.md`) accurately describes the codex-reply behavior we relied on.
 - [ ] Spec doc (`docs/blueprint-review-token-reduction/plan.md`) was not modified during implementation, or if it was, the modification was a justified clarification documented in the relevant task's commit message.
 - [ ] Two manual scenarios from `docs/superpowers/plans/2026-05-23-blueprint-review-token-reduction-manual-tests.md` (at minimum Scenarios A + C) have been executed and their results captured in a follow-up commit.

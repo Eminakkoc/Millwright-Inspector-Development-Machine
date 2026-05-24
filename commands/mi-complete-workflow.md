@@ -239,7 +239,7 @@ if [[ "${branch_route:-III}" == "III" || "${branch_route:-}" == "0a" || "${branc
 fi
 ```
 
-The historical snapshot is then complete: `blueprints/history/v${version}/` carries the rotated `requirements.md`, `config.md`, `diagrams/`, `primer.md`, `reason.md`, the v1.4 `review-history.md` (rotated along with the blueprint by the wildcard `blueprints.sh rotate` move at Step 4), AND `implementation/` (review file, review-context, change-summary, grounding-report, blueprint-lessons, implementation diagrams). PMs querying past cycles can read the full audit trail from this single folder per feature-version — including every codex finding ever raised on that blueprint version via `review-history.md`. The feature's manual-test history lives separately under `workflow-stream/<feature>/test/` and persists across cycles.
+The historical snapshot is then complete: `blueprints/history/v${version}/` carries the rotated `requirements.md`, `config.md`, `diagrams/`, `primer.md`, `reason.md`, the v1.5 `review-history.md` (rotated along with the blueprint by the wildcard `blueprints.sh rotate` move at Step 4), AND `implementation/` (review file, review-context, change-summary, grounding-report, blueprint-lessons, implementation diagrams). PMs querying past cycles can read the full audit trail from this single folder per feature-version — including every codex finding ever raised on that blueprint version via `review-history.md`. The feature's manual-test history lives separately under `workflow-stream/<feature>/test/` and persists across cycles.
 
 ### Step 6 — Finish the active feature
 

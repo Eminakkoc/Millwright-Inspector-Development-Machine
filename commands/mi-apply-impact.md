@@ -95,7 +95,7 @@ else
       for stage2_artifact in grounding-report.md blueprint-lessons.md; do
         [[ -e "$impl_dir/$stage2_artifact" ]] && rm -f "$impl_dir/$stage2_artifact"
       done
-      # v1.4: review-history.md sibling lives under blueprints/current/ and gets
+      # v1.5: review-history.md sibling lives under blueprints/current/ and gets
       # cleared with the rest of current/ above, but be defensive in case the
       # loop above changes — explicit remove keeps cleanup intent visible.
       curr_review_history="$data_root/workflow-stream/$active_feature/blueprints/current/review-history.md"
@@ -215,7 +215,7 @@ Pass `$active_feature` and `$active_item_ids` through to the shared steps. The s
 
 After completing Steps A and B of `docs/blueprint-regeneration.md` (requirements + config generation) and before Step C (diagrams), execute Steps B.4, B.5, and B.6:
 
-#### Step B.4 — Initialize `review-history.md` (new in v1.4)
+#### Step B.4 — Initialize `review-history.md` (new in v1.5)
 
 The orchestrator at Step B.5 expects a sibling `review-history.md` to exist when `requirements.md` lives under `blueprints/current/`. It will lazily init the file itself, but doing it here gives a deterministic init point in the workflow (and ties `requirements-id` to the freshly-written `requirements.md` exactly once, rather than relying on a re-init lookup later).
 
@@ -234,7 +234,7 @@ if [[ ! -f "$review_history" ]]; then
 fi
 ```
 
-Guarded on existence — re-runs of `mi-apply-impact` don't clobber an existing history (which carries unresolved findings from prior cycles that the v1.4 orchestrator's prompt-header summary will surface). `--force` cleanup above DOES wipe this file (intentional: a forced regen resets the review history along with everything else under `current/`).
+Guarded on existence — re-runs of `mi-apply-impact` don't clobber an existing history (which carries unresolved findings from prior cycles that the v1.5 orchestrator's prompt-header summary will surface). `--force` cleanup above DOES wipe this file (intentional: a forced regen resets the review history along with everything else under `current/`).
 
 #### Step B.5 — Auto-invoke `/mi-blueprint-review` on the new `requirements.md`
 
@@ -253,7 +253,7 @@ for r in checks:
 sys.exit(1)
 '; then
   requirements_path="$data_root/workflow-stream/$active_feature/blueprints/current/requirements.md"
-  # v1.4 CLI: --auto-iter replaces positional <max-c-iter> <max-i-iter>. Defaults
+  # v1.5 CLI: --auto-iter replaces positional <max-c-iter> <max-i-iter>. Defaults
   # (--auto-iter 3, --batch-size 3, --concurrency 3, --reasoning-effort medium) are
   # the right starting point for stage-2 auto-fire (see docs/blueprint-review-token-reduction/plan.md §11.1).
   # --scope restricts per-item enumeration to Goals only — Planned and Non-goals

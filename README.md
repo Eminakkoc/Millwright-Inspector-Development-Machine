@@ -173,13 +173,13 @@ See `docs/millwright-inspector-project.md` for the full stage-by-stage reference
 | `/mi-update-todo-list`       | inspector   | Add / cancel / change state on todo items (state-machine safe).            |
 | `/mi-sidequest`              | inspector   | Mid-workflow Q&A or small fix via an isolated side-quest sub-agent; `--write` for source edits. |
 
-**Blueprint review (v1.4.0+ token-reduction refit):**
+**Blueprint review (v1.5.0+ token-reduction refit):**
 
 - `/mi-blueprint-review-consistency <agent> <file> [--auto-iter N] [--reasoning-effort R]` — run a single whole-file consistency review. One codex session per loop; rounds 2+ via `mcp__codex__codex-reply` (delta-only payloads).
-- `/mi-blueprint-review-item <agent> <file>:<item-id> [--auto-iter N] [--reasoning-effort R]` — review a single item (or stateless content) as a `batch_size=1` run through the v1.4 orchestrator.
-- `/mi-blueprint-review <agent> <file> [--auto-iter N] [--batch-size N] [--scope X] [--reasoning-effort R] [--concurrency N]` — v1.4 orchestrator: preflight + summary build (sibling `review-history.md`) → enumerate → per-batch review (parallel waves, session-continuation) → single consistency pass → persist to `review-history.md` → report. Auto-fires at stage 2 against `requirements.md`. Cuts token cost ~95% vs v1.2.x.
+- `/mi-blueprint-review-item <agent> <file>:<item-id> [--auto-iter N] [--reasoning-effort R]` — review a single item (or stateless content) as a `batch_size=1` run through the v1.5 orchestrator.
+- `/mi-blueprint-review <agent> <file> [--auto-iter N] [--batch-size N] [--scope X] [--reasoning-effort R] [--concurrency N]` — v1.5 orchestrator: preflight + summary build (sibling `review-history.md`) → enumerate → per-batch review (parallel waves, session-continuation) → single consistency pass → persist to `review-history.md` → report. Auto-fires at stage 2 against `requirements.md`. Cuts token cost ~95% vs v1.2.x.
 
-See [`docs/blueprint-review-token-reduction/plan.md`](docs/blueprint-review-token-reduction/plan.md) for the v1.4 design (and [`docs/blueprints-review/plan.md`](docs/blueprints-review/plan.md) for the v1.2.x prior art).
+See [`docs/blueprint-review-token-reduction/plan.md`](docs/blueprint-review-token-reduction/plan.md) for the v1.5 design (and [`docs/blueprints-review/plan.md`](docs/blueprints-review/plan.md) for the v1.2.x prior art).
 
 Commands marked **auto** are fired by the millwright on the preceding inspector gate (see the Quickstart). They remain invokable manually for recovery.
 
