@@ -21,25 +21,63 @@ For any other workflow state, this command falls through to `/mi-resume-workflow
 
 ### Step 1 — Read state
 
-#### Step 1a — Sanity-check the plugin runtime (load-bearing)
+#### Step 1a — Resolve the plugin runtime (load-bearing)
 
-Before reading any state, verify `$CLAUDE_PLUGIN_ROOT` is set and the dispatcher's scripts are actually on disk. This guard must run **first**: the state-read fallbacks in Step 1b (`2>/dev/null || echo 'null'`) cannot distinguish "no active workflow" from "scripts unreachable" — without this check, an empty `$CLAUDE_PLUGIN_ROOT` (seen after `/clear` when the env var doesn't propagate into the Bash subshell) would expand `$CLAUDE_PLUGIN_ROOT/scripts/progress.sh` to `/scripts/progress.sh`, silently fail with "command not found", and route the dispatcher to the pre-flight catch-all → `/mi-resume-workflow`, making it look like there's no active workflow when in fact the runtime is broken.
+Resolve `$CLAUDE_PLUGIN_ROOT` and verify the dispatcher's scripts are on disk. This must run **first**: the state-read fallbacks in Step 1b (`2>/dev/null || echo 'null'`) cannot distinguish "no active workflow" from "scripts unreachable" — without this check, an empty `$CLAUDE_PLUGIN_ROOT` would expand `$CLAUDE_PLUGIN_ROOT/scripts/progress.sh` to `/scripts/progress.sh`, silently fail with "command not found", and route the dispatcher to the pre-flight catch-all → `/mi-resume-workflow`, making it look like there's no active workflow when in fact the runtime is broken.
+
+**Why the resolver exists.** Claude Code does not currently inject `$CLAUDE_PLUGIN_ROOT` as a shell env var into Bash tool subshells (open feature request: anthropics/claude-code#48230); the variable is only template-expanded inside config files like `hooks.json`/`plugin.json`. The inherited env var is therefore best-effort — sometimes leaked by a prior hook invocation, often empty (especially right after `/clear`). The resolver below is the canonical source of `$CLAUDE_PLUGIN_ROOT` for this command and falls back through three sources in order: (1) the inherited env var when it points at a working `scripts/progress.sh`, (2) the cwd when it's this plugin's source repo (local dev mode), (3) the marketplace install path from `~/.claude/plugins/installed_plugins.json`. On success the resolved path is exported AND persisted to a per-cwd tempfile so the rest of this invocation's Bash blocks can recover it (each Bash tool call is a fresh subshell that does NOT inherit exports from prior calls — see anthropics/claude-code#2508).
 
 ```bash
-if [[ -z "${CLAUDE_PLUGIN_ROOT:-}" ]]; then
-  echo "error: \$CLAUDE_PLUGIN_ROOT is not set in this shell — plugin scripts cannot be located." >&2
-  echo "       This usually means the env var didn't propagate into the Bash subshell (commonly seen after /clear)." >&2
-  echo "       Retry /mi-continue; if it persists, resolve the plugin root explicitly before re-running." >&2
+resolved=""
+if [[ -n "${CLAUDE_PLUGIN_ROOT:-}" && -x "$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" ]]; then
+  resolved="$CLAUDE_PLUGIN_ROOT"
+elif [[ -f "$PWD/.claude-plugin/plugin.json" ]] \
+  && grep -q '"name": *"millwright-inspector-development-machine"' "$PWD/.claude-plugin/plugin.json" \
+  && [[ -x "$PWD/scripts/progress.sh" ]]; then
+  resolved="$PWD"
+elif [[ -f "$HOME/.claude/plugins/installed_plugins.json" ]]; then
+  candidate="$(python3 - <<'PYEOF' 2>/dev/null
+import json, os
+try:
+    with open(os.path.expanduser('~/.claude/plugins/installed_plugins.json')) as f:
+        d = json.load(f)
+    for k, v in (d.get('plugins') or {}).items():
+        if k.startswith('millwright-inspector-development-machine@') and v:
+            print(v[0].get('installPath', ''))
+            break
+except Exception:
+    pass
+PYEOF
+)"
+  if [[ -n "$candidate" && -x "$candidate/scripts/progress.sh" ]]; then
+    resolved="$candidate"
+  fi
+fi
+
+if [[ -z "$resolved" ]]; then
+  echo "error: cannot resolve plugin root for millwright-inspector-development-machine." >&2
+  echo "       Tried in order: \$CLAUDE_PLUGIN_ROOT env var, \$PWD/.claude-plugin/plugin.json, ~/.claude/plugins/installed_plugins.json." >&2
+  echo "       None of these point to a usable install (scripts/progress.sh must exist and be executable)." >&2
   exit 1
 fi
-if [[ ! -x "$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" ]]; then
-  echo "error: $CLAUDE_PLUGIN_ROOT/scripts/progress.sh is missing or not executable — plugin runtime is not usable." >&2
-  echo "       Do NOT interpret the next state read as workflow state; this is a runtime fault, not a workflow fault." >&2
-  exit 1
-fi
+
+export CLAUDE_PLUGIN_ROOT="$resolved"
+mi_root_tag="$(printf '%s' "$PWD" | shasum -a 256 | cut -c1-16)"
+printf 'export CLAUDE_PLUGIN_ROOT=%q\n' "$resolved" \
+  > "${TMPDIR:-/tmp}/mi-plugin-root.${mi_root_tag}.sh"
+
+echo "Step 1a: CLAUDE_PLUGIN_ROOT resolved to $resolved"
 ```
 
-If either guard fires, **stop**. Do not fall through to Step 1b, do not delegate to `/mi-resume-workflow`, do not print a state snapshot — the failure is environmental, not stateful, and any state-shaped output would mislead the inspector into debugging their workflow when the runtime is the problem.
+If the resolver fails, **stop**. Do not fall through to Step 1b, do not delegate to `/mi-resume-workflow`, do not print a state snapshot — the failure is environmental, not stateful, and any state-shaped output would mislead the inspector into debugging their workflow when the runtime is the problem.
+
+**Per-block recovery (applies to every subsequent Bash invocation in this command).** Each Bash tool call is a fresh subshell that does NOT inherit the export from Step 1a. Prepend this one-liner to every subsequent Bash block in this command so the env var is restored from the tempfile written above:
+
+```bash
+[[ -z "${CLAUDE_PLUGIN_ROOT:-}" ]] && source "${TMPDIR:-/tmp}/mi-plugin-root.$(printf '%s' "$PWD" | shasum -a 256 | cut -c1-16).sh" 2>/dev/null || true
+```
+
+If the tempfile is missing (e.g. someone jumped to a later step without running Step 1a first), the source is a no-op and the original symptom — `$CLAUDE_PLUGIN_ROOT/...` expanding to `/...` — reappears. That's intentional: Step 1a is the only entry point that's expected to produce the tempfile, and a missing tempfile means Step 1a was skipped.
 
 #### Step 1b — Read workflow state
 

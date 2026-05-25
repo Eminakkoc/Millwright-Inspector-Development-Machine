@@ -9,7 +9,7 @@
 > **Provenance.** This file is the single source of truth for the project. It supersedes
 > and replaces the former `docs/project-report.md` (detailed report) and
 > `docs/workflow-spec.md` (workflow specification), which have been merged here. It
-> describes plugin **v1.1.0**. For the end-to-end sequence diagram see
+> describes plugin **v1.5.0**. For the end-to-end sequence diagram see
 > [`docs/diagrams/workflow-sequence.svg`](./diagrams/workflow-sequence.svg); for
 > per-stage diagrams see [`docs/agents-and-contexts/`](./agents-and-contexts/).
 
@@ -412,13 +412,14 @@ workflow-stream/<feature>/
 │   │   ├── requirements.md   # Goals / Planned / Non-goals
 │   │   ├── config.md         # auto-summary of skills+rules; ## GIT BRANCH; ## Inspector Additions
 │   │   ├── primer.md         # compact stage-3 launch primer (layered-load entry point)
+│   │   ├── review-history.md # blueprint-review cross-cycle memory (v1.5; rotates with the blueprint)
 │   │   └── diagrams/
 │   │       ├── README.md
 │   │       ├── use-case-<feature>.puml
 │   │       ├── sequence-<flow>.puml
 │   │       └── (optional, at most one) class-<domain>.puml OR component-<subject>.puml
 │   └── history/
-│       ├── v1/{requirements.md, config.md, primer.md, diagrams/, reason.md, implementation/}
+│       ├── v1/{requirements.md, config.md, primer.md, review-history.md, diagrams/, reason.md, implementation/}
 │       ├── v2/...
 │       └── ...
 ├── implementation/        # archived into history/v[N+1]/implementation/ at stage 8
@@ -763,7 +764,7 @@ end`, and a fresh subfolder is created.
   (≤ 10 entries / ≤ 2 lines each; `## Skills`, `## Rules`, `## Load on demand`); pre-fill
   `## GIT BRANCH` from HEAD when non-trunk; preserve `## Inspector Additions` verbatim.
 
-After Steps A and B, `mi-apply-impact` auto-invokes `/mi-blueprint-review codex 3 5 "<requirements_path>" --scope "Goals (this cycle)"` to review the freshly-generated blueprint for consistency and per-item completeness, then surfaces any drift in `summary.md` / `todo-list.md` (drift is surfaced only — never auto-edited). Diagrams (Step C) are generated last so they reflect the post-review spec. The auto-fire degrades to a non-blocking warning when codex MCP is unavailable. See §7.9 for the full command surface and `docs/blueprints-review/plan.md` for the design.
+After Steps A and B, Step B.4 lazily initializes `review-history.md` (the v1.5 cross-cycle reviewer-memory artifact; §7.9) alongside `requirements.md` if it does not already exist, then Step B.5 auto-invokes `/mi-blueprint-review codex "<requirements_path>" --scope "Goals (this cycle)" --reasoning-effort medium` to review the freshly-generated blueprint for consistency and per-item completeness. The v1.5 CLI relies on defaults (`--auto-iter 5`, `--batch-size 3`, `--concurrency 3`) and no longer takes positional iter args. Step B.6 then surfaces any drift in `summary.md` / `todo-list.md` (drift is surfaced only — never auto-edited). Diagrams (Step C) are generated last so they reflect the post-review spec. The auto-fire degrades to a non-blocking warning when codex MCP is unavailable. See §7.9 for the full command surface and `docs/blueprint-review-token-reduction/plan.md` for the v1.5 design.
 
 - *Step C* — delegate diagram rendering to the `blueprint-diagrammer` sub-agent: a
   mandatory `use-case-<feature>.puml`, 2–3 `sequence-<flow>.puml`, and at most one optional
@@ -1178,7 +1179,7 @@ posted, asks one confirmation, then `pr-review.sh post-reply` posts a threaded r
 Finally `pr-review.sh report-status` sets the report frontmatter to `applied` (all blocks
 terminal) or `partial` (some non-terminal). The handler auto-fires nothing else.
 
-### 7.9 Blueprint review — `/mi-blueprint-review*` (v1.2.0+)
+### 7.9 Blueprint review — `/mi-blueprint-review*` (v1.2.0+; token-reduction refit in v1.5.0)
 
 Three commands that use an **external coding agent** as a reviewer (Codex first; future
 agents plug in by adding to `plugin.json`'s `mcpServers` + `scripts/blueprint-review.sh
@@ -1187,11 +1188,24 @@ completeness. The millwright (Claude) is the **fixer** that applies the reviewer
 suggested edits between iterations. The inspector intervenes only on max-iter `y/n`
 prompts.
 
+**v1.5 refit headline:** every review loop now opens a **single codex session** and
+continues it across iterations — round 1 via `mcp__codex__codex`, rounds 2+ via
+`mcp__codex__codex-reply` with delta-only prompts (the file / batch content lives in
+session state instead of being re-shipped). Combined with a per-batch reviewer (replacing
+the per-item reviewer), envelope-trim across the prompt templates, and a deterministic
+`review-history.md` summary fed into every session opener, the v1.5 path cuts a 20-item
+stage-2 auto-fire from ~107 codex calls / ~1M tokens to ~25 / ~50k (REPORT-4 baseline →
+v1.5 projection in `docs/blueprint-review-token-reduction/plan.md`). When `codex-reply`
+is unavailable (codex-cli < 0.130.0), sub-agents fall back to stateless mode and reach
+~60% reduction instead of ~95%; `mi-doctor` annotates the codex check with the detected
+codex-reply availability.
+
 Findings live **inline in the reviewed file** as `<!-- REVIEW-FINDING ... -->` HTML
 comments — invisible in rendered markdown, visible to both agents in raw text. Each
 carries a `severity: high | medium | low`, a unique lifetime-monotonic `F-NNN` id, and a
 `suggested-fix:` block. Resolved findings are removed when the fixer addresses them;
-unresolved findings stay in the file when the loop exits.
+unresolved findings stay in the file when the loop exits and are persisted as a history
+entry in `review-history.md` (see below).
 
 The commands are **standalone** — they work on any markdown file with or without an
 active mi-workflow. The orchestrator is **also auto-fired at stage 2** (see §6.2) so the
@@ -1199,39 +1213,68 @@ inspector reviews a post-review `requirements.md` rather than the raw stage-2 ou
 
 #### The three commands
 
-- **`/mi-blueprint-review-consistency <agent> <max-iter> <file> [--reasoning-effort <low|medium|high>]`**
+- **`/mi-blueprint-review-consistency <agent> <file> [--auto-iter N] [--reasoning-effort <low|medium|high>]`** (v1.5 CLI)
   — single whole-file consistency loop. Reviewer flags cross-item contradictions,
   missing references, terminology drift; fixer applies edits between iterations.
-  Delegates to the `blueprint-consistency-reviewer` sub-agent (which writes the file
-  directly — safe because consistency review is always serial).
+  Defaults: `--auto-iter 5`, `--reasoning-effort medium`. Delegates to the
+  `blueprint-consistency-reviewer` sub-agent, which writes the file directly between
+  rounds (safe — consistency review is always serial) and owns a single codex session
+  across rounds via `codex-reply`.
 
 - **`/mi-blueprint-review-item <agent> <file>:<item-id> | <content> [--auto-iter N] [--reasoning-effort <low|medium|high>]`** (v1.5)
   — single per-item review run through the v1.5 orchestrator as a `batch_size=1` batch.
   Two modes: file-anchored (Mode A, edits the file in place) and stateless (Mode B,
-  prints results to terminal). Delegates to the `blueprint-batch-reviewer`
-  sub-agent, which is **structurally read-only** — its `tools:` frontmatter contains
-  ONLY the codex MCP tools (`mcp__codex__codex`, `mcp__codex__codex-reply`; no `Read`,
-  `Write`, `Edit`, `Bash`, or `Grep`). The calling command applies any region
-  replacement in main via Edit-exact-match. This lets the orchestrator run multiple
-  batch sub-agents in parallel without write
-  conflicts.
+  prints results to terminal). Delegates to the `blueprint-batch-reviewer` sub-agent,
+  which is **structurally read-only** — its `tools:` frontmatter contains ONLY the
+  codex MCP tools (`mcp__codex__codex`, `mcp__codex__codex-reply`; no `Read`, `Write`,
+  `Edit`, `Bash`, or `Grep`). The calling command applies any region replacement in
+  main via Edit-exact-match. This lets the orchestrator run multiple batch sub-agents
+  in parallel without write conflicts.
 
-- **`/mi-blueprint-review <agent> <max-c-iter> <max-i-iter> <file> [--batch-size N] [--scope <heading>] [--reasoning-effort <low|medium|high>]`**
-  — orchestrator. Five phases:
-  1. **Initial consistency loop** (same as the `-consistency` singleton; max-iter = `<max-c-iter>`).
-  2. **Item enumeration** — one-shot reviewer call returns `[{id, anchor_line, occurrence_index}]`;
-     `scripts/blueprint-review.sh enumerate` deterministically computes canonical
-     byte-offset descriptors `[{id, start_offset, end_offset, original_region}]`.
-     `--scope <heading>` restricts to one section (stage-2 auto-fire passes
-     `--scope "Goals (this cycle)"` so Planned and Non-goals items are skipped). Hard
-     cap: `MAX_ITEMS_PER_REVIEW=20`.
-  3. **Per-item batched review** — items batched (default 5 per batch) and processed
-     in parallel via per-item sub-agents. Returns are aggregated as Payload JSON; the
-     orchestrator applies region replacements **serially in main** (rewriting tmp-ids
-     `T<instance>-<n>` → final `F-NNN`).
-  4. **Final consistency loop** — same as phase 1; catches contradictions introduced
-     by phase-3 rewrites.
-  5. **Final report** — print summary; any remaining findings stay inline.
+- **`/mi-blueprint-review <agent> <file> [--auto-iter N] [--batch-size N] [--scope <heading>] [--reasoning-effort <low|medium|high>] [--concurrency N] [--reference-file <path>]`** (v1.5 CLI; `--reference-file` added in v1.6)
+  — orchestrator. The positional `<max-c-iter> <max-i-iter>` args from v1.2.x are
+  **gone**; a single `--auto-iter N` flag (default `5`) governs both per-batch (Phase C)
+  and per-consistency-pass (Phase D) round budgets. `--batch-size` defaults to `3`;
+  `--concurrency` defaults to `3` (parallel batches per Phase C wave). `--reference-file`
+  (v1.6, optional, single value) points at a `blueprint-review-context.md` manifest whose
+  body is injected as **trusted inspector-authored guidance** (the "Review brief") and
+  whose `references:` list contributes **strict read-only data envelopes** (the
+  "Reference material"). Stage-2 auto-fire writes the manifest at
+  `blueprints/current/blueprint-review-context.md` (Step B.4.5 of `mi-apply-impact`) and
+  passes it automatically; manual runs can author or hand-edit the same file. See
+  `docs/blueprint-rv-context/report.md` for the full design, the manifest format, and the
+  trust split between brief and data. Six phases:
+  1. **Phase A — preflight + summary build.** Resolves the `review-history.md`
+     sibling (when the file lives under `blueprints/current/`) and renders a
+     deterministic `≤ 1500-token` history summary via
+     `scripts/blueprint-review.sh build-summary`. Every reviewer session opener
+     (Phase C and Phase D) receives this summary so the reviewer skips already-resolved
+     findings instead of re-discovering them. Outside `blueprints/current/`, the
+     summary is empty and Phase F is silently skipped.
+  2. **Phase B — item enumeration.** One-shot reviewer call returns
+     `[{id, anchor_line, occurrence_index}]`; `scripts/blueprint-review.sh enumerate`
+     deterministically computes canonical byte-offset descriptors
+     `[{id, start_offset, end_offset, original_region}]`. `--scope <heading>` restricts
+     to one section (stage-2 auto-fire passes `--scope "Goals (this cycle)"` so Planned
+     and Non-goals items are skipped). Hard cap on descriptor count: default `35`,
+     overridable via `--max-items N`. Above the cap the orchestrator refuses and tells
+     the inspector to split the file, raise `--max-items`, or use
+     `/mi-blueprint-review-item` on a subset.
+  3. **Phase C — per-batch parallel review.** Descriptors batched (default 3 per batch)
+     and processed in parallel waves of up to `--concurrency` sub-agents. Each
+     `blueprint-batch-reviewer` owns a single codex session for its batch. Returns are
+     aggregated as multi-item Payload JSON; the orchestrator applies region
+     replacements **serially in main** (rewriting tmp-ids `T<instance>-<n>` →
+     final `F-NNN`).
+  4. **Phase D — consistency pass.** Single fix-and-converge loop that sees Phase C's
+     per-item findings as inline context. v1.2.x's initial consistency loop is gone —
+     Phase D is the only whole-file consistency pass. The `blueprint-consistency-reviewer`
+     spawn here uses the same codex-reply continuation pattern.
+  5. **Phase F — persist findings to `review-history.md`.** Calls
+     `scripts/blueprint-review.sh persist-findings` to append a new history entry for
+     this run and update earlier entries when a previously-open finding has been
+     resolved or dropped. Skipped when the file is outside `blueprints/current/`.
+  6. **Phase G — final report.** Print summary; any remaining findings stay inline.
 
 #### Loop exits
 
@@ -1240,9 +1283,9 @@ Every review loop has four exit reasons, evaluated in order on each iteration:
 | Exit | When |
 | --- | --- |
 | `success` | Zero high/medium findings (kept or new) after a reviewer call. |
-| `stable` | Iter ≥ 2, no new findings, every existing finding is `still-present` or `refined`. The loop has converged — further iterations cannot make progress. |
+| `stable` | Iter ≥ 2, no new findings, every existing finding is `still_present` or `refined`. The loop has converged — further iterations cannot make progress. |
 | `stable-medium-only` | Iter ≥ 2, no high findings, no new mediums (only stable ones remain). Surface to inspector but don't burn more iterations. |
-| `max-iter` | None of the above and iter ≥ `max_iterations`. The orchestrator prompts the inspector `y/n` for another loop. |
+| `max-iter` | None of the above and iter ≥ `--auto-iter`. The orchestrator prompts the inspector `y/n` for another loop. |
 
 The reason is carried in the sub-agent's `Findings / risks:` body so the orchestrator
 shows the right user-facing message (e.g. `"<N> high / <M> medium findings remain after
@@ -1252,33 +1295,64 @@ running another won't help — these findings need inspector judgment"` for `sta
 #### Reconciliation contract
 
 Findings are reconciled **by id**, not by content similarity, via the
-`{{EXISTING_FINDINGS}}` placeholder in both prompt templates. On each iteration the
-reviewer is given every existing finding's id, severity, and finding text, and returns
-per-id `status: still-present | resolved | refined`. `resolved` requires a non-empty
-`resolved_by_change:` field naming the specific edit that addressed it — otherwise the
-sub-agent downgrades to `still-present` for safety (v1.2.4 F4 guard against
-false-positive resolution observed in real testing).
+`{{EXISTING_FINDINGS}}` placeholder rendered into the consistency and batch reviewer
+prompts. On each iteration the reviewer is given every existing finding's id, severity,
+and finding text, and returns per-id `status: still_present | resolved | refined`
+(snake_case keys — the v1.5 JSON contract is uniformly snake_case). `resolved` requires
+a non-empty `resolved_by_change:` field naming the specific edit that addressed it —
+otherwise the sub-agent downgrades to `still_present` for safety (v1.2.4 F4 guard
+against false-positive resolution observed in real testing).
 
 Finding ids `F-NNN` are **lifetime-monotonic per file**: `scripts/blueprint-review.sh
 alloc-final-id` reads, increments, and writes back a `last-finding-id:` field in the
 file's YAML frontmatter. An id is never reused, even after the corresponding finding is
 resolved and its comment removed — audit trails stay clean across iterations.
 
+#### `review-history.md` — cross-cycle reviewer memory (v1.5)
+
+A sibling artifact co-located with `requirements.md` in `blueprints/current/` that
+remembers what previous review runs decided about each finding. It rotates with the
+blueprint at `/mi-update-blueprint` and `/mi-complete-workflow` via the wildcard
+`blueprints.sh rotate` move (no special-case wiring) and is append-only within a
+blueprint version. `mi-apply-impact` Step B.4 lazily initializes it before Step B.5's
+orchestrator auto-fire; `--force` cleanup explicitly removes it.
+
+Two writers / one reader:
+
+- **`scripts/blueprint-review.sh build-summary`** (read-side renderer) — produces a
+  deterministic ≤ 1500-token summary the orchestrator injects into every Phase C and
+  Phase D session opener. A truncation invariant protects unresolved-high findings and
+  current-item-tied resolved findings; surplus content is dropped from the **oldest
+  low-severity unresolved entries first** (v1.5 fix — earlier behavior dropped the
+  newest first).
+- **`scripts/blueprint-review.sh persist-findings`** (write-side, Phase F) — appends
+  the new run's findings and updates earlier entries whose status flipped to resolved
+  or dropped, then recomputes the file's frontmatter counters (`unresolved-high-count`,
+  `unresolved-medium-count`, `unresolved-low-count`, `total-resolved-count`).
+
+A new `review-history` schema validates the artifact; a new template (`templates/review-history.md.tmpl`) initializes it; the PostToolUse hook (§8.2) validates writes to it.
+
 #### MCP integration
 
 `plugin.json` declares the codex MCP server (`codex mcp-server` stdio entrypoint).
-Adding a new reviewer agent requires (1) declaring its MCP server in `plugin.json`, (2)
-adding a case to `scripts/blueprint-review.sh resolve-tool` mapping the agent name to
-its `mcp__*` tool name, and (3) listing the tool name in both reviewer sub-agents'
-`tools:` frontmatter so it's callable at runtime. `--reasoning-effort <low|medium|high>`
-(default `medium`) is plumbed through every sub-agent spawn to every MCP call;
-production cost at `high` is ~2× `medium`, and `low` already produces high-quality
-findings (per the v1.2.0-1.2.4 test runs).
+Adding a new reviewer agent requires (1) declaring its MCP server in `plugin.json`,
+(2) adding a case to `scripts/blueprint-review.sh resolve-tool` mapping the agent name
+to its `mcp__*` tool name, and (3) listing the round-1 and round-2+ tools in both
+reviewer sub-agents' `tools:` frontmatter so they are callable at runtime (for codex:
+`mcp__codex__codex` and `mcp__codex__codex-reply`). `--reasoning-effort <low|medium|high>`
+(default `medium`) is plumbed through every sub-agent spawn to every MCP call; it is
+locked at the round-1 call (`config.model_reasoning_effort`) and inherited by rounds 2+
+through the same session. Production cost at `high` is ~2× `medium`, and `low` already
+produces high-quality findings (per the v1.2.0–1.2.4 test runs).
 
-See `docs/blueprints-review/plan.md` for the full design, `CHANGELOG.md` for per-version
-history (v1.2.0 introduces the feature; v1.2.1-v1.2.4 are the convergence /
-calibration / cost-tuning fixes from real-world testing), and
-`feature/test-plugin/reports/` (gitignored) for the iteration-by-iteration test reports.
+See `docs/blueprint-review-token-reduction/plan.md` for the v1.5 design and
+`docs/blueprint-review-token-reduction/phase-0-findings.md` for the verified
+`mcp__codex__codex-reply` MCP shape. The v1.2.x prior art at
+`docs/blueprints-review/plan.md` carries forward unchanged (item enumeration, canonical
+region descriptor, `alloc-final-id` semantics). `CHANGELOG.md` has the per-version
+history (v1.2.0 introduces the feature; v1.2.1–v1.2.4 are convergence / calibration /
+cost-tuning fixes; v1.5.0 is the token-reduction refit). `feature/test-plugin/reports/`
+(gitignored) holds the iteration-by-iteration test reports.
 
 ---
 
@@ -1289,7 +1363,7 @@ calibration / cost-tuning fixes from real-world testing), and
 ```json
 {
   "name": "millwright-inspector-development-machine",
-  "version": "1.2.4",
+  "version": "1.5.0",
   "description": "Millwright-Inspector agentic workflow system …",
   "author": { "name": "Emin Akkoc", "email": "emin.akkoc@gmail.com" },
   "license": "MIT",
@@ -1335,7 +1409,7 @@ Coverage policy:
   `quest/*/{progress, todo-list, summary, queue-rationale, context-ledger}.md`,
   `quest/*/reference.md` (schema `reference`), `journal/*/id.md` and
   `workflow-stream/*/id.md` (schema `folder-id`), `workflow-stream/*/decisions.md`,
-  `blueprints/current/{requirements, config, primer}.md`,
+  `blueprints/current/{requirements, config, primer, review-history}.md` (`review-history` added in v1.5; §7.9),
   `blueprints/current/diagrams/README.md`,
   `implementation/{inspector-review, review-context, change-summary, grounding-report}.md`,
   `implementation/diagrams/README.md`, `blueprints/history/v*/reason.md`,
@@ -1348,7 +1422,7 @@ Coverage policy:
 
 ### 8.3 Schemas (`schemas/`)
 
-**23 JSON-Schema-as-YAML files**, one per artifact type, validated by `ajv-cli` (preferred)
+**25 JSON-Schema-as-YAML files**, one per artifact type, validated by `ajv-cli` (preferred)
 or a `yq`-based structural fallback:
 
 | Schema | Validates |
@@ -1364,6 +1438,7 @@ or a `yq`-based structural fallback:
 | `requirements` | `blueprints/current/requirements.md` — `id`, `todo-list-id`, `todo-item-ids`, `commits`, optional `last-finding-id` (lifetime-monotonic blueprint-review F-NNN counter; see §7.9) |
 | `config` | `blueprints/current/config.md` — `id`, `requirements-id` |
 | `primer` | `blueprints/current/primer.md` — `id`, `requirements-id`, `feature` |
+| `review-history` | `blueprints/current/review-history.md` — `id`, `requirements-id`, `feature`, per-run history entries plus rolling unresolved-high / medium / low / total-resolved counters; v1.5; see §7.9 |
 | `diagrams-readme-blueprint` | `blueprints/current/diagrams/README.md` — `requirements-id` back-reference |
 | `decisions` | `workflow-stream/*/decisions.md` — `id` (UUIDv4-only, stricter than others), `feature` |
 | `reason` | `blueprints/history/v*/reason.md` — `kind`, `triggered-at`, `summary` |
@@ -1371,6 +1446,7 @@ or a `yq`-based structural fallback:
 | `review-context` | `implementation/review-context.md` — `id`, `requirements-id`, `feature` |
 | `change-summary` | `implementation/change-summary.md` — `id`, `requirements-id`, `feature`, `base-commit`, `head` |
 | `grounding-report` | `implementation/grounding-report.md` — `id`, `feature`, `seam-classification` |
+| `blueprint-lessons` | `implementation/blueprint-lessons.md` — `id`, `feature`, `requirements-id`, `lessons-source-mtime`, `selected-count`; v1.3 stage-2 filtered-lessons injection (selected-count gates whether main reads the body) |
 | `diagrams-readme-implementation` | `implementation/diagrams/README.md` — `id`, `stage: implementation` |
 | `manual-test-plan` | `test/manual-test-plan.md` — `id`, `seed-family-id`, `feature`, `generated-in-activation`, `requirements-id`, … |
 | `manual-test-results` | `test/manual-test-results.md` — `id`, `plan-id`, `seed-family-id`, `state`, `current-scenario`, counts |
@@ -1379,21 +1455,24 @@ or a `yq`-based structural fallback:
 
 ### 8.4 Templates (`templates/`)
 
-**25 templates.** Most are mustache-style and rendered by `frontmatter.sh init`, which
+**27 templates.** Most are mustache-style and rendered by `frontmatter.sh init`, which
 auto-injects a fresh UUID via `uuid.sh` if `UUID=` isn't passed, then substitutes the
-remaining `{{KEY}}` placeholders: `active-quest`, `change-summary`, `config`,
-`context-ledger`, `decisions`, `folder-id`, `grounding-report`, `inspector-review`,
-`lessons-learned`, `manual-test-plan`, `manual-test-results`, `pr-review-report`,
-`primer`, `progress`, `queue-rationale`, `reason`, `reference`, `requirements`,
-`review-context`, `sub-agent-return`, `summary`, `todo-list`. (`inspector-review.md.tmpl`
-is the template for the `review-file` schema; the two `diagrams-readme-*` artifacts have
-no template — their READMEs are composed directly.)
+remaining `{{KEY}}` placeholders: `active-quest`, `blueprint-lessons`, `change-summary`,
+`config`, `context-ledger`, `decisions`, `folder-id`, `grounding-report`,
+`inspector-review`, `lessons-learned`, `manual-test-plan`, `manual-test-results`,
+`pr-review-report`, `primer`, `progress`, `queue-rationale`, `reason`, `reference`,
+`requirements`, `review-context`, `review-history`, `sub-agent-return`, `summary`,
+`todo-list`. (`inspector-review.md.tmpl` is the template for the `review-file` schema;
+the two `diagrams-readme-*` artifacts have no template — their READMEs are composed
+directly.)
 
-Three blueprint-review reviewer prompts (added in v1.2.0; rendered by the sub-agents at
-review-call time, not by `frontmatter.sh`) — see §7.9:
+Three blueprint-review reviewer prompts (added in v1.2.0; per-item prompt renamed and
+refit for per-batch use in v1.5; rendered by the sub-agents at review-call time, not by
+`frontmatter.sh`) — see §7.9:
 `blueprint-reviewer-prompt-consistency.md.tmpl` (whole-file consistency review),
-`blueprint-reviewer-prompt-item.md.tmpl` (per-item review),
-`blueprint-reviewer-prompt-enumerate.md.tmpl` (orchestrator phase-2 item enumeration).
+`blueprint-reviewer-prompt-batch.md.tmpl` (per-batch review — replaces the v1.2.x
+`blueprint-reviewer-prompt-item.md.tmpl`),
+`blueprint-reviewer-prompt-enumerate.md.tmpl` (orchestrator Phase B item enumeration).
 
 ### 8.5 Scripts (`scripts/`)
 
@@ -1417,7 +1496,7 @@ review-call time, not by `frontmatter.sh`) — see §7.9:
 | `info-bar.sh` | Pull-only Claude Code `statusLine` renderer (not a hook). Reads stdin JSON, prints one line, exits 0; ≤ 100 ms hot-path target. |
 | `ledger.sh` | Manage `context-ledger.md`. Subcommands: `init`, `append`. Append failures warn but never block. |
 | `pr-review.sh` | Drive `/mi-analyze-review`. Subcommands: `parse-url`, `new-session`, `fetch`, `canonicalize`, `count-marked`, `find-awaiting`, `list-actionable`, `normalize`, `set-status`, `post-reply`, `report-status`. |
-| `blueprint-review.sh` | Drive the three `/mi-blueprint-review*` commands (v1.2.0+; see §7.9). Subcommands: `resolve-tool` (agent name → MCP tool name), `enumerate` (deterministic byte-offset computation from reviewer-supplied `{id, anchor_line, occurrence_index}`), `parse-findings` (extract `<!-- REVIEW-FINDING -->` blocks as JSON), `alloc-final-id` (lifetime-monotonic F-NNN allocator backed by `last-finding-id` frontmatter), `diff-drift` (heads-up diff against `summary.md` / `todo-list.md` after stage-2 review). |
+| `blueprint-review.sh` | Drive the three `/mi-blueprint-review*` commands (v1.2.0+; v1.5 refit; see §7.9). Subcommands: `resolve-tool` (agent name → MCP tool name), `enumerate` (deterministic byte-offset computation from reviewer-supplied `{id, anchor_line, occurrence_index}`), `parse-findings` (extract `<!-- REVIEW-FINDING -->` blocks as JSON), `alloc-final-id` (lifetime-monotonic F-NNN allocator backed by `last-finding-id` frontmatter), `diff-drift` (heads-up diff against `summary.md` / `todo-list.md` after stage-2 review), `build-summary` (v1.5; deterministic ≤ 1500-token `review-history.md` summary for reviewer-session openers; truncation invariant protects unresolved-high and current-item-tied resolved findings, drops oldest low-severity unresolved first), `persist-findings` (v1.5; append new + flip earlier entries to resolved/dropped + recompute frontmatter counters). |
 | `lessons.sh` | Manage `lessons-learned.md` (cumulative PR-review lessons). Subcommands: `path`, `append` (auto-increments `L-NNN` ids). |
 | `migrate-diagrams-readme.sh` | One-shot back-fill of `requirements-id` / `id` into legacy diagram READMEs. |
 | `migrate-test-folder.sh` | One-shot migration of legacy manual-test artifacts into the feature-permanent `test/` folder. |

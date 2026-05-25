@@ -21,6 +21,7 @@ You write the reviewed file directly between rounds. Safe because consistency re
 - `lessons_block` — opaque markdown string for `{{LESSONS_BLOCK}}` substitution; may be empty.
 - `history_summary` — opaque markdown string built by main (≤ 1500 tokens) carrying cross-cycle context. May be empty.
 - `file_metadata_brief` — opaque markdown string built by main (~100 tokens) — feature, item-id range, terminology glossary.
+- `reference_block` — opaque markdown string built by main from `--reference-file` (Phase A.5). Two-section block with `## Review brief` (inspector-authored trusted guidance — outside envelopes) and `## Reference material` (linked artifacts inside `MI-REFERENCE` envelopes). May be empty. See `docs/blueprint-rv-context/report.md` §3.3.
 
 ## Loop body
 
@@ -36,6 +37,8 @@ You write the reviewed file directly between rounds. Safe because consistency re
 4. Compose the round-1 prompt:
    ```
    [file_metadata_brief]
+   
+   [reference_block]                <-- omit entire block if empty
    
    [history_summary]                <-- omit entire block if empty
    
@@ -71,14 +74,58 @@ For each subsequent round (up to `max_iterations`):
 
 For each `existing[]` entry (downgrade `resolved` → `still-present` if `resolved_by_change` is missing/empty — the v1.2.4 F4 guard):
 - `status: resolved` (with non-empty `resolved_by_change`) — REMOVE the `<!-- REVIEW-FINDING id: X -->` block from the file.
-- `status: refined` — UPDATE the block's `finding:` and `suggested-fix:` with refined text; bump `iteration:`.
+- `status: refined` — UPDATE the block's `finding:` and `suggested-fix:` lines in place with refined text; bump `iteration:`. Leave every other field line untouched. Keep the canonical block format below.
 - `status: still-present` — bump the block's `iteration:`; leave finding text alone.
 
 For each `new[]` entry:
 - Allocate a final `F-NNN` id via `scripts/blueprint-review.sh alloc-final-id "$file_path"`.
-- Append a fresh `REVIEW-FINDING` block at the top of the body (after frontmatter, before the first `## ` heading).
+- Append a fresh `REVIEW-FINDING` block — in the **canonical format below** — at the top of the body (after frontmatter, before the first `## ` heading).
 
 Write the updated file via `Write`. Validate frontmatter byte-for-byte unchanged from your round's starting state — **with one exception**: `alloc-final-id` legitimately updates the `last-finding-id` field on every allocation (state-mutating per spec §5.5). The byte-equality rule is: every OTHER frontmatter field must be unchanged. If a field other than `last-finding-id` differs: revert; retry once; on second failure → `Result: blocked`.
+
+### Canonical REVIEW-FINDING block format (MANDATORY)
+
+Every block you APPEND or UPDATE in the file MUST use this exact shape. The orchestrator's `scripts/blueprint-review.sh parse-findings` splits the comment body on newlines and matches `key: value` per line; **non-canonical blocks (attribute-style, JSON-inside-comment, single-line collapsed) are silently skipped** and the finding is lost from `review-history.md` at Phase F. A skipped finding is a contract violation.
+
+Required layout — one field per line, kebab-case keys, multi-line scalars via the YAML pipe (`|`):
+
+```
+<!-- REVIEW-FINDING
+id: F-007
+severity: high
+phase: consistency
+target: file
+iteration: 2
+finding: |
+  Free-form 1–N line description of the issue.
+suggested-fix: |
+  Free-form 1–N line description of the proposed change.
+-->
+```
+
+Field rules:
+- `id`: final `F-NNN` allocated via `scripts/blueprint-review.sh alloc-final-id` for new blocks. For existing blocks you UPDATE, keep the original id untouched.
+- `severity`: `high | medium | low` — verbatim from the reviewer's response.
+- `phase`: always `consistency` for this sub-agent.
+- `target`: `file` when there's no specific item anchor (the common consistency case); an item id (e.g. `PAY-001`) when the finding pins to one item.
+- `iteration`: current round number; bump on every status update of an existing block.
+- `finding:` / `suggested-fix:` — keys are **kebab-case in the on-disk block** even though the reviewer's JSON contract uses snake_case (`suggested_fix`). The parser expects kebab-case. Use the YAML pipe (`|`) and put the text on the lines below; the parser strips per-line whitespace, so any leading indentation is fine.
+
+Forbidden shapes (all parse to zero fields):
+- HTML attribute style: `<!-- REVIEW-FINDING id="F-007" severity="high" finding="..." -->`
+- JSON-inside-comment: `<!-- REVIEW-FINDING {"id":"F-007","severity":"high",...} -->`
+- Single-line key:value chain: `<!-- REVIEW-FINDING id: F-007; severity: high; finding: ... -->`
+- Kebab-only inside a `|` block where the next line starts with `^[a-zA-Z_-]+:` — the parser will treat that line as the next field and truncate your multi-line scalar. If a finding/suggested-fix body needs to contain literal `word:` at start of line, indent that line by ≥ 2 spaces so it doesn't match the next-key regex.
+
+### Pre-write self-check (per round, before the `Write` call)
+
+Before writing the updated file:
+
+1. Count occurrences of the literal string `<!-- REVIEW-FINDING` in the file body. This count MUST equal `(existing kept as still-present or refined) + (newly-appended)` — every reviewer-tracked finding must be backed by a real block in the file, and every block in the file must correspond to a tracked finding.
+2. For each block, verify it has at minimum these field lines: `id:`, `severity:`, `phase:`, `target:`, `finding:`, `suggested-fix:`. Each on its own line. Keys kebab-case.
+3. If either check fails: rebuild the offending block(s) using the canonical format from the reviewer's JSON response and retry the check once. On second failure → exit with `Result: blocked` and a `reason: contract-mismatch` line in `Findings / risks`.
+
+The pre-write self-check is the contract that lets Phase F's `parse-findings` accurately persist every finding the round produced — without it, blocks are silently dropped from history.
 
 ### Session-expiry fallback
 

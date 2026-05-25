@@ -22,6 +22,7 @@ You are **strictly read-only on every file**. Your `tools:` lists ONLY the codex
 - `history_summary`: opaque markdown string built by main (≤ 1500 tokens). May be empty.
 - `file_metadata_brief`: opaque markdown string built by main.
 - `lessons_block`: **always empty for this sub-agent** (per spec §8.1.3); field kept for shape uniformity.
+- `reference_block`: opaque markdown string built by main from `--reference-file` (Phase A.5). Two-section block with `## Review brief` (inspector-authored trusted guidance — outside envelopes) and `## Reference material` (linked artifacts inside `MI-REFERENCE` envelopes). May be empty. See `docs/blueprint-rv-context/report.md` §3.3.
 
 ## Loop body
 
@@ -45,6 +46,8 @@ You are **strictly read-only on every file**. Your `tools:` lists ONLY the codex
 3. Compose the round-1 prompt:
    ```
    [file_metadata_brief]
+   
+   [reference_block]                <-- omit if empty
    
    [history_summary]                <-- omit if empty
    
@@ -85,12 +88,54 @@ For each item's response entry, downgrade `resolved` → `still-present` if `res
 
 For each `existing[]` entry:
 - `status: resolved` (with non-empty `resolved_by_change`) — REMOVE the matching `<!-- REVIEW-FINDING -->` block from `working_copy`.
-- `status: refined` — UPDATE the block's `finding:` and `suggested-fix:`.
+- `status: refined` — UPDATE the block's `finding:` and `suggested-fix:` lines in place; leave every other field line untouched. Keep the canonical block format below.
 - `status: still-present` — leave alone.
 
 For each `new[]` entry:
 - Allocate tmp-id `<sub_agent_instance_id>-<n>` where n starts at 1 per item and increments per new finding.
-- Append a `REVIEW-FINDING` block to `working_copy` after the offending line (or at the end of the item region if no specific anchor).
+- Append a `REVIEW-FINDING` block — in the **canonical format below** — to `working_copy` after the offending line (or at the end of the item region if no specific anchor).
+
+### Canonical REVIEW-FINDING block format (MANDATORY)
+
+Every block you APPEND or UPDATE in `working_copy` MUST use this exact shape. The orchestrator's `scripts/blueprint-review.sh parse-findings` splits the comment body on newlines and matches `key: value` per line; **non-canonical blocks (attribute-style, JSON-inside-comment, single-line collapsed) are silently skipped** and the finding is lost from `review-history.md` at Phase F. A skipped finding is a contract violation.
+
+Required layout — one field per line, kebab-case keys, multi-line scalars via the YAML pipe (`|`):
+
+```
+<!-- REVIEW-FINDING
+id: T1-1
+severity: high
+phase: item
+target: PAY-001
+finding: |
+  Free-form 1–N line description of the issue.
+suggested-fix: |
+  Free-form 1–N line description of the proposed change.
+-->
+```
+
+Field rules:
+- `id`: tmp-id (`<sub_agent_instance_id>-<n>`, e.g. `T1-1`) for newly-appended blocks; main rewrites tmp-ids to final `F-NNN` after your return. For existing blocks you UPDATE, keep the original id untouched.
+- `severity`: `high | medium | low` — verbatim from the reviewer's response.
+- `phase`: always `item` for this sub-agent.
+- `target`: the item_id (e.g. `PAY-001`). For consistency-only blocks the value would be `file`, but Phase C blocks are always item-scoped.
+- `finding:` / `suggested-fix:` — keys are **kebab-case in the on-disk block** even though the reviewer's JSON contract uses snake_case (`suggested_fix`). The parser expects kebab-case. Use the YAML pipe (`|`) and put the text on the lines below; the parser strips per-line whitespace, so any leading indentation is fine.
+
+Forbidden shapes (all parse to zero fields):
+- HTML attribute style: `<!-- REVIEW-FINDING id="T1-1" severity="high" finding="..." -->`
+- JSON-inside-comment: `<!-- REVIEW-FINDING {"id":"T1-1","severity":"high",...} -->`
+- Single-line key:value chain: `<!-- REVIEW-FINDING id: T1-1; severity: high; finding: ... -->`
+- Kebab-only inside a `|` block where the next line starts with `^[a-zA-Z_-]+:` — the parser will treat that line as the next field and truncate your multi-line scalar. If a finding/suggested-fix body needs to contain literal `word:` at start of line, indent that line by ≥ 2 spaces so it doesn't match the next-key regex.
+
+### Pre-exit self-check (per item)
+
+Before composing the Payload JSON, for each item run this check on your `working_copy`:
+
+1. Count occurrences of the literal string `<!-- REVIEW-FINDING` in `working_copy`. This count MUST equal `len(remaining_findings)` for that item — every entry in your `remaining_findings` array must be backed by a real block in `working_copy`, and every block in `working_copy` must appear in `remaining_findings`.
+2. For each block, verify it has at minimum these field lines: `id:`, `severity:`, `phase:`, `target:`, `finding:`, `suggested-fix:`. Each on its own line. Keys kebab-case.
+3. If either check fails: rebuild the offending block(s) from the structured fields in `remaining_findings` using the canonical format and retry the check once. On second failure → exit with `Result: blocked` and a `reason: contract-mismatch` line in `Findings / risks`.
+
+The pre-exit self-check is the contract that lets main trust `new_region` verbatim — without it, Phase F loses findings silently.
 
 ### Session-expiry fallback
 

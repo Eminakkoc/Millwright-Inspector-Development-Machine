@@ -236,6 +236,54 @@ fi
 
 Guarded on existence — re-runs of `mi-apply-impact` don't clobber an existing history (which carries unresolved findings from prior cycles that the v1.5 orchestrator's prompt-header summary will surface). `--force` cleanup above DOES wipe this file (intentional: a forced regen resets the review history along with everything else under `current/`).
 
+#### Step B.4.5 — Write the blueprint-review-context manifest (new in v1.6)
+
+The orchestrator at Step B.5 passes this manifest via `--reference-file`. It's a persistable artifact: `references:` lists sibling files the reviewer should see, and the body carries auto-computed counts plus an inspector-editable `## Inspector additions to the review brief` section that codex weights as trusted guidance. See `docs/blueprint-rv-context/report.md` §3.6.
+
+```bash
+bp_dir="$data_root/workflow-stream/$active_feature/blueprints/current"
+impl_dir="$data_root/workflow-stream/$active_feature/implementation"
+bp_review_ctx="$bp_dir/blueprint-review-context.md"
+config_path="$bp_dir/config.md"
+grounding_path="$impl_dir/grounding-report.md"
+active_slug="$("$CLAUDE_PLUGIN_ROOT/scripts/quest.sh" slug 2>/dev/null || true)"
+summary_path=""
+[[ -n "$active_slug" ]] && summary_path="$data_root/quest/$active_slug/summary.md"
+
+# Build references list (only artifacts that exist + are readable, in declared order).
+refs_inner=""
+refs_narrative=""
+sep=""
+if [[ -r "$config_path" ]]; then
+  refs_inner+="${sep}./config.md"; sep=", "
+  add_count="$(awk '/^## Inspector Additions/{f=1;next} /^## /{f=0} f && /^- /{c++} END{print c+0}' "$config_path")"
+  refs_narrative+="- \`config.md\` — ${add_count} inspector addition(s) under \`## Inspector Additions\`"$'\n'
+fi
+if [[ -r "$grounding_path" ]]; then
+  refs_inner+="${sep}../../implementation/grounding-report.md"; sep=", "
+  seam_count="$(grep -c '^### ' "$grounding_path" 2>/dev/null || echo 0)"
+  refs_narrative+="- \`grounding-report.md\` — ${seam_count} seams classified by the codebase grounder"$'\n'
+fi
+if [[ -n "$summary_path" && -r "$summary_path" ]]; then
+  refs_inner+="${sep}../../../quest/$active_slug/summary.md"; sep=", "
+  refs_narrative+="- \`summary.md\` — feature digest for active cycle \`$active_slug\`"$'\n'
+fi
+if [[ -z "$refs_inner" ]]; then
+  refs_narrative="_(no readable reference artifacts at generation time)_"
+fi
+
+# Render the manifest. Failure is non-fatal — Step B.5 falls back to no --reference-file.
+if ! "$CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh" init blueprint-review-context "$bp_review_ctx" \
+  FEATURE="$active_feature" \
+  REFS_INNER="!RAW!$refs_inner" \
+  REFS_NARRATIVE="$refs_narrative" 2>/dev/null; then
+  echo "warning: failed to render $bp_review_ctx — auto-fire will run without --reference-file" >&2
+  rm -f "$bp_review_ctx"
+fi
+```
+
+The manifest is **persisted** with the rest of `blueprints/current/` so manual re-runs of `/mi-blueprint-review` (with the same `--reference-file`) reproduce the same context. Inspectors can hand-edit the body — especially the `## Inspector additions to the review brief` section — between auto-fire and a manual re-run; the next invocation picks up the edits.
+
 #### Step B.5 — Auto-invoke `/mi-blueprint-review` on the new `requirements.md`
 
 This is a non-blocking quality gate: an external coding agent (Codex by default) reviews `requirements.md` for consistency and per-item completeness before the inspector sees the blueprint. Findings live inline in the file as `<!-- REVIEW-FINDING -->` comments; resolved ones are cleaned up automatically.
@@ -253,12 +301,18 @@ for r in checks:
 sys.exit(1)
 '; then
   requirements_path="$data_root/workflow-stream/$active_feature/blueprints/current/requirements.md"
+  blueprint_review_context_path="$data_root/workflow-stream/$active_feature/blueprints/current/blueprint-review-context.md"
   # v1.5 CLI: --auto-iter replaces positional <max-c-iter> <max-i-iter>. Defaults
   # (--auto-iter 3, --batch-size 3, --concurrency 3, --reasoning-effort medium) are
   # the right starting point for stage-2 auto-fire (see docs/blueprint-review-token-reduction/plan.md §11.1).
   # --scope restricts per-item enumeration to Goals only — Planned and Non-goals
   # items don't need per-item review.
-  /mi-blueprint-review codex "$requirements_path" --scope "Goals (this cycle)" --reasoning-effort medium
+  # --reference-file (v1.6): only when Step B.4.5 successfully wrote the manifest.
+  # If the manifest is missing, the auto-fire still runs — without the reference block —
+  # preserving the non-blocking-gate property.
+  ref_flag=()
+  [[ -r "$blueprint_review_context_path" ]] && ref_flag=(--reference-file "$blueprint_review_context_path")
+  /mi-blueprint-review codex "$requirements_path" --scope "Goals (this cycle)" --reasoning-effort medium "${ref_flag[@]}"
   review_status="auto-reviewed by codex; any remaining findings are inline as \`<!-- REVIEW-FINDING -->\` comments"
 else
   echo "warning: codex MCP unavailable — skipping stage-2 blueprint review" >&2

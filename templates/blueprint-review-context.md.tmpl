@@ -1,0 +1,20 @@
+---
+type: blueprint-review-context
+feature: {{FEATURE}}
+references: [{{REFS_INNER}}]
+---
+
+# Blueprint review context
+
+This file is the reference manifest for `/mi-blueprint-review`. The reviewer
+(codex) sees this file's body as **trusted inspector-authored guidance** and
+the artifacts listed in `references:` as **strict, read-only data** (wrapped
+in `MI-REFERENCE` envelopes).
+
+{{REFS_NARRATIVE}}
+
+## Inspector additions to the review brief
+
+_(optional — free-form text the inspector wants codex to weight heavily.
+Hand-edit this section after the file is auto-generated. Codex treats anything
+you write under this heading as trusted review guidance, not as data.)_

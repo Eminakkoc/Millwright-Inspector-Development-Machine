@@ -10,6 +10,7 @@ description: Orchestrate a token-reduced blueprint review (v1.5) — Phase A (pr
 /mi-blueprint-review <agent> <file-path>
                      [--auto-iter N] [--batch-size N] [--scope <heading>]
                      [--reasoning-effort <low|medium|high>] [--concurrency N]
+                     [--max-items N] [--reference-file <path>]
 ```
 
 | Param | Default | Meaning |
@@ -21,6 +22,8 @@ description: Orchestrate a token-reduced blueprint review (v1.5) — Phase A (pr
 | `--scope <heading>` | (none) | Restrict Phase B enumeration to items under `## <heading>` only. |
 | `--reasoning-effort R` | medium | Round-1 codex effort (via `config.model_reasoning_effort`). Locked per session; rounds 2+ inherit it. |
 | `--concurrency N` | 3 | Maximum Phase C batches dispatched in parallel codex sessions per wave. |
+| `--max-items N` | 35 | Hard cap on Phase B descriptor count. Above this, the orchestrator refuses and tells the inspector to split the file or use `/mi-blueprint-review-item` on a subset. |
+| `--reference-file <path>` | (none) | Optional manifest file (`type: blueprint-review-context` in frontmatter, `references:` list of paths). The manifest's body is injected as **trusted inspector-authored review guidance** ("Review brief") and each linked artifact is injected as **strict read-only data** in an envelope ("Reference material"). Not repeatable — list multi-artifact reference sets inside one manifest's `references:` field. See `docs/blueprint-rv-context/report.md`. |
 
 ## Preconditions
 
@@ -56,6 +59,8 @@ batch_size=3
 scope=""
 reasoning_effort="medium"
 concurrency=3
+max_items=35
+reference_file=""
 i=3
 while [[ $i -le $# ]]; do
   arg="${!i}"
@@ -70,23 +75,29 @@ while [[ $i -le $# ]]; do
     --reasoning-effort)   ((i++)); reasoning_effort="${!i}" ;;
     --concurrency=*)      concurrency="${arg#--concurrency=}" ;;
     --concurrency)        ((i++)); concurrency="${!i}" ;;
+    --max-items=*)        max_items="${arg#--max-items=}" ;;
+    --max-items)          ((i++)); max_items="${!i}" ;;
+    --reference-file=*)   reference_file="${arg#--reference-file=}" ;;
+    --reference-file)     ((i++)); reference_file="${!i}" ;;
   esac
   ((i++))
 done
 
 [[ -n "$agent" && -n "$file" ]] || {
-  echo "usage: /mi-blueprint-review <agent> <file> [--auto-iter N] [--batch-size N] [--scope X] [--reasoning-effort R] [--concurrency N]" >&2
+  echo "usage: /mi-blueprint-review <agent> <file> [--auto-iter N] [--batch-size N] [--scope X] [--reasoning-effort R] [--concurrency N] [--max-items N] [--reference-file <path>]" >&2
   exit 64
 }
 [[ "$auto_iter" =~ ^[1-9][0-9]*$ ]]   || { echo "error: --auto-iter must be positive integer" >&2; exit 64; }
 [[ "$batch_size" =~ ^[1-9][0-9]*$ ]]  || { echo "error: --batch-size must be positive integer" >&2; exit 64; }
 [[ "$concurrency" =~ ^[1-9][0-9]*$ ]] || { echo "error: --concurrency must be positive integer" >&2; exit 64; }
+[[ "$max_items" =~ ^[1-9][0-9]*$ ]]   || { echo "error: --max-items must be positive integer" >&2; exit 64; }
 [[ "$reasoning_effort" =~ ^(low|medium|high)$ ]] || { echo "error: --reasoning-effort must be low|medium|high" >&2; exit 64; }
 [[ -f "$file" && -w "$file" ]] || { echo "error: file not found or not writable: $file" >&2; exit 1; }
+[[ -z "$reference_file" || -r "$reference_file" ]] || { echo "error: --reference-file path not readable: $reference_file" >&2; exit 64; }
 
 reviewer_tool="$($CLAUDE_PLUGIN_ROOT/scripts/blueprint-review.sh resolve-tool "$agent")" || exit 1
 reviewer_reply_tool="mcp__${agent}__${agent}-reply"   # v1.5 convention; matches Phase 0 finding
-MAX_ITEMS_PER_REVIEW=20
+MAX_ITEMS_PER_REVIEW="$max_items"
 ```
 
 ### Step 2 — Phase A: preflight + summary build **(MANDATORY)**
@@ -143,6 +154,18 @@ fi
 
 Per-batch summaries are built in Step 4 once each batch's scope IDs are known.
 
+**A.5 — Build `reference_block` from `--reference-file` (when supplied).** The reference block is a two-section markdown string with `## Review brief` (manifest body, outside envelopes — trusted inspector guidance) and `## Reference material` (linked artifacts each wrapped in `MI-REFERENCE` envelopes — strict data). It is threaded into the Phase C batch sub-agent + Phase D consistency sub-agent spawn inputs. **Phase B's enumeration call does NOT receive it** — codex would otherwise enumerate item anchors inside reference content, breaking the descriptor count. See `docs/blueprint-rv-context/report.md` §3.3.
+
+```bash
+reference_block=""
+if [[ -n "$reference_file" ]]; then
+  reference_block="$("$CLAUDE_PLUGIN_ROOT/scripts/blueprint-review.sh" \
+    build-reference-block "$file" "$reference_file")" || exit $?
+fi
+```
+
+`build-reference-block` exits 64 on validation failure (manifest not found, wrong `type:` sentinel, malformed YAML, target self-reference, manifest == target). Failures propagate — the review aborts so the inspector can fix the manifest. Missing linked artifacts within a valid manifest are logged to stderr and silently skipped (graceful degradation, matches the auto-fire flow's "non-blocking gate" property).
+
 ### Step 3 — Phase B: item enumeration **(MANDATORY)**
 
 Announce: `Phase B — enumeration — starting`.
@@ -154,7 +177,7 @@ Call `mcp__codex__codex` directly from main (one-shot; no sub-agent) with `sandb
 Parse the fenced ```json ... ``` array; pass to `scripts/blueprint-review.sh enumerate <file> <items.json>` for deterministic descriptor computation.
 
 - If `enumerate` exits 2 → surface its `errors` array + abort.
-- If descriptor count > `MAX_ITEMS_PER_REVIEW` → print refusal: `"File has N items, exceeds cap of 20. Split across cycles or use /mi-blueprint-review-item on a subset."` + stop.
+- If descriptor count > `MAX_ITEMS_PER_REVIEW` → print refusal: `"File has N items, exceeds cap of ${MAX_ITEMS_PER_REVIEW}. Split across cycles, raise --max-items, or use /mi-blueprint-review-item on a subset."` + stop.
 - If count == 0 → skip Step 4; jump to Step 5.
 
 ### Step 4 — Phase C: per-batch review **(MANDATORY when descriptor count ≥ 1)**
@@ -193,6 +216,7 @@ for wave_start in range(0, len(batches), concurrency):
             "history_summary": history_summary_batch,
             "file_metadata_brief": file_metadata_brief,
             "lessons_block": "",                  # always empty for batch reviewer (spec §8.1.3)
+            "reference_block": reference_block,   # from Phase A.5; may be empty
         })
     
     # Dispatch ALL spawn_inputs in this wave as parallel Agent calls in ONE message.
@@ -238,6 +262,7 @@ reasoning_effort = $reasoning_effort
 lessons_block = (from A.2)
 history_summary = history_summary_consistency (from A.4)
 file_metadata_brief = (from A.3, updated after Phase B with item-ids in scope)
+reference_block = $reference_block (from A.5; may be empty)
 ```
 
 On `success` / `partial` / `blocked`: continue to Step 6 (Phase F) regardless. Phase F persists whatever findings the file ended up with. On `partial` with `reason: max-iter`: surface a y/n prompt: `"<H>H/<M>M consistency findings remain after <K> rounds — run another loop? (y/n)"`. On `y`: re-spawn the sub-agent with the file's current state. On `n`: continue.
