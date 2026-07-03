@@ -681,6 +681,144 @@ fi
 
 rm -rf "$brf"
 
+# ---- v1.5.2: phase-run ledger (anti-skip enforcement) ---------------------
+
+BR="$REPO_ROOT/scripts/blueprint-review.sh"
+led_dir="$(mktemp -d)"
+led_file="$led_dir/requirements.md"
+printf '# spec\n' > "$led_file"
+led_path="$("$BR" ledger path "$led_file")"
+# Start each ledger test from a clean slate.
+led_reset() { rm -f "$led_path"; "$BR" ledger init "$led_file" >/dev/null 2>&1; }
+
+t="ledger: render with no ledger → exit 3 (uninitialized run cannot be certified)"
+rm -f "$led_path"
+if "$BR" ledger render "$led_file" >/dev/null 2>&1; then
+  ng "$t" "expected exit 3; got 0"
+else
+  [[ $? -eq 3 ]] && ok "$t" || ng "$t" "expected exit 3"
+fi
+
+t="ledger: fresh init, nothing marked → render exit 3"
+led_reset
+if "$BR" ledger render "$led_file" >/dev/null 2>&1; then
+  ng "$t" "expected exit 3 on all-pending ledger"
+else
+  ok "$t"
+fi
+
+t="ledger: all phases done (B≥1 items) → render exit 0"
+led_reset
+"$BR" ledger mark "$led_file" A done >/dev/null
+"$BR" ledger mark "$led_file" B done --findings 5 >/dev/null
+"$BR" ledger mark "$led_file" C done --findings 2 >/dev/null
+"$BR" ledger mark "$led_file" D done --findings 0 >/dev/null
+"$BR" ledger mark "$led_file" F done --findings 2 >/dev/null
+"$BR" ledger mark "$led_file" G running >/dev/null
+if "$BR" ledger render "$led_file" >/dev/null 2>&1; then
+  ok "$t"
+else
+  ng "$t" "expected exit 0 when every mandatory phase ran"
+fi
+
+t="ledger: C & D never marked while B enumerated items → render exit 3 (the reported bug)"
+led_reset
+"$BR" ledger mark "$led_file" A done >/dev/null
+"$BR" ledger mark "$led_file" B done --findings 7 >/dev/null
+"$BR" ledger mark "$led_file" F done --findings 0 >/dev/null
+"$BR" ledger mark "$led_file" G running >/dev/null
+out="$("$BR" ledger render "$led_file" 2>/dev/null)"; rc=$?
+if [[ $rc -eq 3 ]] && grep -q "C — per-item review" <<<"$out" && grep -q "NOT RUN" <<<"$out"; then
+  ok "$t"
+else
+  ng "$t" "expected exit 3 + C flagged NOT RUN; rc=$rc"
+fi
+
+t="ledger: C skipped is allowed ONLY when B enumerated 0 items → render exit 0"
+led_reset
+"$BR" ledger mark "$led_file" A done >/dev/null
+"$BR" ledger mark "$led_file" B done --findings 0 >/dev/null
+"$BR" ledger mark "$led_file" C skipped >/dev/null
+"$BR" ledger mark "$led_file" D done --findings 0 >/dev/null
+"$BR" ledger mark "$led_file" F skipped >/dev/null
+"$BR" ledger mark "$led_file" G running >/dev/null
+if "$BR" ledger render "$led_file" >/dev/null 2>&1; then
+  ok "$t"
+else
+  ng "$t" "expected exit 0 for sanctioned 0-item C skip"
+fi
+
+t="ledger: C skipped while B had items → render exit 3 (unsanctioned skip)"
+led_reset
+"$BR" ledger mark "$led_file" A done >/dev/null
+"$BR" ledger mark "$led_file" B done --findings 4 >/dev/null
+"$BR" ledger mark "$led_file" C skipped >/dev/null
+"$BR" ledger mark "$led_file" D done --findings 0 >/dev/null
+"$BR" ledger mark "$led_file" F done --findings 0 >/dev/null
+"$BR" ledger mark "$led_file" G running >/dev/null
+out="$("$BR" ledger render "$led_file" 2>/dev/null)"; rc=$?
+if [[ $rc -eq 3 ]] && grep -q "NOT ALLOWED" <<<"$out"; then
+  ok "$t"
+else
+  ng "$t" "expected exit 3 + NOT ALLOWED annotation; rc=$rc"
+fi
+
+t="ledger: D skipped even when C ran → render exit 3 (D is never skippable)"
+led_reset
+"$BR" ledger mark "$led_file" A done >/dev/null
+"$BR" ledger mark "$led_file" B done --findings 4 >/dev/null
+"$BR" ledger mark "$led_file" C done --findings 1 >/dev/null
+"$BR" ledger mark "$led_file" D skipped >/dev/null
+"$BR" ledger mark "$led_file" F done --findings 1 >/dev/null
+"$BR" ledger mark "$led_file" G running >/dev/null
+if "$BR" ledger render "$led_file" >/dev/null 2>&1; then
+  ng "$t" "expected exit 3 when D was skipped"
+else
+  ok "$t"
+fi
+
+t="ledger: table renders one row per phase with findings + notes"
+led_reset
+"$BR" ledger mark "$led_file" A done >/dev/null
+"$BR" ledger mark "$led_file" B done --findings 3 --note "3 descriptors" >/dev/null
+"$BR" ledger mark "$led_file" C done --findings 1 --note "1 batch" >/dev/null
+"$BR" ledger mark "$led_file" D done --findings 0 >/dev/null
+"$BR" ledger mark "$led_file" F done --findings 1 >/dev/null
+"$BR" ledger mark "$led_file" G running >/dev/null
+out="$("$BR" ledger render "$led_file" 2>/dev/null)"
+rows="$(grep -c '^| [A-G] —' <<<"$out")"
+if [[ "$rows" -eq 6 ]] && grep -q "3 items" <<<"$out" && grep -q "3 descriptors" <<<"$out"; then
+  ok "$t"
+else
+  ng "$t" "expected 6 phase rows + B unit/note; got rows=$rows"
+fi
+
+t="ledger: mark auto-inits when called before init (no silent loss)"
+rm -f "$led_path"
+"$BR" ledger mark "$led_file" A done >/dev/null 2>&1
+# Capture render stdout to a var first — render exits 3 here (only A marked), and
+# under `pipefail` a `render | grep` pipeline would inherit that 3 even on a match.
+out="$("$BR" ledger render "$led_file" 2>/dev/null)"
+if [[ -f "$led_path" ]] && grep -q "A — preflight" <<<"$out"; then
+  ok "$t"
+else
+  ng "$t" "expected auto-init to create ledger and record Phase A"
+fi
+
+t="ledger: wiring sanity — command file inits + renders the ledger"
+missing=()
+grep -q 'ledger init "\$file"' "$REPO_ROOT/commands/mi-blueprint-review.md" || missing+=("init call")
+grep -q 'ledger render "\$file"' "$REPO_ROOT/commands/mi-blueprint-review.md" || missing+=("render call")
+grep -q 'ledger mark "\$file" C' "$REPO_ROOT/commands/mi-blueprint-review.md" || missing+=("C mark")
+grep -q 'ledger mark "\$file" D' "$REPO_ROOT/commands/mi-blueprint-review.md" || missing+=("D mark")
+if [[ ${#missing[@]} -eq 0 ]]; then
+  ok "$t"
+else
+  ng "$t" "command file missing ledger wiring: ${missing[*]}"
+fi
+
+rm -rf "$led_dir"; rm -f "$led_path"
+
 # ---- Summary --------------------------------------------------------------
 
 printf "\n--- summary: %d pass, %d fail ---\n" "$pass" "$fail"

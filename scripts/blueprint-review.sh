@@ -9,6 +9,7 @@
 #   alloc-final-id <file>         # (added in Task 1.5)
 #   diff-drift <req> <sum> <todo> <feature>  # (added in Task 5.2)
 #   build-reference-block <target> <manifest>  # (added in v1.6 — --reference-file)
+#   ledger init|mark|render|path <file> [...] # (added in v1.5.2 — phase-run enforcement)
 
 set -euo pipefail
 
@@ -646,6 +647,247 @@ if resolved:
 output = "\n".join(parts).rstrip()
 if output:
     print(output)
+sys.exit(0)
+PYEOF
+    ;;
+
+  ledger)
+    # Deterministic phase-run ledger for /mi-blueprint-review. The ledger file is
+    # derived from the reviewed file's absolute path (NOT the shell PID) so every
+    # separate bash invocation the orchestrator makes across Phases A→G resolves
+    # the SAME ledger. This is the enforcement backbone: the orchestrator marks
+    # each phase as it runs, and `render` refuses (exit 3) if a mandatory phase
+    # was never recorded — turning a silent skip into a loud, visible failure.
+    action="${1:-}"
+    file="${2:-}"
+    [[ -n "$action" && -n "$file" ]] || {
+      echo "usage: $0 ledger <init|mark|render|path> <file> [args...]" >&2
+      exit 64
+    }
+    [[ "$action" =~ ^(init|mark|render|path)$ ]] || {
+      echo "error: ledger action must be init|mark|render|path" >&2
+      exit 64
+    }
+    shift 2  # drop action + file; remaining args are action-specific
+
+    python3 - "$action" "$file" "$@" <<'PYEOF'
+import sys, os, json, hashlib
+
+action = sys.argv[1]
+file_arg = sys.argv[2]
+rest = sys.argv[3:]
+
+abs_file = os.path.realpath(file_arg)
+digest = hashlib.sha256(abs_file.encode("utf-8")).hexdigest()[:16]
+tmpdir = os.environ.get("TMPDIR", "/tmp").rstrip("/") or "/tmp"
+ledger_path = os.path.join(tmpdir, f"mi-br-ledger-{digest}.json")
+
+# Canonical phase order + labels. Order here IS the table row order.
+PHASE_ORDER = ["A", "B", "C", "D", "F", "G"]
+PHASE_LABEL = {
+    "A": "A — preflight",
+    "B": "B — enumeration",
+    "C": "C — per-item review",
+    "D": "D — consistency",
+    "F": "F — persist",
+    "G": "G — report",
+}
+VALID_STATUS = {"pending", "running", "done", "skipped"}
+
+
+def blank_ledger():
+    return {
+        "file": abs_file,
+        "phases": {
+            p: {"status": "pending", "findings": None, "note": ""}
+            for p in PHASE_ORDER
+        },
+    }
+
+
+def load():
+    try:
+        with open(ledger_path, encoding="utf-8") as f:
+            data = json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return None
+    # Repair any missing phase keys (forward-compat).
+    data.setdefault("phases", {})
+    for p in PHASE_ORDER:
+        data["phases"].setdefault(p, {"status": "pending", "findings": None, "note": ""})
+    return data
+
+
+def save(data):
+    with open(ledger_path, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2)
+
+
+def parse_flags(argv):
+    findings = None
+    note = ""
+    i = 0
+    while i < len(argv):
+        a = argv[i]
+        if a == "--findings":
+            findings = argv[i + 1] if i + 1 < len(argv) else None
+            i += 2
+        elif a.startswith("--findings="):
+            findings = a[len("--findings="):]
+            i += 1
+        elif a == "--note":
+            note = argv[i + 1] if i + 1 < len(argv) else ""
+            i += 2
+        elif a.startswith("--note="):
+            note = a[len("--note="):]
+            i += 1
+        else:
+            i += 1
+    # Normalize findings to int when numeric, else leave as-is / None.
+    if findings is not None:
+        try:
+            findings = int(findings)
+        except ValueError:
+            pass
+    return findings, note
+
+
+if action == "path":
+    print(ledger_path)
+    sys.exit(0)
+
+if action == "init":
+    save(blank_ledger())
+    print(f"info: phase ledger initialized at {ledger_path}", file=sys.stderr)
+    sys.exit(0)
+
+if action == "mark":
+    if not rest:
+        print("usage: ... ledger mark <file> <phase> <status> [--findings N] [--note TEXT]", file=sys.stderr)
+        sys.exit(64)
+    phase = rest[0].upper()
+    status = rest[1].lower() if len(rest) > 1 else ""
+    if phase not in PHASE_ORDER:
+        print(f"error: unknown phase {phase!r}; expected one of {PHASE_ORDER}", file=sys.stderr)
+        sys.exit(64)
+    if status not in VALID_STATUS:
+        print(f"error: status must be one of {sorted(VALID_STATUS)}", file=sys.stderr)
+        sys.exit(64)
+    findings, note = parse_flags(rest[2:])
+    data = load()
+    if data is None:
+        # mark before init: auto-init so a partial run still records what it can.
+        data = blank_ledger()
+        print(f"warning: ledger not initialized; auto-initializing at {ledger_path}", file=sys.stderr)
+    entry = data["phases"][phase]
+    entry["status"] = status
+    if findings is not None:
+        entry["findings"] = findings
+    if note:
+        entry["note"] = note
+    save(data)
+    sys.exit(0)
+
+# action == "render"
+data = load()
+
+RAN_TEXT = {
+    "done": "✅ yes",
+    "running": "\U0001f7e1 in progress",
+    "pending": "❌ NOT RUN",
+}
+
+
+def findings_cell(phase, entry):
+    f = entry.get("findings")
+    if phase in ("A", "G"):
+        return "—"
+    if f is None:
+        return "—"
+    if phase == "B":
+        return f"{f} items"
+    if phase == "F":
+        return f"{f} recorded"
+    return str(f)
+
+
+if data is None:
+    # No ledger at all — the run never initialized phase tracking. This is itself
+    # a violation: we cannot certify any phase ran.
+    print("### Blueprint review — phase ledger")
+    print()
+    print("**⚠️ No phase ledger found — phase tracking was never initialized; "
+          "the review cannot be certified.**")
+    print()
+    print(f"Expected ledger at: `{ledger_path}`")
+    print("Re-run /mi-blueprint-review from Phase A so each phase is recorded.", file=sys.stderr)
+    sys.exit(3)
+
+phases = data["phases"]
+
+# Per-phase pass/fail evaluation (the enforcement rules).
+b_findings = phases["B"].get("findings")
+b_count = b_findings if isinstance(b_findings, int) else None
+violations = []
+
+
+def evaluate():
+    rows = []
+    for p in PHASE_ORDER:
+        e = phases[p]
+        st = e.get("status", "pending")
+        ok = True
+        ran_txt = RAN_TEXT.get(st, st)
+        if p in ("A", "B", "D"):
+            ok = st == "done"
+        elif p == "C":
+            if st == "done":
+                ok = True
+            elif st == "skipped" and b_count == 0:
+                ok = True
+                ran_txt = "⏭️ skipped (0 items)"
+            else:
+                ok = False
+        elif p == "F":
+            if st == "done":
+                ok = True
+            elif st == "skipped":
+                ok = True
+                ran_txt = "⏭️ skipped (no history)"
+            else:
+                ok = False
+        elif p == "G":
+            ok = st in ("running", "done")
+        if not ok:
+            if st == "skipped":
+                ran_txt = "❌ SKIPPED (NOT ALLOWED)"
+            violations.append(p)
+        rows.append((p, ran_txt, findings_cell(p, e), e.get("note", "")))
+    return rows
+
+
+rows = evaluate()
+
+print("### Blueprint review — phase ledger")
+print()
+print("| Phase | Ran? | Findings | Notes |")
+print("| --- | --- | --- | --- |")
+for p, ran_txt, fcell, note in rows:
+    note = (note or "").replace("|", "\\|").replace("\n", " ")
+    print(f"| {PHASE_LABEL[p]} | {ran_txt} | {fcell} | {note} |")
+print()
+
+if violations:
+    names = ", ".join(f"Phase {p} ({PHASE_LABEL[p]})" for p in violations)
+    print(f"**❌ MANDATORY PHASE(S) NOT RUN: {names}.** "
+          f"This review is INCOMPLETE and must not be reported as successful.")
+    print()
+    print(f"error: mandatory phase(s) not recorded as run: {names}. "
+          f"Execute the missing phase(s), mark them in the ledger, then re-run "
+          f"`blueprint-review.sh ledger render`.", file=sys.stderr)
+    sys.exit(3)
+
+print("All mandatory phases ran. ✅")
 sys.exit(0)
 PYEOF
     ;;

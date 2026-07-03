@@ -1,5 +1,5 @@
 ---
-description: Orchestrate a token-reduced blueprint review (v1.5) — Phase A (preflight + summary build) → B (enumerate) → C (per-batch parallel review) → D (single consistency pass) → F (persist to review-history.md) → G (report). Uses mcp__codex__codex for round 1 and mcp__codex__codex-reply for rounds 2+. See docs/blueprint-review-token-reduction/plan.md.
+description: Orchestrate a token-reduced blueprint review (v1.5) — Phase A (preflight + summary build) → B (enumerate) → C (per-batch parallel review) → D (single consistency pass) → F (persist to review-history.md) → G (report). Every phase is recorded in a deterministic phase ledger; Phase G renders it as a table and FAILS if any mandatory phase was skipped. Uses mcp__codex__codex for round 1 and mcp__codex__codex-reply for rounds 2+. See docs/blueprint-review-token-reduction/plan.md.
 ---
 
 # /mi-blueprint-review
@@ -45,6 +45,28 @@ Phases run in order: **A → B → C → D → F → G**. Every phase is mandato
 | G — final report | (none) | Skipping. |
 
 Announce each phase as you enter it (one short line: `Phase X — <name> — starting`).
+
+### Enforcement — the phase ledger (NOT optional)
+
+Your own judgment is **not** authorized to skip Phase C or Phase D. "Items look
+fine", "cost", "time", "C found nothing so D is redundant" are all forbidden
+rationales. To make skipping impossible to hide, this command is backed by a
+**deterministic phase ledger** owned by `scripts/blueprint-review.sh`:
+
+1. **Step 1 initializes** the ledger for this run (`ledger init`).
+2. **Every phase records itself** the instant it runs, via
+   `ledger mark <file> <PHASE> <status> [--findings N] [--note "…"]`. Mark
+   `running` when you enter the phase and `done` when it completes.
+3. **Phase G renders** the ledger as the final table via `ledger render`. Render
+   **exits 3** — a hard failure under `set -euo pipefail` — if any mandatory phase
+   was never marked `done` (C may be `skipped` only when Phase B enumerated 0
+   items; F may be `skipped` only when the file is not under `blueprints/current/`).
+
+**Contract:** the table you show the inspector is the *verbatim* stdout of
+`ledger render`. You may NOT hand-author it, and you may NOT report the review as
+successful while `ledger render` exits non-zero. If it exits non-zero, a mandatory
+phase did not run: go back, execute the missing phase(s) for real, mark them, and
+re-run `ledger render` until it exits 0.
 
 ## Execution
 
@@ -98,6 +120,12 @@ done
 reviewer_tool="$($CLAUDE_PLUGIN_ROOT/scripts/blueprint-review.sh resolve-tool "$agent")" || exit 1
 reviewer_reply_tool="mcp__${agent}__${agent}-reply"   # v1.5 convention; matches Phase 0 finding
 MAX_ITEMS_PER_REVIEW="$max_items"
+
+# Initialize the phase ledger for this run. Every phase marks itself; Phase G
+# renders it and fails if any mandatory phase was skipped. The ledger path is
+# derived from "$file" internally, so every later bash block resolves the same
+# ledger without threading a variable across invocations.
+"$CLAUDE_PLUGIN_ROOT/scripts/blueprint-review.sh" ledger init "$file"
 ```
 
 ### Step 2 — Phase A: preflight + summary build **(MANDATORY)**
@@ -166,9 +194,17 @@ fi
 
 `build-reference-block` exits 64 on validation failure (manifest not found, wrong `type:` sentinel, malformed YAML, target self-reference, manifest == target). Failures propagate — the review aborts so the inspector can fix the manifest. Missing linked artifacts within a valid manifest are logged to stderr and silently skipped (graceful degradation, matches the auto-fire flow's "non-blocking gate" property).
 
+**A.6 — Record Phase A in the ledger** (do this once A.1–A.5 have completed):
+
+```bash
+"$CLAUDE_PLUGIN_ROOT/scripts/blueprint-review.sh" ledger mark "$file" A done \
+  --note "preflight complete${review_history:+ (history: $(basename "$review_history"))}"
+```
+
 ### Step 3 — Phase B: item enumeration **(MANDATORY)**
 
 Announce: `Phase B — enumeration — starting`.
+Record entry: `blueprint-review.sh ledger mark "$file" B running`.
 
 Render `templates/blueprint-reviewer-prompt-enumerate.md.tmpl` (unchanged from v1.2.x) — substitute `{{SCOPE_INSTRUCTION}}` and `{{SCOPE_EMPTY_HINT}}` according to whether `--scope` was passed (same logic as v1.2.x orchestrator).
 
@@ -178,13 +214,27 @@ Parse the fenced ```json ... ``` array; pass to `scripts/blueprint-review.sh enu
 
 - If `enumerate` exits 2 → surface its `errors` array + abort.
 - If descriptor count > `MAX_ITEMS_PER_REVIEW` → print refusal: `"File has N items, exceeds cap of ${MAX_ITEMS_PER_REVIEW}. Split across cycles, raise --max-items, or use /mi-blueprint-review-item on a subset."` + stop.
-- If count == 0 → skip Step 4; jump to Step 5.
+- If count == 0 → Phase C is legitimately empty: mark it skipped, then jump to Step 5 (Phase D still runs).
+
+Record the descriptor count into the ledger — this count is what Phase G's `ledger render` checks Phase C against, so it MUST reflect the true enumeration result:
+
+```bash
+"$CLAUDE_PLUGIN_ROOT/scripts/blueprint-review.sh" ledger mark "$file" B done \
+  --findings "$descriptor_count" --note "$descriptor_count descriptors enumerated"
+
+# Count == 0 is the ONLY sanctioned way to skip Phase C. Record it explicitly.
+if [[ "$descriptor_count" -eq 0 ]]; then
+  "$CLAUDE_PLUGIN_ROOT/scripts/blueprint-review.sh" ledger mark "$file" C skipped \
+    --note "0 descriptors — nothing to review per-item"
+fi
+```
 
 ### Step 4 — Phase C: per-batch review **(MANDATORY when descriptor count ≥ 1)**
 
 Announce: `Phase C — per-item review — starting (N descriptors, batch size B, concurrency C)`.
+Record entry: `blueprint-review.sh ledger mark "$file" C running`.
 
-You **MUST** spawn a `blueprint-batch-reviewer` sub-agent for every batch of `batch_size` descriptors. Cost / time / "items look fine" are not valid reasons to skip — Phase C catches single-item ambiguities the whole-file Phase D pass under-weights.
+You **MUST** spawn a `blueprint-batch-reviewer` sub-agent for every batch of `batch_size` descriptors. Cost / time / "items look fine" are not valid reasons to skip — Phase C catches single-item ambiguities the whole-file Phase D pass under-weights. (Reaching this step at all means Phase B enumerated ≥ 1 descriptor; the ledger already recorded that count, and Phase G's `ledger render` will fail the whole review if Phase C is not marked `done` here.)
 
 ```python
 # pseudocode for the orchestrator's batched-wave dispatcher
@@ -244,11 +294,20 @@ for wave_start in range(0, len(batches), concurrency):
         validate_frontmatter_unchanged(file)
 ```
 
-When all waves complete, proceed to Step 5.
+When all waves complete, record Phase C — set `--findings` to the number of `<!-- REVIEW-FINDING -->` blocks the batch reviewers emitted this phase (0 is a valid, honest count):
+
+```bash
+"$CLAUDE_PLUGIN_ROOT/scripts/blueprint-review.sh" ledger mark "$file" C done \
+  --findings "$phase_c_finding_count" \
+  --note "$num_batches batches, size $batch_size, concurrency $concurrency"
+```
+
+Then proceed to Step 5.
 
 ### Step 5 — Phase D: consistency loop **(MANDATORY — runs even when descriptor count was 0)**
 
 Announce: `Phase D — consistency — starting`.
+Record entry: `blueprint-review.sh ledger mark "$file" D running`.
 
 Spawn one `blueprint-consistency-reviewer` sub-agent. Parameters:
 
@@ -266,6 +325,13 @@ reference_block = $reference_block (from A.5; may be empty)
 ```
 
 On `success` / `partial` / `blocked`: continue to Step 6 (Phase F) regardless. Phase F persists whatever findings the file ended up with. On `partial` with `reason: max-iter`: surface a y/n prompt: `"<H>H/<M>M consistency findings remain after <K> rounds — run another loop? (y/n)"`. On `y`: re-spawn the sub-agent with the file's current state. On `n`: continue.
+
+Once the loop resolves (whichever terminal outcome), record Phase D — set `--findings` to the number of consistency findings that remain inline:
+
+```bash
+"$CLAUDE_PLUGIN_ROOT/scripts/blueprint-review.sh" ledger mark "$file" D done \
+  --findings "$phase_d_finding_count" --note "$consistency_outcome after $consistency_rounds round(s)"
+```
 
 ### Step 6 — Phase F: persist to review-history.md **(MANDATORY when `review_history` is set)**
 
@@ -286,20 +352,47 @@ Pipe the JSON array to `scripts/blueprint-review.sh persist-findings`:
 echo "$findings_json" > "/tmp/mi-persist-input.$$.json"
 "$CLAUDE_PLUGIN_ROOT/scripts/blueprint-review.sh" persist-findings "$review_history" "/tmp/mi-persist-input.$$.json"
 rm -f "/tmp/mi-persist-input.$$.json"
+"$CLAUDE_PLUGIN_ROOT/scripts/blueprint-review.sh" ledger mark "$file" F done \
+  --findings "$persisted_count" --note "persisted to $(basename "$review_history")"
 ```
 
-If `review_history` is empty (file not under `blueprints/current/`), skip Phase F silently — inline findings stay in the file with no history record.
+If `review_history` is empty (file not under `blueprints/current/`), skip Phase F — inline findings stay in the file with no history record. This is the ONLY sanctioned Phase F skip, so record it so the ledger stays honest:
+
+```bash
+"$CLAUDE_PLUGIN_ROOT/scripts/blueprint-review.sh" ledger mark "$file" F skipped \
+  --note "file not under blueprints/current/ — no review-history sibling"
+```
 
 ### Step 7 — Phase G: final report **(MANDATORY)**
 
 Announce: `Phase G — final report — starting`.
+Record entry: `blueprint-review.sh ledger mark "$file" G running`.
 
-Inspect the file's final `<!-- REVIEW-FINDING -->` block count + severity breakdown (via `scripts/blueprint-review.sh parse-findings`). Print:
+**G.1 — Render the phase-ledger table (REQUIRED, and it is the gate).** Run:
+
+```bash
+"$CLAUDE_PLUGIN_ROOT/scripts/blueprint-review.sh" ledger render "$file"
+render_rc=$?
+```
+
+Show the table stdout to the inspector **verbatim** — it is the mandated "each phase, did it run, did it find anything" report. Do NOT hand-author or paraphrase it.
+
+- If `render_rc == 0`: every mandatory phase ran. Continue to G.2.
+- If `render_rc == 3`: the table names a mandatory phase that was NOT run (e.g. Phase C or Phase D). **Stop. Do not report success.** Go back and actually execute the missing phase(s) per Steps 4/5, mark them (`ledger mark`), then re-run `ledger render` until it exits 0. Skipping the phase and editing the ledger by hand is a contract violation.
+
+**G.2 — Summarize inline findings.** Inspect the file's final `<!-- REVIEW-FINDING -->` block count + severity breakdown (via `scripts/blueprint-review.sh parse-findings`). Print:
 
 - `"No high/medium findings remain (Success)"` — if 0 H + 0 M remain inline.
 - Otherwise: `"<H>H/<M>M remain inline in <file>; <N> findings recorded in <review_history>"` (omit the second clause if `review_history` is empty).
 
-Cleanup: `rm -f /tmp/mi-*.$$.*`.
+**G.3 — Mark Phase G done + cleanup:**
+
+```bash
+"$CLAUDE_PLUGIN_ROOT/scripts/blueprint-review.sh" ledger mark "$file" G done --note "report rendered"
+rm -f /tmp/mi-*.$$.*
+```
+
+The ledger file itself lives under `$TMPDIR` keyed by the reviewed file's path; it is left in place (harmless) and reset by the next run's `ledger init`.
 
 ## Notes
 
