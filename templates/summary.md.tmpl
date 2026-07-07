@@ -44,3 +44,25 @@ self-contained so a stage that loads only this section has everything it needs. 
      pricing-meeting.txt" in their reasoning, and a future cycle can spot
      which inputs drove a decision. Required even for small intakes — keep it
      terse, but never empty. -->
+
+## In plain terms
+
+<!-- Reader aid — NON-NORMATIVE. A plain-language walkthrough of THIS summary for a
+     reader who is not deep in the codebase. Add ONE short bullet per item that appears
+     in the sections above — each `## Cross-cutting constraints` entry, each
+     `## Out-of-scope` entry, and each `## Feature: <name>` section — restating it in
+     everyday words and giving ONE concrete example. Keep each bullet to 1–2 sentences.
+     Downstream stages ignore this section and read the structured sections above; it
+     exists only so a human can skim the gist. Keep the heading even if the body is empty
+     (e.g. a summary with no constraints, no exclusions, and no feature content yet).
+     Format each bullet as:
+       - **<item / section it explains>** — <plain-language restatement>. Example: <concrete example>.
+     e.g.:
+
+     - **Feature: payment-webhook** — Instead of guessing whether a customer paid, we
+       wait for Stripe to confirm the money actually cleared, and only then mark the order
+       paid. Example: a shopper checks out at 2:00; at 2:01 Stripe says the charge
+       succeeded, and only then does the order flip from "pending" to "paid".
+     - **Out-of-scope: refunds** — Sending money back to a customer is a separate job we
+       are deliberately not building this time. Example: a "cancel my order and refund me"
+       request is not handled by this work. -->

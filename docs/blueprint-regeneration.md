@@ -190,6 +190,17 @@ Then write the requirements body with **three clearly-labeled scope sections**:
 
 3. **`## Non-goals (out of scope)`** — reserved for things **explicitly excluded from the feature's roadmap** — captured at stage 1 in the cycle's `summary.md` (any journal-sourced exclusions are already digested there; under `quest/<active-slug>/`), or in `config.md`'s `## Inspector Additions`, or via inspector statements in chat. These are NOT on the TODO list. If there are none, omit the section.
 
+**Plain-language explanation after every item (reader aid).** Directly beneath **each** item in all three sections — every `## Goals` item, every `## Planned` item, and every `## Non-goals` item — add a **nested** sub-bullet (2-space indent, alongside any acceptance-criteria bullets) that restates the item in everyday language and gives one concrete example:
+
+```markdown
+- **PAY-001** — Add a webhook receiver under `services/payments/` that validates incoming Stripe events.
+  - Reject malformed events with an HTTP error.
+  - Acceptance criteria: events with invalid signatures are rejected; valid events return success.
+  - _In plain terms:_ Stripe "phones home" to tell us about payments; this adds the phone line and checks the caller really is Stripe before we trust the message. _Example:_ a forged request with a bad signature is turned away, while a genuine `payment_intent.succeeded` from Stripe is accepted.
+```
+
+Two hard rules: (1) the explanation MUST be a **nested** sub-bullet (2-space indent) so the blueprint-review enumerator treats it as part of the item, not as a separate reviewable requirement; (2) it is **non-normative** — a reader aid only. Keep it to 1–2 sentences of plain language plus one concrete example; do **not** introduce new requirements, seams, acceptance criteria, or scope in it, and keep it consistent with the item above it. For `## Planned` / `## Non-goals` items that carry no other sub-bullets, the single `- _In plain terms:_ … _Example:_ …` line is the item's only nested bullet.
+
 **Critical distinction:** "Planned (future cycles)" items WILL be implemented — just later. The design of this cycle must accommodate them. "Non-goals" items are truly out of scope and can be assumed away.
 
 **Note on scope of `todo-item-ids`.** The array captures the items that *initiated* the current cycle — not every concern discovered during brainstorming. Scope expansions that surface mid-cycle land in the requirements body but do not retroactively invent new todo ids; manage those via `/mi-update-todo-list add ... IMPLEMENTING`.
