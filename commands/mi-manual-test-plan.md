@@ -220,8 +220,10 @@ This is the last read-only step. Any refusal up to this point — invalid existi
 Only when `--force` was passed OR Step 1.5 set `freshness_forced_regen=true`, AND we're proceeding to render:
 
 ```bash
-$CLAUDE_PLUGIN_ROOT/scripts/progress.sh set manual-test-state=none manual-test-failure-policy=none
+$CLAUDE_PLUGIN_ROOT/scripts/progress.sh set manual-test-state=none manual-test-failure-policy=none manual-test-env-mode=interactive
 ```
+
+Resetting `manual-test-env-mode` back to the interactive baseline alongside `manual-test-state`/`manual-test-failure-policy` keeps a forced regeneration starting from a clean slate — Step 7 re-sets the mode explicitly when the inspector answers, so this reset only governs the deferred (`n`) path where no start answer overwrites it.
 
 This is the FIRST `progress.md` mutation in the regeneration branch. It runs AFTER all read-only gates above so any earlier refusal aborts cleanly without changing state. Skip this step entirely on non-`--force` invocations that didn't trigger the freshness regen. The prior `manual-test-results.md` is rotated alongside the plan in step 4; this step only touches `progress.md`.
 
@@ -260,16 +262,41 @@ The body has three top-level sections:
 
 Always asked (regardless of `--from-resume`):
 
-Prompt: `"Plan available at workflow-stream/<feature>/test/manual-test-plan.md. Perform the manual test now? y to start with the local-environment-up phase; n to defer — you can resume later by typing /mi-manual-test-run, or proceed directly to findings authoring."`
+Prompt: `"Plan available at workflow-stream/<feature>/test/manual-test-plan.md. Perform the manual test now? Reply y, y-autonomous, or n.
+
+  y             — start with the local-environment-up phase; the runner hands you the plan's
+                  Prerequisites + run-commands and you bring the services up yourself, then reply
+                  `ready` (or `skip-env` if already running).
+
+  y-autonomous  — start with the millwright bringing the environment up itself: it runs the plan's
+                  What-to-run commands from the worktree (services in the background, one-shot
+                  bootstrap in the foreground), verifies they're up, and proceeds to the scenarios
+                  WITHOUT asking you to run anything. If bring-up fails it stops and hands control
+                  back to you.
+
+  n             — defer — you can resume later by typing /mi-manual-test-run, or proceed directly
+                  to findings authoring."`
+
+The per-scenario verdict loop is inspector-driven in BOTH `y` and `y-autonomous` — `y-autonomous` only automates the local-environment-up phase (running the required services), not the `pass`/`fail`/`skip`/`pause` judgments, which still require the inspector.
 
 - On `n`: print `"Deferred. Run /mi-manual-test-run when ready, or write findings into inspector-review.md and type /mi-continue to proceed without manual testing. The plan file stays available."` Stop. State stays `none`.
 - On `y`:
 
   ```bash
-  $CLAUDE_PLUGIN_ROOT/scripts/progress.sh set sub-flow=manual-testing manual-test-state=running
+  $CLAUDE_PLUGIN_ROOT/scripts/progress.sh set sub-flow=manual-testing manual-test-state=running manual-test-env-mode=interactive
   ```
 
   Then auto-fire `/mi-manual-test-run`.
+
+- On `y-autonomous`:
+
+  ```bash
+  $CLAUDE_PLUGIN_ROOT/scripts/progress.sh set sub-flow=manual-testing manual-test-state=running manual-test-env-mode=autonomous
+  ```
+
+  Then auto-fire `/mi-manual-test-run`.
+
+`manual-test-env-mode` is set **explicitly on both start paths** (not left to default) so a re-run in a feature cycle whose prior run chose the other mode always reflects the answer just given, never a stale value.
 
 ## Notes
 

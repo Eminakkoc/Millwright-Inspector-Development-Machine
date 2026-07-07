@@ -1,6 +1,6 @@
 ---
 description: Execute the active feature's manual-test-plan.md scenario by scenario, asking the inspector for verdicts. Single owner of manual-test auto-seeding into inspector-review.md.
-argument-hint: "[--seed-only [--reclassify | --reopen-all | --as-new-findings [--force-new-regressions]]] | [--finalize-skipped]"
+argument-hint: "[--autonomous-env | --interactive-env] | [--seed-only [--reclassify | --reopen-all | --as-new-findings [--force-new-regressions]]] | [--finalize-skipped]"
 ---
 
 # mi-manual-test-run
@@ -11,11 +11,20 @@ Stage-5 sub-flow runner. Walks the active feature's `manual-test-plan.md` scenar
 
 ```
 /mi-manual-test-run                                     # Branch A — normal first-run / paused-resume
+/mi-manual-test-run --autonomous-env                    # Branch A, forcing autonomous local-environment-up
+/mi-manual-test-run --interactive-env                   # Branch A, forcing interactive local-environment-up
 /mi-manual-test-run --seed-only [<companion-flags>]     # Branch B — seed-only re-trigger / recovery
 /mi-manual-test-run --finalize-skipped                  # Branch C — bulk-skip remaining scenarios + finalize
 ```
 
 Mode flags are mutually exclusive: `--seed-only` and `--finalize-skipped` together refuse with `"--seed-only and --finalize-skipped are mutually exclusive"` and no mutation.
+
+**Branch A env-mode flags** (`--autonomous-env` / `--interactive-env`): direct control over the local-environment-up phase (Step 2). They are only meaningful for Branch A — the sole branch that runs the env-up phase. Behavior:
+
+- They persist the choice by writing `progress.sh set manual-test-env-mode=<autonomous|interactive>` **before** Step 2, so the mode is durable across a later pause/resume (which re-fires the runner without flags).
+- `--autonomous-env` and `--interactive-env` together refuse with `"--autonomous-env and --interactive-env are mutually exclusive"` and no mutation.
+- Either combined with `--seed-only` or `--finalize-skipped` refuses with `"env-mode flags apply only to a normal run (Branch A); they cannot combine with --seed-only/--finalize-skipped"` and no mutation.
+- When neither flag is passed, Branch A reads the persisted `manual-test-env-mode` (set earlier by `/mi-manual-test-plan` Step 7); a missing/null value means `interactive`.
 
 **Branch B companion flags** (only meaningful with `--seed-only`):
 
@@ -33,9 +42,10 @@ Mode flags are mutually exclusive: `--seed-only` and `--finalize-skipped` togeth
 Parse flags first, then dispatch to one of three branches. The runner picks exactly one branch and never mixes their flows:
 
 1. Parse flags from `$ARGUMENTS`.
-2. If `--seed-only` is present → run **Branch B** (seed-only re-trigger / recovery).
-3. Else if `--finalize-skipped` is present → run **Branch C** (bulk-skip + finalize).
-4. Else → run **Branch A** (normal first-run / paused-resume).
+2. Validate env-mode flags: `--autonomous-env` and `--interactive-env` are mutually exclusive with each other, and neither may combine with `--seed-only` or `--finalize-skipped` (refuse with the diagnostics in the Invocation section; no mutation).
+3. If `--seed-only` is present → run **Branch B** (seed-only re-trigger / recovery).
+4. Else if `--finalize-skipped` is present → run **Branch C** (bulk-skip + finalize).
+5. Else → run **Branch A** (normal first-run / paused-resume). If `--autonomous-env` or `--interactive-env` was passed, Branch A applies it (see Branch A — env-mode resolution).
 
 ## Common preconditions (all branches)
 
@@ -148,9 +158,44 @@ Render from `templates/manual-test-results.md.tmpl` if absent. The template incl
 
 Always first, even on resume — env may have decayed since the pause.
 
+**Env-mode resolution.** Determine how the environment comes up:
+
+```bash
+# Direct-invocation override: if --autonomous-env / --interactive-env was
+# passed, persist it FIRST so the choice survives a later pause/resume
+# (mi-continue re-fires this runner without flags).
+if [[ -n "$flag_env_mode" ]]; then           # "autonomous" | "interactive" | ""
+  $CLAUDE_PLUGIN_ROOT/scripts/progress.sh set manual-test-env-mode="$flag_env_mode"
+fi
+
+env_mode="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get manual-test-env-mode 2>/dev/null || echo interactive)"
+[[ -n "$env_mode" && "$env_mode" != "null" ]] || env_mode="interactive"
+```
+
+Then branch on `env_mode`. The two modes read the SAME plan sections (`## 1. Prerequisites`, `## 2. What to run`); they differ only in WHO runs the commands.
+
+##### 2a. Interactive mode (`env_mode == interactive`, the default)
+
 - Read `## 1. Prerequisites` and `## 2. What to run` from the plan.
 - Render the prerequisite checklist + run-commands as a single message to the inspector in chat. Per the plan template, each command is already in self-contained shape (absolute path inlined OR an `export RUN_ROOT="..."` preamble at the top of the section followed by `cd "$RUN_ROOT" && ...` commands). The runner echoes the section verbatim — it does NOT post-process or re-substitute `$RUN_ROOT`.
 - Wait for the inspector to confirm `ready` (or `skip-env` if they're already running).
+
+##### 2b. Autonomous mode (`env_mode == autonomous`)
+
+The millwright brings the environment up **itself** — the inspector is NOT asked to run any command. Only this env-up phase is automated; the per-scenario verdict loop (Step 3) still asks the inspector for `pass`/`fail`/`skip`/`pause`.
+
+1. Read `## 1. Prerequisites` and `## 2. What to run` from the plan. All commands run from the resolved `RUN_ROOT` (the plan already inlines it; do NOT re-substitute).
+2. Announce in chat: `"Bringing the test environment up autonomously from <RUN_ROOT>."` followed by the list of commands about to run, so the inspector can see (and interrupt) what the millwright is doing.
+3. **Idempotent readiness pre-check.** For each service the plan describes, first probe whether it is already up (the health URL / port / ready log line the plan names). Skip launching any service that is already healthy — this makes autonomous **resume** safe (background services started before a pause are usually still running; re-launching a dev server would fail on port-in-use).
+4. **Execute the `## 2. What to run` commands in order**, classifying each by whether it returns:
+   - **Long-running service** — a process that does not exit until killed (dev server, watcher, `docker compose up` without `-d`; e.g. `pnpm dev`, `npm start`, `next dev`, `vite`, `serve`, `… --watch`). Launch it with the Bash tool's `run_in_background: true` so it keeps running across the whole per-scenario loop. Record the returned background task id.
+   - **One-shot bootstrap** — a command that runs to completion (installs, builds, DB migrations, seed-data loaders, `docker compose up -d`, `docker compose … --wait`). Run it in the **foreground** and check the exit code; a non-zero exit is a hard failure (step 6).
+   - **Ambiguous** — if the millwright cannot confidently classify a command, treat it as a failure (step 6) rather than guessing; the inspector runs it.
+5. **Wait for readiness** before proceeding: after launching background services, poll the health/URL/port the plan names (or watch the captured log for the service's ready line) with a bounded retry (roughly up to ~60s per service). Never advance to Step 3 against a service that is not yet up.
+6. **On any bring-up failure** — a one-shot non-zero exit, a service that never becomes ready within the bound, or an unclassifiable command — STOP the autonomous bring-up. Do NOT fall through to the scenario loop. Report exactly what failed (the command, and the tail of its captured stdout/stderr or background-task output), then hand control back to the inspector: `"Autonomous environment bring-up failed at <cmd>: <reason>. Fix it and re-run /mi-manual-test-run (add --interactive-env to bring the environment up yourself), or reply here to continue manually."` Leave `manual-test-state=running` so the run is resumable.
+7. **On success**, echo a concise one-line-per-service summary (service → background task id / URL, one-shots → `done`), then proceed directly to Step 3 — no `ready`/`skip-env` wait.
+
+Background services the millwright starts here are its responsibility for the life of the run; their background task ids are surfaced (step 7 summary, and again in the pause/finalize messages) so the inspector can stop them when the run ends. The millwright does NOT tear them down automatically — the inspector may keep exercising the environment while authoring findings.
 
 #### Step 3 — Per-scenario loop
 
@@ -197,6 +242,7 @@ Reply is one of: `pass`, `fail <observation>`, `skip <reason>`, `pause`.
 
 - Frontmatter is already set to `current-scenario: <THIS_ID>` from step 3.1. Do not advance it. Leave **results-file** `state: in-progress`. (The two state fields are deliberately separate: `progress.md` `manual-test-state: running` is the workflow-level marker for dispatcher routing; `manual-test-results.md` `state: in-progress` is the file-level marker for the resume guard.)
 - Print: `"Paused at scenario <THIS_ID>. Type /mi-continue (will resume the run by re-showing this scenario) or /mi-manual-test-run directly. To bulk-skip remaining scenarios and end the run, type /mi-manual-test-run --finalize-skipped."`
+- **Autonomous env-mode only:** append the list of millwright-started background services (with their task ids) and note they remain running so resume can reuse them: `"Services the millwright started remain up: <service → task-id …>. On resume the env-up phase re-probes and only relaunches ones that have stopped."`
 - Stop.
 
 #### Step 4 — Loop completion (auto-seed + finalize)
@@ -334,6 +380,8 @@ Manual test done. Review inspector-review.md (auto-seeded failures appear at the
 text, and type /mi-continue when done. The free-form findings will be canonicalized by the existing
 canonicalize pass on the next /mi-continue.
 ```
+
+**Autonomous env-mode only:** append a line listing the millwright-started background services (with their task ids) and note they are still running so the inspector can stop them once done exercising the environment (the runner does not tear them down automatically).
 
 ## Branch B — `--seed-only` invocation
 

@@ -252,6 +252,35 @@ properties:
               IR blocks based on this value. Existing canonicalization of
               inspector-authored free-form review text remains outside this
               invariant.
+          manual-test-env-mode:
+            type: string
+            enum: [interactive, autonomous]
+            description: >
+              Stage-5 manual-test local-environment-up mode. Controls the
+              behavior of `/mi-manual-test-run`'s Step 2 (local-environment-up
+              phase).
+                - `interactive` — the runner renders the plan's Prerequisites +
+                  What-to-run commands to the inspector and waits for the
+                  inspector to run the services and reply `ready`/`skip-env`.
+                - `autonomous` — the runner brings the environment up itself:
+                  it runs the plan's What-to-run commands from the resolved
+                  RUN_ROOT (long-running services in the background, one-shot
+                  bootstrap in the foreground), probes readiness, and proceeds
+                  to the per-scenario loop WITHOUT asking the inspector to run
+                  anything. On any bring-up failure it stops and hands control
+                  back to the inspector rather than testing against a
+                  half-up environment.
+              Set by `/mi-manual-test-plan` Step 7 (`y` → interactive,
+              `y-autonomous` → autonomous) and overridable via
+              `/mi-manual-test-run`'s `--autonomous-env` / `--interactive-env`
+              flags. Persisted in `active.*` so the mode survives pause/resume
+              (`/mi-continue`'s Manual-Test-Resume Handler re-fires the runner
+              WITHOUT invocation flags — the persisted field is the only place
+              the choice can be recovered from). Optional — a missing/null
+              value means `interactive` (backward-compatible with in-flight
+              cycles predating this field). Resets to the interactive default
+              at the next feature's `activate` (the field is simply absent on a
+              fresh active block).
           drift-check-completed:
             type: boolean
             description: >
