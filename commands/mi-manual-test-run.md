@@ -1,11 +1,11 @@
 ---
-description: Execute the active feature's manual-test-plan.md scenario by scenario, asking the inspector for verdicts. Single owner of manual-test auto-seeding into inspector-review.md.
+description: Execute the active feature's manual-test-plan.md scenario by scenario — inspector-driven verdicts in interactive mode, millwright-driven verdicts in autonomous mode. Single owner of manual-test auto-seeding into inspector-review.md.
 argument-hint: "[--autonomous-env | --interactive-env] | [--seed-only [--reclassify | --reopen-all | --as-new-findings [--force-new-regressions]]] | [--finalize-skipped]"
 ---
 
 # mi-manual-test-run
 
-Stage-5 sub-flow runner. Walks the active feature's `manual-test-plan.md` scenario by scenario, asking the inspector for `pass`, `fail <observation>`, `skip <reason>`, or `pause` per scenario. On loop completion, prompts the inspector to auto-seed failures as canonical `### IR-NNN` blocks in `inspector-review.md` via `review.sh upsert-manual-test-failure`. **This skill is the single owner of manual-test auto-seeding** — `/mi-continue`'s Inspector Handler is read-only against `inspector-review.md` for manual-test results.
+Stage-5 sub-flow runner. Walks the active feature's `manual-test-plan.md` scenario by scenario. In **interactive** env-mode the inspector runs each scenario and replies `pass`, `fail <observation>`, `skip <reason>`, or `pause`; in **autonomous** env-mode the millwright performs each scenario itself and self-determines the `pass` / `fail <observation>` / `skip <reason>` verdict without asking the inspector to run anything (no `pause`). On loop completion, prompts the inspector to auto-seed failures as canonical `### IR-NNN` blocks in `inspector-review.md` via `review.sh upsert-manual-test-failure`. **This skill is the single owner of manual-test auto-seeding** — `/mi-continue`'s Inspector Handler is read-only against `inspector-review.md` for manual-test results.
 
 ## Invocation
 
@@ -182,7 +182,7 @@ Then branch on `env_mode`. The two modes read the SAME plan sections (`## 1. Pre
 
 ##### 2b. Autonomous mode (`env_mode == autonomous`)
 
-The millwright brings the environment up **itself** — the inspector is NOT asked to run any command. Only this env-up phase is automated; the per-scenario verdict loop (Step 3) still asks the inspector for `pass`/`fail`/`skip`/`pause`.
+The millwright brings the environment up **itself** — the inspector is NOT asked to run any command. In autonomous mode the per-scenario loop (Step 3) is **also** run by the millwright: after env-up it performs each scenario itself and self-determines the `pass`/`fail`/`skip` verdict, without asking the inspector to run anything. (Interactive mode automates neither — the inspector runs the services AND gives every verdict.)
 
 1. Read `## 1. Prerequisites` and `## 2. What to run` from the plan. All commands run from the resolved `RUN_ROOT` (the plan already inlines it; do NOT re-substitute).
 2. Announce in chat: `"Bringing the test environment up autonomously from <RUN_ROOT>."` followed by the list of commands about to run, so the inspector can see (and interrupt) what the millwright is doing.
@@ -193,7 +193,7 @@ The millwright brings the environment up **itself** — the inspector is NOT ask
    - **Ambiguous** — if the millwright cannot confidently classify a command, treat it as a failure (step 6) rather than guessing; the inspector runs it.
 5. **Wait for readiness** before proceeding: after launching background services, poll the health/URL/port the plan names (or watch the captured log for the service's ready line) with a bounded retry (roughly up to ~60s per service). Never advance to Step 3 against a service that is not yet up.
 6. **On any bring-up failure** — a one-shot non-zero exit, a service that never becomes ready within the bound, or an unclassifiable command — STOP the autonomous bring-up. Do NOT fall through to the scenario loop. Report exactly what failed (the command, and the tail of its captured stdout/stderr or background-task output), then hand control back to the inspector: `"Autonomous environment bring-up failed at <cmd>: <reason>. Fix it and re-run /mi-manual-test-run (add --interactive-env to bring the environment up yourself), or reply here to continue manually."` Leave `manual-test-state=running` so the run is resumable.
-7. **On success**, echo a concise one-line-per-service summary (service → background task id / URL, one-shots → `done`), then proceed directly to Step 3 — no `ready`/`skip-env` wait.
+7. **On success**, echo a concise one-line-per-service summary (service → background task id / URL, one-shots → `done`), then proceed directly to Step 3 — no `ready`/`skip-env` wait. In autonomous mode the millwright then drives the per-scenario loop itself (Step 3, autonomous branch).
 
 Background services the millwright starts here are its responsibility for the life of the run; their background task ids are surfaced (step 7 summary, and again in the pause/finalize messages) so the inspector can stop them when the run ends. The millwright does NOT tear them down automatically — the inspector may keep exercising the environment while authoring findings.
 
@@ -203,13 +203,17 @@ For each scenario in the plan in order, starting from `current-scenario` (or sce
 
 ##### 3.1 Set the cursor
 
-Set `current-scenario: <THIS_ID>` in the results-file frontmatter BEFORE rendering. This is the resume key — pause persists this value, so resume re-shows the same scenario rather than skipping to the next one.
+Set `current-scenario: <THIS_ID>` in the results-file frontmatter BEFORE presenting or performing the scenario. This is the resume key — a `pause` (interactive) or an interruption of the autonomous run persists this value, so resume re-presents / re-runs the same scenario rather than skipping to the next one.
 
-**Verdict-already-committed crash recovery:** before rendering, check whether a verdict block for `<THIS_ID>` already exists. If it does, treat the verdict as already committed (likely crash window after writing the body but before advancing the cursor): recompute counts from all verdict blocks, advance `current-scenario` to the next uncommitted scenario (or `null` if none), persist the frontmatter, and continue without prompting the inspector again. Keeps resume idempotent when a prior invocation crashed mid-commit.
+**Verdict-already-committed crash recovery:** before presenting or performing the scenario, check whether a verdict block for `<THIS_ID>` already exists. If it does, treat the verdict as already committed (likely crash window after writing the body but before advancing the cursor): recompute counts from all verdict blocks, advance `current-scenario` to the next uncommitted scenario (or `null` if none), persist the frontmatter, and continue without prompting the inspector or re-running the scenario. Keeps resume idempotent when a prior invocation crashed mid-commit.
 
-##### 3.2 Render the scenario
+##### 3.2 Present or perform the scenario (mode-branched)
 
-Render in the report format the inspector specified:
+Both modes read the scenario fresh from the plan each iteration (per Context discipline). They differ in WHO exercises it.
+
+###### 3.2a Interactive (`env_mode == interactive`, the default)
+
+Render the scenario for the inspector in the report format they specified:
 
 ```
 ⏺ <SCENARIO_ID> — <one-line title> (<linked-IR-IDs if any>)
@@ -225,9 +229,31 @@ Expected:
 <bulleted expectations from the plan>
 ```
 
-##### 3.3 Wait for inspector reply
+###### 3.2b Autonomous (`env_mode == autonomous`)
 
-Reply is one of: `pass`, `fail <observation>`, `skip <reason>`, `pause`.
+The millwright performs the scenario **itself** against the environment it brought up in Step 2 — it does NOT render the scenario for the inspector to run. This is the whole point of `y-autonomous`: after env-up the run proceeds through every scenario without asking the inspector to run anything.
+
+1. Read the scenario's `Action` steps and `Expected` outcomes from the plan.
+2. **Announce a one-line intent before acting** — `running <SCENARIO_ID>: <what it's about to exercise>` — so the inspector can watch and interrupt.
+3. **Execute the `Action` steps** using the tools available, driving from `RUN_ROOT`: shell commands, HTTP requests against the services started in Step 2 (the health/URL/route the plan names), log/DB/file inspection, project scripts, and any browser-automation tool the millwright actually has. Never simulate a step it did not run.
+
+##### 3.3 Obtain the verdict (mode-branched)
+
+Same verdict vocabulary in both modes; only the source differs. The commit path (3.4) is shared.
+
+###### 3.3a Interactive
+
+Wait for the inspector's reply, one of: `pass`, `fail <observation>`, `skip <reason>`, `pause`.
+
+###### 3.3b Autonomous
+
+The millwright determines the verdict itself by comparing what it observed in 3.2b against every `Expected` bullet:
+
+- **`pass`** — every expectation was actually observed to hold.
+- **`fail <observation>`** — at least one expectation was observed NOT to hold. The `<observation>` is the millwright's own account: what it ran, what it saw, and the delta from expected. Autonomous failures are as load-bearing as inspector ones — they enter the auto-seed loop in Step 4 identically.
+- **`skip <reason>`** — the scenario cannot be verified autonomously with the tools at hand (pure visual judgment, a physical device, an interaction with no available tool, or an outcome the millwright cannot observe). **Never fabricate a `pass` for a step that was not actually exercised** — `skip` with an explicit reason is the honest verdict, and skipped scenarios do not seed findings.
+
+There is **no `pause` verdict** in autonomous mode — the millwright runs the loop straight through to Step 4. (The inspector can still interrupt the session at any point; the `current-scenario` cursor persisted in 3.1 makes an interruption resumable exactly as a `pause` would be, and Step 2's idempotent readiness pre-check relaunches only the services that stopped.)
 
 ##### 3.4 On `pass` / `fail` / `skip`
 
@@ -238,11 +264,12 @@ Reply is one of: `pass`, `fail <observation>`, `skip <reason>`, `pause`.
 - Echo to chat as a single line: `<ID> ✅ <one-line outcome>` or `<ID> ❌ <one-line observation>` or `<ID> ⊘ skipped: <reason>`. Do NOT re-render the full scenario block in the echo.
 - Continue to the next scenario.
 
-##### 3.5 On `pause`
+##### 3.5 On `pause` (interactive mode only)
+
+Reached only in interactive mode — `pause` is not a verdict the autonomous loop produces. An autonomous run instead runs straight through; if the inspector interrupts it, the persisted `current-scenario` cursor (3.1) makes it resumable, and `/mi-continue`'s Manual-Test-Resume Handler re-probes and relaunches any stopped millwright-started services (see 3.3b).
 
 - Frontmatter is already set to `current-scenario: <THIS_ID>` from step 3.1. Do not advance it. Leave **results-file** `state: in-progress`. (The two state fields are deliberately separate: `progress.md` `manual-test-state: running` is the workflow-level marker for dispatcher routing; `manual-test-results.md` `state: in-progress` is the file-level marker for the resume guard.)
 - Print: `"Paused at scenario <THIS_ID>. Type /mi-continue (will resume the run by re-showing this scenario) or /mi-manual-test-run directly. To bulk-skip remaining scenarios and end the run, type /mi-manual-test-run --finalize-skipped."`
-- **Autonomous env-mode only:** append the list of millwright-started background services (with their task ids) and note they remain running so resume can reuse them: `"Services the millwright started remain up: <service → task-id …>. On resume the env-up phase re-probes and only relaunches ones that have stopped."`
 - Stop.
 
 #### Step 4 — Loop completion (auto-seed + finalize)
@@ -256,6 +283,8 @@ current-scenario: null
 ```
 
 Recompute pass/fail/skip counts from the verdict blocks.
+
+**Autonomous env-mode only:** the inspector was hands-off for the whole loop, so echo a one-line roll-up before the auto-seed decision: `"Autonomous manual test complete: <passed>/<total> passed, <failed> failed, <skipped> skipped."` (Interactive mode already surfaced each verdict as the inspector gave it.)
 
 ##### 4.2 Auto-seed prompt
 
@@ -475,7 +504,7 @@ No mutation. This makes `--finalize-skipped` an honest finalization escape hatch
 2. **Write bulk-skip verdicts.** For every scenario id from `current-scenario` onward (in plan order), upsert a verdict block with `Verdict: skip`, `Observation: bulk-skipped`, a `Recorded at` timestamp, and `Seeded: false`. **Pre-existing verdicts at or after `current-scenario` are left as-is** (Branch C never overwrites a real verdict; it only writes for scenarios that lack one). Recompute counts from the body. Set frontmatter `current-scenario: null`.
 3. **Converge into Branch A step 4 (loop completion).** From here, the auto-seed prompt fires for any failed scenarios (bulk-skipped scenarios are NOT failures and do not enter the auto-seed loop), the helper writes seeded IRs per the family-inspection rules, and the LAST mutation is `progress.sh set sub-flow=none manual-test-state=complete`. **Terminal state is `manual-test-state=complete`, NOT `skipped`** — the run reached its terminal state, just with a higher skipped count.
 
-Branch C does NOT run the local-environment-up phase, the per-scenario render/wait loop, or the pre-render verdict-already-committed check from Branch A step 3.1.
+Branch C does NOT run the local-environment-up phase, the per-scenario present/perform loop (interactive render-and-wait or autonomous execute-and-judge), or the pre-render verdict-already-committed check from Branch A step 3.1.
 
 ## Auto-seed ownership recap
 
@@ -487,6 +516,6 @@ The deterministic **seed-id** (`manual-test:<seed-family-id>:<scenario-id>`) wri
 
 - Each scenario's full prompt is **rendered fresh from the plan file** every iteration, not held in conversation as a growing block.
 - The chat echo per scenario is one line.
-- Detailed verdicts (multi-line observations from the inspector) go to `manual-test-results.md` body, not to chat history. If the inspector types a long observation, the skill writes it to the file and echoes back only `<ID> ❌ failed (observation written to results file)`.
+- Detailed verdicts (multi-line observations — inspector-typed in interactive mode, millwright-generated in autonomous mode) go to `manual-test-results.md` body, not to chat history. When an observation is long, the skill writes it to the file and echoes back only `<ID> ❌ failed (observation written to results file)`.
 
 See `docs/manual-testing/plan.md` § 2.2 for the full design rationale, § 3.7.1 for the helper contract, § 4.2.1 for the verdict-block parsing contract.

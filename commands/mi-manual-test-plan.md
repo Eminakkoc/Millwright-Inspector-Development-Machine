@@ -268,16 +268,18 @@ Prompt: `"Plan available at workflow-stream/<feature>/test/manual-test-plan.md. 
                   Prerequisites + run-commands and you bring the services up yourself, then reply
                   `ready` (or `skip-env` if already running).
 
-  y-autonomous  — start with the millwright bringing the environment up itself: it runs the plan's
-                  What-to-run commands from the worktree (services in the background, one-shot
-                  bootstrap in the foreground), verifies they're up, and proceeds to the scenarios
-                  WITHOUT asking you to run anything. If bring-up fails it stops and hands control
-                  back to you.
+  y-autonomous  — full hands-off run. The millwright brings the environment up itself (the plan's
+                  What-to-run commands from the worktree — services in the background, one-shot
+                  bootstrap in the foreground, verified up), then performs every scenario itself and
+                  records each `pass`/`fail`/`skip` verdict WITHOUT asking you to run anything. A
+                  scenario it can't verify autonomously (visual-only judgment, a physical device, or
+                  no available tool) is recorded `skip` with a reason — never a fabricated pass. If
+                  env bring-up fails it stops and hands control back to you.
 
   n             — defer — you can resume later by typing /mi-manual-test-run, or proceed directly
                   to findings authoring."`
 
-The per-scenario verdict loop is inspector-driven in BOTH `y` and `y-autonomous` — `y-autonomous` only automates the local-environment-up phase (running the required services), not the `pass`/`fail`/`skip`/`pause` judgments, which still require the inspector.
+`y-autonomous` automates the **whole** run — both the local-environment-up phase AND the per-scenario `pass`/`fail`/`skip` verdicts, which the millwright self-determines (there is no `pause` in autonomous mode). `y` automates neither: you run the services and give every verdict. In BOTH modes the end-of-run auto-seed prompt still asks you before writing any failures into `inspector-review.md`.
 
 - On `n`: print `"Deferred. Run /mi-manual-test-run when ready, or write findings into inspector-review.md and type /mi-continue to proceed without manual testing. The plan file stays available."` Stop. State stays `none`.
 - On `y`:

@@ -256,19 +256,24 @@ properties:
             type: string
             enum: [interactive, autonomous]
             description: >
-              Stage-5 manual-test local-environment-up mode. Controls the
-              behavior of `/mi-manual-test-run`'s Step 2 (local-environment-up
-              phase).
+              Stage-5 manual-test execution mode. Controls how
+              `/mi-manual-test-run` brings the environment up (Step 2) and, in
+              autonomous mode, who drives the per-scenario verdict loop (Step 3).
                 - `interactive` — the runner renders the plan's Prerequisites +
                   What-to-run commands to the inspector and waits for the
-                  inspector to run the services and reply `ready`/`skip-env`.
-                - `autonomous` — the runner brings the environment up itself:
-                  it runs the plan's What-to-run commands from the resolved
-                  RUN_ROOT (long-running services in the background, one-shot
-                  bootstrap in the foreground), probes readiness, and proceeds
-                  to the per-scenario loop WITHOUT asking the inspector to run
-                  anything. On any bring-up failure it stops and hands control
-                  back to the inspector rather than testing against a
+                  inspector to run the services and reply `ready`/`skip-env`,
+                  then renders each scenario and waits for the inspector's
+                  `pass`/`fail`/`skip`/`pause` verdict.
+                - `autonomous` — the runner brings the environment up itself
+                  (runs the plan's What-to-run commands from the resolved
+                  RUN_ROOT — long-running services in the background, one-shot
+                  bootstrap in the foreground — and probes readiness) AND then
+                  performs every scenario itself, self-determining each
+                  `pass`/`fail`/`skip` verdict WITHOUT asking the inspector to
+                  run anything (there is no `pause`). A scenario it cannot
+                  verify autonomously is recorded `skip` with a reason, never a
+                  fabricated pass. On any bring-up failure it stops and hands
+                  control back to the inspector rather than testing against a
                   half-up environment.
               Set by `/mi-manual-test-plan` Step 7 (`y` → interactive,
               `y-autonomous` → autonomous) and overridable via
