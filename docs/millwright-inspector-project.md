@@ -284,8 +284,8 @@ millwright-inspector/
 ```
 
 A few feature-scoped or workspace-scoped files also live under the data root:
-`lessons-learned.md` (cumulative PR-review lessons) at the root, and `pr-reviews/`
-session directories created by `/mi-analyze-review`.
+`lessons-learned.md` (cumulative PR-review + workflow-completion lessons) at the root,
+and `pr-reviews/` session directories created by `/mi-analyze-review`.
 
 ### 3.2 The journal
 
@@ -682,7 +682,7 @@ stage — the single most useful view of the workflow's blast radius.
 | Millwright (auto) | `/mi-review` | Fires the `stage-5-to-6` clear-point gate; writes `review-context.md`; asks for `review-mode`; dispatches. | 6 |
 | Inspector + chain / Millwright | Review session | Addresses findings; ends with `approve`. | 6 |
 | Inspector | `/mi-continue` | Review-Resume Handler — check/defer open findings, optional diagram refresh, atomic `advance-to 6 7`, auto-fire `/mi-complete-workflow`. | 6 → 7 → 8 |
-| Millwright (auto) | `/mi-complete-workflow` | IMPLEMENTING→IMPLEMENTED, populate `commits:`, rotate blueprint, archive `implementation/`, `progress.sh finish`. | 8 |
+| Millwright (auto) | `/mi-complete-workflow` | IMPLEMENTING→IMPLEMENTED, populate `commits:`, distill lessons (`lessons-distiller`), rotate blueprint, archive `implementation/`, `progress.sh finish`. | 8 |
 | Inspector | recovery commands | `/mi-abort-workflow`, `/mi-resume-workflow`, `/mi-update-blueprint`, `/mi-update-todo-list`, `/mi-export-bundle`, `/mi-sidequest`. | any |
 | Inspector | `/mi-analyze-review <pr-url>` | Standalone — turns a GitHub PR review into a triaged `report.md`. | n/a |
 | **PostToolUse hook** | `hooks/validate-on-write.sh` | Validates YAML frontmatter against schemas on every Write/Edit to a workflow `.md`; blocks the turn on failure. | always |
@@ -852,10 +852,14 @@ commits exist (the refreshed render is what stage 8 archives). Then atomic `adva
 **Stage 8 — Completion (`mi-complete-workflow`).** (1) `todo.sh bulk-transition
 IMPLEMENTING IMPLEMENTED --feature <active>` (CANCELED items left alone); (2)
 `commits.sh populate-requirements` writes the `commits:` field in `requirements.md`; (3)
+the `lessons-distiller` sub-agent reads the cycle's evidence artifacts (inspector-review,
+review-history, manual-test results, decisions) and appends ≤ 5 generalizable lessons to
+`lessons-learned.md` — best-effort, idempotent via the `workflow:<feature>/<requirements-id>`
+source-prefix guard, and run *before* rotation so evidence is still at live paths; (4)
 `blueprints.sh rotate --reason-kind completion` moves `current/*` into `history/v[N+1]/`
-and writes `reason.md`; (4) archives the live `implementation/` folder into
+and writes `reason.md`; (5) archives the live `implementation/` folder into
 `history/v[N+1]/implementation/` (a move, not a delete — `decisions.md` and `test/` stay at
-the feature root); (5) `progress.sh finish`. Then housekeeping: if `queue` is non-empty,
+the feature root); (6) `progress.sh finish`. Then housekeeping: if `queue` is non-empty,
 the **feature-A→feature-B clear-point gate** fires (recommend `/clear`, halt before
 auto-firing the next `/mi-apply-impact`); if `queue` is empty but `[ ] TODO` items remain,
 ask the inspector to mark the next batch and `/mi-continue` (re-enters stage 1.5 via
@@ -991,8 +995,10 @@ branches so a partially-completed prior invocation resumes cleanly:
 - **III** — normal forward path; before Step 4's rotate, requires
   `blueprints.sh check-current --require-primer` to return 0.
 
-Steps when reached: resolve inputs; IMPLEMENTING→IMPLEMENTED; populate `commits:`; rotate
-the blueprint; archive `implementation/`; `progress.sh finish`; housekeeping (§6.2 stage 8).
+Steps when reached: resolve inputs; IMPLEMENTING→IMPLEMENTED; populate `commits:`; distill
+workflow lessons (Step 3.5 — `lessons-distiller` sub-agent, Branch III only, idempotent via
+the `workflow:<feature>/<requirements-id>` source-prefix guard); rotate the blueprint;
+archive `implementation/`; `progress.sh finish`; housekeeping (§6.2 stage 8).
 
 ### 7.4 The universal advancement signal — `/mi-continue`
 
@@ -1497,7 +1503,7 @@ refit for per-batch use in v1.5; rendered by the sub-agents at review-call time,
 | `ledger.sh` | Manage `context-ledger.md`. Subcommands: `init`, `append`. Append failures warn but never block. |
 | `pr-review.sh` | Drive `/mi-analyze-review`. Subcommands: `parse-url`, `new-session`, `fetch`, `canonicalize`, `count-marked`, `find-awaiting`, `list-actionable`, `normalize`, `set-status`, `post-reply`, `report-status`. |
 | `blueprint-review.sh` | Drive the three `/mi-blueprint-review*` commands (v1.2.0+; v1.5 refit; see §7.9). Subcommands: `resolve-tool` (agent name → MCP tool name), `enumerate` (deterministic byte-offset computation from reviewer-supplied `{id, anchor_line, occurrence_index}`), `parse-findings` (extract `<!-- REVIEW-FINDING -->` blocks as JSON), `alloc-final-id` (lifetime-monotonic F-NNN allocator backed by `last-finding-id` frontmatter), `diff-drift` (heads-up diff against `summary.md` / `todo-list.md` after stage-2 review), `build-summary` (v1.5; deterministic ≤ 1500-token `review-history.md` summary for reviewer-session openers; truncation invariant protects unresolved-high and current-item-tied resolved findings, drops oldest low-severity unresolved first), `persist-findings` (v1.5; append new + flip earlier entries to resolved/dropped + recompute frontmatter counters). |
-| `lessons.sh` | Manage `lessons-learned.md` (cumulative PR-review lessons). Subcommands: `path`, `append` (auto-increments `L-NNN` ids). |
+| `lessons.sh` | Manage `lessons-learned.md` (cumulative PR-review + workflow-completion lessons). Subcommands: `path`, `append` (auto-increments `L-NNN` ids, self-validates after each write). |
 | `migrate-diagrams-readme.sh` | One-shot back-fill of `requirements-id` / `id` into legacy diagram READMEs. |
 | `migrate-test-folder.sh` | One-shot migration of legacy manual-test artifacts into the feature-permanent `test/` folder. |
 | `internal/common.sh` | Shared helpers sourced by every script: `mi_data_root`, path resolvers, `mi_quest_compute_slug`, frontmatter helpers, `mi_render_template` (YAML-encodes substituted values), the worktree guard `mi_assert_worktree_match`. |
@@ -1512,7 +1518,7 @@ profile returns per `docs/sub-agent-return-contract.md` with a ≤ 1k-token retu
 (`Result`, `Artifacts changed`, `Commits`, `Findings / risks`, `Main should read`);
 detailed evidence belongs in artifact files, not the return. The `blueprint-batch-reviewer`
 profile additionally emits a **Payload JSON** block before the standard fields (see the
-contract doc's "Payload JSON extension" section). There are **14 profiles**:
+contract doc's "Payload JSON extension" section). There are **15 profiles**:
 
 | Profile | Model / effort | Spawned by | Output |
 | --- | --- | --- | --- |
@@ -1524,6 +1530,7 @@ contract doc's "Payload JSON extension" section). There are **14 profiles**:
 | `blueprint-diagrammer` | sonnet / high | `mi-apply-impact` Step C (stage 2) | writes `.puml` sources into `blueprints/current/diagrams/` (has the PlantUML MCP tools) |
 | `implementation-analyst` | opus / high | `mi-generate-implementation-diagrams` / `mi-draw-diagrams` (stage 4) | writes `implementation/change-summary.md`; re-renders `implementation/diagrams/` |
 | `review-iteration-runner` | opus / high | `mi-review` (stage 6 brainstorming mode) | calls `review.sh set-status`; has the `Skill` tool and chains into `brainstorming`/`writing-plans` for `re-spec`/`re-plan` cascades |
+| `lessons-distiller` | sonnet / high | `mi-complete-workflow` Step 3.5 (stage 8, Branch III only) | reads the finished cycle's evidence artifacts (inspector-review, review-history, manual-test results, decisions, change-summary, grounding-report) and appends ≤ 5 generalizable lessons to `lessons-learned.md` via `lessons.sh append`; every `--source` begins with the `workflow:<feature>/<requirements-id>` prefix (caller's idempotency fence). Read-only on evidence; zero lessons is a valid outcome; never blocks completion |
 | `sidequest-reader` | sonnet | `/mi-sidequest` (no `--write`) | read-only — answers a mid-workflow question; no Edit/Write |
 | `sidequest-writer` | sonnet | `/mi-sidequest --write` | answers + performs a small fix; edits project source only — workflow artifacts stay read-only |
 | `review-comment-analyst` | sonnet / high | `/mi-analyze-review` | appends one `### PR-NNN` block per comment to `report.md`; read-only on source |
@@ -1674,7 +1681,7 @@ explicit override prompt.
 | 4 | Resume / `/mi-draw-diagrams` | `change-summary.md`, `progress.md`, drift-probe filesystem state | Diagram-source generation — delegated to `implementation-analyst` |
 | 5 | `/mi-continue` Inspector | `inspector-review.md`, `progress.md` | (none significant) |
 | 6 | `/mi-review` | `review-context.md`, `inspector-review.md` (open IRs) | Source reads — delegated to `review-iteration-runner` unless direct mode + all `fix` findings |
-| 8 | `/mi-complete-workflow` | `change-summary.md`, archived blueprint files | (rotates + archives only) |
+| 8 | `/mi-complete-workflow` | `change-summary.md`, archived blueprint files | Lessons-distillation evidence reads (inspector-review, review-history, manual-test results, decisions) — delegated to `lessons-distiller` |
 
 Enforcement is currently a documented contract; the `context-ledger.md` telemetry artifact
 is the regression-detection oracle — a `large`-class read with `location: main` in a stage
@@ -1829,7 +1836,9 @@ invoke `/clear` programmatically).
 - **Layered load** — the primer-first context discipline (Rule 3); canonical files are
   fallbacks.
 - **Lessons-learned** — `lessons-learned.md` at the data root: a cumulative, append-only
-  record of PR-review lessons (`L-NNN` blocks), written by the `pr-review-fixer` sub-agent.
+  record of PR-review and workflow-completion lessons (`L-NNN` blocks), written by the
+  `pr-review-fixer` sub-agent (per applied valid fix) and the `lessons-distiller`
+  sub-agent (`/mi-complete-workflow` Step 3.5, ≤ 5 per finished cycle).
 - **Manual-testing sub-flow** — the optional stage-5 sub-flow (§7.5).
 - **Multi-batch queue-rationale** — `queue-rationale.md`'s `## Batch <N>` body shape; the
   dispatcher's Row A relies on `features − completed == queue` exactly.

@@ -4,18 +4,20 @@ id: {{UUID}}
 
 # Lessons learned
 
-Cumulative record of mistakes surfaced by PR reviews, appended by the
-`pr-review-fixer` sub-agent after `/mi-continue` applies review fixes. The
-planning and implementation chains read this file before writing code so the
-same mistakes are not repeated — `config.md`'s `## Lessons learned` section
-points here.
+Cumulative record of mistakes surfaced by PR reviews and completed workflows.
+Appended by the `pr-review-fixer` sub-agent after `/mi-continue` applies
+review fixes, and by the `lessons-distiller` sub-agent at
+`/mi-complete-workflow` Step 3.5 (stage 8). The planning and implementation
+chains read this file before writing code so the same mistakes are not
+repeated — `config.md`'s `## Lessons learned` section points here.
 
 Append-only; managed by `scripts/lessons.sh`. Each entry is a `## L-NNN` block:
 
 <!--
 ## L-NNN — <short lesson title>
 - date:   <YYYY-MM-DD>
-- source: <pr-url> · <PR-NNN>
+- source: <pr-url> · <PR-NNN>            (PR-review lessons)
+          workflow:<feature>/<req-id> · <IR-NNN|F-NNN|S-NNN|decisions>   (workflow lessons)
 - lesson: |
     <what went wrong, and the concrete rule to follow next time>
 -->

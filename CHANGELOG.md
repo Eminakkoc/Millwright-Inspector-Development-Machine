@@ -1,5 +1,38 @@
 # Changelog
 
+## 1.6.0 — Workflow-completion lessons distillation (stage 8)
+
+Closes the lessons loop: until now `lessons-learned.md` had exactly one writer — the
+`pr-review-fixer` sub-agent on the standalone GitHub-PR-review path — so a workflow that
+never went through an external PR review produced zero lessons, even though the
+consumption side (stage-2 `lessons-filter` injection into blueprint creation) was fully
+built.
+
+### What changed
+
+- **New `agents/lessons-distiller.md`** (sonnet / high; `Read`, `Bash`, `Grep`).
+  Reads the finished cycle's evidence artifacts — `inspector-review.md` (resolved
+  IR-NNN blocks, especially `re-spec` / `re-plan` tier), `review-history.md`,
+  `manual-test-results.md`, `decisions.md`, `change-summary.md`,
+  `grounding-report.md` — and appends at most **5 generalizable lessons** per cycle
+  via `lessons.sh append`. Judgment bar: "would knowing this at stage 2/3 have
+  changed an artifact or the approach?" Zero lessons is a valid outcome; existing
+  `L-NNN` entries are read first to avoid duplicates (the stage-2 filter is
+  haiku-class — noise degrades its selection).
+- **New Step 3.5 in `/mi-complete-workflow`** — runs on Branch III only, *before*
+  Step 4's rotation so evidence artifacts are still at their live paths. Stage 8 is
+  the universal funnel (both the findings path 6→7→8 and the no-findings
+  auto-finalize path 5→7→8 end there), so every completed workflow now distills.
+- **Idempotency fence.** Every distilled lesson's `--source` begins with
+  `workflow:<feature>/<requirements-id>`; Step 3.5 greps for that prefix before
+  spawning, so crash-and-reenter (and the 0a/I/II recovery branches) never
+  double-append. `lessons.sh append` continues to self-validate after each write.
+- **Best-effort contract.** A `blocked` / failed distillation logs a warning and
+  completion proceeds — Step 3.5 can never wedge stage 8.
+- **Docs widened** (`lessons.sh` header, project doc §3.1/§5/§6.2/§7.3/§8.5/§8.6/
+  §8.13/glossary, sub-agent return-contract binding table): `lessons-learned.md` is
+  now "PR-review **+ workflow-completion** lessons" with two writers.
+
 ## 1.5.0 — Blueprint review token-reduction refit
 
 **Breaking CLI change.** Replaces v1.2.x's positional `<max-c-iter> <max-i-iter>` args

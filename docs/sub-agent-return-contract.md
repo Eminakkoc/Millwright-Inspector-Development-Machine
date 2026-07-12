@@ -55,6 +55,7 @@ Each mi-workflow command that delegates work via a fresh sub-agent embeds the co
 | `commands/mi-generate-implementation-diagrams.md` | 4 | Implementation diagram generation |
 | `commands/mi-apply-impact.md` | 2 | Blueprint diagram generation (same per-event prompt as stage 4) |
 | `commands/mi-draw-diagrams.md` | manual | Inspector-invokable wrapper for stage-4 diagram generation |
+| `commands/mi-complete-workflow.md` (Step 3.5) | 8 | Workflow-completion lessons distillation into `lessons-learned.md` (`lessons-distiller`) |
 | `commands/mi-sidequest.md` | any | Mid-workflow Q&A or small-fix sub-agent (read-only `sidequest-reader`, or writable `sidequest-writer` under `--write`). Uses the side-quest variant of the contract — see below. |
 
 When adding a new delegated stage, copy the "Required return shape" block from `templates/sub-agent-return.md.tmpl` verbatim into the new prompt. Do not paraphrase — the literal shape is what trains consistent sub-agent behavior across the workflow.

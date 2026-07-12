@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 # lessons.sh — manage <data_root>/lessons-learned.md, the cumulative record of
-# mistakes surfaced by PR reviews so future implementations don't repeat them.
+# mistakes surfaced by PR reviews and completed workflows so future
+# implementations don't repeat them. Writers: the pr-review-fixer sub-agent
+# (one lesson per applied valid fix) and the lessons-distiller sub-agent
+# (/mi-complete-workflow Step 3.5, at most 5 per finished cycle).
 #
 # The file is append-only and lives at the top level of the data root, a
 # sibling of journal/, quest/, workflow-stream/, and pr-reviews/. It is created

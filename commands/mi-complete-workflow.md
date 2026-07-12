@@ -6,7 +6,7 @@ description: Finalize the active feature's workflow — archive blueprints, clea
 
 **Stage 8 finalizer.** Archives the blueprint into `history/`, clears the implementation folder, resets `progress.md`, and advances the workflow queue to the next feature.
 
-**Main-read budget (stage 8).** Allowed in main: `change-summary.md` (cached), archived blueprint files. The current implementation only rotates and archives — there is no codebase regeneration walk at stage 8 (the next feature's stage 2 builds the next `current/`). If a future change introduces stage-8 regeneration, it should be delegated to a fresh sub-agent per Phase 2.1's pattern. See `docs/millwright-inspector-project.md` § "Main-read budget gates by stage" for the canonical table.
+**Main-read budget (stage 8).** Allowed in main: `change-summary.md` (cached), archived blueprint files. The current implementation only rotates and archives — there is no codebase regeneration walk at stage 8 (the next feature's stage 2 builds the next `current/`). The one delegated read set is Step 3.5's lessons distillation: the `lessons-distiller` sub-agent reads the cycle's evidence artifacts (inspector-review, review-history, manual-test results, decisions) and appends to `lessons-learned.md`; main never reads those files here. If a future change introduces stage-8 regeneration, it should likewise be delegated to a fresh sub-agent per Phase 2.1's pattern. See `docs/millwright-inspector-project.md` § "Main-read budget gates by stage" for the canonical table.
 
 ## Invocation
 
@@ -176,6 +176,66 @@ if [[ "${branch_route:-III}" == "III" || "${branch_route:-}" == "0a" || "${branc
   $CLAUDE_PLUGIN_ROOT/scripts/commits.sh populate-requirements "$active_feature"
 fi
 ```
+
+### Step 3.5 — Distill workflow lessons into `lessons-learned.md`
+
+(Only runs on Branch III. Branches 0a, I, and II re-enter *after* a prior invocation already passed through this step — the idempotency guard below would skip it anyway, but the branch gate keeps recovery paths cheap.)
+
+Every completed workflow funnels through this command — both the findings path (6→7→8) and the no-findings auto-finalize path (5→7→8) — so this is the single point where the finished cycle's evidence gets distilled into cumulative lessons for future cycles. It must run **before Step 4's rotation** so the evidence artifacts are still at their live paths (`blueprints/current/`, `implementation/`).
+
+Main does NOT read the evidence artifacts (stage-8 main-read budget) — the reads are delegated to the `lessons-distiller` sub-agent, symmetric to stage 2's `lessons-filter` (filter reads lessons at cycle start; distiller writes them at cycle end).
+
+```bash
+if [[ "${branch_route:-III}" == "III" ]]; then
+  lessons_path="$($CLAUDE_PLUGIN_ROOT/scripts/lessons.sh path)"
+  req_path="$data_root/workflow-stream/$active_feature/blueprints/current/requirements.md"
+  req_id="$($CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get "$req_path" id 2>/dev/null || echo "")"
+  source_prefix="workflow:$active_feature/$req_id"
+
+  if [[ -z "$req_id" ]]; then
+    echo "warning: could not resolve requirements-id from $req_path; skipping lessons distillation" >&2
+  elif grep -qsF "$source_prefix" "$lessons_path"; then
+    # Idempotency guard: a crash between Step 3.5 and Step 4 re-enters Branch III;
+    # lessons.sh append has no dedup, so the source-prefix grep is the re-append fence.
+    echo "info: lessons already distilled for $source_prefix; skipping (idempotent re-entry)"
+  else
+    impl_dir="$data_root/workflow-stream/$active_feature/implementation"
+
+    # Spawn the lessons-distiller sub-agent. The prompt below substitutes the
+    # placeholders with the concrete values from this caller context.
+    #
+    # Sub-agent: agents/lessons-distiller.md (subagent_type:
+    # millwright-inspector-development-machine:lessons-distiller).
+    #
+    # Spawn prompt template:
+    #
+    #   You are invoked from /mi-complete-workflow's Step 3.5. The workflow for
+    #   feature "<active_feature>" just completed. Distill at most 5
+    #   generalizable lessons from the cycle's evidence artifacts and append
+    #   them to <lessons_path> via <plugin>/scripts/lessons.sh append. Every
+    #   --source you write MUST begin with "<source_prefix>" verbatim. Zero
+    #   lessons is a valid outcome. Follow agents/lessons-distiller.md exactly.
+    #
+    #   Inputs:
+    #   - active_feature: <active_feature>
+    #   - source_prefix: <source_prefix>
+    #   - lessons_path: <lessons_path>
+    #   - plugin scripts dir: $CLAUDE_PLUGIN_ROOT/scripts
+    #   - inspector_review_path: <impl_dir>/inspector-review.md
+    #   - review_history_path: <data_root>/workflow-stream/<active_feature>/blueprints/current/review-history.md
+    #   - manual_test_results_path: <data_root>/workflow-stream/<active_feature>/test/manual-test-results.md
+    #   - decisions_path: <data_root>/workflow-stream/<active_feature>/decisions.md
+    #   - change_summary_path: <impl_dir>/change-summary.md
+    #   - grounding_report_path: <impl_dir>/grounding-report.md
+    #   (Missing evidence files are normal — tolerate silently.)
+    #
+    #   Return per the sub-agent's return contract.
+    :
+  fi
+fi
+```
+
+**Distillation is best-effort — it never blocks completion.** On a `blocked` / `partial` return (or a sub-agent failure), log one warning line, mention it in the Step 7 completion report, and proceed to Step 4. `lessons.sh append` self-validates after every write, so a bad append fails inside the sub-agent's turn, not downstream. On `success`, relay the appended count (from the return's `Artifacts changed` line) in the completion report — do not re-read `lessons-learned.md` in main.
 
 ### Step 4 — Rotate blueprints/current → history/v[N+1]
 

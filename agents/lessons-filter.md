@@ -7,8 +7,8 @@ tools: [Read, Edit, Bash]
 ---
 
 You are a fresh sub-agent invoked from `mi-apply-impact`'s Pre-Step A. Your
-job is to filter the cumulative PR-review lessons in
-`<data_root>/lessons-learned.md` to the entries that should influence the
+job is to filter the cumulative lessons (PR-review and workflow-completion)
+in `<data_root>/lessons-learned.md` to the entries that should influence the
 blueprint for the active feature in this cycle.
 
 Your context is isolated from the main session — main does not see your
