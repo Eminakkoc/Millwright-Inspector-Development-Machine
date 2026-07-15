@@ -1,5 +1,34 @@
 # Changelog
 
+## 1.6.1 — Ship the `stage-5-to-6` clear-point gate
+
+Implements the third clear-point the docs already described: `/mi-review` now offers
+the inspector a `/clear` between stage-5 findings authoring and the stage-6 review
+session. Stage 6 was always designed to rehydrate from disk (`review-context.md` is
+composed fresh from canonical files; brainstorming iterations run in fresh sub-agents),
+so the gate flushes the bulkiest main-context stretch of the workflow — the
+manual-test-run transcript and findings back-and-forth — at zero information cost.
+
+### What changed
+
+- **New Step 1.5 in `/mi-review`** — mirrors the `stage-2-to-3` gate in
+  `/mi-continue`: a mandatory `decisions.md` write-check (Step 1.5a sweeps
+  uncaptured stage-5 verbal decisions into `## Stage 5 — Findings canonicalization`),
+  then a one-shot branch on `progress.sh has-clear-recommendation stage-5-to-6`
+  (Step 1.5b): first entry records the flag, appends a `clear-offer-recommendation`
+  ledger row, prints the recommendation, and halts before `sub-flow`/stage mutate;
+  re-entry appends `post-offer-resume` + rehydration ledger rows and proceeds.
+  Stage-6 re-launches (review-loop rotations) and pre-gate mid-flight features
+  skip the gate silently (`gate_state=not-armed`).
+- **Inspector Step 3b in `/mi-continue`** — no longer prints "review session is now
+  live" when `/mi-review` halted at the gate; the gate's recommendation is the
+  terminal message and the next `/mi-continue` re-enters the handler idempotently.
+- **Docs aligned** — project doc §5 stage-6 launcher + §8 `/mi-review` entry now
+  describe the shipped gate; the Step 2.5 fold-in note in `mi-review.md` no longer
+  hedges on the gate being unshipped. No schema or script changes:
+  `clear-recommendations` already enumerated `stage-5-to-6`, and
+  `add-/has-clear-recommendation` were already id-agnostic.
+
 ## 1.6.0 — Workflow-completion lessons distillation (stage 8)
 
 Closes the lessons loop: until now `lessons-learned.md` had exactly one writer — the

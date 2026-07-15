@@ -37,6 +37,92 @@ open_ids="$($CLAUDE_PLUGIN_ROOT/scripts/review.sh list-open "$active_feature")"
 [[ -n "$open_ids" ]] || { echo "no open findings — nothing to review. Type /mi-continue to run the clean-review finalizer (advances to stage 7 and auto-fires /mi-complete-workflow)." >&2; exit 0; }
 ```
 
+### Step 1.5 — Clear-point gate (`stage-5-to-6`)
+
+Per `docs/clear-points/plan.md` §3.3 / §5.2, this step offers the inspector a `/clear` between stage-5 findings authoring and the stage-6 review session. The gate fires at most once per feature: on first entry it prints the recommendation and halts; on re-entry (whether the inspector cleared or skipped) it proceeds. It only arms while `current-stage` is still 5 — stage-6 re-launches of `/mi-review` (review-loop blueprint rotations, mid-review re-entry) and features activated before the gate shipped skip it silently.
+
+```bash
+current_stage="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get current-stage)"
+if (( current_stage != 5 )); then
+  gate_state="not-armed"        # stage-6 re-launch — never prompt, no ledger rows
+elif "$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" has-clear-recommendation stage-5-to-6; then
+  gate_state="already-fired"    # post-offer re-entry
+else
+  gate_state="first-entry"
+fi
+```
+
+#### Step 1.5a — `decisions.md` write-check (always runs)
+
+Before the gate decides, ensure any verbal decisions from the recent stage-5 conversation (manual-test run, findings Q&A, canonicalization overrides) have been persisted to `decisions.md`. This is mandatory: if the inspector clears on the strength of the recommendation (Step 1.5b), anything not in `decisions.md` is **lost** — the file is the only conversational carrier that survives the clear (per `docs/clear-points/plan.md` §4 prerequisites), and Step 2.5 folds it into `review-context.md` where the review sub-agents can see it.
+
+Review the last several turns of the conversation. If they contain instructions, scope decisions, or constraints that are NOT captured in `inspector-review.md` IR blocks / `test/manual-test-results.md` / `requirements.md` / `config.md`, summarize them as bullets in `$data_root/workflow-stream/$active_feature/decisions.md` under the `## Stage 5 — Findings canonicalization` section.
+
+```bash
+decisions_file="$data_root/workflow-stream/$active_feature/decisions.md"
+if [[ ! -f "$decisions_file" ]]; then
+  # File doesn't exist yet — initialize it on first use.
+  $CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh init decisions "$decisions_file" \
+    "FEATURE=$active_feature"
+fi
+# Then use Edit to append bullets to the `## Stage 5 — Findings canonicalization`
+# section if any new decisions surfaced. Format per templates/decisions.md.tmpl:
+#   - **YYYY-MM-DD** — <decision>. Reason: <why>.
+# Skip the write entirely if the recent turns contain no review-relevant
+# decisions — the placeholder comment can stay.
+```
+
+The write-check runs in every `gate_state` branch — late decisions caught between offer and resume (or during a stage-6 re-launch) should still land, and Step 2.5 re-folds `decisions.md` on every invocation. Only the ledger appends and the recommendation print differ between branches.
+
+#### Step 1.5b — Branch on `gate_state`
+
+**If `gate_state=first-entry` (print recommendation + halt):**
+
+```bash
+$CLAUDE_PLUGIN_ROOT/scripts/progress.sh add-clear-recommendation stage-5-to-6
+$CLAUDE_PLUGIN_ROOT/scripts/ledger.sh append \
+  "5" "/mi-review" "clear-offer-recommendation" "small" "main" \
+  "stage-5-to-6 clear offered" || true
+```
+
+Then print the recommendation block to the inspector and **halt** — do NOT proceed to Step 2 in this branch (state stays at `current-stage=5`, `sub-flow` untouched):
+
+> "Open findings for `$active_feature` are recorded; the stage-6 review session is next. **Recommended:** type `/clear`, then `/mi-continue` to enter the review session with a fresh main context.
+>
+> What gets carried across the clear:
+> - `progress.md` (workflow state, including the `review-mode-suggestion`)
+> - `implementation/inspector-review.md` (your findings as canonical `IR-NNN` blocks)
+> - `test/manual-test-results.md` (manual-test outcomes, if a run happened)
+> - `decisions.md` (any verbal decisions captured above — folded into `review-context.md` when the session starts)
+>
+> What gets discarded by the clear: the manual-test-run transcript and the findings back-and-forth. The IR blocks and results file are the canonical record; the chat history is not.
+>
+> Skip the clear (just type `/mi-continue` without clearing) if you have unsaved verbal context you specifically want to carry forward."
+
+Then exit. The inspector's next `/mi-continue` re-enters the Inspector Handler (idempotent — canonicalization exits 0 on an already-canonical file), which auto-fires `/mi-review` again; this time the gate sees the flag and proceeds.
+
+**If `gate_state=already-fired` (re-entry — offer was already shown; proceed):**
+
+```bash
+$CLAUDE_PLUGIN_ROOT/scripts/ledger.sh append \
+  "5" "/mi-review" "post-offer-resume" "small" "main" \
+  "stage-5-to-6 launcher resumed" || true
+
+# Rehydration row — record the file set Step 2.5 reads to compose
+# review-context.md post-clear. The gate does NOT itself read these here;
+# the ledger row attributes the read class to the gate transition for
+# analytics.
+$CLAUDE_PLUGIN_ROOT/scripts/ledger.sh append \
+  "5" "/mi-review" "progress.md, inspector-review.md, requirements.md, change-summary.md, manual-test-results.md, decisions.md" \
+  "medium" "main" "stage-5-to-6 rehydration" || true
+```
+
+Fall through to Step 2.
+
+**If `gate_state=not-armed` (stage-6 re-launch):** fall through to Step 2 with no ledger rows — the gate transition already happened (or predates the gate on a mid-flight feature); re-launches are not resumes.
+
+We **cannot** distinguish "took the clear" from "skipped the clear" — both produce the same persisted state (the `clear-recommendations` array contains `stage-5-to-6` either way). Per `docs/clear-points/plan.md` §6.5 and §5.4, this is fine functionally; telemetry honestly records `clear-offered` and `post-offer-resume` only, never a fake `clear-taken`.
+
 ### Step 2 — Mark sub-flow
 
 ```bash
@@ -136,7 +222,7 @@ PYEOF
 
   If `decisions_body` is non-empty, replace the `_(none recorded)_` line in the rendered review-context's `## Decisions` section with the extracted body via `Edit`. If `decisions.md` is absent OR every section is placeholder-only, leave `_(none recorded)_` untouched. **Do NOT delete the `## Decisions` heading itself** — the sub-agent prompt template references it positionally, and an absent heading is a different signal than "heading present, no decisions."
 
-  This fold-in **always runs** at Step 2.5, regardless of whether the `stage-5-to-6` clear-point gate (§3.3 of the clear-points plan) is shipped — it is independently useful as soon as `decisions.md` exists, because any decision written between stages 5 and 6 (with or without a clear) needs to reach the sub-agents.
+  This fold-in **always runs** at Step 2.5, independent of the `stage-5-to-6` clear-point gate (Step 1.5) — it is useful on every invocation, not just post-clear ones, because any decision written between stages 5 and 6 (with or without a clear) needs to reach the sub-agents. The gate's Step 1.5a write-check and this fold-in are the two halves of the survival path: 1.5a persists conversational decisions to `decisions.md`; 2.5 carries them into the sub-agents' view.
 
 The `## On-demand canonical files` section is template-emitted and does not need editing. No `schemas/review-context.schema.yaml` change is required for the manual-test addition (the schema validates frontmatter only).
 

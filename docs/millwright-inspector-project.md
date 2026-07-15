@@ -833,8 +833,9 @@ findings** — `review.sh canonicalize` returns TSV spans, the millwright classi
 `/mi-review` and stop.
 
 **Stage 6 — Inspector review session (`mi-review`).** Pure launcher: fires the
-`stage-5-to-6` clear-point gate, composes `review-context.md`, sets `sub-flow=reviewing`,
-advances 5→6, asks for `review-mode`. **Brainstorming mode** invokes the
+`stage-5-to-6` clear-point gate (Step 1.5 — first entry recommends `/clear` and halts;
+re-entry proceeds), sets `sub-flow=reviewing`, advances 5→6, composes `review-context.md`,
+asks for `review-mode`. **Brainstorming mode** invokes the
 `review-iteration-runner` sub-agent (which holds the `Skill` tool and chains into
 `brainstorming`/`writing-plans` for `re-spec`/`re-plan` cascades) — the session loops
 internally: read findings → cascade-dispatch by scope → mark each `fixed` → ask for
@@ -976,9 +977,11 @@ Writes `implementation/diagrams/README.md` with `stage: implementation` (intenti
 `requirements-id`).
 
 **`/mi-review`** *(auto)* — stage 6 launcher. Auto-fired by the Inspector Handler when
-findings exist. Step 0: `stage-5-to-6` clear-point gate. Then composes `review-context.md`
-(folding in `decisions.md` content + the `review-mode-suggestion`), sets `sub-flow=reviewing`,
-advances 5→6, asks for `review-mode`, and dispatches to the `review-iteration-runner`
+findings exist. Step 1.5 (after preconditions): `stage-5-to-6` clear-point gate — first
+entry persists stage-5 decisions, records the flag, recommends `/clear`, and halts; re-entry
+proceeds. Then sets `sub-flow=reviewing`, advances 5→6, composes `review-context.md`
+(folding in `decisions.md` content + the `review-mode-suggestion`), asks for `review-mode`,
+and dispatches to the `review-iteration-runner`
 sub-agent (brainstorming) or the main-session loop (direct). Does **not** advance past 6 or
 auto-fire `/mi-complete-workflow` — that is the Review-Resume Handler's job.
 

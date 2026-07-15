@@ -1209,14 +1209,17 @@ Then auto-invoke `/mi-complete-workflow` immediately. Do not wait for a further 
 Hand the review off to a **brainstorming review session** by invoking `/mi-review`. The session runs **isolated from mi-workflow — same isolation model as stage 3**. After invoking `/mi-review`, control returns to the inspector, who drives the session through to its terminal state (typing `approve`).
 
 ```bash
-# /mi-review handles sub-flow=reviewing, the stage 5→6 advance, and the Skill invocation,
-# then hands off. It does NOT block on the Skill.
+# /mi-review handles the stage-5-to-6 clear-point gate (Step 1.5), sub-flow=reviewing,
+# the stage 5→6 advance, and the Skill invocation, then hands off. It does NOT block
+# on the Skill.
 /mi-review
 ```
 
 After `/mi-review` returns, **stop**. Do not advance the stage. Do not auto-fire `/mi-complete-workflow`. The Review-Resume Handler will run when the inspector types `/mi-continue` again after the brainstorming review session exits.
 
-Tell the inspector: "Brainstorming review session is now live (isolated from mi-workflow). Drive it to completion (typing `approve` when ready), then type `/mi-continue` to resume the mi-workflow."
+**If `/mi-review` halted at its `stage-5-to-6` clear-point gate** (first entry — it printed a `/clear` recommendation and did NOT launch the session), say nothing further: the gate's recommendation is the terminal message for this turn. State stays at `current-stage=5`, so the inspector's next `/mi-continue` re-enters this handler and auto-fires `/mi-review` again, which then proceeds past the gate.
+
+Otherwise tell the inspector: "Brainstorming review session is now live (isolated from mi-workflow). Drive it to completion (typing `approve` when ready), then type `/mi-continue` to resume the mi-workflow."
 
 **Why no scope-tier dispatch here.** Earlier versions of mi-workflow encoded a scope-tier cascade (re-spec → re-plan → re-implement → fix) inside this handler. That logic moved into the brainstorming session itself: the chain reads each finding's `scope:` as a hint and chooses the smallest cascade that resolves the root cause. Mi-workflow no longer needs to know about scopes during the loop — only that brainstorming exited cleanly.
 
