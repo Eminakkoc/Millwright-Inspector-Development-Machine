@@ -5,7 +5,7 @@ argument-hint: "[--autonomous-env | --interactive-env] | [--seed-only [--reclass
 
 # mi-manual-test-run
 
-Stage-5 sub-flow runner. Walks the active feature's `manual-test-plan.md` scenario by scenario. In **interactive** env-mode the inspector runs each scenario and replies `pass`, `fail <observation>`, `skip <reason>`, or `pause`; in **autonomous** env-mode the millwright performs each scenario itself and self-determines the `pass` / `fail <observation>` / `skip <reason>` verdict without asking the inspector to run anything (no `pause`). On loop completion, prompts the inspector to auto-seed failures as canonical `### IR-NNN` blocks in `inspector-review.md` via `review.sh upsert-manual-test-failure`. **This skill is the single owner of manual-test auto-seeding** — `/mi-continue`'s Inspector Handler is read-only against `inspector-review.md` for manual-test results.
+Stage-5 sub-flow runner. Walks the active feature's `manual-test-plan.md` scenario by scenario. In **interactive** env-mode the inspector runs each scenario and replies `pass`, `fail <observation>`, `skip <reason>`, or `pause`; in **autonomous** env-mode the millwright performs each scenario itself and self-determines the `pass` / `fail <observation>` / `skip <reason>` verdict without asking the inspector to run anything (no `pause`; `skip` is a last-resort verdict reserved for a proven capability gap — see 3.3b — never a convenience exit). On loop completion, prompts the inspector to auto-seed failures as canonical `### IR-NNN` blocks in `inspector-review.md` via `review.sh upsert-manual-test-failure`. **This skill is the single owner of manual-test auto-seeding** — `/mi-continue`'s Inspector Handler is read-only against `inspector-review.md` for manual-test results.
 
 ## Invocation
 
@@ -236,6 +236,7 @@ The millwright performs the scenario **itself** against the environment it broug
 1. Read the scenario's `Action` steps and `Expected` outcomes from the plan.
 2. **Announce a one-line intent before acting** — `running <SCENARIO_ID>: <what it's about to exercise>` — so the inspector can watch and interrupt.
 3. **Execute the `Action` steps** using the tools available, driving from `RUN_ROOT`: shell commands, HTTP requests against the services started in Step 2 (the health/URL/route the plan names), log/DB/file inspection, project scripts, and any browser-automation tool the millwright actually has. Never simulate a step it did not run.
+4. **Execute every scenario — attempt before judging.** The plan's scenario list is a contract: an autonomous run's default is a verdict grounded in actual execution for **100% of scenarios**. Do NOT pre-judge a scenario as un-runnable from its text, its similarity to a previous scenario, or its expected effort — attempt its `Action` steps with real tools first. A `skip` verdict is only reachable AFTER an attempt has demonstrated a genuine capability gap (3.3b defines the bar).
 
 ##### 3.3 Obtain the verdict (mode-branched)
 
@@ -251,7 +252,7 @@ The millwright determines the verdict itself by comparing what it observed in 3.
 
 - **`pass`** — every expectation was actually observed to hold.
 - **`fail <observation>`** — at least one expectation was observed NOT to hold. The `<observation>` is the millwright's own account: what it ran, what it saw, and the delta from expected. Autonomous failures are as load-bearing as inspector ones — they enter the auto-seed loop in Step 4 identically.
-- **`skip <reason>`** — the scenario cannot be verified autonomously with the tools at hand (pure visual judgment, a physical device, an interaction with no available tool, or an outcome the millwright cannot observe). **Never fabricate a `pass` for a step that was not actually exercised** — `skip` with an explicit reason is the honest verdict, and skipped scenarios do not seed findings.
+- **`skip <reason>`** — **last resort, allowed only for a proven capability gap, never for convenience.** Before a skip verdict the millwright MUST have: (1) actually attempted the `Action` steps (3.2b item 4); (2) tried every observation channel available for each `Expected` bullet — HTTP response, logs, DB/file state, project scripts, DOM/browser automation where present; (3) looked for an objective proxy when the expectation is subjective (the plan generator's autonomous-runnability rule lists machine-checkable side-effects for visual scenarios precisely so this run can verify those instead of skipping). Only if every expectation remains genuinely unobservable after all three may it skip, and the `<reason>` must name the specific unobservable expectation AND the channels attempted — e.g. `skip gradient rendering is visual-only; DOM classes + computed styles verified via browser tool, pixel output unobservable`. The following are NOT valid skip reasons and force an actual attempt instead: "similar to a previous scenario", "low value", "would take too long", "environment already exercised this path", "likely passes". **Never fabricate a `pass` for a step that was not actually exercised** — an honest `skip` beats a fabricated `pass`, but an executed verdict beats both: skipped scenarios do not seed findings, so every unjustified skip silently shrinks the quality gate.
 
 There is **no `pause` verdict** in autonomous mode — the millwright runs the loop straight through to Step 4. (The inspector can still interrupt the session at any point; the `current-scenario` cursor persisted in 3.1 makes an interruption resumable exactly as a `pause` would be, and Step 2's idempotent readiness pre-check relaunches only the services that stopped.)
 
@@ -284,7 +285,9 @@ current-scenario: null
 
 Recompute pass/fail/skip counts from the verdict blocks.
 
-**Autonomous env-mode only:** the inspector was hands-off for the whole loop, so echo a one-line roll-up before the auto-seed decision: `"Autonomous manual test complete: <passed>/<total> passed, <failed> failed, <skipped> skipped."` (Interactive mode already surfaced each verdict as the inspector gave it.)
+**Autonomous env-mode only — pre-finalize skip audit (runs BEFORE writing `state: complete`):** if `skipped > 0`, re-read every `skip` verdict block and check its recorded reason against the 3.3b bar — it must name a specific unobservable expectation and the channels attempted. Any skip whose reason reads as convenience ("similar to", "low value", time/effort, "likely passes", an empty or generic reason) is NOT terminal: re-enter Step 3 for that scenario and execute it properly — the 3.4 upsert replaces the skip verdict with the earned one. Only when every remaining skip is a genuine, attempt-backed capability gap may the run finalize. This audit is the enforcement backstop for the 100%-execution contract in 3.2b item 4.
+
+**Autonomous env-mode only:** the inspector was hands-off for the whole loop, so echo a one-line roll-up before the auto-seed decision: `"Autonomous manual test complete: <passed>/<total> passed, <failed> failed, <skipped> skipped."` When `skipped > 0`, follow it with one line per skipped scenario — `<ID> ⊘ <unobservable expectation> — attempted: <channels>` — so the inspector immediately sees that nothing was silently dropped. (Interactive mode already surfaced each verdict as the inspector gave it.)
 
 ##### 4.2 Auto-seed prompt
 

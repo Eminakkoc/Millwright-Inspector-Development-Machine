@@ -54,3 +54,15 @@ Bare `cd "$RUN_ROOT" && ...` without the export preamble in the same section is 
 Scenarios are grouped by letter (A, B, C, …) and numbered within (`A.1, A.2, B.1, …`). The runner walks them in order; the inspector answers `pass`, `fail <observation>`, `skip <reason>`, or `pause` per scenario.
 
 {{SCENARIOS}}
+
+## 4. Coverage notes
+
+<!--
+Waived coverage-matrix cells — one line per Goal / changed area / matrix dimension
+(edge cases, error paths, idempotency, regression seams, non-goal boundaries) that
+intentionally has no scenario, with the reason. An empty section asserts full matrix
+coverage. This section lives OUTSIDE § 3 so scenario-block parsers never mistake a
+waiver line for a scenario.
+-->
+
+{{COVERAGE_NOTES}}

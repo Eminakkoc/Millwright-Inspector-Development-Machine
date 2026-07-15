@@ -5,7 +5,7 @@ argument-hint: "[--from-resume] [--force [--new-seed-family]] [--discard-existin
 
 # mi-manual-test-plan
 
-Stage-5 manual-test plan generator. Reads the active feature's blueprint + change-summary + a codebase scan, renders `workflow-stream/<feature>/test/manual-test-plan.md`, then offers to start the per-scenario run via `/mi-manual-test-run`. Auto-fired by `/mi-continue`'s Resume Step 7 when the inspector answers `y` to the stage-5 hand-off prompt; also invocable directly during stage 5 if the inspector wants to (re)generate.
+Stage-5 manual-test plan generator. Reads the active feature's blueprint + change-summary + a codebase scan, renders `workflow-stream/<feature>/test/manual-test-plan.md`, then offers to start the per-scenario run via `/mi-manual-test-run`. The plan is one of the most important artifacts in the workflow — Step 5's depth & coverage bar is mandatory: enumerate every scenario the implementation surface supports (happy paths, edge cases, error paths, idempotency, regression seams, non-goal boundaries), not a happy-path sketch. Auto-fired by `/mi-continue`'s Resume Step 7 when the inspector answers `y` to the stage-5 hand-off prompt; also invocable directly during stage 5 if the inspector wants to (re)generate.
 
 The plan + results files live under a feature-permanent `test/` folder — they survive `/mi-complete-workflow` and `/mi-abort-workflow` so the next cycle on the same feature can reuse them. See `docs/manual-testing-folder/plan.md` for the lifecycle.
 
@@ -241,7 +241,7 @@ The `seed-family-id` to preserve was already captured in step 1. Preserving `see
 
 Render `workflow-stream/<feature>/test/manual-test-plan.md` from `templates/manual-test-plan.md.tmpl`. Generate a fresh plan `id` (UUIDv4) every time, but reuse `preserved_seed_family_id` from step 1 when present; otherwise create a new UUIDv4 `seed-family-id`. Populate `{{ACTIVATION_ID}}` with the value from `progress.sh get activation-id` (already backfilled in Step 1.0 for in-flight cycles).
 
-The body has three top-level sections:
+The body has four top-level sections:
 
 - `## 1. Prerequisites` — services to run, env vars, install/bootstrap, seed data. Filled from blueprint config.md + change-summary grep results.
 - `## 2. What to run` — per-terminal command set. **Every command line MUST be self-contained** — copy-pasteable into the inspector's terminal without preceding setup. Acceptable shapes (pick one per section, do not mix):
@@ -252,7 +252,30 @@ The body has three top-level sections:
 
   Set the `generated-against-run-root` frontmatter field to the resolved absolute `RUN_ROOT` so the runner can detect worktree drift at run time.
 
-- `## 3. Test scenarios` — grouped by Scenario letter (A, B, C, …), numbered within (`A.1, A.2, B.1, …`).
+- `## 3. Test scenarios` — grouped by Scenario letter (A, B, C, …), numbered within (`A.1, A.2, B.1, …`). This is the most consequential section of the plan — generate it against the depth & coverage bar below, not as a happy-path sketch.
+- `## 4. Coverage notes` — waived coverage-matrix cells, one line each with the reason (see the bar below). An empty section asserts full matrix coverage. Kept OUTSIDE § 3 so scenario-block parsers never mistake it for a scenario.
+
+#### Scenario depth & coverage bar (mandatory)
+
+The manual test plan is one of the most important artifacts in the entire workflow: it is the last quality gate before findings authoring, and whatever it fails to cover is simply never exercised — by the inspector or by an autonomous run. Generate § 3 **as detailed and exhaustive as the implementation surface allows**; err on the side of too many scenarios, never too few. A short plan is not a virtue here.
+
+**Coverage matrix — every cell gets ≥1 scenario or an explicit § 4 waiver:**
+
+- **Every Goal** in `requirements.md` `## Goals (this cycle)` — at least one happy-path scenario per goal, plus that goal's failure/error path.
+- **Every changed area** in `change-summary.md` `## Changed files` — at least one scenario exercising that area's observable behavior. A changed file with no scenario and no waiver is a coverage hole.
+- **Edge + boundary cases** — empty inputs, oversized inputs, invalid formats, boundary values (0, 1, N, N+1), unicode/whitespace where strings are handled.
+- **Error and failure paths** — invalid requests, missing/expired auth where applicable, dependency-down behavior (a `config.md` service stopped), malformed payloads, constraint violations. Expected outcomes name the *specific* error surface (status code, error-code constant found by the Step 3 codebase scan, exact UI error state) — never just "an error is shown".
+- **State transitions & idempotency** — re-run/refresh/double-submit the same action, resume after interruption, run a scenario twice where the second run's expectation differs (or must not differ).
+- **Regression seams** — pre-existing behavior adjacent to the changed code (call sites of changed functions per the codebase scan). At least one scenario per seam verifying old behavior still holds.
+- **Non-goals boundaries** — for each `requirements.md` Non-goal bordering the change, one scenario verifying the excluded behavior did NOT change.
+
+**Waivers instead of silent omission:** when a matrix cell genuinely has nothing testable (e.g. a pure-refactor file with no observable behavior), record it in `## 4. Coverage notes` — one line per waived cell with the reason. An unmentioned empty cell is a defect in the plan, not a judgment call.
+
+**Per-scenario depth bar:** every scenario must be executable without reading the source. `Action` steps are numbered and copy-paste concrete (exact commands, URLs, request bodies, UI paths, input values — grounded in the real symbols the Step 3 codebase scan found). `Expected` bullets are concrete observable outcomes (exact response fields/status codes, exact UI text or state, log lines, DB rows) — one bullet per observable, never a vague "it works". Where a trick is needed to trigger the path from the UI, spell it out.
+
+**Autonomous-runnability:** write every scenario so a hands-off run (`/mi-manual-test-run`, autonomous env-mode) can execute it — each `Expected` bullet names WHERE the outcome is observable (HTTP response, log line, DB row, file, DOM state). When a scenario's headline verification is subjective visual judgment, additionally list the objective side-effects that CAN be machine-checked, so an autonomous run verifies those instead of skipping the scenario outright.
+
+**Self-check before writing the file:** after drafting § 3, walk the coverage matrix once more against Goals + changed areas and count scenarios per cell; add scenarios (or § 4 waivers) for every empty cell. Only then render the file.
 
 ### Step 6 — Do NOT change `manual-test-state`
 

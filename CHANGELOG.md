@@ -1,5 +1,33 @@
 # Changelog
 
+## 1.6.2 — Manual-test depth: exhaustive plans + no-skip autonomous runs
+
+Two quality tightenings on the stage-5 manual-test sub-flow.
+
+### What changed
+
+- **`/mi-manual-test-plan` Step 5 — mandatory scenario depth & coverage bar.** The
+  plan is now generated against an explicit coverage matrix: every Goal (happy +
+  failure path), every changed area, edge/boundary cases, error paths with the
+  specific error surface, state transitions & idempotency, regression seams, and
+  non-goal boundaries — each cell needs ≥1 scenario or an explicit waiver in the
+  new `## 4. Coverage notes` section (template gains the section + `{{COVERAGE_NOTES}}`,
+  kept outside § 3 so scenario parsers never mistake a waiver for a scenario).
+  Per-scenario depth bar: executable without reading the source, copy-paste-concrete
+  Actions, one observable per Expected bullet. Scenarios must also be written
+  autonomous-runnable — each Expected names WHERE it is observable, and visual-only
+  checks list machine-checkable side-effects.
+- **`/mi-manual-test-run` autonomous mode — 100%-execution contract.** New 3.2b
+  item 4: attempt every scenario with real tools before judging; pre-judging from
+  scenario text, similarity, or effort is banned. The `skip` verdict (3.3b) is now
+  a last resort gated on a three-step attempt protocol (run the Actions, try every
+  observation channel per Expected, seek an objective proxy for subjective checks),
+  with an explicit list of invalid reasons ("similar to previous", "low value",
+  time/effort, "likely passes"). New pre-finalize skip audit in Step 4.1: before
+  `state: complete`, every skip verdict is re-checked against the bar — convenience
+  skips re-enter the Step 3 loop and get executed; the autonomous roll-up now lists
+  each surviving skip with the unobservable expectation and channels attempted.
+
 ## 1.6.1 — Ship the `stage-5-to-6` clear-point gate
 
 Implements the third clear-point the docs already described: `/mi-review` now offers
