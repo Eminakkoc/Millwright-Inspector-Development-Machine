@@ -1,5 +1,33 @@
 # Changelog
 
+## 1.6.4 — Feature-name uniqueness gate (workflow-stream collision prevention)
+
+Fixes artifact mixing when two different journal folders distill to the same feature
+name: journal `general-fixes-1` (completed workflow) and `general-fixes-2` (new cycle)
+both produced feature `general-fixes`, so the new cycle's artifacts landed in the
+completed workflow's `workflow-stream/general-fixes/` folder.
+
+### What changed
+
+- **New `folder-id.sh feature-lineage-check <feature>`** — answers "may the active
+  cycle safely use this feature name?" from the existing folder-linking metadata
+  (quest `reference.md` journal-refs/feature-refs). Exit 0 = safe (folder absent,
+  already linked to the active cycle, or shares a source journal folder — genuine
+  continuation); exit 3 = collision (lineage disjoint); exit 4 = unknown lineage
+  (pre-linking folder / orphan — treated as collision).
+- **`/mi-run` Step 3 — mandatory uniqueness gate** before `todo-list.md` is written.
+  Colliding candidates are renamed automatically, preferring the source journal
+  folder's own name (journal `general-fixes-2` → feature `general-fixes-2`); the
+  final names flow into `related-features`, `summary.md`, and the queue together, and
+  renames are surfaced in the Step 6 hand-off. Intentional cross-cycle reuse (test
+  plans, `decisions.md`) still works: re-selecting the feature's original journal
+  folder passes the check as same-lineage.
+- **`/mi-apply-impact` activation backstop** — the same check runs at fresh
+  activation (before `ensure-current` creates/links the folder) for cycles
+  scaffolded before the gate and hand-edited queues; on collision it halts with the
+  lineage diagnostic and asks the inspector to `proceed` (knowing reuse) or abort
+  and fix the name at stage 1.
+
 ## 1.6.3 — Optional requirements walkthrough at the stage-2 review gate
 
 The stage-2 hand-off (blueprints + diagrams generated, inspector asked to review)

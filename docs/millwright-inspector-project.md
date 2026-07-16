@@ -739,6 +739,17 @@ journal folder gets an `id.md` minted on first use. Only `todo-list.md`, `summar
 `quest/<active-slug>/` is preserved frozen, `quest/active.md` is cleared via `quest.sh
 end`, and a fresh subfolder is created.
 
+Feature names pass a **uniqueness gate** before `todo-list.md` is written
+(`folder-id.sh feature-lineage-check`): a candidate that matches an existing
+`workflow-stream/<feature>/` folder is kept only when the folder's recorded lineage
+(quest `reference.md` links) shares a journal folder with the active cycle — genuine
+continuation. Otherwise the millwright renames the feature (preferring the source
+journal folder's own name, e.g. journal `general-fixes-2` → feature `general-fixes-2`)
+so a new effort never mixes artifacts into a completed workflow's folder.
+`/mi-apply-impact` re-runs the same check at fresh activation as a late backstop
+(halts for an inspector `proceed` on collision) for pre-gate cycles and hand-edited
+queues.
+
 **Stage 1.5 — Selection + ordering (Pre-flight Handler).**
 - *Sub-state A* (`[x] TODO` lines exist): runs `todo.sh pend-selected`, groups PENDING
   items by feature, repopulates the queue via `progress.sh enqueue` if mid-cycle, derives

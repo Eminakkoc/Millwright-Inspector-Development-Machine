@@ -37,6 +37,24 @@
 #       warning and ensures only the id.md when there is no active quest or
 #       its reference.md is missing (e.g. a cycle predating folder-linking).
 #       Called by blueprints.sh ensure-current at stage 2.
+#
+#   folder-id.sh feature-lineage-check <feature>
+#       Answer "may the ACTIVE quest cycle safely use workflow-stream/<feature>?"
+#       by comparing the folder's recorded lineage (which journal folders
+#       produced it, via every quest cycle's reference.md) against the active
+#       cycle's journal-refs. Exit codes:
+#         0 — safe: the folder does not exist yet, is already linked to the
+#             active cycle (mid-cycle re-entry), or shares at least one source
+#             journal folder with the active cycle (genuine continuation).
+#         3 — collision: the folder exists and its lineage is DISJOINT from
+#             the active cycle's journal folders (e.g. journal general-fixes-1
+#             produced it, this cycle sources general-fixes-2). Reusing it
+#             would mix artifacts from unrelated efforts.
+#         4 — unknown: the folder exists but lineage cannot be established
+#             (no id.md, no active reference.md, or no cycle references it).
+#             Callers must treat this as a collision (conservative default).
+#       Prints a one-line diagnostic either way. Called by /mi-run's Step-3
+#       feature-name uniqueness gate and /mi-apply-impact's activation backstop.
 
 set -euo pipefail
 source "$(dirname "$0")/internal/common.sh"
@@ -175,8 +193,85 @@ PYEOF
     mi_info "linked feature '$feature' (id=$fid) into $ref"
     ;;
 
+  feature-lineage-check)
+    feature="${1:?feature required}"
+    fdir="$(mi_feature_dir "$feature")"
+    if [[ ! -d "$fdir" ]]; then
+      echo "free: workflow-stream/$feature does not exist"
+      exit 0
+    fi
+    fid="$(_fid_read "$fdir" || true)"
+    if [[ -z "$fid" ]]; then
+      echo "unknown: workflow-stream/$feature exists but has no id.md (predates folder-linking); lineage cannot be established"
+      exit 4
+    fi
+    quest_dir="$(mi_quest_active_dir 2>/dev/null || true)"
+    ref="${quest_dir:+$quest_dir/reference.md}"
+    if [[ -z "$quest_dir" || ! -f "$ref" ]]; then
+      echo "unknown: no active quest reference.md to compare lineage against"
+      exit 4
+    fi
+    python3 - "$(mi_quest_dir)" "$ref" "$fid" "$feature" "$(mi_journal_dir)" <<'PYEOF'
+import sys, os, re, glob, yaml
+
+quest_root, active_ref, fid, feature, journal_root = sys.argv[1:]
+
+def frontmatter(path):
+    try:
+        with open(path) as f:
+            content = f.read()
+    except OSError:
+        return {}
+    m = re.match(r'^---\n(.*?)\n---\n', content, re.DOTALL)
+    if not m:
+        return {}
+    try:
+        return yaml.safe_load(m.group(1)) or {}
+    except yaml.YAMLError:
+        return {}
+
+# id -> journal folder name, for human-readable diagnostics.
+jname = {}
+for idfile in glob.glob(os.path.join(journal_root, '*', 'id.md')):
+    jid = frontmatter(idfile).get('id')
+    if jid:
+        jname[jid] = os.path.basename(os.path.dirname(idfile))
+
+def names(ids):
+    return ', '.join(sorted(jname.get(i, f'<unresolved:{i}>') for i in ids)) or '<none>'
+
+active_fm = frontmatter(active_ref)
+active_jids = set(active_fm.get('journal-refs') or [])
+if fid in (active_fm.get('feature-refs') or []):
+    print(f"same-cycle: workflow-stream/{feature} is already linked to the active cycle")
+    sys.exit(0)
+
+# Every quest cycle that produced this feature folder, and the union of the
+# journal folders those cycles were built from.
+linked_jids, linked_slugs = set(), []
+for ref in glob.glob(os.path.join(quest_root, '*', 'reference.md')):
+    fm = frontmatter(ref)
+    if fid in (fm.get('feature-refs') or []):
+        linked_jids.update(fm.get('journal-refs') or [])
+        linked_slugs.append(os.path.basename(os.path.dirname(ref)))
+
+if not linked_slugs:
+    print(f"unknown: workflow-stream/{feature} exists (id={fid}) but no quest cycle references it")
+    sys.exit(4)
+
+shared = linked_jids & active_jids
+if shared:
+    print(f"same-lineage: workflow-stream/{feature} shares journal folder(s) {names(shared)} with the active cycle")
+    sys.exit(0)
+
+print(f"collision: workflow-stream/{feature} was produced from journal folder(s) {names(linked_jids)} "
+      f"(quest cycle(s): {', '.join(sorted(linked_slugs))}); the active cycle's journal folder(s) are {names(active_jids)}")
+sys.exit(3)
+PYEOF
+    ;;
+
   *)
-    echo "usage: folder-id.sh {ensure|get|resolve|list|init-reference|link-feature} ..." >&2
+    echo "usage: folder-id.sh {ensure|get|resolve|list|init-reference|link-feature|feature-lineage-check} ..." >&2
     exit 2
     ;;
 esac

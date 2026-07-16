@@ -342,6 +342,25 @@ This creates `$quest_dir/reference.md` with the `journal-refs` frontmatter array
 
 Create `$quest_dir/todo-list.md` using the template. Analyze **only the content from the specified journal folders** and write todo items grouped by feature/module. Each item must have a stable `item-id` (e.g., `PAY-001`, `AUD-002`) and start in `TODO` state.
 
+**Feature-name uniqueness gate (mandatory — run BEFORE writing `todo-list.md`).** Candidate feature names are derived from journal *content*, so two different journal folders about the same topic (`general-fixes-1` last cycle, `general-fixes-2` today) naturally distill to the same feature name (`general-fixes`) — and since `workflow-stream/<feature>/` is keyed by feature name, reusing it would mix this cycle's artifacts into the completed workflow's folder. Check every candidate name:
+
+```bash
+# For each candidate kebab-case feature name:
+if msg="$($CLAUDE_PLUGIN_ROOT/scripts/folder-id.sh feature-lineage-check "$candidate")"; then
+  echo "$msg"   # free / same-cycle / same-lineage — safe to use
+else
+  echo "$msg"   # exit 3 = collision, exit 4 = unknown lineage — MUST rename (below)
+fi
+```
+
+- **Exit 0** — keep the name. `same-lineage` means this cycle re-selected a journal folder that produced the existing feature folder: that is genuine continuation of the same feature, and folder reuse is intentional (`test/` plans and `decisions.md` carry over by design).
+- **Exit 3 or 4** — the name belongs to an unrelated (or unprovable) prior effort. Rename the candidate — never reuse silently:
+  1. **Preferred:** the source journal folder's name verbatim — journal `general-fixes-2` → feature `general-fixes-2`. Journal folder names are unique within `journal/`, so this almost always resolves the collision in one step.
+  2. If the feature draws on multiple journal folders, or the journal-folder name is itself taken, append the source journal folder's distinguishing suffix (or an ordinal `-2`, `-3`) to the semantic name.
+  3. Re-run `feature-lineage-check` on the replacement — it must exit 0 before the name is used anywhere.
+
+The final (possibly renamed) names are the ones written everywhere downstream — `todo-list.md` `related-features`, `summary.md` `features:` + `## Feature:` headings, and the `progress.md` queue — so a rename can never desync the cycle files. If the inspector actually wants to CONTINUE a completed feature in its old folder (reusing its manual-test plan and decisions), the supported path is re-selecting that feature's original journal folder for this cycle, which makes the check pass by lineage. Record any renames — Step 6's hand-off message must surface them.
+
 The block below is a **template** — substitute concrete values before running. `FEATURES` must be comma-separated kebab-case feature names matching what you found in the journal; `DESCRIPTION` is a one-line overall scope. Sample invocation:
 
 ```bash
@@ -395,6 +414,10 @@ $CLAUDE_PLUGIN_ROOT/scripts/progress.sh init "$todo_list_id" <feature1> [<featur
 Tell the inspector (substitute `$quest_dir` and `$slug` literals into the message):
 
 > "Quest scaffolded at `$quest_dir/` (`todo-list.md`, `summary.md`, and `progress.md` with the feature queue; slug=`$slug`; journal folders=<comma-separated list>). The top-level `quest/active.md` now points at this subfolder. Please open `$quest_dir/todo-list.md` and mark the items you want this cycle to cover by putting an `x` in their checkbox AND adding your name in parentheses between the checkbox and the state word, e.g. `- [x] (emin) TODO — PAY-001: ...`. Leave items you don't want as `[ ] TODO`. Items you want to pre-assign but not start this cycle can be `[ ] (emin) TODO`. When you're done marking, type **`/mi-continue`** — I'll promote your selections to PENDING, analyze cross-feature dependencies, and propose a workflow order. Reply `/mi-continue` again to accept the order, or paste a different one first and then `/mi-continue`. (Branch selection is deferred to per-feature config — you'll declare it in `blueprints/current/config.md`'s `## GIT BRANCH` section at stage 2.)"
+
+When the Step-3 uniqueness gate renamed any feature, append one line per rename to the hand-off message:
+
+> "Note: feature `<semantic-name>` was named **`<final-name>`** — `workflow-stream/<semantic-name>/` already belongs to a previously completed workflow built from different journal folder(s) (`<lineage from feature-lineage-check>`), so reusing the name would mix artifacts."
 
 Then **stop and wait** for the inspector to type `/mi-continue`. The Pre-flight Handler in `commands/mi-continue.md` carries out the rest of stage 1.5:
 

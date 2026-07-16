@@ -46,6 +46,21 @@ done
 if [[ "$active_feature_pre" == "null" || -z "$active_feature_pre" ]]; then
   active_feature="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh activate)"
   echo "Starting workflow for feature: $active_feature"
+
+  # Feature-folder lineage backstop — late safety net behind /mi-run's Step-3
+  # uniqueness gate (which prevents this at naming time for post-gate cycles).
+  # Runs BEFORE ensure-current: ensure-current would create the folder and
+  # link it to this cycle, flipping every later check to same-cycle. Fresh
+  # activation only — the re-entry branch below re-enters a folder this cycle
+  # already owns.
+  if lineage_msg="$($CLAUDE_PLUGIN_ROOT/scripts/folder-id.sh feature-lineage-check "$active_feature")"; then
+    echo "$lineage_msg"
+  else
+    echo "warning: $lineage_msg" >&2
+    echo "warning: workflow-stream/$active_feature already exists and cannot be tied to this cycle's journal folders. Proceeding would mix this cycle's artifacts into the existing folder." >&2
+    exit 78   # halt for inspector decision — see prose below
+  fi
+
   $CLAUDE_PLUGIN_ROOT/scripts/blueprints.sh ensure-current "$active_feature"
 else
   current_stage="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get current-stage)"
@@ -107,6 +122,15 @@ fi
 ```
 
 If the queue is empty AND `active` was null, `progress.sh activate` errors out — tell the inspector and stop. Branch is declared per-feature in `config.md`'s `## GIT BRANCH` section (written later in this command) and validated at stage 3; `/mi-plan-implementation` will persist it into `active.branch`.
+
+**On the lineage-backstop halt (`exit 78`):** relay both warning lines to the inspector and ask how to proceed:
+
+> "`workflow-stream/$active_feature/` already exists from a previous workflow (`<lineage diagnostic>`), and this cycle was built from different journal folders. Reusing the folder mixes the old artifacts (blueprints history, manual-test plans, decisions) with this cycle's.
+>
+>   - `proceed` — reuse the folder anyway. Only right when this genuinely continues the same feature (its test plans and decisions SHOULD carry over).
+>   - anything else — I'll stop. Run `/mi-abort-workflow`, then fix the feature name at stage 1 (new cycles get this automatically from `/mi-run`'s Step-3 uniqueness gate — e.g. name the feature after its journal folder, `general-fixes-2`)."
+
+On `proceed`, re-invoke `/mi-apply-impact`: the `active` block is already populated at `current-stage=2`, so the re-entry branch takes over and calls `ensure-current` without re-running the check. This backstop exists for cycles scaffolded before the `/mi-run` Step-3 gate and for hand-edited queues — post-gate cycles arrive here with collision-free names.
 
 If the inspector replies `walkthrough` after the `check-current=0` short-circuit message above, run the Step 3.3 requirements walkthrough against the existing `blueprints/current/requirements.md` — the short-circuit path is the same review gate as Step 3.2, just re-entered.
 
