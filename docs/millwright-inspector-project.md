@@ -772,6 +772,14 @@ After Steps A and B, Step B.4 lazily initializes `review-history.md` (the v1.5 c
   seams meeting a content threshold). Plus `diagrams/README.md` with a `requirements-id`
   back-reference.
 
+The stage-2 hand-off message offers an **optional requirements walkthrough** (Step 3.3):
+on `walkthrough`, the millwright presents each `requirements.md` item one at a time —
+plain language, brief, one concrete example each — waiting for the inspector's go-ahead
+between items. Purely conversational (no state mutation, repeatable); scope decisions
+voiced mid-walkthrough are persisted immediately (requirements edit or `decisions.md`)
+rather than left to the Approve Handler's end-of-stage sweep. The walkthrough does not
+substitute for the explicit `/mi-continue` approval.
+
 `mi-apply-impact` has a **three-branch re-entry**: `active` null → activate; `current-stage
 == 2` → re-enter the same feature (surfaces `blueprints.sh check-current` status; `--force`
 overrides a complete or partial `current/`); `current-stage > 2` → refuses (run

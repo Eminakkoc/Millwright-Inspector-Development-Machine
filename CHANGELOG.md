@@ -1,5 +1,33 @@
 # Changelog
 
+## 1.6.3 — Optional requirements walkthrough at the stage-2 review gate
+
+The stage-2 hand-off (blueprints + diagrams generated, inspector asked to review)
+now offers a guided, one-item-at-a-time walkthrough of `requirements.md` — replacing
+the custom prompt inspectors used to paste by hand.
+
+### What changed
+
+- **`/mi-apply-impact` Step 3.2** — the hand-off message offers `walkthrough`
+  (natural-language equivalents accepted) alongside `/mi-continue`. The same offer
+  appears on the `check-current=0` re-entry short-circuit, which is the same review
+  gate re-entered.
+- **New Step 3.3 — the walkthrough loop.** Enumerates the top-level items under
+  `## Goals (this cycle)` / `## Planned (future cycles)` / `## Non-goals (out of
+  scope)` in file order and presents exactly one per turn: item quoted verbatim, a
+  2–4 sentence jargon-free explanation, and one concrete input → observable-outcome
+  example — required to go deeper than the item's inline `_In plain terms:_` /
+  `_Example:_` sub-bullets, never repeat them. Waits for `next` between items;
+  questions keep the cursor on the current item; `stop` exits early with a
+  remaining-items note.
+- **Decision capture** — mid-walkthrough scope decisions are persisted immediately
+  (a `requirements.md` edit or a `decisions.md` entry) instead of relying on the
+  Approve Handler's end-of-stage sweep, whose recent-turns window a long walkthrough
+  can outrun.
+- **No state mutation** — purely conversational (one context-ledger row), repeatable,
+  and not a substitute for the explicit `/mi-continue` approval gate. Project doc
+  stage-2 section updated to match.
+
 ## 1.6.2 — Manual-test depth: exhaustive plans + no-skip autonomous runs
 
 Two quality tightenings on the stage-5 manual-test sub-flow.

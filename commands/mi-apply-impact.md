@@ -67,7 +67,7 @@ else
   case "$cc_status" in
     0)
       if [[ "$force_regen" != "1" ]]; then
-        echo "blueprints/current is already complete for $active_feature. Skipping regeneration. Re-run with --force to regenerate from scratch, or type /mi-continue to advance to /mi-plan-implementation."
+        echo "blueprints/current is already complete for $active_feature. Skipping regeneration. Re-run with --force to regenerate from scratch, reply 'walkthrough' for an item-by-item guided review of requirements.md, or type /mi-continue to advance to /mi-plan-implementation."
         exit 0
       fi
       echo "--force passed; regenerating despite check-current=0."
@@ -107,6 +107,8 @@ fi
 ```
 
 If the queue is empty AND `active` was null, `progress.sh activate` errors out — tell the inspector and stop. Branch is declared per-feature in `config.md`'s `## GIT BRANCH` section (written later in this command) and validated at stage 3; `/mi-plan-implementation` will persist it into `active.branch`.
+
+If the inspector replies `walkthrough` after the `check-current=0` short-circuit message above, run the Step 3.3 requirements walkthrough against the existing `blueprints/current/requirements.md` — the short-circuit path is the same review gate as Step 3.2, just re-entered.
 
 ### Step 1.5 — Lessons-filter Pre-Step A
 
@@ -419,6 +421,58 @@ fi
 
 Tell the inspector (append `$effort_suggestion` only when non-empty):
 
-> "Blueprints generated for `$active_feature` at `workflow-stream/$active_feature/blueprints/current/`. The blueprint was ${review_status}. Review `requirements.md`, `config.md`, and `diagrams/`. When ready, type **`/mi-continue`**.${effort_suggestion}"
+> "Blueprints generated for `$active_feature` at `workflow-stream/$active_feature/blueprints/current/`. The blueprint was ${review_status}. Review `requirements.md`, `config.md`, and `diagrams/`.
+>
+> Optional: reply **`walkthrough`** and I'll go over `requirements.md` with you item by item — each item explained briefly in plain language with a concrete example, waiting for your go-ahead before moving to the next one.
+>
+> When ready, type **`/mi-continue`**.${effort_suggestion}"
 
-Then stop and wait for the inspector to type `/mi-continue`. Do NOT auto-advance to stage 3 without that signal — this is the mandatory review gate. The Approve Handler in `commands/mi-continue.md` (current-stage = 2) handles the rest: blueprint sanity check, then auto-fire of `/mi-plan-implementation`.
+Then stop and wait. Two accepted signals:
+
+- **`walkthrough`** (or a natural-language equivalent — "yes, walk me through it", "explain the requirements one by one") → run Step 3.3, then return to waiting for `/mi-continue`.
+- **`/mi-continue`** → the Approve Handler in `commands/mi-continue.md` (current-stage = 2) takes over: blueprint sanity check, clear-point gate, then auto-fire of `/mi-plan-implementation`.
+
+Do NOT auto-advance to stage 3 without `/mi-continue` — this is the mandatory review gate, and the walkthrough does not substitute for it (the inspector still approves explicitly).
+
+#### Step 3.3 — Optional requirements walkthrough (on `walkthrough`)
+
+Purely conversational — **no `progress.md` mutation, no stage change**; the feature stays at `current-stage=2` and the walkthrough is repeatable. Append one context-ledger row at the start:
+
+```bash
+$CLAUDE_PLUGIN_ROOT/scripts/ledger.sh append \
+  "2" "/mi-apply-impact" "requirements.md" "medium" "main" \
+  "requirements walkthrough" || true
+```
+
+**Enumerate the items.** Read `blueprints/current/requirements.md` once. The items are the top-level `- ` bullets under `## Goals (this cycle)`, `## Planned (future cycles)`, and `## Non-goals (out of scope)`, in file order; each item's nested sub-bullets (including its `- _In plain terms:_ … _Example:_ …` line) belong to that item, not to the enumeration. Count them as `N`.
+
+**Present one item at a time.** For each item `i` of `N`:
+
+```
+Item <i>/<N> — <section name>
+
+> <the item's top-level bullet, verbatim>
+
+<plain-language explanation>
+
+Example: <one concrete example>
+```
+
+- **Explanation bar:** 2–4 sentences, very simple language — no workflow or domain jargon (define any term that can't be avoided), name the real files/behaviors the item touches. Go a step deeper than the item's inline `_In plain terms:_` sub-bullet — expand on it, never just repeat it.
+- **Example bar:** one concrete before/after or input → observable-outcome walk-through the inspector could actually try ("you click X / call Y → today you get A; after this feature you get B"). If the inline `_Example:_` sub-bullet already covers the same case, pick a different one so the inspector gets two angles on the item.
+
+**Then wait for the inspector before advancing.** Accepted replies:
+
+- `next` (also empty reply, `y`, `ok`) → advance to item `i+1`.
+- A question or comment about the current item → answer it from the blueprint/grounding-report context, stay on the same item, and wait again.
+- `stop` → end the walkthrough early (say which items remain unreviewed).
+
+Never present two items in one turn — the one-item-then-wait rhythm is the entire point of the walkthrough.
+
+**Decision capture during the walkthrough.** If an inspector reply amounts to a scope decision or a change request ("drop that", "this should also cover X", "treat that module as out of scope"), act on it immediately: edit `requirements.md` on request (stage 2 owns `blueprints/current/`), or persist it to `decisions.md` under `## Stage 2 — Blueprint approval`. Do NOT rely solely on the Approve Handler's end-of-stage decisions sweep — it reviews only the last several turns, and a long walkthrough can push early decisions out of that window.
+
+**On completion** (last item, or `stop`):
+
+> "Walkthrough done — <covered>/<N> items covered<, <remaining> skipped via stop>. Also review `config.md` and `diagrams/` if you haven't. When ready, type **`/mi-continue`**.${effort_suggestion}"
+
+Then stop and wait for `/mi-continue` (or another `walkthrough`) exactly as in Step 3.2.
