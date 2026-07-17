@@ -1,5 +1,29 @@
 # Changelog
 
+## 1.6.6 — Canonical `$CLAUDE_PLUGIN_ROOT` resolver documentation (§8.14)
+
+Claude Code does not inject `$CLAUDE_PLUGIN_ROOT` into Bash tool subshells
+(anthropics/claude-code#48230), so on marketplace installs every command's
+`$CLAUDE_PLUGIN_ROOT/scripts/…` reference silently depended on the executing agent
+improvising a resolution. Only `mi-continue.md` documented the resolver; the other 23
+commands assumed the variable worked.
+
+### What changed
+
+- **New project-doc §8.14 — "Resolving `$CLAUDE_PLUGIN_ROOT` in Bash blocks".** The
+  canonical writeup: why the env var is best-effort, why the resolver must be an
+  inline pattern (finding a script requires the very root being resolved), the
+  three-source fallback (validated env var → source-repo `$PWD` → `installPath` from
+  `~/.claude/plugins/installed_plugins.json`), refuse-with-environmental-diagnostic,
+  and the export + per-cwd-tempfile persistence with the per-block recovery one-liner
+  (each Bash call is a fresh subshell — anthropics/claude-code#2508).
+- **`mi-continue.md` Step 1a** named as the reference implementation; its inline
+  resolver is unchanged and its rationale now cites §8.14.
+- **Standard "Runtime bootstrap" note added to the other 23 commands** that use
+  `$CLAUDE_PLUGIN_ROOT`, directly under each H1. The note is self-sufficient (inlines
+  the three-source order and persist/recover steps) so an agent can act on it before
+  it can read the doc.
+
 ## 1.6.5 — Blueprint-review fixes: reference manifest bugs + codex tool-name portability
 
 Two field-reported defects, both verified against the repo before fixing.

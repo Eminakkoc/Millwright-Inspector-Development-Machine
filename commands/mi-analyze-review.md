@@ -4,6 +4,8 @@ description: Analyze a GitHub PR review. Fetches every review comment (line comm
 
 # mi-analyze-review
 
+**Runtime bootstrap.** Every `$CLAUDE_PLUGIN_ROOT` reference in this command's Bash blocks assumes a resolved plugin root; Claude Code does not inject the env var into Bash subshells. If it is empty in your shell, apply the canonical resolver (`docs/millwright-inspector-project.md` §8.14; reference implementation: `mi-continue.md` Step 1a) before the first Bash block: (1) inherited env var when it points at a working install, (2) `$PWD` when it is this plugin's source repo, (3) the `installPath` from `~/.claude/plugins/installed_plugins.json` — then export it, persist it to the per-cwd tempfile, and prepend the recovery one-liner to every subsequent Bash block. Refuse with an environmental diagnostic if none resolve.
+
 Turns a GitHub PR review into a structured, inspector-triaged work list. The
 inspector runs `/mi-analyze-review <pr-url>`; the millwright fetches every review
 comment, analyzes each against the real codebase, and writes a **report** — one

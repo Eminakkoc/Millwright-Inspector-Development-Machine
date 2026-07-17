@@ -4,6 +4,8 @@ description: Diagnostic dispatcher — reads workflow state and prints the recom
 
 # mi-resume-workflow
 
+**Runtime bootstrap.** Every `$CLAUDE_PLUGIN_ROOT` reference in this command's Bash blocks assumes a resolved plugin root; Claude Code does not inject the env var into Bash subshells. If it is empty in your shell, apply the canonical resolver (`docs/millwright-inspector-project.md` §8.14; reference implementation: `mi-continue.md` Step 1a) before the first Bash block: (1) inherited env var when it points at a working install, (2) `$PWD` when it is this plugin's source repo, (3) the `installPath` from `~/.claude/plugins/installed_plugins.json` — then export it, persist it to the per-cwd tempfile, and prepend the recovery one-liner to every subsequent Bash block. Refuse with an environmental diagnostic if none resolve.
+
 Use this when you're not sure where the workflow left off (e.g., after a session break).
 
 The recommendations below include launcher commands (`/mi-apply-impact`, `/mi-plan-implementation`, `/mi-complete-workflow`) that **normally auto-fire** during the happy path. They only appear here as recommendations because `mi-resume-workflow` is a recovery tool — the auto-fire was interrupted or bypassed (e.g., by `/mi-abort-workflow`, or a session break that dropped the pending text-approval turn). Typing the recommended command manually is safe and re-joins the workflow.

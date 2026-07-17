@@ -4,6 +4,8 @@ description: Wire the mi-workflow status line. Writes a wrapper script with the 
 
 # mi-init-status-bar
 
+**Runtime bootstrap.** Every `$CLAUDE_PLUGIN_ROOT` reference in this command's Bash blocks assumes a resolved plugin root; Claude Code does not inject the env var into Bash subshells. If it is empty in your shell, apply the canonical resolver (`docs/millwright-inspector-project.md` §8.14; reference implementation: `mi-continue.md` Step 1a) before the first Bash block: (1) inherited env var when it points at a working install, (2) `$PWD` when it is this plugin's source repo, (3) the `installPath` from `~/.claude/plugins/installed_plugins.json` — then export it, persist it to the per-cwd tempfile, and prepend the recovery one-liner to every subsequent Bash block. Refuse with an environmental diagnostic if none resolve.
+
 Wires the mi-workflow status line into the inspector's Claude Code settings. After this command runs, the bottom bar in Claude Code will show the current workflow stage on the next interaction (no session restart needed).
 
 **Why a separate command.** Claude Code's `statusLine` is a per-machine setting, not something a plugin manifest can ship. Worse, the docs confirm `$CLAUDE_PLUGIN_ROOT` is **not** expanded inside `statusLine.command` — so we cannot just write `"$CLAUDE_PLUGIN_ROOT/scripts/info-bar.sh"` and call it done. This command resolves the plugin's absolute path at install time, writes a small wrapper that exec's the renderer, and points `settings.json` at that wrapper. Idempotent — safe to run any time on any machine.

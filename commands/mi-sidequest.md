@@ -4,6 +4,8 @@ description: Run a mid-workflow question or small ask in an isolated sub-agent c
 
 # mi-sidequest
 
+**Runtime bootstrap.** Every `$CLAUDE_PLUGIN_ROOT` reference in this command's Bash blocks assumes a resolved plugin root; Claude Code does not inject the env var into Bash subshells. If it is empty in your shell, apply the canonical resolver (`docs/millwright-inspector-project.md` §8.14; reference implementation: `mi-continue.md` Step 1a) before the first Bash block: (1) inherited env var when it points at a working install, (2) `$PWD` when it is this plugin's source repo, (3) the `installPath` from `~/.claude/plugins/installed_plugins.json` — then export it, persist it to the per-cwd tempfile, and prepend the recovery one-liner to every subsequent Bash block. Refuse with an environmental diagnostic if none resolve.
+
 A user-triggered escape hatch for handling mid-workflow questions and small fixes without polluting the main orchestrator's context. The inspector types `/mi-sidequest "<question or ask>"`, you read the active quest's `progress.md` to learn workflow state, classify the question into one of three effort budgets, and spawn a fresh side-quest sub-agent that does the exploration in its isolated context and returns a focused answer.
 
 The trigger is **always** explicit. This command exists because ad-hoc questions and small fixes typed in chat land directly in main and propagate to later stages; clear-points (`docs/clear-points/plan.md`) flush context at fixed gates but do nothing for the *exploration cost* of a single mid-stage question — that is what this command addresses. See `docs/side-quest/plan.md` for the full design.

@@ -4,6 +4,8 @@ description: Export a self-contained agent-handoff brief for the active feature.
 
 # mi-export-bundle
 
+**Runtime bootstrap.** Every `$CLAUDE_PLUGIN_ROOT` reference in this command's Bash blocks assumes a resolved plugin root; Claude Code does not inject the env var into Bash subshells. If it is empty in your shell, apply the canonical resolver (`docs/millwright-inspector-project.md` §8.14; reference implementation: `mi-continue.md` Step 1a) before the first Bash block: (1) inherited env var when it points at a working install, (2) `$PWD` when it is this plugin's source repo, (3) the `installPath` from `~/.claude/plugins/installed_plugins.json` — then export it, persist it to the per-cwd tempfile, and prepend the recovery one-liner to every subsequent Bash block. Refuse with an environmental diagnostic if none resolve.
+
 Produces a single self-contained markdown file under `tmp/bundles/` that the inspector can paste into a fresh agent session that may not have access to this plugin's data tree or this codebase. The bundle extracts (it never synthesizes) every workflow artifact relevant to the active feature, strips frontmatter / HTML scaffolding / template placeholders, mechanically scrubs workflow file paths and `.md` filenames out of body text, and structures the result under task-neutral section headers.
 
 Workflow role / tool / domain words (`mi-workflow`, `millwright`, `inspector`, `seam`, `cycle flavor`, finding ids) may still appear in body text where they were authored by humans or sub-agents. The bundle's top prompt block tells the receiving agent to treat such phrasing as opaque labels.

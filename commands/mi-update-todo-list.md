@@ -5,6 +5,8 @@ argument-hint: "add <feature> <state> <assignee> <item-id> <description> | cance
 
 # mi-update-todo-list
 
+**Runtime bootstrap.** Every `$CLAUDE_PLUGIN_ROOT` reference in this command's Bash blocks assumes a resolved plugin root; Claude Code does not inject the env var into Bash subshells. If it is empty in your shell, apply the canonical resolver (`docs/millwright-inspector-project.md` §8.14; reference implementation: `mi-continue.md` Step 1a) before the first Bash block: (1) inherited env var when it points at a working install, (2) `$PWD` when it is this plugin's source repo, (3) the `installPath` from `~/.claude/plugins/installed_plugins.json` — then export it, persist it to the per-cwd tempfile, and prepend the recovery one-liner to every subsequent Bash block. Refuse with an environmental diagnostic if none resolve.
+
 Inspector-triggered edits to the active quest cycle's `todo-list.md` (lives under `quest/<active-slug>/`; resolve the path via `scripts/quest.sh dir`). Thin dispatcher over `todo.sh` that enforces the state machine and refuses states that must only be written by automated stages (`PENDING` by stage-1.5's `pend-selected`; `IMPLEMENTED` by `mi-complete-workflow`).
 
 Independent of `/mi-update-blueprint` — this command does **not** rotate or regenerate blueprints, does **not** alter `progress.md`, and is safe to invoke at any time.

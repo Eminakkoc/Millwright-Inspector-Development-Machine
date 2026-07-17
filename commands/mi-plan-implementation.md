@@ -4,6 +4,8 @@ description: Launch brainstorming → writing-plans → executing-plans chain fo
 
 # mi-plan-implementation
 
+**Runtime bootstrap.** Every `$CLAUDE_PLUGIN_ROOT` reference in this command's Bash blocks assumes a resolved plugin root; Claude Code does not inject the env var into Bash subshells. If it is empty in your shell, apply the canonical resolver (`docs/millwright-inspector-project.md` §8.14; reference implementation: `mi-continue.md` Step 1a) before the first Bash block: (1) inherited env var when it points at a working install, (2) `$PWD` when it is this plugin's source repo, (3) the `installPath` from `~/.claude/plugins/installed_plugins.json` — then export it, persist it to the per-cwd tempfile, and prepend the recovery one-liner to every subsequent Bash block. Refuse with an environmental diagnostic if none resolve.
+
 **Stage 3 launcher.** A pure launcher — primes the brainstorming skill with context, then returns control. The brainstorming → writing-plans → executing-plans / subagent-driven-development → finishing-a-development-branch chain runs as an isolated interactive session driven by the inspector. No mi-workflow commands are expected during the chain.
 
 ## Invocation

@@ -4,6 +4,8 @@ description: Generate blueprints/current/ for the active feature — requirement
 
 # mi-apply-impact
 
+**Runtime bootstrap.** Every `$CLAUDE_PLUGIN_ROOT` reference in this command's Bash blocks assumes a resolved plugin root; Claude Code does not inject the env var into Bash subshells. If it is empty in your shell, apply the canonical resolver (`docs/millwright-inspector-project.md` §8.14; reference implementation: `mi-continue.md` Step 1a) before the first Bash block: (1) inherited env var when it points at a working install, (2) `$PWD` when it is this plugin's source repo, (3) the `installPath` from `~/.claude/plugins/installed_plugins.json` — then export it, persist it to the per-cwd tempfile, and prepend the recovery one-liner to every subsequent Bash block. Refuse with an environmental diagnostic if none resolve.
+
 **Stage 2 launcher.** Pops the next feature off the queue, creates its `progress.md`, and generates the blueprint artifacts (requirements, config, diagrams).
 
 **Main-read budget (stage 2).** Allowed in main: `summary.md` (active feature section + cross-cutting), generated artifacts. Forbidden in main: (a) codebase grounding pass — delegated to `subagent_type: millwright-inspector-development-machine:codebase-grounder` (Phase 2.1) which writes `implementation/grounding-report.md`; (b) diagram framing + render — delegated to `subagent_type: millwright-inspector-development-machine:blueprint-diagrammer` (Step C of `docs/blueprint-regeneration.md`) which writes `.puml` sources into `blueprints/current/diagrams/`. Main writes only the `diagrams/README.md` after the sub-agent returns. See `docs/millwright-inspector-project.md` § "Main-read budget gates by stage" for the canonical table.

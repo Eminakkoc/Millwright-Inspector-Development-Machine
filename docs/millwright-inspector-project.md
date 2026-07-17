@@ -1711,6 +1711,48 @@ that forbids it surfaces in the ledger as a budget violation.
 
 ---
 
+### 8.14 Resolving `$CLAUDE_PLUGIN_ROOT` in Bash blocks
+
+Every command's Bash blocks reference scripts as `$CLAUDE_PLUGIN_ROOT/scripts/…`, but
+Claude Code does **not** inject `$CLAUDE_PLUGIN_ROOT` as a shell env var into Bash tool
+subshells (open feature request: anthropics/claude-code#48230) — the variable is only
+template-expanded inside config files like `hooks.json`/`plugin.json`. The inherited env
+var is best-effort: sometimes leaked by a prior hook invocation, often empty (especially
+right after `/clear`). An empty var expands `$CLAUDE_PLUGIN_ROOT/scripts/progress.sh` to
+`/scripts/progress.sh` and fails with "command not found" — an environmental fault that
+is easy to misread as workflow state ("no active workflow").
+
+This resolver cannot ship as a plugin script — finding a script requires the very root
+being resolved. It is therefore an inline Bash pattern, canonical here, with
+`commands/mi-continue.md` Step 1a as the reference implementation:
+
+1. **Inherited env var** — trust `$CLAUDE_PLUGIN_ROOT` only when
+   `$CLAUDE_PLUGIN_ROOT/scripts/progress.sh` exists and is executable.
+2. **Source-repo cwd (local dev)** — use `$PWD` when
+   `$PWD/.claude-plugin/plugin.json` names `millwright-inspector-development-machine`
+   and `$PWD/scripts/progress.sh` is executable.
+3. **Marketplace install path** — read
+   `~/.claude/plugins/installed_plugins.json`, find the key starting with
+   `millwright-inspector-development-machine@`, and take its `installPath` (validated
+   the same way).
+
+If none resolve, **refuse with an environmental diagnostic** — do not fall through to
+state-shaped output that would send the inspector debugging their workflow instead of
+the runtime.
+
+On success, `export CLAUDE_PLUGIN_ROOT="$resolved"` AND persist it to a per-cwd
+tempfile (`${TMPDIR:-/tmp}/mi-plugin-root.<sha256(PWD)[:16]>.sh`), because each Bash
+tool call is a fresh subshell that does not inherit exports (anthropics/claude-code#2508).
+Subsequent Bash blocks re-source it with:
+
+```bash
+[[ -z "${CLAUDE_PLUGIN_ROOT:-}" ]] && source "${TMPDIR:-/tmp}/mi-plugin-root.$(printf '%s' "$PWD" | shasum -a 256 | cut -c1-16).sh" 2>/dev/null || true
+```
+
+Every command that uses `$CLAUDE_PLUGIN_ROOT` cites this section in its **Runtime
+bootstrap** note; the full copy-pasteable resolver block lives in `mi-continue.md`
+Step 1a.
+
 ## 9. End-to-end happy-path walkthrough
 
 A single feature (`auth`), brainstorming planning, brainstorming review, one finding.
