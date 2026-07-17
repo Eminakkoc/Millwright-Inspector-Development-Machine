@@ -1,5 +1,33 @@
 # Changelog
 
+## 1.6.5 — Blueprint-review fixes: reference manifest bugs + codex tool-name portability
+
+Two field-reported defects, both verified against the repo before fixing.
+
+### What changed
+
+- **`/mi-apply-impact` Step B.4.5 — two bugs, the second masked by the first.**
+  (1) The manifest builder called `quest.sh slug` with no args — which
+  unconditionally errors (it computes slugs from journal-folder args; the active-slug
+  accessor is `quest.sh current`) — and the `|| true` swallow left `active_slug`
+  empty, silently dropping `summary.md` from every review manifest's reference list.
+  (2) The summary reference path was one directory level too shallow
+  (`../../../quest/…` resolves to `workflow-stream/quest/…`; references resolve
+  relative to the manifest's directory, so four levels are needed). Both fixed;
+  codex reviews now receive the full reference set.
+- **Codex MCP tool-name portability.** The reviewer agents' `tools:` frontmatter
+  pinned unprefixed `mcp__codex__codex[-reply]`, which only resolves when the codex
+  server is registered at user/project level; marketplace installs register it via
+  `plugin.json` and expose plugin-prefixed names
+  (`mcp__plugin_millwright-inspector-development-machine_codex__codex[-reply]`),
+  leaving the agents with no resolvable tools. Fixes: both spellings listed in the
+  agents' `tools:` (unresolvable names drop out of the allowlist); agent bodies now
+  call the `reviewer_tool_name` / `reviewer_reply_tool_name` spawn inputs instead of
+  hard-coded names; `/mi-blueprint-review` Step 1 gains an explicit tool-name
+  resolution step (verify inventory → reassign to prefixed spellings → refuse with a
+  `/mi-doctor` pointer if neither exists) whose resolved values feed every direct
+  call and spawn input; the two wrapper commands reference the same rule.
+
 ## 1.6.4 — Feature-name uniqueness gate (workflow-stream collision prevention)
 
 Fixes artifact mixing when two different journal folders distill to the same feature

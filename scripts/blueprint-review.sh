@@ -27,8 +27,13 @@ case "$cmd" in
     [[ -n "$agent" ]] || { echo "usage: $0 resolve-tool <agent>" >&2; exit 64; }
     case "$agent" in
       codex)
-        # MCP tool name verified in Phase 0 Task 0.2. Replace if Phase 0 found a
-        # different name.
+        # Unprefixed candidate only — correct when the codex server is
+        # registered at user/project level. When it comes from this plugin's
+        # plugin.json (marketplace install), the session exposes the tools as
+        # mcp__plugin_millwright-inspector-development-machine_codex__codex
+        # instead; a shell script cannot see the session's tool registry, so
+        # the caller (runbook Step 1) verifies which spelling exists and
+        # reassigns. MCP shape verified in Phase 0 Task 0.2.
         echo "mcp__codex__codex"
         ;;
       *)

@@ -272,7 +272,7 @@ impl_dir="$data_root/workflow-stream/$active_feature/implementation"
 bp_review_ctx="$bp_dir/blueprint-review-context.md"
 config_path="$bp_dir/config.md"
 grounding_path="$impl_dir/grounding-report.md"
-active_slug="$("$CLAUDE_PLUGIN_ROOT/scripts/quest.sh" slug 2>/dev/null || true)"
+active_slug="$("$CLAUDE_PLUGIN_ROOT/scripts/quest.sh" current 2>/dev/null || true)"
 summary_path=""
 [[ -n "$active_slug" ]] && summary_path="$data_root/quest/$active_slug/summary.md"
 
@@ -291,7 +291,10 @@ if [[ -r "$grounding_path" ]]; then
   refs_narrative+="- \`grounding-report.md\` — ${seam_count} seams classified by the codebase grounder"$'\n'
 fi
 if [[ -n "$summary_path" && -r "$summary_path" ]]; then
-  refs_inner+="${sep}../../../quest/$active_slug/summary.md"; sep=", "
+  # 4 levels up from blueprints/current/ to the data root (current → blueprints
+  # → <feature> → workflow-stream → data root); references resolve relative to
+  # the manifest's own directory.
+  refs_inner+="${sep}../../../../quest/$active_slug/summary.md"; sep=", "
   refs_narrative+="- \`summary.md\` — feature digest for active cycle \`$active_slug\`"$'\n'
 fi
 if [[ -z "$refs_inner" ]]; then

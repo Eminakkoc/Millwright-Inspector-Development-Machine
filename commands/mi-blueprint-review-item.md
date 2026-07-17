@@ -38,6 +38,11 @@ reasoning_effort="medium"
 
 reviewer_tool="$($CLAUDE_PLUGIN_ROOT/scripts/blueprint-review.sh resolve-tool "$agent")" || exit 1
 reviewer_reply_tool="mcp__${agent}__${agent}-reply"
+# resolve-tool prints the unprefixed candidate. Apply /mi-blueprint-review
+# Step 1's tool-name resolution: if the unprefixed pair is absent from the
+# session's tool inventory but the plugin-prefixed pair exists
+# (mcp__plugin_millwright-inspector-development-machine_codex__codex[-reply]),
+# reassign both variables to the prefixed spellings; if neither exists, refuse.
 
 # Mode detection (identical to v1.2.x):
 mode=""
@@ -85,7 +90,7 @@ done
 
 **Phase A:** same logic as `/mi-blueprint-review` Step 2 (lazily init `review-history.md` if under `blueprints/current/`; build `history_summary` filtered to `[item_id]` plus file; build `file_metadata_brief`).
 
-**Phase B (single-item enumerate):** render `templates/blueprint-reviewer-prompt-enumerate.md.tmpl` with no scope (return all items). Call `mcp__codex__codex` (single-shot, discard threadId). Filter the returned JSON array to the entry matching `item_id`; abort with `"item <id> not found in file"` if absent. Run `scripts/blueprint-review.sh enumerate <file> <items.json>` to compute the canonical descriptor.
+**Phase B (single-item enumerate):** render `templates/blueprint-reviewer-prompt-enumerate.md.tmpl` with no scope (return all items). Call the resolved reviewer tool (`$reviewer_tool`; single-shot, discard threadId). Filter the returned JSON array to the entry matching `item_id`; abort with `"item <id> not found in file"` if absent. Run `scripts/blueprint-review.sh enumerate <file> <items.json>` to compute the canonical descriptor.
 
 **Phase C (batch=1):** spawn `blueprint-batch-reviewer` with:
 

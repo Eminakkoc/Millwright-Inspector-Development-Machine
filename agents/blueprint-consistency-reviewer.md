@@ -3,20 +3,22 @@ name: blueprint-consistency-reviewer
 description: Runs one whole-file consistency review for /mi-blueprint-review-consistency and the orchestrator's Phase D. Owns a single codex session; rounds 2+ use codex-reply. Writes the reviewed file directly between rounds (safe — always serial). Exits early on success / stop-on-stable; otherwise hits max-iter.
 model: opus
 effort: high
-tools: [Read, Write, Edit, Bash, Grep, mcp__codex__codex, mcp__codex__codex-reply]
+tools: [Read, Write, Edit, Bash, Grep, mcp__codex__codex, mcp__codex__codex-reply, mcp__plugin_millwright-inspector-development-machine_codex__codex, mcp__plugin_millwright-inspector-development-machine_codex__codex-reply]
 ---
 
 You are a fresh sub-agent invoked by `mi-blueprint-review-consistency` (or by `/mi-blueprint-review` Phase D) to run **one** consistency review on a markdown file. Your context is isolated; main sees only your structured return.
 
 You write the reviewed file directly between rounds. Safe because consistency review is always serial — only one instance of you runs per file at a time.
 
+The `tools:` list carries **both spellings** of each codex tool because the server's registered tool names depend on the environment: unprefixed (`mcp__codex__codex`) when codex comes from user/project MCP config, plugin-prefixed (`mcp__plugin_millwright-inspector-development-machine_codex__codex`) when it comes from this plugin's `plugin.json` (typical marketplace install). Only one pair resolves in any given session — unresolvable names are dropped from the allowlist. Wherever this file says "the reviewer tool" / "the reviewer reply tool", call the spelling named by your `reviewer_tool_name` / `reviewer_reply_tool_name` spawn inputs; if those inputs are missing, use whichever spelling your tool list actually resolved.
+
 ## Inputs (from spawn prompt)
 
 - `file_path` — absolute path to the markdown file.
 - `max_iterations` — positive integer; maximum reviewer calls.
 - `agent` — reviewer agent name (e.g. `codex`).
-- `reviewer_tool_name` — main `mcp__codex__codex` tool (round 1).
-- `reviewer_reply_tool_name` — `mcp__codex__codex-reply` (rounds 2+).
+- `reviewer_tool_name` — the round-1 codex tool name **as resolved by the orchestrator** for this session (unprefixed or plugin-prefixed; see the note above). Call this, not a hard-coded spelling.
+- `reviewer_reply_tool_name` — the rounds-2+ reply tool name, resolved the same way.
 - `reasoning_effort` — `low | medium | high`.
 - `lessons_block` — opaque markdown string for `{{LESSONS_BLOCK}}` substitution; may be empty.
 - `history_summary` — opaque markdown string built by main (≤ 1500 tokens) carrying cross-cycle context. May be empty.
@@ -44,7 +46,7 @@ You write the reviewed file directly between rounds. Safe because consistency re
    
    [rendered consistency template]
    ```
-5. Call `mcp__codex__codex` with `prompt=<composed>`, `sandbox="read-only"`, `approval-policy="never"`, `config={"model_reasoning_effort": <spawn input reasoning_effort>}`. Capture `threadId` from the response. Parse the `content` field as JSON (shape `{existing: [...], new: [...]}`). On parse failure: retry once with `"Your last response was not valid JSON. Return ONLY a JSON object with the documented shape."`; on second failure → `Result: blocked`. **See `docs/blueprint-review-token-reduction/phase-0-findings.md` for the MCP shape — `threadId`, not `session_id`; `reasoning_effort` goes through `config.model_reasoning_effort`, not as a top-level param.**
+5. Call the reviewer tool (`reviewer_tool_name`) with `prompt=<composed>`, `sandbox="read-only"`, `approval-policy="never"`, `config={"model_reasoning_effort": <spawn input reasoning_effort>}`. Capture `threadId` from the response. Parse the `content` field as JSON (shape `{existing: [...], new: [...]}`). On parse failure: retry once with `"Your last response was not valid JSON. Return ONLY a JSON object with the documented shape."`; on second failure → `Result: blocked`. **See `docs/blueprint-review-token-reduction/phase-0-findings.md` for the MCP shape — `threadId`, not `session_id`; `reasoning_effort` goes through `config.model_reasoning_effort`, not as a top-level param.**
 6. Apply the reconciliation in-memory + write the file to disk (see Apply step below).
 7. If `new[]` is empty AND every `existing[]` is `status ∈ {still-present, refined}` after round 1, you've converged → exit `Result: success` (or `partial; reason: stable` if anything remains).
 8. Else if `max_iterations == 1`: exit `Result: partial; reason: max-iter`.
@@ -62,7 +64,7 @@ For each subsequent round (up to `max_iterations`):
    
    Re-evaluate per the same contract. Return the same JSON shape. Iteration: <N>.
    ```
-2. Call `mcp__codex__codex-reply` with **only** `threadId=<from round 1>` and `prompt=<delta>`. **Do NOT pass `reasoning_effort` / `sandbox` / `config`** — `codex-reply` rejects those; they're locked at round 1 via the thread's session state. Same parse + retry policy as round 1.
+2. Call the reviewer reply tool (`reviewer_reply_tool_name`) with **only** `threadId=<from round 1>` and `prompt=<delta>`. **Do NOT pass `reasoning_effort` / `sandbox` / `config`** — `codex-reply` rejects those; they're locked at round 1 via the thread's session state. Same parse + retry policy as round 1.
 3. Apply the reconciliation; write the file.
 4. Check completion:
    - **(a) Success** — `new[]` empty AND every `existing[]` is `resolved`. Exit `Result: success`.
@@ -129,7 +131,7 @@ The pre-write self-check is the contract that lets Phase F's `parse-findings` ac
 
 ### Session-expiry fallback
 
-If `mcp__codex__codex-reply` returns an error matching `Session not found for thread_id` (see `docs/blueprint-review-token-reduction/phase-0-findings.md`), degrade for this round: re-compose the full round-1-style prompt (brief + summary + rendered template) and call `mcp__codex__codex` instead. Capture the new `threadId` for subsequent rounds. Note in `Findings / risks`: `round-N-degraded: session-expired`.
+If the reviewer reply tool returns an error matching `Session not found for thread_id` (see `docs/blueprint-review-token-reduction/phase-0-findings.md`), degrade for this round: re-compose the full round-1-style prompt (brief + summary + rendered template) and call `reviewer_tool_name` instead. Capture the new `threadId` for subsequent rounds. Note in `Findings / risks`: `round-N-degraded: session-expired`.
 
 ## Required return shape
 

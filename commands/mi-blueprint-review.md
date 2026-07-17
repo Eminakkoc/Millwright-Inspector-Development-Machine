@@ -1,5 +1,5 @@
 ---
-description: Orchestrate a token-reduced blueprint review (v1.5) — Phase A (preflight + summary build) → B (enumerate) → C (per-batch parallel review) → D (single consistency pass) → F (persist to review-history.md) → G (report). Every phase is recorded in a deterministic phase ledger; Phase G renders it as a table and FAILS if any mandatory phase was skipped. Uses mcp__codex__codex for round 1 and mcp__codex__codex-reply for rounds 2+. See docs/blueprint-review-token-reduction/plan.md.
+description: Orchestrate a token-reduced blueprint review (v1.5) — Phase A (preflight + summary build) → B (enumerate) → C (per-batch parallel review) → D (single consistency pass) → F (persist to review-history.md) → G (report). Every phase is recorded in a deterministic phase ledger; Phase G renders it as a table and FAILS if any mandatory phase was skipped. Uses the codex MCP tools — round-1 tool + -reply for rounds 2+; names resolved at Step 1 (unprefixed or plugin-prefixed depending on how the server is registered). See docs/blueprint-review-token-reduction/plan.md.
 ---
 
 # /mi-blueprint-review
@@ -28,7 +28,7 @@ description: Orchestrate a token-reduced blueprint review (v1.5) — Phase A (pr
 ## Preconditions
 
 - Reviewer's MCP server reachable (`/mi-doctor`).
-- `mcp__codex__codex-reply` available (verified at Phase 0; see `docs/blueprint-review-token-reduction/phase-0-findings.md`). If unavailable, sub-agents fall back to stateless mode automatically.
+- The codex reply tool available under either spelling — `mcp__codex__codex-reply` (user/project-registered server) or `mcp__plugin_millwright-inspector-development-machine_codex__codex-reply` (plugin-registered server; see Step 1's tool-name resolution). Session behavior verified at Phase 0 (`docs/blueprint-review-token-reduction/phase-0-findings.md`). If unavailable, sub-agents fall back to stateless mode automatically.
 - File exists and is writable.
 
 ## Phase progression contract (READ BEFORE EXECUTING)
@@ -128,6 +128,8 @@ MAX_ITEMS_PER_REVIEW="$max_items"
 "$CLAUDE_PLUGIN_ROOT/scripts/blueprint-review.sh" ledger init "$file"
 ```
 
+**Tool-name resolution (environment-dependent — do this before any codex call).** `resolve-tool` prints the unprefixed candidate (`mcp__codex__codex`), which is correct when the codex MCP server is registered at user/project level. When the server comes from this plugin's `plugin.json` (typical marketplace install), the session exposes the tools **plugin-prefixed** instead: `mcp__plugin_millwright-inspector-development-machine_codex__codex` / `mcp__plugin_millwright-inspector-development-machine_codex__codex-reply`. Check your actual tool inventory (ToolSearch for `codex` if not loaded): if the unprefixed pair is absent and the prefixed pair exists, reassign `reviewer_tool` / `reviewer_reply_tool` to the prefixed spellings. If **neither** spelling exists, refuse: `error: codex MCP tools not reachable under either name (mcp__codex__codex or mcp__plugin_millwright-inspector-development-machine_codex__codex) — run /mi-doctor.` The resolved values flow into every direct call below and into every sub-agent spawn input (`reviewer_tool_name` / `reviewer_reply_tool_name`) — the sub-agents call whatever names they are handed, so resolving here fixes the whole run.
+
 ### Step 2 — Phase A: preflight + summary build **(MANDATORY)**
 
 Announce: `Phase A — preflight — starting`.
@@ -208,7 +210,7 @@ Record entry: `blueprint-review.sh ledger mark "$file" B running`.
 
 Render `templates/blueprint-reviewer-prompt-enumerate.md.tmpl` (unchanged from v1.2.x) — substitute `{{SCOPE_INSTRUCTION}}` and `{{SCOPE_EMPTY_HINT}}` according to whether `--scope` was passed (same logic as v1.2.x orchestrator).
 
-Call `mcp__codex__codex` directly from main (one-shot; no sub-agent) with `sandbox="read-only"`, `approval-policy="never"`, `config={"model_reasoning_effort": "$reasoning_effort"}`. Discard the returned `threadId` — enumeration is single-call.
+Call the resolved reviewer tool (`$reviewer_tool`) directly from main (one-shot; no sub-agent) with `sandbox="read-only"`, `approval-policy="never"`, `config={"model_reasoning_effort": "$reasoning_effort"}`. Discard the returned `threadId` — enumeration is single-call.
 
 Parse the fenced ```json ... ``` array; pass to `scripts/blueprint-review.sh enumerate <file> <items.json>` for deterministic descriptor computation.
 
@@ -398,7 +400,7 @@ The ledger file itself lives under `$TMPDIR` keyed by the reviewed file's path; 
 
 - This command does NOT mutate `progress.md` or any quest file. It is workflow-neutral when invoked manually. Stage-2 auto-invocation is wired in `commands/mi-apply-impact.md` (see Step B.5).
 - All file writes happen in main (Step 4 write-back loop, Step 5 sub-agent direct writes, Step 6 persist). Sub-agents read but never write the spec file (batch reviewer is structurally read-only; consistency reviewer is serial-safe).
-- Session-expiry behavior: if `codex-reply` errors with `Session not found for thread_id`, the affected sub-agent re-issues that round as a fresh `mcp__codex__codex` call (full prompt cost for one round; subsequent rounds continue on the new session).
+- Session-expiry behavior: if `codex-reply` errors with `Session not found for thread_id`, the affected sub-agent re-issues that round as a fresh `reviewer_tool_name` call (full prompt cost for one round; subsequent rounds continue on the new session).
 
 ## See also
 

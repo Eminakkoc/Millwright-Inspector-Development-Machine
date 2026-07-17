@@ -45,6 +45,11 @@ done
 
 reviewer_tool="$($CLAUDE_PLUGIN_ROOT/scripts/blueprint-review.sh resolve-tool "$agent")" || exit 1
 reviewer_reply_tool="mcp__${agent}__${agent}-reply"
+# resolve-tool prints the unprefixed candidate. Apply /mi-blueprint-review
+# Step 1's tool-name resolution: if the unprefixed pair is absent from the
+# session's tool inventory but the plugin-prefixed pair exists
+# (mcp__plugin_millwright-inspector-development-machine_codex__codex[-reply]),
+# reassign both variables to the prefixed spellings; if neither exists, refuse.
 ```
 
 ### Step 2 — Run Phase A (preflight + summary build)
