@@ -713,6 +713,7 @@ led_reset
 "$BR" ledger mark "$led_file" B done --findings 5 >/dev/null
 "$BR" ledger mark "$led_file" C done --findings 2 >/dev/null
 "$BR" ledger mark "$led_file" D done --findings 0 >/dev/null
+"$BR" ledger mark "$led_file" E done --findings 0 >/dev/null
 "$BR" ledger mark "$led_file" F done --findings 2 >/dev/null
 "$BR" ledger mark "$led_file" G running >/dev/null
 if "$BR" ledger render "$led_file" >/dev/null 2>&1; then
@@ -740,6 +741,7 @@ led_reset
 "$BR" ledger mark "$led_file" B done --findings 0 >/dev/null
 "$BR" ledger mark "$led_file" C skipped >/dev/null
 "$BR" ledger mark "$led_file" D done --findings 0 >/dev/null
+"$BR" ledger mark "$led_file" E skipped --findings 0 >/dev/null
 "$BR" ledger mark "$led_file" F skipped >/dev/null
 "$BR" ledger mark "$led_file" G running >/dev/null
 if "$BR" ledger render "$led_file" >/dev/null 2>&1; then
@@ -783,14 +785,15 @@ led_reset
 "$BR" ledger mark "$led_file" B done --findings 3 --note "3 descriptors" >/dev/null
 "$BR" ledger mark "$led_file" C done --findings 1 --note "1 batch" >/dev/null
 "$BR" ledger mark "$led_file" D done --findings 0 >/dev/null
+"$BR" ledger mark "$led_file" E done --findings 0 >/dev/null
 "$BR" ledger mark "$led_file" F done --findings 1 >/dev/null
 "$BR" ledger mark "$led_file" G running >/dev/null
 out="$("$BR" ledger render "$led_file" 2>/dev/null)"
 rows="$(grep -c '^| [A-G] —' <<<"$out")"
-if [[ "$rows" -eq 6 ]] && grep -q "3 items" <<<"$out" && grep -q "3 descriptors" <<<"$out"; then
+if [[ "$rows" -eq 7 ]] && grep -q "3 items" <<<"$out" && grep -q "3 descriptors" <<<"$out"; then
   ok "$t"
 else
-  ng "$t" "expected 6 phase rows + B unit/note; got rows=$rows"
+  ng "$t" "expected 7 phase rows + B unit/note; got rows=$rows"
 fi
 
 t="ledger: mark auto-inits when called before init (no silent loss)"
@@ -908,6 +911,144 @@ else
 fi
 
 rm -rf "$sev_dir"
+
+# ---- v1.6.10: scope-expansion gate (anti-regrowth) -------------------------
+
+sc_dir="$(mktemp -d)"
+
+# A history carrying one unresolved finding and one the inspector DECLINED at
+# the Phase E gate. The declined one must reach the reviewer as a "do not
+# re-raise" instruction — that is the whole anti-regrowth mechanism.
+sc_hist="$sc_dir/review-history.md"
+{
+  printf -- '---\n'
+  printf 'id: 22222222-2222-4222-9222-222222222222\n'
+  printf 'feature: scope-test\nrequirements-id: null\n'
+  printf 'last-finding-id: F-002\nfinding-count-total: 2\nfinding-count-unresolved: 1\n'
+  printf 'last-review-at: "2026-07-29T00:00:00Z"\n'
+  printf -- '---\n\n# Review history — scope-test\n'
+  printf '\n## F-001\n- severity: high\n- scope-impact: clarifying\n- phase: item\n- target: PAY-001\n'
+  printf -- '- first-seen: 2026-07-01T00:00:00Z (cycle x, iter 1)\n'
+  printf -- '- last-status: still-present\n- last-status-at: 2026-07-01T00:00:00Z\n'
+  printf -- '- finding: |\n    still open thing\n- suggested-fix: |\n    fix.\n'
+  printf '\n## F-002\n- severity: medium\n- scope-impact: expanding\n- phase: item\n- target: PAY-001\n'
+  printf -- '- first-seen: 2026-07-02T00:00:00Z (cycle x, iter 1)\n'
+  printf -- '- last-status: deferred\n- last-status-at: 2026-07-02T00:00:00Z\n'
+  printf -- '- deferred-reason: "out of scope for this cycle"\n'
+  printf -- '- finding: |\n    add a retry queue\n- suggested-fix: |\n    build a retry queue.\n'
+} > "$sc_hist"
+
+t="build-summary: declined findings render as do-NOT-re-raise, not as unresolved"
+out="$("$REPO_ROOT/scripts/blueprint-review.sh" build-summary "$sc_hist" consistency 2>/dev/null)"
+if grep -q "DECLINED BY THE INSPECTOR" <<<"$out" \
+   && grep -q "F-002" <<<"$out" \
+   && grep -q "out of scope for this cycle" <<<"$out" \
+   && ! sed -n '/Currently unresolved/,/^$/p' <<<"$out" | grep -q "F-002"; then
+  ok "$t"
+else
+  ng "$t" "expected F-002 under a DECLINED heading and absent from unresolved"
+fi
+
+t="persist: deferred status is terminal (not counted unresolved)"
+cp "$sc_hist" "$sc_dir/h2.md"
+cat > "$sc_dir/in.json" <<'JSON'
+[{"id":"F-001","status":"deferred","deferred_reason":"inspector said no"}]
+JSON
+"$REPO_ROOT/scripts/blueprint-review.sh" persist-findings "$sc_dir/h2.md" "$sc_dir/in.json" >/dev/null 2>&1
+unres="$("$REPO_ROOT/scripts/frontmatter.sh" get "$sc_dir/h2.md" finding-count-unresolved 2>/dev/null)"
+if [[ "$unres" == "0" ]] && grep -q 'deferred-reason: "inspector said no"' "$sc_dir/h2.md"; then
+  ok "$t"
+else
+  ng "$t" "expected unresolved=0 and a recorded reason; got unresolved=$unres"
+fi
+
+t="persist: new finding records scope-impact"
+cp "$FIXTURES/summary-mixed/review-history.md" "$sc_dir/h3.md"
+cat > "$sc_dir/in3.json" <<'JSON'
+[{"id":"F-005","status":"new","severity":"high","scope_impact":"expanding","phase":"item","target":"PAY-009","finding":"needs a cache","suggested_fix":"add a cache"}]
+JSON
+"$REPO_ROOT/scripts/blueprint-review.sh" persist-findings "$sc_dir/h3.md" "$sc_dir/in3.json" >/dev/null 2>&1
+if grep -q '^- scope-impact: expanding' "$sc_dir/h3.md"; then
+  ok "$t"
+else
+  ng "$t" "expected scope-impact recorded on the appended section"
+fi
+
+t="size-stat: excludes frontmatter and REVIEW-FINDING blocks"
+cat > "$sc_dir/spec.md" <<'MD'
+---
+id: x
+---
+
+- **A-001** — a thing.
+<!-- REVIEW-FINDING
+id: F-001
+severity: high
+scope-impact: expanding
+finding: |
+  noise that must not count as spec growth
+suggested-fix: |
+  noise
+-->
+- **A-002** — another thing.
+MD
+read -r lines items _bytes <<<"$("$REPO_ROOT/scripts/blueprint-review.sh" size-stat "$sc_dir/spec.md")"
+if [[ "$lines" == "2" && "$items" == "2" ]]; then
+  ok "$t"
+else
+  ng "$t" "expected 2 lines / 2 items after stripping; got lines=$lines items=$items"
+fi
+
+t="ledger: E skipped without --findings 0 → render exit 3 (gate cannot be bypassed)"
+led_dir2="$(mktemp -d)"; led_file2="$led_dir2/requirements.md"; printf '# spec\n' > "$led_file2"
+led_path2="$("$BR" ledger path "$led_file2")"
+rm -f "$led_path2"; "$BR" ledger init "$led_file2" >/dev/null 2>&1
+"$BR" ledger mark "$led_file2" A done >/dev/null
+"$BR" ledger mark "$led_file2" B done --findings 3 >/dev/null
+"$BR" ledger mark "$led_file2" C done --findings 2 >/dev/null
+"$BR" ledger mark "$led_file2" D done --findings 1 >/dev/null
+"$BR" ledger mark "$led_file2" E skipped --findings 2 >/dev/null
+"$BR" ledger mark "$led_file2" F done --findings 3 >/dev/null
+"$BR" ledger mark "$led_file2" G running >/dev/null
+if "$BR" ledger render "$led_file2" >/dev/null 2>&1; then
+  ng "$t" "expected exit 3 — E was skipped while expanding findings existed"
+else
+  ok "$t"
+fi
+
+t="ledger: meta round-trips the size baseline across invocations"
+"$BR" ledger meta "$led_file2" set size_baseline "120 14 4096" >/dev/null
+got="$("$BR" ledger meta "$led_file2" get size_baseline 2>/dev/null)"
+if [[ "$got" == "120 14 4096" ]]; then
+  ok "$t"
+else
+  ng "$t" "expected the baseline to survive a separate invocation; got '$got'"
+fi
+rm -rf "$led_dir2"; rm -f "$led_path2"
+
+t="scope-impact wiring: templates, agents, and orchestrator carry the contract"
+missing=()
+for f in templates/blueprint-reviewer-prompt-batch.md.tmpl \
+         templates/blueprint-reviewer-prompt-consistency.md.tmpl; do
+  grep -q '"scope_impact": "clarifying|expanding"' "$REPO_ROOT/$f" || missing+=("$f: JSON field")
+  grep -q 'Scope impact — classify EVERY finding' "$REPO_ROOT/$f" || missing+=("$f: classification section")
+  grep -q 'DECLINED BY THE INSPECTOR' "$REPO_ROOT/$f" || missing+=("$f: no-re-raise rule")
+done
+for f in agents/blueprint-batch-reviewer.md agents/blueprint-consistency-reviewer.md; do
+  grep -q 'The fix step' "$REPO_ROOT/$f" || missing+=("$f: fix-step bound")
+  grep -q 'NEVER auto-apply an `expanding` fix' "$REPO_ROOT/$f" || missing+=("$f: no-auto-apply rule")
+  grep -q 'scope-impact:' "$REPO_ROOT/$f" || missing+=("$f: canonical block field")
+done
+grep -q 'Phase E' "$REPO_ROOT/commands/mi-blueprint-review.md" || missing+=("orchestrator: Phase E")
+grep -q 'size-stat' "$REPO_ROOT/commands/mi-blueprint-review.md" || missing+=("orchestrator: growth report")
+grep -q 'status: deferred' "$REPO_ROOT/commands/mi-blueprint-review.md" || missing+=("orchestrator: deferred persist")
+if [[ ${#missing[@]} -eq 0 ]]; then
+  ok "$t"
+else
+  ng "$t" "missing scope-impact wiring: ${missing[*]}"
+fi
+
+rm -rf "$sc_dir"
 
 # ---- Summary --------------------------------------------------------------
 

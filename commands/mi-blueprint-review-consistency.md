@@ -76,6 +76,12 @@ file_metadata_brief = (from A.3)
 
 On `success` / `partial` / `blocked`: continue to Step 4 regardless. On `partial` with `reason: max-iter`: surface `"<B>B/<C>C/<H>H/<M>M findings remain after <K> rounds — run another loop? (y/n)"` (drop the zero-count severities from the string). On `y`: re-spawn with the file's current state. On `n`: continue.
 
+### Step 3.5 — Run Phase E (scope-expansion gate)
+
+Same contract as `/mi-blueprint-review` Step 5.5, scoped to this file's consistency findings: collect the inline blocks with `scope-impact: expanding`, present them as one compact list, ask once (`none` / `all` / an id list / `keep <ids>`), apply only what the inspector approves, and mark the declined ones `deferred` for Step 4's persist. Skip only when there are none.
+
+The gate belongs here as much as in the orchestrator — this wrapper drives the same consistency reviewer, whose fixer is under the same rule (apply `clarifying` only), so without Phase E its expanding findings would sit inline forever and be re-proposed on every later run.
+
 ### Step 4 — Run Phase F (persist)
 
 Same logic as `/mi-blueprint-review` Step 6 (collect inline findings, classify against history sections, pipe to `persist-findings`). Skip silently if `review_history` is empty.
@@ -89,6 +95,7 @@ Same logic as `/mi-blueprint-review` Step 6 (collect inline findings, classify a
 ## Notes
 
 - Severity vocabulary is `blocker | critical | high | medium` (v1.6.8 — no `low`); see `/mi-blueprint-review` Notes.
+- Findings also carry `scope-impact: clarifying | expanding` (v1.6.10). The fixer auto-applies only `clarifying`; `expanding` proposals go through the Step 3.5 inspector gate and are recorded `deferred` when declined, so later runs do not re-raise them.
 - Thin wrapper. All shared logic lives in `commands/mi-blueprint-review.md` and the `blueprint-consistency-reviewer` sub-agent — this wrapper just skips Phases B and C.
 - File frontmatter is preserved byte-for-byte (the sub-agent revalidates after each disk write).
 

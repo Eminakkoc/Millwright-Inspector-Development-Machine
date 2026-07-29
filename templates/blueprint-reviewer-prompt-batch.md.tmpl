@@ -91,12 +91,49 @@ that item.
 - high     — two implementations WILL diverge and one is wrong.
 - medium   — ambiguity an implementer would need to ask about before proceeding.
 
+## Scope impact — classify EVERY finding (mandatory)
+
+This spec is a human's statement of what they want built. Your job is to make that
+statement unambiguous — **not** to design a more complete feature than the human asked
+for. Every finding therefore carries `scope_impact`:
+
+- `clarifying` — resolving it changes only how the EXISTING intent is stated: word choice,
+  making an already-implied acceptance criterion explicit, naming the seam the item
+  already points at, picking one of two readings the text already contains, deleting a
+  contradiction. Nothing new gets built as a result.
+- `expanding` — resolving it requires the implementer to build something that is not in
+  the spec today: a new mechanism or component (retry, caching, audit trail, versioning,
+  rate limiting, migration, feature flag, background job, new endpoint), a new
+  configuration surface, a new error-handling regime, a new acceptance criterion that
+  implies new work, a new item, or reaching into a seam the spec does not currently touch.
+
+**Prefer the smallest fix. Prefer deleting ambiguity over adding mechanism.** If an item
+is vague, the first question is "can this be resolved by saying the existing intent more
+precisely?" — only if the honest answer is no does the fix become `expanding`.
+
+An `expanding` finding is **legitimate and wanted** — a genuine gap that only new
+mechanism can close is exactly what review is for. What is NOT wanted is silently
+designing it in. Report it, mark it `expanding`, describe the mechanism in one line in
+`suggested_fix`, and let the human decide. The fixer will NOT auto-apply it; it goes to
+an inspector approval gate. So:
+
+- Do not inflate an `expanding` finding's severity to force it through — severity and
+  scope impact are independent axes.
+- Do not split one mechanism across several `clarifying` findings to smuggle it in.
+- Do not re-raise a proposal the prior-review context lists as DECLINED BY THE INSPECTOR,
+  under any wording. That is a decision, not an oversight.
+
 ## Reconciliation contract
 
 `REVIEW-FINDING blocks in each item's content below are prior findings; honor this contract.`
 
 Per prior finding, one `existing[]` entry per the same rules as the consistency reviewer
 (`still-present` / `resolved` (REQUIRES `resolved_by_change:`) / `refined`).
+
+A prior finding carrying `scope-impact: expanding` is awaiting the inspector's decision,
+not the fixer's edit. Report it `still-present` (that is accurate — the spec is unchanged)
+and do NOT escalate its severity or restate it as new because it went unfixed. When you
+`refine` one, include `refined_scope_impact` if your judgment of its scope changed.
 
 ## Output
 
@@ -112,10 +149,10 @@ nothing to flag still appear with empty `existing` and `new` arrays.
     {
       "item_id": "<id from input>",
       "existing": [
-        { "id": "F-NNN-or-T1-N", "status": "...", "resolved_by_change": "...", "refined_finding": "...", "refined_suggested_fix": "..." }
+        { "id": "F-NNN-or-T1-N", "status": "...", "resolved_by_change": "...", "refined_finding": "...", "refined_suggested_fix": "...", "refined_scope_impact": "clarifying|expanding" }
       ],
       "new": [
-        { "severity": "blocker|critical|high|medium", "phase": "item", "target": "<item_id>", "finding": "...", "suggested_fix": "..." }
+        { "severity": "blocker|critical|high|medium", "scope_impact": "clarifying|expanding", "phase": "item", "target": "<item_id>", "finding": "...", "suggested_fix": "..." }
       ]
     }
   ]

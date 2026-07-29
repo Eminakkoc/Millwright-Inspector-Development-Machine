@@ -113,6 +113,8 @@ lessons_block = ""    (always empty per spec §8.1.3)
 
 Apply the returned `new_region` to disk via `Edit(old_string=original_region, new_string=new_region)` — rewrite tmp-ids T1-<n> to final F-NNN via `scripts/blueprint-review.sh alloc-final-id` before applying. On exact-match failure: re-enumerate this item; re-spawn (same shape as orchestrator's Phase C exact-match-failure path).
 
+**Phase E:** run the scope-expansion gate for this item per `/mi-blueprint-review` Step 5.5 — collect its inline `scope-impact: expanding` blocks, show them as one compact list, ask once, apply only what the inspector approves, mark the rest `deferred`. Skip when there are none.
+
 **Phase F:** persist findings (only this one item's worth) per `/mi-blueprint-review` Step 6.
 
 **Phase G:** print summary. On `partial; reason: max-iter`: surface y/n re-loop prompt.
@@ -142,7 +144,8 @@ Print the returned `new_region` to stdout (with any remaining `T1-<n>` REVIEW-FI
 
 ## Notes
 
-- Severity vocabulary is `blocker | critical | high | medium` (v1.6.8 — no `low`; the batch reviewer drops any `low` the reviewer emits). Per-item shipped-code regression is in scope for both modes. See `/mi-blueprint-review` Notes.
+- Severity vocabulary is `blocker | critical | high | medium` (v1.6.8 — no `low`; the batch reviewer drops any `low` the reviewer emits). Findings also carry `scope-impact: clarifying | expanding` (v1.6.10) — the fixer auto-applies only `clarifying`, and Mode A gates `expanding` proposals through the inspector before applying. Per-item shipped-code regression is in scope for both modes. See `/mi-blueprint-review` Notes.
+- **Mode B has no gate and no history** (stateless, prints to terminal): expanding findings are simply printed as `REVIEW-FINDING` blocks in the output for the inspector to judge by eye. Nothing is applied and nothing is recorded, so there is nothing to gate.
 - All shared logic lives in the orchestrator (`commands/mi-blueprint-review.md`) and the batch reviewer sub-agent (`agents/blueprint-batch-reviewer.md`). This wrapper just builds a single-item batch and routes through Phases A / B / C / F / G.
 - The `:item-id` separator is colon. Use `--file <path> --item <id>` for paths containing colons (rare on macOS, common on Windows).
 

@@ -1270,8 +1270,9 @@ codex-reply availability.
 
 Findings live **inline in the reviewed file** as `<!-- REVIEW-FINDING ... -->` HTML
 comments — invisible in rendered markdown, visible to both agents in raw text. Each
-carries a `severity: blocker | critical | high | medium`, a unique lifetime-monotonic
-`F-NNN` id, and a `suggested-fix:` block. Resolved findings are removed when the fixer
+carries a `severity: blocker | critical | high | medium`, a `scope-impact: clarifying |
+expanding` (v1.6.10 — governs whether the fixer may apply it at all; see below), a unique
+lifetime-monotonic `F-NNN` id, and a `suggested-fix:` block. Resolved findings are removed when the fixer
 addresses them; unresolved findings stay in the file when the loop exits and are
 persisted as a history entry in `review-history.md` (see below).
 
@@ -1368,11 +1369,72 @@ inspector reviews a post-review `requirements.md` rather than the raw stage-2 ou
      per-item findings as inline context. v1.2.x's initial consistency loop is gone —
      Phase D is the only whole-file consistency pass. The `blueprint-consistency-reviewer`
      spawn here uses the same codex-reply continuation pattern.
-  5. **Phase F — persist findings to `review-history.md`.** Calls
+  5. **Phase E — scope-expansion gate.** Collects every inline finding marked
+     `scope-impact: expanding` (proposals that would add mechanism the spec does not
+     contain today — the fixer is forbidden from applying these), shows them to the
+     inspector as one compact list with the run's growth stat, applies only the approved
+     subset, and records the rest as `deferred`. Ledger-enforced: `skipped` is sanctioned
+     only when recorded with 0 expanding findings. See the scope-expansion section above.
+  6. **Phase F — persist findings to `review-history.md`.** Calls
      `scripts/blueprint-review.sh persist-findings` to append a new history entry for
      this run and update earlier entries when a previously-open finding has been
      resolved or dropped. Skipped when the file is outside `blueprints/current/`.
-  6. **Phase G — final report.** Print summary; any remaining findings stay inline.
+  7. **Phase G — final report.** Print summary, including spec-size growth for the run;
+     any remaining findings stay inline.
+
+#### Scope-expansion gate — `scope_impact` + Phase E (v1.6.10)
+
+The reviewer-fixer loop had an unbounded fix step: the fixer was told to "apply the
+reviewer's suggested edits" with no rule about *what an edit may change*. Since the
+cheapest way to resolve "this is ambiguous" is to specify more, and `--auto-iter` allows
+up to 5 fix rounds per batch and per consistency pass, every review run added mechanism
+the inspector never asked for — and because `review-history.md` had no "the human decided
+against this" state, the next run rediscovered and re-applied the same proposals. The file
+grew on every review.
+
+Every finding now carries **`scope_impact`** alongside its severity — independent axes:
+
+| Value | Meaning |
+| --- | --- |
+| `clarifying` | Resolving it changes only how existing intent is *stated*: word choice, making an already-implied AC explicit, naming the seam the item already points at, picking one of two readings the text already contains, deleting a contradiction. Nothing new gets built. |
+| `expanding` | Resolving it requires building something the spec does not contain today: a new mechanism or component (retry, caching, audit trail, versioning, rate limiting, migration, feature flag, background job, new endpoint), a new config surface, a new error-handling regime, a new AC implying new work, a new item, or reaching into an untouched seam. |
+
+The contract that follows from it:
+
+- **The fixer applies `clarifying` fixes only.** `expanding` fixes are never auto-applied;
+  the finding stays inline carrying `scope-impact: expanding`. Both reviewer sub-agents
+  additionally **verify the reviewer's own label** — a "clarifying" fix that would
+  introduce a noun the spec lacks (a component, policy, store, job, flag, endpoint,
+  lifecycle) is reclassified `expanding` and skipped — and treat a missing or unrecognized
+  value as `expanding`, because the unsafe default is the one that lets scope in silently.
+  Even clarifying fixes are bounded: rewrite the smallest span, and a net addition beyond
+  ~2 lines is itself the signal that mechanism is being added rather than ambiguity removed.
+- **Deferred findings do not burn iterations.** An item (or file) whose only remaining
+  findings are `expanding` is converged for loop purposes — the fixer is structurally
+  unable to act on them, so another round can only re-report them. The consistency reviewer
+  exits `stable-deferred`; delta prompts name the deferred ids and forbid re-raising them,
+  escalating their severity, or proposing an equivalent mechanism under another name.
+- **Phase E asks the inspector, once per run.** All expanding findings are shown as one
+  compact list — each a single line naming the mechanism it would add — with the run's
+  growth stat (from the Phase A `size-stat` baseline stored in the ledger). The inspector
+  answers `none` (default), `all`, an id list, or `keep <ids>`. Only approved fixes are
+  applied. Non-interactive runs apply nothing and record `still-present`: silence is
+  neither consent nor refusal.
+- **Declined proposals are remembered.** Phase F persists them as `last-status: deferred`
+  with a `deferred-reason`, and `build-summary` renders them into every future reviewer
+  session under a "DECLINED BY THE INSPECTOR — do NOT re-raise" heading. This is the part
+  that actually stops the regrowth: without it the gate would hold for exactly one run.
+  `deferred` is terminal, so it does not inflate `finding-count-unresolved`; the summary
+  protects declined entries ahead of legacy lows and keeps at least the 5 most recent,
+  noting when older ones were dropped for budget.
+- **Phase G reports growth** — spec lines and items before → after — so creeping expansion
+  is visible run over run even when every individual fix looked reasonable.
+
+Phase E is ledger-enforced exactly like Phase C: `skipped` is sanctioned only when it was
+marked `--findings 0`, so a run cannot quietly bypass the gate while expanding findings
+exist. Both wrapper commands run the gate too, since they drive the same reviewers;
+`/mi-blueprint-review-item` Mode B is the sole exception — it is stateless and applies
+nothing, so there is nothing to gate.
 
 #### Loop exits
 
@@ -1382,6 +1444,7 @@ Every review loop has four exit reasons, evaluated in order on each iteration:
 | --- | --- |
 | `success` | Zero reportable findings (kept or new) after a reviewer call. |
 | `stable` | Iter ≥ 2, no new findings, every existing finding is `still_present` or `refined`. The loop has converged — further iterations cannot make progress. |
+| `stable-deferred` | No new findings and every kept finding is `scope-impact: expanding`. The fixer cannot act on these by contract, so further rounds would only re-report them; they go to the Phase E gate instead. |
 | `stable-medium-only` | Iter ≥ 2, no blocker / critical / high findings (kept or new), no new mediums (only stable ones remain). Surface to inspector but don't burn more iterations. A kept blocker or critical never qualifies — those fall through to `max-iter` and the inspector prompt. |
 | `max-iter` | None of the above and iter ≥ `--auto-iter`. The orchestrator prompts the inspector `y/n` for another loop. |
 
@@ -1597,7 +1660,7 @@ refit for per-batch use in v1.5; rendered by the sub-agents at review-call time,
 | `info-bar.sh` | Pull-only Claude Code `statusLine` renderer (not a hook). Reads stdin JSON, prints one line, exits 0; ≤ 100 ms hot-path target. |
 | `ledger.sh` | Manage `context-ledger.md`. Subcommands: `init`, `append`. Append failures warn but never block. |
 | `pr-review.sh` | Drive `/mi-analyze-review`. Subcommands: `parse-url`, `new-session`, `fetch`, `canonicalize`, `count-marked`, `find-awaiting`, `list-actionable`, `normalize`, `set-status`, `post-reply`, `report-status`. |
-| `blueprint-review.sh` | Drive the three `/mi-blueprint-review*` commands (v1.2.0+; v1.5 refit; see §7.9). Subcommands: `resolve-tool` (agent name → MCP tool name), `enumerate` (deterministic byte-offset computation from reviewer-supplied `{id, anchor_line, occurrence_index}`), `parse-findings` (extract `<!-- REVIEW-FINDING -->` blocks as JSON), `alloc-final-id` (lifetime-monotonic F-NNN allocator backed by `last-finding-id` frontmatter), `diff-drift` (heads-up diff against `summary.md` / `todo-list.md` after stage-2 review), `build-summary` (v1.5; deterministic ≤ 1500-token `review-history.md` summary for reviewer-session openers; truncation invariant protects every unresolved reportable severity — blocker/critical/high/medium — plus current-item-tied resolved findings, and drops oldest legacy low-severity unresolved first), `persist-findings` (v1.5; append new + flip earlier entries to resolved/dropped + recompute frontmatter counters). |
+| `blueprint-review.sh` | Drive the three `/mi-blueprint-review*` commands (v1.2.0+; v1.5 refit; see §7.9). Subcommands: `resolve-tool` (agent name → MCP tool name), `enumerate` (deterministic byte-offset computation from reviewer-supplied `{id, anchor_line, occurrence_index}`), `parse-findings` (extract `<!-- REVIEW-FINDING -->` blocks as JSON), `alloc-final-id` (lifetime-monotonic F-NNN allocator backed by `last-finding-id` frontmatter), `diff-drift` (heads-up diff against `summary.md` / `todo-list.md` after stage-2 review), `build-summary` (v1.5; deterministic ≤ 1500-token `review-history.md` summary for reviewer-session openers; truncation invariant protects every unresolved reportable severity — blocker/critical/high/medium — plus current-item-tied resolved findings, and drops oldest legacy low-severity unresolved first), `persist-findings` (v1.5; append new + flip earlier entries to resolved/dropped/deferred + recompute frontmatter counters), `size-stat` (v1.6.10; `<body-lines> <items> <bytes>` with frontmatter and REVIEW-FINDING blocks excluded, for the Phase A → G growth report), `ledger … meta` (v1.6.10; run-scoped key/value so the size baseline survives across fresh Bash subshells). |
 | `lessons.sh` | Manage `lessons-learned.md` (cumulative PR-review + workflow-completion lessons). Subcommands: `path`, `append` (auto-increments `L-NNN` ids, self-validates after each write). |
 | `migrate-diagrams-readme.sh` | One-shot back-fill of `requirements-id` / `id` into legacy diagram READMEs. |
 | `migrate-test-folder.sh` | One-shot migration of legacy manual-test artifacts into the feature-permanent `test/` folder. |

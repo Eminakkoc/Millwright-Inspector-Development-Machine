@@ -1,5 +1,5 @@
 ---
-description: Orchestrate a token-reduced blueprint review (v1.5) — Phase A (preflight + summary build) → B (enumerate) → C (per-batch parallel review) → D (single consistency pass) → F (persist to review-history.md) → G (report). Every phase is recorded in a deterministic phase ledger; Phase G renders it as a table and FAILS if any mandatory phase was skipped. Uses the codex MCP tools — round-1 tool + -reply for rounds 2+; names resolved at Step 1 (unprefixed or plugin-prefixed depending on how the server is registered). See docs/blueprint-review-token-reduction/plan.md.
+description: Orchestrate a token-reduced blueprint review (v1.5) — Phase A (preflight + summary build) → B (enumerate) → C (per-batch parallel review) → D (single consistency pass) → E (scope-expansion gate) → F (persist to review-history.md) → G (report). Every phase is recorded in a deterministic phase ledger; Phase G renders it as a table and FAILS if any mandatory phase was skipped. Uses the codex MCP tools — round-1 tool + -reply for rounds 2+; names resolved at Step 1 (unprefixed or plugin-prefixed depending on how the server is registered). See docs/blueprint-review-token-reduction/plan.md.
 ---
 
 # /mi-blueprint-review
@@ -35,7 +35,7 @@ description: Orchestrate a token-reduced blueprint review (v1.5) — Phase A (pr
 
 ## Phase progression contract (READ BEFORE EXECUTING)
 
-Phases run in order: **A → B → C → D → F → G**. Every phase is mandatory. Allowed early exits:
+Phases run in order: **A → B → C → D → E → F → G**. Every phase is mandatory. Allowed early exits:
 
 | Phase | Allowed skip | NOT allowed |
 | --- | --- | --- |
@@ -43,6 +43,7 @@ Phases run in order: **A → B → C → D → F → G**. Every phase is mandato
 | B — enumeration | `enumerate` exits 2 → abort orchestrator. | Skipping. |
 | C — per-batch review | Descriptor count == 0 → skip C, proceed to D. | Skipping for cost / time / "items look fine." |
 | D — consistency | (none) | Skipping because C found nothing / count was 0. |
+| E — scope-expansion gate | 0 expanding findings → mark `skipped --findings 0`. | Skipping while expanding findings exist — that either grows the spec without consent or loses a real gap. |
 | F — persist | (none) | Skipping; even if no findings, `last-review-at` updates. |
 | G — final report | (none) | Skipping. |
 
@@ -50,9 +51,11 @@ Announce each phase as you enter it (one short line: `Phase X — <name> — sta
 
 ### Enforcement — the phase ledger (NOT optional)
 
-Your own judgment is **not** authorized to skip Phase C or Phase D. "Items look
-fine", "cost", "time", "C found nothing so D is redundant" are all forbidden
-rationales. To make skipping impossible to hide, this command is backed by a
+Your own judgment is **not** authorized to skip Phase C, Phase D, or Phase E. "Items look
+fine", "cost", "time", "C found nothing so D is redundant", "the expanding findings are
+obviously good ideas" are all forbidden rationales. That last one is specifically
+forbidden: whether a proposed mechanism is a good idea is exactly the judgment Phase E
+reserves for the inspector. To make skipping impossible to hide, this command is backed by a
 **deterministic phase ledger** owned by `scripts/blueprint-review.sh`:
 
 1. **Step 1 initializes** the ledger for this run (`ledger init`).
@@ -62,11 +65,14 @@ rationales. To make skipping impossible to hide, this command is backed by a
 3. **Phase G renders** the ledger as the final table via `ledger render`. Render
    **exits 3** — a hard failure under `set -euo pipefail` — if any mandatory phase
    was never marked `done` (C may be `skipped` only when Phase B enumerated 0
-   items; F may be `skipped` only when the file is not under `blueprints/current/`).
+   items; E only when it recorded `--findings 0`; F may be `skipped` only when the
+   file is not under `blueprints/current/`).
 
 **Contract:** the table you show the inspector is the *verbatim* stdout of
 `ledger render`. You may NOT hand-author it, and you may NOT report the review as
-successful while `ledger render` exits non-zero. If it exits non-zero, a mandatory
+successful while `ledger render` exits non-zero. Phase E is enforced the same way
+Phase C is: `skipped` counts as sanctioned only when it was marked with
+`--findings 0`. If it exits non-zero, a mandatory
 phase did not run: go back, execute the missing phase(s) for real, mark them, and
 re-run `ledger render` until it exits 0.
 
@@ -198,7 +204,16 @@ fi
 
 `build-reference-block` exits 64 on validation failure (manifest not found, wrong `type:` sentinel, malformed YAML, target self-reference, manifest == target). Failures propagate — the review aborts so the inspector can fix the manifest. Missing linked artifacts within a valid manifest are logged to stderr and silently skipped (graceful degradation, matches the auto-fire flow's "non-blocking gate" property).
 
-**A.6 — Record Phase A in the ledger** (do this once A.1–A.5 have completed):
+**A.6 — Capture the size baseline** so Phase E and Phase G can report how much this run grew the spec. Each Bash block is a fresh subshell, so the value goes in the ledger rather than a shell variable:
+
+```bash
+"$CLAUDE_PLUGIN_ROOT/scripts/blueprint-review.sh" ledger meta "$file" set size_baseline \
+  "$("$CLAUDE_PLUGIN_ROOT/scripts/blueprint-review.sh" size-stat "$file")"
+```
+
+`size-stat` prints `<body-lines> <items> <bytes>` with frontmatter and `REVIEW-FINDING` blocks excluded, so the number tracks spec growth rather than review-annotation churn.
+
+**A.7 — Record Phase A in the ledger** (do this once A.1–A.6 have completed):
 
 ```bash
 "$CLAUDE_PLUGIN_ROOT/scripts/blueprint-review.sh" ledger mark "$file" A done \
@@ -337,6 +352,72 @@ Once the loop resolves (whichever terminal outcome), record Phase D — set `--f
   --findings "$phase_d_finding_count" --note "$consistency_outcome after $consistency_rounds round(s)"
 ```
 
+### Step 5.5 — Phase E: scope-expansion gate **(MANDATORY)**
+
+Announce: `Phase E — scope-expansion gate — starting`.
+Record entry: `blueprint-review.sh ledger mark "$file" E running`.
+
+**Why this phase exists.** The fixer applies `clarifying` fixes automatically but is forbidden from applying `expanding` ones — fixes that would have the implementer build something the spec does not contain today. Without a gate, those either get silently applied (the spec grows a little more on every review run until it no longer matches what the inspector asked for) or get silently discarded (a real gap is lost). Phase E is where a human decides, once, per run.
+
+**E.1 — Collect the expanding findings.**
+
+```bash
+expanding_json="$("$CLAUDE_PLUGIN_ROOT/scripts/blueprint-review.sh" parse-findings "$file" \
+  | python3 -c 'import sys,json; print(json.dumps([f for f in json.load(sys.stdin) if f.get("scope-impact")=="expanding"]))')"
+expanding_count="$(python3 -c 'import sys,json; print(len(json.load(sys.stdin)))' <<<"$expanding_json")"
+```
+
+If `expanding_count == 0`, there is nothing to gate — record the sanctioned skip and go to Step 6:
+
+```bash
+"$CLAUDE_PLUGIN_ROOT/scripts/blueprint-review.sh" ledger mark "$file" E skipped \
+  --findings 0 --note "no scope-expanding findings"
+```
+
+(`ledger render` accepts `E skipped` **only** with `--findings 0`. Skipping it while expanding findings exist fails the run — the same enforcement shape as Phase C.)
+
+**E.2 — Present them compactly.** One block, not one prompt per finding. For each expanding finding print exactly one line:
+
+```
+<F-NNN> [<severity>, <target>] would add: <the mechanism, in ≤ 12 words>
+    why: <the finding, one line>
+```
+
+Then the growth line, from the Phase A baseline (`ledger meta … get size_baseline`) versus the current `size-stat`:
+
+```
+requirements.md this run: <lines_before> → <lines_after> lines (<+N>), <items_before> → <items_after> items.
+Applying all <N> expanding findings would add roughly <M> more lines of scope.
+```
+
+**E.3 — Ask once:**
+
+```
+<N> findings propose adding NEW mechanism to this blueprint that isn't there today.
+These were NOT applied — the review deliberately stops here so scope stays yours.
+
+Reply:
+  none          — apply nothing (default). The findings stay inline as comments and are
+                  recorded as declined, so future reviews won't re-propose them.
+  all           — apply every proposal above.
+  F-003 F-007   — apply just these; the rest are recorded as declined.
+  keep F-003    — apply nothing now, but leave the listed ones open for next time
+                  (neither applied nor declined).
+```
+
+**E.4 — Apply the approved subset, in main, serially.** For each approved id: apply its `suggested-fix` to the file with `Edit`, then remove that `REVIEW-FINDING` block. Apply the smallest edit that satisfies the fix — the inspector approved the mechanism described on that one line, not a redesign of the item. Re-validate frontmatter after each edit (`last-finding-id` may change only via `alloc-final-id`).
+
+For each **declined** id: leave the `REVIEW-FINDING` block inline and add it to the Phase F persist input with `status: deferred` plus a `deferred_reason` (the inspector's words when they gave a reason; otherwise `"inspector declined at the scope-expansion gate"`). This is what stops the regrowth loop: `build-summary` renders declined findings into every future reviewer session under a "DECLINED BY THE INSPECTOR — do NOT re-raise" heading, so the next run does not rediscover and re-apply the same mechanism.
+
+For each `keep` id: leave the block inline and persist it as `still-present` — undecided, so it comes back next run.
+
+**E.5 — Non-interactive safety.** If the inspector cannot be prompted (no TTY, unattended run), apply **nothing** and record every expanding finding as `still-present`, not `deferred` — silence is not consent, and it is also not refusal. Note it: `"Phase E: <N> expanding findings left unapplied (non-interactive run) — re-run and answer the gate, or apply them by hand."` The safe direction is always "don't grow the file."
+
+```bash
+"$CLAUDE_PLUGIN_ROOT/scripts/blueprint-review.sh" ledger mark "$file" E done \
+  --findings "$expanding_count" --note "$approved_count applied, $declined_count declined, $kept_count kept open"
+```
+
 ### Step 6 — Phase F: persist to review-history.md **(MANDATORY when `review_history` is set)**
 
 Announce: `Phase F — persist — starting`.
@@ -345,7 +426,8 @@ Collect every `<!-- REVIEW-FINDING -->` block currently in the file via `scripts
 
 | In file? | In history? | Action |
 | --- | --- | --- |
-| yes | no | emit `status: new` entry with full body (`severity`, `phase`, `target`, `finding`, `suggested_fix` — all snake_case to match the v1.5 reviewer template contract; `persist-findings` reads `suggested_fix`) |
+| yes | no | emit `status: new` entry with full body (`severity`, `scope_impact`, `phase`, `target`, `finding`, `suggested_fix` — all snake_case to match the v1.5 reviewer template contract; `persist-findings` reads `suggested_fix`) |
+| yes | yes | **declined at Phase E** → emit `status: deferred` with `deferred_reason`. This is the entry that stops the next run re-proposing the same mechanism; without it the gate only holds for one run |
 | yes | yes | emit `status: still-present` entry (just timestamp bump; persist-findings is a no-op for these since status doesn't change, but the script still updates `last-review-at`) |
 | no | yes (with `last-status: still-present` or `refined`) | emit `status: dropped` entry — the finding's `REVIEW-FINDING` block was removed from the spec body (fixer resolved it, OR inspector manually deleted it without a `resolved_by_change` note) |
 | no | yes (with `last-status: resolved` or `dropped`) | no entry (no state change needed) |
@@ -391,6 +473,17 @@ Show the table stdout to the inspector **verbatim** — it is the mandated "each
 
 **Escalate blockers and criticals explicitly.** When any `blocker` or `critical` block remains inline, follow the count line with one line per such finding — `<F-NNN> [<severity>, <target>]: <first line of finding>` — and this sentence: `"Blocker/critical findings mean the blueprint is not implementable as written; resolve them before advancing past stage 2."` They are still not a hard gate (this command never blocks the workflow), but they must not be buried in a count.
 
+**G.2b — Report the growth.** Compare the Phase A baseline against the file's current state and print one line, always — a run that changed nothing should say so:
+
+```bash
+before="$("$CLAUDE_PLUGIN_ROOT/scripts/blueprint-review.sh" ledger meta "$file" get size_baseline)"
+after="$("$CLAUDE_PLUGIN_ROOT/scripts/blueprint-review.sh" size-stat "$file")"
+```
+
+Render as `"Spec size: <lines_before> → <lines_after> lines (<±N>), <items_before> → <items_after> items."` followed, when Phase E declined or kept anything, by `"<D> scope-expanding proposal(s) declined and recorded — future reviews won't re-raise them; <K> left open."`
+
+This line is the feedback loop that makes creeping growth visible run over run. If lines grew by more than ~15% while Phase E applied nothing, say so plainly: `"Note: the spec grew <N>% from clarifying fixes alone — worth checking that the review is sharpening the requirements rather than padding them."`
+
 **G.3 — Mark Phase G done + cleanup:**
 
 ```bash
@@ -403,6 +496,7 @@ The ledger file itself lives under `$TMPDIR` keyed by the reviewed file's path; 
 ## Notes
 
 - **Severity vocabulary (v1.6.8).** Findings carry `blocker | critical | high | medium`. There is no `low` — the reviewer templates declare it out of scope and both reviewer sub-agents drop any `low` entry that arrives anyway (reported as `dropped-low: N` in their return). Blocks carrying `severity: low` from a pre-v1.6.8 run are left alone in place and still parse; they are simply never created again.
+- **Scope-expansion gate (v1.6.10).** Reviewer findings carry `scope_impact: clarifying | expanding`. The fixer auto-applies only `clarifying` fixes; `expanding` ones — those that would have the implementer build something the spec does not contain today — are never applied automatically. Phase E shows them to the inspector once, applies only what they approve, and records the rest as `deferred` in `review-history.md` so future runs do not re-propose them. This is what keeps `requirements.md` from growing a little more on every review.
 - **Shipped-code regression is in scope.** Both reviewer passes check every item against already-shipped behavior — see the "Shipped-code regression check" section in `templates/blueprint-reviewer-prompt-batch.md.tmpl` (per item) and `…-consistency.md.tmpl` (file-wide). The evidence comes from the item's own `**Shipped-code impact:**` bullet and the grounding report injected via `--reference-file`.
 - This command does NOT mutate `progress.md` or any quest file. It is workflow-neutral when invoked manually. Stage-2 auto-invocation is wired in `commands/mi-apply-impact.md` (see Step B.5).
 - All file writes happen in main (Step 4 write-back loop, Step 5 sub-agent direct writes, Step 6 persist). Sub-agents read but never write the spec file (batch reviewer is structurally read-only; consistency reviewer is serial-safe).

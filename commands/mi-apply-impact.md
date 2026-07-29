@@ -319,6 +319,8 @@ The manifest is **persisted** with the rest of `blueprints/current/` so manual r
 
 This is a non-blocking quality gate: an external coding agent (Codex by default) reviews `requirements.md` for consistency and per-item completeness before the inspector sees the blueprint. Findings live inline in the file as `<!-- REVIEW-FINDING -->` comments; resolved ones are cleaned up automatically.
 
+**Expect one inspector prompt from this auto-fire (v1.6.10).** The review's Phase E is a scope-expansion gate: any finding whose fix would add mechanism the blueprint does not contain today is NOT applied automatically — the review stops and asks. Answering `none` (the default) is a perfectly good answer at stage 2; those proposals stay inline as comments, get recorded as declined, and are not re-raised by later runs. This prompt is the reason `requirements.md` no longer grows on every review, so do not suppress or auto-answer it. If the session cannot prompt, the gate applies nothing and says so.
+
 ```bash
 # Skip if codex MCP server is unavailable — graceful degradation per
 # docs/blueprints-review/plan.md §10.2.
@@ -448,9 +450,13 @@ fi
 
 #### Step 3.2 — Hand-off message
 
+When Phase E of the auto-fired review declined or kept any scope-expanding proposals, set `scope_gate_note` to one line naming the count and where they live — e.g. `"2 scope-expanding proposals from the review were not applied (declined at the gate); they remain as \`<!-- REVIEW-FINDING -->\` comments in requirements.md if you want to revisit them."` Otherwise leave it empty and omit the line entirely.
+
 Tell the inspector (append `$effort_suggestion` only when non-empty):
 
 > "Blueprints generated for `$active_feature` at `workflow-stream/$active_feature/blueprints/current/`. The blueprint was ${review_status}. Review `requirements.md`, `config.md`, and `diagrams/`.
+>
+> ${scope_gate_note}
 >
 > Optional: reply **`walkthrough`** and I'll go over `requirements.md` with you item by item — each item explained briefly in plain language with a concrete example, waiting for your go-ahead before moving to the next one.
 >

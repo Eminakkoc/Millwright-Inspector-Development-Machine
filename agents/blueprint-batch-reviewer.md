@@ -63,6 +63,8 @@ The `tools:` list carries **both spellings** of each codex tool because the serv
 ### Rounds 2..N (via codex-reply)
 
 1. Drop converged items from `active_items` (item is converged if its round N-1 entry has `new: []` AND every `existing[]` is `still-present | resolved | refined`). An item whose `new[]` entries were **all discarded by the severity gate** counts as `new: []` here — dropped lows never keep a batch iterating.
+
+   **Deferred-expanding findings do not keep an item active.** An item whose only remaining findings are `scope-impact: expanding` is converged for loop purposes: you are structurally unable to fix them, so another round can only re-report them. Drop it from `active_items` and let Phase E carry them to the inspector. Without this rule every expanding finding burns the full `--auto-iter` budget producing identical rounds.
 2. If `active_items` is empty: exit `Result: success`.
 3. Compose the delta prompt:
    ```
@@ -77,12 +79,29 @@ The `tools:` list carries **both spellings** of each codex tool because the serv
    
    Items not listed converged in round <N-1>.
    
+   Findings <ids> were NOT applied: they are scope-expanding and are awaiting the
+   inspector's decision. Their items are unchanged for that reason. Do not re-raise
+   them as new, do not escalate their severity, and do not propose an equivalent
+   mechanism under a different name.
+   
    Re-evaluate per the same contract. Return the same JSON shape, with `items` entries
    ONLY for the items above. Iteration: <N>.
    ```
 4. Call the reviewer reply tool (`reviewer_reply_tool_name`) with **only** `threadId=<from round 1>` and `prompt=<delta>`. Do NOT pass `sandbox` / `config` / `reasoning_effort` — `codex-reply` rejects those (settings are locked at thread open). Same parse/validate/retry policy.
 5. Apply reconciliation.
 6. Check completion (same exit logic as the consistency reviewer's rounds 2+).
+
+### The fix step — what you may change in `working_copy` (READ FIRST)
+
+Between rounds you act as the **fixer**: you edit the item text so the next round sees an improved spec. That edit is bounded, and the bound is the point of this section — an unbounded fixer grows `requirements.md` on every review run until the feature no longer resembles what the inspector asked for.
+
+**You may apply a suggested fix ONLY when its finding is `scope_impact: clarifying`.** A clarifying fix restates existing intent more precisely: word choice, making an already-implied acceptance criterion explicit, naming the seam the item already points at, choosing one of two readings the text already contains, removing a contradiction.
+
+**You may NEVER auto-apply an `expanding` fix** — one that would have the implementer build something the spec does not contain today (a new mechanism or component: retry, caching, audit trail, versioning, rate limiting, migration, feature flag, background job, new endpoint; a new config surface; a new error-handling regime; a new acceptance criterion implying new work; a new item; or reaching into an untouched seam). Leave the item text alone and leave the finding inline as a `REVIEW-FINDING` block carrying `scope-impact: expanding`. The orchestrator's Phase E gate asks the inspector, who decides. Applying it yourself takes a decision that is not yours.
+
+**Verify the label; do not trust it.** The reviewer classifies its own findings, so check each `clarifying` fix before applying: if writing it would introduce a noun the item does not already have — a component, policy, store, job, flag, endpoint, or lifecycle — it is `expanding` regardless of what the reviewer called it. Reclassify it in the block you write and skip the edit. Record the count as `reclassified-expanding: N` in `Findings / risks`. Same test in reverse is not allowed: never downgrade an `expanding` finding to `clarifying` so you can apply it.
+
+**Bound even clarifying fixes.** Rewrite the smallest span that resolves the finding; do not restructure the item, re-order its bullets, or "improve" text no finding mentions. If a clarifying fix cannot be made without a net addition of more than ~2 lines, treat it as `expanding` and defer it — that size is a reliable signal that mechanism is being added, not ambiguity removed.
 
 ### Apply step (in-memory per item)
 
@@ -115,6 +134,7 @@ Required layout — one field per line, kebab-case keys, multi-line scalars via 
 <!-- REVIEW-FINDING
 id: T1-1
 severity: high
+scope-impact: clarifying
 phase: item
 target: PAY-001
 finding: |
@@ -127,6 +147,7 @@ suggested-fix: |
 Field rules:
 - `id`: tmp-id (`<sub_agent_instance_id>-<n>`, e.g. `T1-1`) for newly-appended blocks; main rewrites tmp-ids to final `F-NNN` after your return. For existing blocks you UPDATE, keep the original id untouched.
 - `severity`: `blocker | critical | high | medium` — verbatim from the reviewer's response. Entries arriving as `low` (or any other value) were already dropped by the severity gate above and never reach this format.
+- `scope-impact`: `clarifying | expanding` — from the reviewer's `scope_impact`, corrected by your own verification (see the fix step). **Required on every block you write.** Missing or unrecognized → write `expanding`: an unclassified finding must never be auto-applied, and defaulting the other way is what lets scope leak in silently.
 - `phase`: always `item` for this sub-agent.
 - `target`: the item_id (e.g. `PAY-001`). For consistency-only blocks the value would be `file`, but Phase C blocks are always item-scoped.
 - `finding:` / `suggested-fix:` — keys are **kebab-case in the on-disk block** even though the reviewer's JSON contract uses snake_case (`suggested_fix`). The parser expects kebab-case. Use the YAML pipe (`|`) and put the text on the lines below; the parser strips per-line whitespace, so any leading indentation is fine.
@@ -142,7 +163,7 @@ Forbidden shapes (all parse to zero fields):
 Before composing the Payload JSON, for each item run this check on your `working_copy`:
 
 1. Count occurrences of the literal string `<!-- REVIEW-FINDING` in `working_copy`. This count MUST equal `len(remaining_findings)` for that item — every entry in your `remaining_findings` array must be backed by a real block in `working_copy`, and every block in `working_copy` must appear in `remaining_findings`.
-2. For each block, verify it has at minimum these field lines: `id:`, `severity:`, `phase:`, `target:`, `finding:`, `suggested-fix:`. Each on its own line. Keys kebab-case.
+2. For each block, verify it has at minimum these field lines: `id:`, `severity:`, `scope-impact:`, `phase:`, `target:`, `finding:`, `suggested-fix:`. Each on its own line. Keys kebab-case. A block missing `scope-impact:` is a contract violation — Phase E cannot gate what it cannot see, so the finding would either be lost or silently applied.
 3. If either check fails: rebuild the offending block(s) from the structured fields in `remaining_findings` using the canonical format and retry the check once. On second failure → exit with `Result: blocked` and a `reason: contract-mismatch` line in `Findings / risks`.
 
 The pre-exit self-check is the contract that lets main trust `new_region` verbatim — without it, Phase F loses findings silently.
@@ -185,6 +206,8 @@ Findings / risks:
 - reason: <success | stable | stable-medium | max-iter | blocked-detail>
 - rounds: <N>
 - dropped-low: <N>            (omit the line entirely when 0)
+- expanding-deferred: <N>     (findings left for the Phase E gate; omit when 0)
+- reclassified-expanding: <N> (reviewer said clarifying, you judged expanding; omit when 0)
 Main should read:
 - (none — main reads the Payload JSON above)
 ````

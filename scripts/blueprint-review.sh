@@ -6,15 +6,16 @@
 #   resolve-tool <agent>          # → MCP tool name for the agent argument
 #   enumerate <file> <items.json> # (added in Task 1.4)
 #   parse-findings <file>         # (added in Task 1.5)
+#   size-stat <file>              # (v1.6.10) "<body-lines> <items> <bytes>" growth snapshot
 #   alloc-final-id <file>         # (added in Task 1.5)
 #   diff-drift <req> <sum> <todo> <feature>  # (added in Task 5.2)
 #   build-reference-block <target> <manifest>  # (added in v1.6 — --reference-file)
-#   ledger init|mark|render|path <file> [...] # (added in v1.5.2 — phase-run enforcement)
+#   ledger init|mark|render|path|meta <file> [...] # (v1.5.2 phase-run enforcement; meta added v1.6.10)
 
 set -euo pipefail
 
 usage() {
-  sed -n '2,11p' "$0"
+  sed -n '2,13p' "$0"
 }
 
 cmd="${1:-}"
@@ -126,6 +127,29 @@ sys.exit(0 if not errors else 2)
 PYEOF
     ;;
 
+  size-stat)
+    # Deterministic size snapshot of a spec file, for the Phase A → Phase G
+    # growth report (v1.6.10). Prints one line: "<body-lines> <items> <bytes>".
+    # Body lines exclude YAML frontmatter and REVIEW-FINDING comment blocks, so
+    # the number tracks SPEC growth, not review-annotation churn — otherwise a
+    # run that only adds findings would look like scope creep, and one that
+    # resolves findings while adding mechanism would look like a shrink.
+    file="${1:-}"
+    [[ -n "$file" && -f "$file" ]] || { echo "usage: $0 size-stat <file>" >&2; exit 64; }
+    python3 - "$file" <<'PYEOF'
+import sys, re
+with open(sys.argv[1], encoding="utf-8", errors="replace") as f:
+    text = f.read()
+m = re.match(r'^---\n.*?\n---\n', text, re.DOTALL)
+body = text[m.end():] if m else text
+stripped = re.sub(r'<!--\s*REVIEW-FINDING\s*.*?-->\n?', '', body, flags=re.DOTALL)
+lines = [ln for ln in stripped.splitlines() if ln.strip()]
+# "Items" = top-level list bullets, the unit the reviewer enumerates.
+items = len(re.findall(r'(?m)^- ', stripped))
+print(f"{len(lines)} {items} {len(stripped.encode('utf-8'))}")
+PYEOF
+    ;;
+
   parse-findings)
     file="${1:-}"
     [[ -n "$file" && -f "$file" ]] || { echo "usage: $0 parse-findings <file>" >&2; exit 64; }
@@ -227,11 +251,13 @@ for sm in section_re.finditer(body):
     findings.append({
         "id": fid,
         "severity": field("severity") or "medium",
+        "scope_impact": field("scope-impact") or "clarifying",
         "phase": field("phase") or "item",
         "target": field("target") or "file",
         "last_status": field("last-status") or "still-present",
         "last_status_at": field("last-status-at") or "",
         "resolved_by_change": field("resolved_by_change") or "",
+        "deferred_reason": field("deferred-reason") or "",
         "finding": (field_multi("finding") or "").splitlines()[0] if field_multi("finding") else "",
     })
 
@@ -249,15 +275,22 @@ relevant_findings = [f for f in findings if relevant(f)]
 if not relevant_findings:
     sys.exit(0)
 
-unresolved = [f for f in relevant_findings if f["last_status"] != "resolved"]
+unresolved = [f for f in relevant_findings
+              if f["last_status"] not in ("resolved", "deferred")]
 resolved   = [f for f in relevant_findings if f["last_status"] == "resolved"]
+# v1.6.10: scope-expanding findings the inspector declined at the Phase E gate.
+# Surfacing them is the whole anti-regrowth mechanism — without this section the
+# next run re-discovers the same "you should also add X", the fixer applies it,
+# and the file grows again on every review.
+deferred   = [f for f in relevant_findings if f["last_status"] == "deferred"]
 
 unresolved.sort(key=lambda f: (SEVERITY_RANK.get(f["severity"], UNKNOWN_RANK), f["id"]))
 resolved.sort(key=lambda f: f["last_status_at"], reverse=True)
+deferred.sort(key=lambda f: f["last_status_at"], reverse=True)
 
 # Truncation invariant: protect every unresolved reportable severity
 # (blocker/critical/high/medium) + current-item-tied resolved
-def render(u, r):
+def render(u, r, d):
     out = ["## Prior review context (review-history.md)"]
     if u:
         out.append("")
@@ -270,13 +303,33 @@ def render(u, r):
         for f in r:
             rbc = f["resolved_by_change"] or "(no resolution note)"
             out.append(f"- {f['id']} [resolved {f['last_status_at'][:10]}, {f['target']}]: {rbc}")
+    if d:
+        out.append("")
+        out.append("DECLINED BY THE INSPECTOR — scope the human chose NOT to add. Do NOT "
+                   "re-raise these, in any wording, and do not propose an equivalent "
+                   "mechanism under a different name. They are decisions, not oversights:")
+        for f in d:
+            why = f["deferred_reason"] or "declined at the scope-expansion gate"
+            out.append(f"- {f['id']} [declined {f['last_status_at'][:10]}, {f['target']}]: "
+                       f"{f['finding']} — {why}")
     out.append("")
     return "\n".join(out)
 
-block = render(unresolved, resolved)
+DEFERRED_FLOOR = 5   # never truncate below this many declined findings
+deferred_dropped = 0
+
+block = render(unresolved, resolved, deferred)
 while len(block) > BUDGET_CHARS:
     if resolved:
         resolved.pop()  # drop oldest resolved first (sort is recency-desc, so [-1] is oldest)
+    elif len(deferred) > DEFERRED_FLOOR:
+        # Declined findings are protected ahead of legacy lows but are not
+        # unbounded — a long-lived blueprint accumulates them. Drop the OLDEST
+        # (recency-desc sort → [-1] is oldest) and keep the most recent floor,
+        # then tell the reviewer the list is partial so it stays conservative
+        # about proposing new mechanism.
+        deferred.pop()
+        deferred_dropped += 1
     elif any(f["severity"] in LEGACY_DROPPABLE for f in unresolved):
         # drop OLDEST legacy low-severity unresolved. The unresolved list is
         # sorted by (severity_rank, id_asc) — so lows live at the tail of the
@@ -288,9 +341,16 @@ while len(block) > BUDGET_CHARS:
                 unresolved.pop(i); break
     else:
         # accept overrun; never drop an unresolved blocker/critical/high/medium
-        # (protected per spec §6.2)
+        # (protected per spec §6.2), and never drop below the deferred floor
         break
-    block = render(unresolved, resolved)
+    block = render(unresolved, resolved, deferred)
+
+if deferred_dropped:
+    block = block.rstrip("\n") + (
+        f"\n- (+{deferred_dropped} older declined finding(s) omitted for budget — the "
+        f"inspector has declined scope-expanding proposals before; when in doubt, mark a "
+        f"finding `expanding` rather than assuming it is wanted.)\n"
+    )
 
 print(block)
 PYEOF
@@ -335,10 +395,17 @@ for item in inputs:
         # Append a fresh section
         finding_text = item.get("finding", "").strip()
         fix_text = item.get("suggested_fix", "").strip()
+        # scope-impact (v1.6.10): clarifying | expanding. Governs whether the
+        # fixer may auto-apply the suggested fix or must route it through the
+        # Phase E inspector gate. Defaults to clarifying only because that is
+        # the shape of every pre-v1.6.10 history entry; new findings always
+        # carry an explicit value.
+        scope_impact = item.get("scope_impact", "clarifying")
         section = f"""
 
 ## {new_id}
 - severity: {item.get("severity", "medium")}
+- scope-impact: {scope_impact}
 - phase: {item.get("phase", "item")}
 - target: {item.get("target", "file")}
 - first-seen: {item.get("first_seen", now_iso)} (cycle {item.get("cycle_slug", "")}, iter {item.get("iter", 1)})
@@ -361,9 +428,9 @@ for item in inputs:
             if candidate > int(allocated_last):
                 allocated_last = m2.group(1).zfill(3)
                 next_n = candidate + 1
-    elif status in ("resolved", "dropped"):
+    elif status in ("resolved", "dropped", "deferred"):
         fid = item["id"]
-        ts = item.get("resolved_at") or item.get("dropped_at") or now_iso
+        ts = item.get("resolved_at") or item.get("dropped_at") or item.get("deferred_at") or now_iso
         # Locate the section
         pat = re.compile(rf"(^## {re.escape(fid)}\s*\n)((?:(?!^## ).)*?)(?=^## |\Z)", re.MULTILINE | re.DOTALL)
         sm = pat.search(body)
@@ -378,6 +445,16 @@ for item in inputs:
             section_body = re.sub(r"(?m)^- last-status-at:.*$", f"- last-status-at: {ts}", section_body)
         else:
             section_body = re.sub(r"(?m)(^- last-status:.*$)", rf"\1\n- last-status-at: {ts}", section_body)
+        # deferred (v1.6.10): the inspector saw this scope-expanding finding at
+        # the Phase E gate and declined it. Record WHY so later runs can show
+        # the reviewer a real decision instead of silence — the whole point is
+        # that a declined mechanism is never re-proposed and re-applied.
+        if status == "deferred":
+            reason = item.get("deferred_reason", "inspector declined at the scope-expansion gate")
+            if re.search(r"(?m)^- deferred-reason:", section_body):
+                section_body = re.sub(r"(?m)^- deferred-reason:.*$", f'- deferred-reason: "{reason}"', section_body)
+            else:
+                section_body = re.sub(r"(?m)(^- last-status-at:.*$)", rf'\1\n- deferred-reason: "{reason}"', section_body)
         # resolved_by_change (only for resolved)
         if status == "resolved":
             rbc = item.get("resolved_by_change", "")
@@ -397,7 +474,10 @@ for fid in all_ids:
         st_m = re.search(r"(?m)^- last-status:\s*(\S+)", sm.group(1))
         statuses[fid] = st_m.group(1) if st_m else "still-present"
 total = len(all_ids)
-unresolved = sum(1 for s in statuses.values() if s != "resolved" and s != "dropped")
+# `deferred` is a terminal decision (the inspector declined the scope at the
+# Phase E gate), so it does not count as unresolved — otherwise every declined
+# mechanism would inflate the unresolved counter forever.
+unresolved = sum(1 for s in statuses.values() if s not in ("resolved", "dropped", "deferred"))
 
 # Rewrite frontmatter
 def set_field(fm, name, value):
@@ -675,11 +755,11 @@ PYEOF
     action="${1:-}"
     file="${2:-}"
     [[ -n "$action" && -n "$file" ]] || {
-      echo "usage: $0 ledger <init|mark|render|path> <file> [args...]" >&2
+      echo "usage: $0 ledger <init|mark|render|path|meta> <file> [args...]" >&2
       exit 64
     }
-    [[ "$action" =~ ^(init|mark|render|path)$ ]] || {
-      echo "error: ledger action must be init|mark|render|path" >&2
+    [[ "$action" =~ ^(init|mark|render|path|meta)$ ]] || {
+      echo "error: ledger action must be init|mark|render|path|meta" >&2
       exit 64
     }
     shift 2  # drop action + file; remaining args are action-specific
@@ -697,12 +777,13 @@ tmpdir = os.environ.get("TMPDIR", "/tmp").rstrip("/") or "/tmp"
 ledger_path = os.path.join(tmpdir, f"mi-br-ledger-{digest}.json")
 
 # Canonical phase order + labels. Order here IS the table row order.
-PHASE_ORDER = ["A", "B", "C", "D", "F", "G"]
+PHASE_ORDER = ["A", "B", "C", "D", "E", "F", "G"]
 PHASE_LABEL = {
     "A": "A — preflight",
     "B": "B — enumeration",
     "C": "C — per-item review",
     "D": "D — consistency",
+    "E": "E — scope-expansion gate",
     "F": "F — persist",
     "G": "G — report",
 }
@@ -716,6 +797,10 @@ def blank_ledger():
             p: {"status": "pending", "findings": None, "note": ""}
             for p in PHASE_ORDER
         },
+        # Free-form run metadata (v1.6.10). Used for the Phase A size baseline so
+        # Phase G can report growth — each Bash block is a fresh subshell, so a
+        # shell variable cannot carry the baseline across phases; the ledger can.
+        "meta": {},
     }
 
 
@@ -727,6 +812,7 @@ def load():
         return None
     # Repair any missing phase keys (forward-compat).
     data.setdefault("phases", {})
+    data.setdefault("meta", {})
     for p in PHASE_ORDER:
         data["phases"].setdefault(p, {"status": "pending", "findings": None, "note": ""})
     return data
@@ -775,6 +861,27 @@ if action == "init":
     print(f"info: phase ledger initialized at {ledger_path}", file=sys.stderr)
     sys.exit(0)
 
+if action == "meta":
+    # ledger meta <file> set <key> <value>   → store a run-scoped value
+    # ledger meta <file> get <key>           → print it (empty + exit 0 if unset)
+    if not rest:
+        print("usage: ... ledger meta <file> <set|get> <key> [value]", file=sys.stderr)
+        sys.exit(64)
+    op = rest[0].lower()
+    key = rest[1] if len(rest) > 1 else ""
+    if op not in ("set", "get") or not key:
+        print("usage: ... ledger meta <file> <set|get> <key> [value]", file=sys.stderr)
+        sys.exit(64)
+    data = load()
+    if data is None:
+        data = blank_ledger()
+    if op == "set":
+        data.setdefault("meta", {})[key] = " ".join(rest[2:])
+        save(data)
+        sys.exit(0)
+    print(data.get("meta", {}).get(key, ""))
+    sys.exit(0)
+
 if action == "mark":
     if not rest:
         print("usage: ... ledger mark <file> <phase> <status> [--findings N] [--note TEXT]", file=sys.stderr)
@@ -820,6 +927,8 @@ def findings_cell(phase, entry):
         return "—"
     if phase == "B":
         return f"{f} items"
+    if phase == "E":
+        return f"{f} expanding"
     if phase == "F":
         return f"{f} recorded"
     return str(f)
@@ -860,6 +969,20 @@ def evaluate():
             elif st == "skipped" and b_count == 0:
                 ok = True
                 ran_txt = "⏭️ skipped (0 items)"
+            else:
+                ok = False
+        elif p == "E":
+            # Scope-expansion gate (v1.6.10). Mandatory in the same sense as C:
+            # `skipped` is sanctioned ONLY when the run produced no
+            # scope-expanding findings to gate on (recorded as findings == 0).
+            # Skipping it with expanding findings present would silently apply
+            # (or silently discard) scope the inspector never approved.
+            e_findings = e.get("findings")
+            if st == "done":
+                ok = True
+            elif st == "skipped" and e_findings == 0:
+                ok = True
+                ran_txt = "⏭️ skipped (0 expanding)"
             else:
                 ok = False
         elif p == "F":

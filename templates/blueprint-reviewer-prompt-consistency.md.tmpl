@@ -92,6 +92,38 @@ suspected regression when the spec names a concrete path or symbol — cap at ~5
 per round and never survey the repo broadly. A speculative "this might break something"
 is not a finding.
 
+## Scope impact — classify EVERY finding (mandatory)
+
+This spec is a human's statement of what they want built. Your job is to make that
+statement unambiguous — **not** to design a more complete feature than the human asked
+for. Every finding therefore carries `scope_impact`:
+
+- `clarifying` — resolving it changes only how the EXISTING intent is stated: aligning
+  terminology already used, fixing a cross-reference, picking one of two readings the
+  text already contains, deleting a contradiction. Nothing new gets built as a result.
+- `expanding` — resolving it requires the implementer to build something not in the spec
+  today: a new mechanism or component (retry, caching, audit trail, versioning, rate
+  limiting, migration, feature flag, background job, new endpoint), a new configuration
+  surface, a new error-handling regime, a new acceptance criterion that implies new work,
+  a new item, or reaching into a seam the spec does not currently touch.
+
+**Prefer the smallest fix. Prefer deleting ambiguity over adding mechanism.** Consistency
+review is especially prone to this: when two items disagree, aligning them to the
+narrower reading is `clarifying`; inventing a shared mechanism that satisfies both is
+`expanding`. Reach for the first.
+
+An `expanding` finding is **legitimate and wanted** — a genuine gap only new mechanism can
+close is exactly what review is for. What is NOT wanted is silently designing it in.
+Report it, mark it `expanding`, describe the mechanism in one line in `suggested_fix`, and
+let the human decide. The fixer will NOT auto-apply it; it goes to an inspector approval
+gate. So:
+
+- Do not inflate an `expanding` finding's severity to force it through — severity and
+  scope impact are independent axes.
+- Do not split one mechanism across several `clarifying` findings to smuggle it in.
+- Do not re-raise a proposal the prior-review context lists as DECLINED BY THE INSPECTOR,
+  under any wording. That is a decision, not an oversight.
+
 ## Reconciliation contract
 
 `REVIEW-FINDING blocks in the content below are prior findings; honor this contract.`
@@ -111,6 +143,10 @@ For each prior `phase: consistency` finding, return one entry in `existing[]`:
 
 For new issues, append to `new[]`. Don't restate any prior finding as new.
 
+A prior finding carrying `scope-impact: expanding` is awaiting the inspector's decision,
+not the fixer's edit. Report it `still-present` (that is accurate — the spec is unchanged)
+and do NOT escalate its severity or restate it as new because it went unfixed.
+
 ## Output
 
 ONLY a JSON object, fenced as ```json ... ```, this exact shape. **All field names are snake_case. Match the names in the example below exactly — do not substitute kebab-case (e.g. write `suggested_fix`, not `suggested-fix`).**
@@ -118,10 +154,10 @@ ONLY a JSON object, fenced as ```json ... ```, this exact shape. **All field nam
 ```json
 {
   "existing": [
-    { "id": "F-NNN", "status": "...", "resolved_by_change": "...", "refined_finding": "...", "refined_suggested_fix": "..." }
+    { "id": "F-NNN", "status": "...", "resolved_by_change": "...", "refined_finding": "...", "refined_suggested_fix": "...", "refined_scope_impact": "clarifying|expanding" }
   ],
   "new": [
-    { "severity": "blocker|critical|high|medium", "phase": "consistency", "target": "file", "finding": "...", "suggested_fix": "..." }
+    { "severity": "blocker|critical|high|medium", "scope_impact": "clarifying|expanding", "phase": "consistency", "target": "file", "finding": "...", "suggested_fix": "..." }
   ]
 }
 ```

@@ -1,5 +1,69 @@
 # Changelog
 
+## 1.6.10 — Scope-expansion gate: blueprint review stops growing `requirements.md`
+
+Field report: blueprint reviews kept adding new mechanisms to the requirements without
+asking, so the file got bigger on every run.
+
+**Root cause — the fix step had no scope contract.** Both reviewer sub-agents documented
+exactly how to manipulate `<!-- REVIEW-FINDING -->` comment blocks, and both round-2+
+prompts opened with "I applied your suggested fixes", but nothing defined what *applying a
+fix* was allowed to change. Three things compounded it: `--auto-iter 5` gives up to five
+fix rounds per batch and per consistency pass; the reviewer's in-scope list ("missing
+acceptance criteria", "ambiguous edge cases") makes *adding* the cheapest way to resolve
+anything; and `review-history.md` had no "the human decided against this" state, so a
+mechanism the inspector implicitly rejected was rediscovered and re-applied on the next
+run.
+
+### What changed
+
+- **`scope_impact` on every finding** — `clarifying` (restates existing intent: wording, an
+  already-implied AC, the seam the item already points at, picking one of two readings the
+  text contains) or `expanding` (requires building something the spec lacks today: retry,
+  caching, audit trail, versioning, rate limiting, migration, feature flag, background job,
+  new endpoint, new config surface, new error regime, a new AC implying new work, a new
+  item, an untouched seam). Independent of severity. Both prompt templates now instruct:
+  prefer the smallest fix, prefer deleting ambiguity over adding mechanism — and an
+  `expanding` finding is *legitimate*, it just isn't the reviewer's decision to apply.
+- **The fixer applies `clarifying` fixes only.** `expanding` fixes are never auto-applied.
+  Both sub-agents verify the reviewer's self-label (a "clarifying" fix introducing a noun
+  the spec lacks — component, policy, store, job, flag, endpoint, lifecycle — is
+  reclassified and skipped), treat missing/unknown values as `expanding`, and bound even
+  clarifying fixes to the smallest span (a net addition beyond ~2 lines is itself the
+  signal that mechanism is being added).
+- **New Phase E — scope-expansion gate.** All expanding findings are shown once, as one
+  compact list, each a single line naming the mechanism it would add, alongside the run's
+  growth stat. The inspector answers `none` (default), `all`, an id list, or `keep <ids>`.
+  Only approved fixes are applied. Non-interactive runs apply nothing and record
+  `still-present` — silence is neither consent nor refusal. Ledger-enforced exactly like
+  Phase C: `skipped` is sanctioned only when marked `--findings 0`, so the gate cannot be
+  quietly bypassed. Both wrapper commands run it too (Mode B of `-item` excepted: stateless,
+  applies nothing).
+- **Declined proposals are remembered.** Phase F persists them as `last-status: deferred`
+  with a `deferred-reason`, and `build-summary` renders them into every future reviewer
+  session under "DECLINED BY THE INSPECTOR — do NOT re-raise". Without this the gate would
+  hold for exactly one run. `deferred` is terminal (doesn't inflate
+  `finding-count-unresolved`); the summary protects declined entries ahead of legacy lows,
+  keeps at least the 5 most recent, and says when older ones were dropped for budget.
+- **Deferred findings no longer burn iterations.** An item or file whose only remaining
+  findings are `expanding` is converged — the fixer cannot act on them by contract. The
+  consistency reviewer gains a `stable-deferred` exit; delta prompts name the deferred ids
+  and forbid re-raising them, escalating them, or proposing the same mechanism under
+  another name.
+- **Growth is now reported.** New `blueprint-review.sh size-stat` (body lines / items /
+  bytes, with frontmatter and finding blocks excluded) is captured as a Phase A baseline
+  via a new `ledger … meta` key/value store and reported in Phase G, so creeping expansion
+  is visible run over run even when each individual fix looked reasonable.
+
+### Tests
+
+Seven new cases in `tests/blueprint-review/run.sh`: declined findings render as
+do-NOT-re-raise and not as unresolved; `deferred` is terminal in the counters; `scope-impact`
+is persisted on new findings; `size-stat` strips frontmatter and finding blocks; Phase E
+cannot be skipped while expanding findings exist; `ledger meta` round-trips across
+invocations; and a wiring guard across templates, agents, and the orchestrator. 59 pass,
+0 fail.
+
 ## 1.6.8 — Blueprint-review severities, shipped-code regression checks, guided manual tests
 
 Three changes, one theme: make the quality gates say what actually matters and let the
