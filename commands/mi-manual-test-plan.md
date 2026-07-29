@@ -222,10 +222,12 @@ This is the last read-only step. Any refusal up to this point — invalid existi
 Only when `--force` was passed OR Step 1.5 set `freshness_forced_regen=true`, AND we're proceeding to render:
 
 ```bash
-$CLAUDE_PLUGIN_ROOT/scripts/progress.sh set manual-test-state=none manual-test-failure-policy=none manual-test-env-mode=interactive
+$CLAUDE_PLUGIN_ROOT/scripts/progress.sh set manual-test-state=none manual-test-failure-policy=none manual-test-env-mode=guided
 ```
 
-Resetting `manual-test-env-mode` back to the interactive baseline alongside `manual-test-state`/`manual-test-failure-policy` keeps a forced regeneration starting from a clean slate — Step 7 re-sets the mode explicitly when the inspector answers, so this reset only governs the deferred (`n`) path where no start answer overwrites it.
+Resetting `manual-test-env-mode` alongside `manual-test-state`/`manual-test-failure-policy` keeps a forced regeneration starting from a clean slate — without it, a prior run's `autonomous` would silently govern the next one. Step 7 re-sets the mode explicitly whenever the inspector answers `y` or `y-autonomous`, so this reset only governs the deferred (`n`) path, where it is the mode a later bare `/mi-manual-test-run` will use.
+
+**The reset baseline is `guided`, not `interactive` (v1.6.8).** It has to match what `y` selects: an inspector who regenerates a plan and defers, then types `/mi-manual-test-run` later, gets the same experience they would have gotten by answering `y` on the spot. `interactive` remains the reading of a *missing* `manual-test-env-mode` — that is a compatibility rule for cycles that predate the field, not a default anyone chose.
 
 This is the FIRST `progress.md` mutation in the regeneration branch. It runs AFTER all read-only gates above so any earlier refusal aborts cleanly without changing state. Skip this step entirely on non-`--force` invocations that didn't trigger the freshness regen. The prior `manual-test-results.md` is rotated alongside the plan in step 4; this step only touches `progress.md`.
 
@@ -268,7 +270,7 @@ The manual test plan is one of the most important artifacts in the entire workfl
 - **Edge + boundary cases** — empty inputs, oversized inputs, invalid formats, boundary values (0, 1, N, N+1), unicode/whitespace where strings are handled.
 - **Error and failure paths** — invalid requests, missing/expired auth where applicable, dependency-down behavior (a `config.md` service stopped), malformed payloads, constraint violations. Expected outcomes name the *specific* error surface (status code, error-code constant found by the Step 3 codebase scan, exact UI error state) — never just "an error is shown".
 - **State transitions & idempotency** — re-run/refresh/double-submit the same action, resume after interruption, run a scenario twice where the second run's expectation differs (or must not differ).
-- **Regression seams** — pre-existing behavior adjacent to the changed code (call sites of changed functions per the codebase scan). At least one scenario per seam verifying old behavior still holds.
+- **Regression seams** — pre-existing behavior adjacent to the changed code (call sites of changed functions per the codebase scan). At least one scenario per seam verifying old behavior still holds. **Start from the requirements' `**Shipped-code impact:**` bullets** (one per Goals item) and, when it exists, `implementation/grounding-report.md`'s `## Shipped-code regression risks` section — each named consumer/contract that "must keep holding" is a required scenario here, phrased as *the old behavior still works*, with the cheapest observable check the bullet named. An item whose shipped-code impact reads `none — additive only` needs no scenario in this cell; one that reads `unassessed` gets a scenario against its seam's obvious existing consumer plus a `## 4. Coverage notes` line saying the assessment was missing.
 - **Non-goals boundaries** — for each `requirements.md` Non-goal bordering the change, one scenario verifying the excluded behavior did NOT change.
 
 **Waivers instead of silent omission:** when a matrix cell genuinely has nothing testable (e.g. a pure-refactor file with no observable behavior), record it in `## 4. Coverage notes` — one line per waived cell with the reason. An unmentioned empty cell is a defect in the plan, not a judgment call.
@@ -289,28 +291,33 @@ Always asked (regardless of `--from-resume`):
 
 Prompt: `"Plan available at workflow-stream/<feature>/test/manual-test-plan.md. Perform the manual test now? Reply y, y-autonomous, or n.
 
-  y             — start with the local-environment-up phase; the runner hands you the plan's
-                  Prerequisites + run-commands and you bring the services up yourself, then reply
-                  `ready` (or `skip-env` if already running).
-
-  y-autonomous  — full hands-off run. The millwright brings the environment up itself (the plan's
+  y             — guided run. I bring the whole local environment up for you (the plan's
                   What-to-run commands from the worktree — services in the background, one-shot
-                  bootstrap in the foreground, verified up), then performs every scenario itself and
-                  records each `pass`/`fail`/`skip` verdict WITHOUT asking you to run anything. A
-                  scenario it can't verify autonomously (visual-only judgment, a physical device, or
-                  no available tool) is recorded `skip` with a reason — never a fabricated pass. If
-                  env bring-up fails it stops and hands control back to you.
+                  bootstrap in the foreground, verified up), then walk you through the plan one
+                  test case at a time: what it checks in one or two plain sentences, a concrete
+                  example, and exactly what to do. I wait for your `pass` / `fail <what you saw>` /
+                  `skip <why>` before moving to the next one, and I'll add anything you ask me to
+                  into test/manual-test-results.md as we go.
+
+  y-autonomous  — full hands-off run. The millwright brings the environment up itself, then
+                  performs every scenario itself and records each `pass`/`fail`/`skip` verdict
+                  WITHOUT asking you to run anything. A scenario it can't verify autonomously
+                  (visual-only judgment, a physical device, or no available tool) is recorded
+                  `skip` with a reason — never a fabricated pass. If env bring-up fails it stops
+                  and hands control back to you. When it finishes I'll offer you a guided re-run.
 
   n             — defer — you can resume later by typing /mi-manual-test-run, or proceed directly
                   to findings authoring."`
 
-`y-autonomous` automates the **whole** run — both the local-environment-up phase AND the per-scenario `pass`/`fail`/`skip` verdicts, which the millwright self-determines (there is no `pause` in autonomous mode). `y` automates neither: you run the services and give every verdict. In BOTH modes the end-of-run auto-seed prompt still asks you before writing any failures into `inspector-review.md`.
+Both `y` and `y-autonomous` bring the environment up for you; they differ in **who judges each scenario**. `y` (guided) keeps every verdict yours — the millwright explains and sets up, you look and decide, and there is a `pause` whenever you want to stop. `y-autonomous` self-determines the verdicts and runs straight through (no `pause`). In BOTH modes the end-of-run auto-seed prompt still asks you before writing any failures into `inspector-review.md`.
+
+If you'd rather start the services yourself, that is still available — type `/mi-manual-test-run --interactive-env` instead of answering `y`.
 
 - On `n`: print `"Deferred. Run /mi-manual-test-run when ready, or write findings into inspector-review.md and type /mi-continue to proceed without manual testing. The plan file stays available."` Stop. State stays `none`.
 - On `y`:
 
   ```bash
-  $CLAUDE_PLUGIN_ROOT/scripts/progress.sh set sub-flow=manual-testing manual-test-state=running manual-test-env-mode=interactive
+  $CLAUDE_PLUGIN_ROOT/scripts/progress.sh set sub-flow=manual-testing manual-test-state=running manual-test-env-mode=guided
   ```
 
   Then auto-fire `/mi-manual-test-run`.
@@ -324,6 +331,8 @@ Prompt: `"Plan available at workflow-stream/<feature>/test/manual-test-plan.md. 
   Then auto-fire `/mi-manual-test-run`.
 
 `manual-test-env-mode` is set **explicitly on both start paths** (not left to default) so a re-run in a feature cycle whose prior run chose the other mode always reflects the answer just given, never a stale value.
+
+**Why `y` is `guided` and not `interactive`.** The value `interactive` still exists and still means "the inspector brings the services up themselves"; it is simply no longer what `y` selects, because the common case — "run the app for me and then walk me through the tests" — is better served by `guided`. `interactive` stays reachable through `/mi-manual-test-run --interactive-env` and remains the backward-compatible meaning of a missing/null `manual-test-env-mode` on in-flight cycles.
 
 ## Notes
 

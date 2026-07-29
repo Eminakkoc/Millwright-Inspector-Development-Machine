@@ -1,32 +1,44 @@
 ---
-description: Execute the active feature's manual-test-plan.md scenario by scenario — inspector-driven verdicts in interactive mode, millwright-driven verdicts in autonomous mode. Single owner of manual-test auto-seeding into inspector-review.md.
-argument-hint: "[--autonomous-env | --interactive-env] | [--seed-only [--reclassify | --reopen-all | --as-new-findings [--force-new-regressions]]] | [--finalize-skipped]"
+description: Execute the active feature's manual-test-plan.md scenario by scenario — millwright-guided walkthrough with inspector verdicts (guided), inspector-driven verdicts (interactive), or millwright-driven verdicts (autonomous). Single owner of manual-test auto-seeding into inspector-review.md.
+argument-hint: "[--guided-env | --autonomous-env | --interactive-env] | [--rerun-guided] | [--seed-only [--reclassify | --reopen-all | --as-new-findings [--force-new-regressions]]] | [--finalize-skipped]"
 ---
 
 # mi-manual-test-run
 
 **Runtime bootstrap.** Every `$CLAUDE_PLUGIN_ROOT` reference in this command's Bash blocks assumes a resolved plugin root; Claude Code does not inject the env var into Bash subshells. If it is empty in your shell, apply the canonical resolver (`docs/millwright-inspector-project.md` §8.14; reference implementation: `mi-continue.md` Step 1a) before the first Bash block: (1) inherited env var when it points at a working install, (2) `$PWD` when it is this plugin's source repo, (3) the `installPath` from `~/.claude/plugins/installed_plugins.json` — then export it, persist it to the per-cwd tempfile, and prepend the recovery one-liner to every subsequent Bash block. Refuse with an environmental diagnostic if none resolve.
 
-Stage-5 sub-flow runner. Walks the active feature's `manual-test-plan.md` scenario by scenario. In **interactive** env-mode the inspector runs each scenario and replies `pass`, `fail <observation>`, `skip <reason>`, or `pause`; in **autonomous** env-mode the millwright performs each scenario itself and self-determines the `pass` / `fail <observation>` / `skip <reason>` verdict without asking the inspector to run anything (no `pause`; `skip` is a last-resort verdict reserved for a proven capability gap — see 3.3b — never a convenience exit). On loop completion, prompts the inspector to auto-seed failures as canonical `### IR-NNN` blocks in `inspector-review.md` via `review.sh upsert-manual-test-failure`. **This skill is the single owner of manual-test auto-seeding** — `/mi-continue`'s Inspector Handler is read-only against `inspector-review.md` for manual-test results.
+Stage-5 sub-flow runner. Walks the active feature's `manual-test-plan.md` scenario by scenario in one of three env-modes:
+
+| Env-mode | Who brings the environment up | Who judges each scenario |
+| --- | --- | --- |
+| `guided` (the `y` answer at the plan prompt) | the millwright | the **inspector**, walked through each scenario in plain language by the millwright |
+| `interactive` (`--interactive-env`) | the inspector | the inspector |
+| `autonomous` (`y-autonomous`) | the millwright | the millwright |
+
+In **guided** env-mode the millwright brings the whole local environment up itself, then presents each scenario as a short plain-language explanation (≤ 2 sentences) plus a concrete example and exactly what to do, and waits for the inspector's `pass`, `fail <observation>`, `skip <reason>`, or `pause`; the inspector can also ask for notes or extra checks to be recorded into `manual-test-results.md` mid-walk. In **interactive** env-mode the inspector runs the services and each scenario and replies with the same verdict vocabulary. In **autonomous** env-mode the millwright performs each scenario itself and self-determines the `pass` / `fail <observation>` / `skip <reason>` verdict without asking the inspector to run anything (no `pause`; `skip` is a last-resort verdict reserved for a proven capability gap — see 3.3b — never a convenience exit); when it finishes, it offers a **guided re-run** (Step 4.7.1) so the inspector can walk the same plan themselves.
+
+On loop completion, prompts the inspector to auto-seed failures as canonical `### IR-NNN` blocks in `inspector-review.md` via `review.sh upsert-manual-test-failure`. **This skill is the single owner of manual-test auto-seeding** — `/mi-continue`'s Inspector Handler is read-only against `inspector-review.md` for manual-test results.
 
 ## Invocation
 
 ```
 /mi-manual-test-run                                     # Branch A — normal first-run / paused-resume
+/mi-manual-test-run --guided-env                        # Branch A, forcing guided (millwright env-up, inspector verdicts)
 /mi-manual-test-run --autonomous-env                    # Branch A, forcing autonomous local-environment-up
 /mi-manual-test-run --interactive-env                   # Branch A, forcing interactive local-environment-up
+/mi-manual-test-run --rerun-guided                      # Branch D — re-run a finished run as a guided walkthrough
 /mi-manual-test-run --seed-only [<companion-flags>]     # Branch B — seed-only re-trigger / recovery
 /mi-manual-test-run --finalize-skipped                  # Branch C — bulk-skip remaining scenarios + finalize
 ```
 
-Mode flags are mutually exclusive: `--seed-only` and `--finalize-skipped` together refuse with `"--seed-only and --finalize-skipped are mutually exclusive"` and no mutation.
+Mode flags are mutually exclusive: any two of `--seed-only`, `--finalize-skipped`, `--rerun-guided` together refuse with `"--seed-only, --finalize-skipped, and --rerun-guided are mutually exclusive"` and no mutation.
 
-**Branch A env-mode flags** (`--autonomous-env` / `--interactive-env`): direct control over the local-environment-up phase (Step 2). They are only meaningful for Branch A — the sole branch that runs the env-up phase. Behavior:
+**Branch A env-mode flags** (`--guided-env` / `--autonomous-env` / `--interactive-env`): direct control over the local-environment-up phase (Step 2) and the per-scenario loop mode (Step 3). They are only meaningful for Branch A — the sole branch that runs the env-up phase. Behavior:
 
-- They persist the choice by writing `progress.sh set manual-test-env-mode=<autonomous|interactive>` **before** Step 2, so the mode is durable across a later pause/resume (which re-fires the runner without flags).
-- `--autonomous-env` and `--interactive-env` together refuse with `"--autonomous-env and --interactive-env are mutually exclusive"` and no mutation.
-- Either combined with `--seed-only` or `--finalize-skipped` refuses with `"env-mode flags apply only to a normal run (Branch A); they cannot combine with --seed-only/--finalize-skipped"` and no mutation.
-- When neither flag is passed, Branch A reads the persisted `manual-test-env-mode` (set earlier by `/mi-manual-test-plan` Step 7); a missing/null value means `interactive`.
+- They persist the choice by writing `progress.sh set manual-test-env-mode=<guided|autonomous|interactive>` **before** Step 2, so the mode is durable across a later pause/resume (which re-fires the runner without flags).
+- Any two of them together refuse with `"--guided-env, --autonomous-env, and --interactive-env are mutually exclusive"` and no mutation.
+- Any of them combined with `--seed-only`, `--finalize-skipped`, or `--rerun-guided` refuses with `"env-mode flags apply only to a normal run (Branch A); they cannot combine with --seed-only/--finalize-skipped/--rerun-guided"` and no mutation. (`--rerun-guided` already implies `guided`.)
+- When no env-mode flag is passed, Branch A reads the persisted `manual-test-env-mode` (set earlier by `/mi-manual-test-plan` Step 7). A missing/null value means `interactive` — the backward-compatible reading for cycles that predate the field — **except** on a fresh run (no results file), where the runner asks once rather than assuming; see Step 2's "Unset-mode disambiguation".
 
 **Branch B companion flags** (only meaningful with `--seed-only`):
 
@@ -41,22 +53,23 @@ Mode flags are mutually exclusive: `--seed-only` and `--finalize-skipped` togeth
 
 ## Dispatch order
 
-Parse flags first, then dispatch to one of three branches. The runner picks exactly one branch and never mixes their flows:
+Parse flags first, then dispatch to one of four branches. The runner picks exactly one branch and never mixes their flows:
 
 1. Parse flags from `$ARGUMENTS`.
-2. Validate env-mode flags: `--autonomous-env` and `--interactive-env` are mutually exclusive with each other, and neither may combine with `--seed-only` or `--finalize-skipped` (refuse with the diagnostics in the Invocation section; no mutation).
+2. Validate env-mode flags: `--guided-env`, `--autonomous-env`, and `--interactive-env` are mutually exclusive with each other, and none may combine with `--seed-only`, `--finalize-skipped`, or `--rerun-guided` (refuse with the diagnostics in the Invocation section; no mutation).
 3. If `--seed-only` is present → run **Branch B** (seed-only re-trigger / recovery).
 4. Else if `--finalize-skipped` is present → run **Branch C** (bulk-skip + finalize).
-5. Else → run **Branch A** (normal first-run / paused-resume). If `--autonomous-env` or `--interactive-env` was passed, Branch A applies it (see Branch A — env-mode resolution).
+5. Else if `--rerun-guided` is present → run **Branch D** (guided re-run of an already-finished run).
+6. Else → run **Branch A** (normal first-run / paused-resume). If an env-mode flag was passed, Branch A applies it (see Branch A — env-mode resolution).
 
 ## Common preconditions (all branches)
 
 - `progress.sh get-active` is non-null.
 - `progress.sh get current-stage == 5`. Refuse outside stage 5: `"Manual test belongs to stage 5 (inspector review). Current stage is <N>. Type /mi-resume-workflow to see the next-step recommendation, or wait until the workflow reaches stage 5."`
 
-## Resolve RUN_ROOT (Branches A and B only)
+## Resolve RUN_ROOT (Branches A, B, and D)
 
-Before any user-facing prompt or scenario render in Branches A and B:
+Before any user-facing prompt or scenario render in Branches A, B, and D (Branch D resolves it as a read-only precondition, before its rotation):
 
 ```bash
 RUN_ROOT="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get worktree-path)"
@@ -163,10 +176,10 @@ Always first, even on resume — env may have decayed since the pause.
 **Env-mode resolution.** Determine how the environment comes up:
 
 ```bash
-# Direct-invocation override: if --autonomous-env / --interactive-env was
-# passed, persist it FIRST so the choice survives a later pause/resume
-# (mi-continue re-fires this runner without flags).
-if [[ -n "$flag_env_mode" ]]; then           # "autonomous" | "interactive" | ""
+# Direct-invocation override: if --guided-env / --autonomous-env /
+# --interactive-env was passed, persist it FIRST so the choice survives a later
+# pause/resume (mi-continue re-fires this runner without flags).
+if [[ -n "$flag_env_mode" ]]; then           # "guided" | "autonomous" | "interactive" | ""
   $CLAUDE_PLUGIN_ROOT/scripts/progress.sh set manual-test-env-mode="$flag_env_mode"
 fi
 
@@ -174,7 +187,19 @@ env_mode="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get manual-test-env-mode 2>/
 [[ -n "$env_mode" && "$env_mode" != "null" ]] || env_mode="interactive"
 ```
 
-Then branch on `env_mode`. The two modes read the SAME plan sections (`## 1. Prerequisites`, `## 2. What to run`); they differ only in WHO runs the commands.
+**Unset-mode disambiguation (fresh runs only).** With three modes, a bare `/mi-manual-test-run` on a run that never recorded a choice is ambiguous — silently picking `interactive` would hand the inspector a list of commands when they may have wanted the guided walkthrough. So when **all** of these hold — no env-mode flag was passed, AND the persisted `manual-test-env-mode` is missing/null, AND this is a **fresh** run (no `manual-test-results.md`, i.e. not a resume) — ask once instead of assuming:
+
+```
+How should I run this? Reply guided, autonomous, or interactive.
+
+  guided       — I bring the environment up and walk you through each test case; your verdicts.
+  autonomous   — I bring the environment up, run every case myself, and record my own verdicts.
+  interactive  — you bring the services up and run every case yourself.
+```
+
+Persist the answer (`progress.sh set manual-test-env-mode=<answer>`) before continuing, so a later pause/resume recovers it. **Do NOT ask** when any of the three conditions fails: an env-mode flag is an explicit answer; a persisted value is an earlier explicit answer; and a resume (results file present) must not re-prompt — a pre-v1.6.8 cycle mid-run has no persisted value by construction, and its `interactive` default is the correct back-compatible reading. Auto-fire paths never reach this prompt: `/mi-manual-test-plan` Step 7 always persists the mode before firing the runner.
+
+Then branch on `env_mode`. All three modes read the SAME plan sections (`## 1. Prerequisites`, `## 2. What to run`); they differ only in WHO runs the commands. `guided` and `autonomous` share one bring-up procedure (2b) and diverge only afterwards, at the per-scenario loop.
 
 ##### 2a. Interactive mode (`env_mode == interactive`, the default)
 
@@ -182,9 +207,14 @@ Then branch on `env_mode`. The two modes read the SAME plan sections (`## 1. Pre
 - Render the prerequisite checklist + run-commands as a single message to the inspector in chat. Per the plan template, each command is already in self-contained shape (absolute path inlined OR an `export RUN_ROOT="..."` preamble at the top of the section followed by `cd "$RUN_ROOT" && ...` commands). The runner echoes the section verbatim — it does NOT post-process or re-substitute `$RUN_ROOT`.
 - Wait for the inspector to confirm `ready` (or `skip-env` if they're already running).
 
-##### 2b. Autonomous mode (`env_mode == autonomous`)
+##### 2b. Millwright-driven bring-up (`env_mode == autonomous` OR `env_mode == guided`)
 
-The millwright brings the environment up **itself** — the inspector is NOT asked to run any command. In autonomous mode the per-scenario loop (Step 3) is **also** run by the millwright: after env-up it performs each scenario itself and self-determines the `pass`/`fail`/`skip` verdict, without asking the inspector to run anything. (Interactive mode automates neither — the inspector runs the services AND gives every verdict.)
+The millwright brings the environment up **itself** — the inspector is NOT asked to run any command. This bring-up procedure is identical for both modes; only what happens afterwards differs:
+
+- `autonomous` — the per-scenario loop (Step 3) is **also** run by the millwright: it performs each scenario itself and self-determines the `pass`/`fail`/`skip` verdict.
+- `guided` — the per-scenario loop is a **walkthrough**: the millwright explains each scenario in plain language and tells the inspector what to do, and the **inspector** gives every verdict (Step 3.2c / 3.3c).
+
+(Interactive mode automates neither — the inspector runs the services AND gives every verdict.)
 
 1. Read `## 1. Prerequisites` and `## 2. What to run` from the plan. All commands run from the resolved `RUN_ROOT` (the plan already inlines it; do NOT re-substitute).
 2. Announce in chat: `"Bringing the test environment up autonomously from <RUN_ROOT>."` followed by the list of commands about to run, so the inspector can see (and interrupt) what the millwright is doing.
@@ -194,8 +224,10 @@ The millwright brings the environment up **itself** — the inspector is NOT ask
    - **One-shot bootstrap** — a command that runs to completion (installs, builds, DB migrations, seed-data loaders, `docker compose up -d`, `docker compose … --wait`). Run it in the **foreground** and check the exit code; a non-zero exit is a hard failure (step 6).
    - **Ambiguous** — if the millwright cannot confidently classify a command, treat it as a failure (step 6) rather than guessing; the inspector runs it.
 5. **Wait for readiness** before proceeding: after launching background services, poll the health/URL/port the plan names (or watch the captured log for the service's ready line) with a bounded retry (roughly up to ~60s per service). Never advance to Step 3 against a service that is not yet up.
-6. **On any bring-up failure** — a one-shot non-zero exit, a service that never becomes ready within the bound, or an unclassifiable command — STOP the autonomous bring-up. Do NOT fall through to the scenario loop. Report exactly what failed (the command, and the tail of its captured stdout/stderr or background-task output), then hand control back to the inspector: `"Autonomous environment bring-up failed at <cmd>: <reason>. Fix it and re-run /mi-manual-test-run (add --interactive-env to bring the environment up yourself), or reply here to continue manually."` Leave `manual-test-state=running` so the run is resumable.
-7. **On success**, echo a concise one-line-per-service summary (service → background task id / URL, one-shots → `done`), then proceed directly to Step 3 — no `ready`/`skip-env` wait. In autonomous mode the millwright then drives the per-scenario loop itself (Step 3, autonomous branch).
+6. **On any bring-up failure** — a one-shot non-zero exit, a service that never becomes ready within the bound, or an unclassifiable command — STOP the bring-up. Do NOT fall through to the scenario loop. Report exactly what failed (the command, and the tail of its captured stdout/stderr or background-task output), then hand control back to the inspector: `"Environment bring-up failed at <cmd>: <reason>. Fix it and re-run /mi-manual-test-run (add --interactive-env to bring the environment up yourself), or reply here to continue manually."` Leave `manual-test-state=running` so the run is resumable.
+7. **On success**, echo a concise one-line-per-service summary (service → background task id / URL, one-shots → `done`), then proceed directly to Step 3 — no `ready`/`skip-env` wait. Then:
+   - `autonomous` — the millwright drives the per-scenario loop itself (Step 3, autonomous branch).
+   - `guided` — announce that the environment is up and the walkthrough is starting, naming the entry point the inspector will be using (the app URL / CLI command the plan's scenarios exercise): `"Environment is up — <URL or entry point>. I'll walk you through <N> test cases one at a time. Reply `pass`, `fail <what you saw>`, `skip <why>`, or `pause` after each one."` Then start the walkthrough (Step 3, guided branch).
 
 Background services the millwright starts here are its responsibility for the life of the run; their background task ids are surfaced (step 7 summary, and again in the pause/finalize messages) so the inspector can stop them when the run ends. The millwright does NOT tear them down automatically — the inspector may keep exercising the environment while authoring findings.
 
@@ -211,7 +243,7 @@ Set `current-scenario: <THIS_ID>` in the results-file frontmatter BEFORE present
 
 ##### 3.2 Present or perform the scenario (mode-branched)
 
-Both modes read the scenario fresh from the plan each iteration (per Context discipline). They differ in WHO exercises it.
+All modes read the scenario fresh from the plan each iteration (per Context discipline). They differ in WHO exercises it and how it is presented.
 
 ###### 3.2a Interactive (`env_mode == interactive`, the default)
 
@@ -240,9 +272,44 @@ The millwright performs the scenario **itself** against the environment it broug
 3. **Execute the `Action` steps** using the tools available, driving from `RUN_ROOT`: shell commands, HTTP requests against the services started in Step 2 (the health/URL/route the plan names), log/DB/file inspection, project scripts, and any browser-automation tool the millwright actually has. Never simulate a step it did not run.
 4. **Execute every scenario — attempt before judging.** The plan's scenario list is a contract: an autonomous run's default is a verdict grounded in actual execution for **100% of scenarios**. Do NOT pre-judge a scenario as un-runnable from its text, its similarity to a previous scenario, or its expected effort — attempt its `Action` steps with real tools first. A `skip` verdict is only reachable AFTER an attempt has demonstrated a genuine capability gap (3.3b defines the bar).
 
+###### 3.2c Guided (`env_mode == guided`)
+
+The environment is already up (the millwright started it in Step 2b). The **inspector** performs the scenario; the millwright's job is to make that as easy as possible. Present exactly one scenario, in this shape:
+
+```
+⏺ <SCENARIO_ID> — <one-line title>   (<i> of <N>)
+
+What this checks: <≤ 2 sentences, plain language — no jargon, no internal symbol
+names unless the inspector has to type them. Say what behavior is being verified and
+why it matters, not how the code works.>
+
+For example: <one concrete instance — a specific input and the specific thing that
+should happen. Use real values the inspector can actually type/click, taken from the
+plan's Action steps.>
+
+What to do:
+1. <numbered, copy-paste concrete steps from the plan's Action — with the resolved
+   URL / command / input values filled in, not placeholders>
+2. …
+
+What you should see: <the plan's Expected bullets, restated as observable outcomes
+in plain language — one line each.>
+
+Reply `pass`, `fail <what you saw>`, `skip <why>`, or `pause`.
+```
+
+Bars for this presentation:
+
+- **Brevity is the point.** "What this checks" is at most 2 sentences. If a scenario genuinely needs more, that is a signal to say less, not more — the detail belongs in the plan file, which the inspector can open.
+- **Plain language.** Explain it the way you'd explain it to someone who has not read the code. Define any term you can't avoid.
+- **Always give the example.** One concrete instance beats a general description; it is what makes an abstract expectation checkable.
+- **Resolve every placeholder.** URLs, ports, paths, and sample payloads are filled in from the running environment and `RUN_ROOT` — the inspector should never have to substitute a variable.
+- **One scenario per turn, then stop and wait.** Never present two scenarios in one message, and never guess a verdict — the whole point of guided mode is that the inspector looks and decides.
+- **Answer questions in place.** If the inspector asks something about the current scenario ("where do I click?", "what's the difference from the last one?"), answer it, stay on the same scenario, and wait again. A question is not a verdict.
+
 ##### 3.3 Obtain the verdict (mode-branched)
 
-Same verdict vocabulary in both modes; only the source differs. The commit path (3.4) is shared.
+Same verdict vocabulary in all three modes; only the source differs. The commit path (3.4) is shared.
 
 ###### 3.3a Interactive
 
@@ -258,21 +325,38 @@ The millwright determines the verdict itself by comparing what it observed in 3.
 
 There is **no `pause` verdict** in autonomous mode — the millwright runs the loop straight through to Step 4. (The inspector can still interrupt the session at any point; the `current-scenario` cursor persisted in 3.1 makes an interruption resumable exactly as a `pause` would be, and Step 2's idempotent readiness pre-check relaunches only the services that stopped.)
 
+###### 3.3c Guided
+
+**The verdict is the inspector's, always.** Wait for their reply, one of `pass`, `fail <observation>`, `skip <reason>`, `pause` — exactly the interactive vocabulary. The millwright brought the environment up and explained the scenario; it does NOT self-determine the outcome, and it does not "help" by pre-filling a verdict it expects. If the reply is a question or a comment rather than a verdict, answer it and wait again (3.2c).
+
+Two guided-only behaviors on top of the interactive contract:
+
+1. **Confirmation before advancing is mandatory.** Never move to the next scenario without a verdict for the current one. A bare `next`/`ok` with no verdict word is ambiguous — ask which verdict they mean rather than assuming `pass`.
+2. **Inspector-requested additions to the results file.** During the walkthrough the inspector may ask for something to be recorded — an extra observation, a note, a check they ran that the plan didn't list, or a whole extra case they want captured. Honor it immediately and write it into `manual-test-results.md`:
+   - **A note or observation about the current scenario** → fold it into that scenario's `Observation:` bullet at commit time (3.4). This is the common case, and it keeps one canonical block per scenario id.
+   - **An extra check the inspector wants recorded as its own item** → append a block under `## Inspector-added checks` (create the section at the end of the body if absent) in the same shape as a verdict block, with the id `INS-<n>` (`n` starting at 1, per results file) and the same `Verdict` / `Observation` / `Recorded at` bullets. These are **not** plan scenarios: they never enter `total`, never enter the `passed`/`failed`/`skipped` counts, never advance the cursor, and never seed IRs — the frontmatter counters describe the plan, and a plan-shaped counter that counted ad-hoc checks would break every ownership comparison in Branches A/B/C.
+   - **A gap in the plan itself** ("this case should have been in here") → record it as an `INS-<n>` block and say plainly that the plan file is not edited mid-run; the durable fix is `/mi-manual-test-plan --force` after this run, or a finding in `inspector-review.md`.
+
+   Echo one line per addition (`recorded: <one-line summary>`), then return to the scenario you were on. An addition is never a verdict — after recording it, still wait for the verdict.
+
 ##### 3.4 On `pass` / `fail` / `skip`
 
 - Upsert the verdict block for `<THIS_ID>` in `manual-test-results.md` body (one canonical block per scenario id). Do not append a second block if one already exists; replace that scenario's block.
 - Recompute `passed`/`failed`/`skipped` counts from the full set of verdict blocks. Then set `current-scenario` to the **next** uncommitted scenario id (or `null` if this was the last) — only AFTER the verdict block is committed, so the just-finished scenario is durable before the cursor advances.
 - Write body + frontmatter via temp file + atomic rename where the platform supports it. Scenario verdict commit unit: parse existing verdict blocks into `map[scenario_id]`, replace `map[<THIS_ID>]`, render blocks in plan order, recompute counts, update cursor, write temp, rename.
+- **Parsing scope (load-bearing).** Verdict-block parsing — here, in Branch C's cursor-integrity check, and anywhere else the body is read — is scoped to the `## Per-scenario verdicts` section: start at that heading, stop at the next `## ` heading or EOF, and treat `### <id> — ` blocks inside that window as verdicts. Blocks outside it (notably `## Inspector-added checks`'s `### INS-<n>` blocks from guided mode) are NOT verdicts: they never enter `map[scenario_id]`, the counters, the cursor, or the auto-seed loop. An unscoped whole-body scan would swallow them and corrupt the counts.
 - **Duplicate-verdict-block recovery.** When parsing existing verdict blocks into `map[scenario_id]`, if two or more blocks share the same scenario id (corruption from a prior crash window or hand-edit), keep the latest block (the one that appears later in the file) as canonical, drop the earlier duplicate(s), emit a one-line `^warning:` to stderr naming the scenario id and the count of duplicates dropped. Then proceed with the upsert as normal. Refusal-and-prompt is NOT acceptable — silent self-healing matches the rest of the file's idempotency story.
 - Echo to chat as a single line: `<ID> ✅ <one-line outcome>` or `<ID> ❌ <one-line observation>` or `<ID> ⊘ skipped: <reason>`. Do NOT re-render the full scenario block in the echo.
+- **Guided mode only:** anything the inspector asked to record for this scenario (3.3c item 2) is folded into the `Observation:` bullet in the same commit — one write, not two. `INS-<n>` blocks under `## Inspector-added checks` are written the same way (parse → upsert by id → render → atomic rename) but do NOT touch `total` / `passed` / `failed` / `skipped` or the cursor.
 - Continue to the next scenario.
 
-##### 3.5 On `pause` (interactive mode only)
+##### 3.5 On `pause` (interactive and guided modes)
 
-Reached only in interactive mode — `pause` is not a verdict the autonomous loop produces. An autonomous run instead runs straight through; if the inspector interrupts it, the persisted `current-scenario` cursor (3.1) makes it resumable, and `/mi-continue`'s Manual-Test-Resume Handler re-probes and relaunches any stopped millwright-started services (see 3.3b).
+Reached in interactive and guided mode — `pause` is not a verdict the autonomous loop produces. An autonomous run instead runs straight through; if the inspector interrupts it, the persisted `current-scenario` cursor (3.1) makes it resumable, and `/mi-continue`'s Manual-Test-Resume Handler re-probes and relaunches any stopped millwright-started services (see 3.3b).
 
 - Frontmatter is already set to `current-scenario: <THIS_ID>` from step 3.1. Do not advance it. Leave **results-file** `state: in-progress`. (The two state fields are deliberately separate: `progress.md` `manual-test-state: running` is the workflow-level marker for dispatcher routing; `manual-test-results.md` `state: in-progress` is the file-level marker for the resume guard.)
 - Print: `"Paused at scenario <THIS_ID>. Type /mi-continue (will resume the run by re-showing this scenario) or /mi-manual-test-run directly. To bulk-skip remaining scenarios and end the run, type /mi-manual-test-run --finalize-skipped."`
+- **Guided mode only:** append the list of millwright-started background services (with their task ids) and note that they are left running so the environment survives the pause — resume re-probes and relaunches only what stopped.
 - Stop.
 
 #### Step 4 — Loop completion (auto-seed + finalize)
@@ -406,6 +490,31 @@ $CLAUDE_PLUGIN_ROOT/scripts/progress.sh set sub-flow=none manual-test-state=comp
 
 A session break before this leaves `sub-flow=manual-testing` (re-enters cleanly via `/mi-continue`'s Manual-Test-Resume Handler).
 
+"LAST mutation" scopes to **this run**. The guided re-run offer below fires after finalization and, if accepted, starts a new run through Branch D — which re-opens the markers deliberately and with its own preconditions. It is a fresh run, not a continuation of this one.
+
+##### 4.7.1 Guided re-run offer (autonomous env-mode only)
+
+A hands-off run is a machine's opinion of the feature. The inspector may still want to see it with their own eyes — so after an autonomous run finalizes, **always offer the guided walkthrough**:
+
+```
+Autonomous run finished: <passed>/<total> passed, <failed> failed, <skipped> skipped.
+Want to walk through the same plan yourself now? I'll bring the environment back up
+(or reuse what's already running), explain each test case in plain language, and
+record YOUR verdicts. Reply y or n.
+
+  y  — guided re-run. The autonomous verdicts are rotated into
+       test/manual-test-results.history/<timestamp>/ and kept; this run starts a
+       fresh results file against the same plan. Failures you record upsert into the
+       same seeded IR family, so nothing is double-seeded.
+  n  — done. Review inspector-review.md and type /mi-continue.
+```
+
+- Fires **only** when `env_mode == autonomous`, and only on a clean finalization (Step 4.7 actually ran). Never fires for guided or interactive runs — those verdicts are already the inspector's.
+- Fires regardless of the auto-seed answer, and regardless of pass/fail counts: a clean autonomous pass is exactly the case an inspector most often wants to double-check.
+- On `y` → invoke `/mi-manual-test-run --rerun-guided` (Branch D) and stop driving; Branch D owns the rest, including its own Step 4 and hand-off message. Do NOT print 4.8 as well.
+- On `n` → continue to 4.8 unchanged.
+- Ask **once** per autonomous run. If the inspector declines and later changes their mind, `/mi-manual-test-run --rerun-guided` is directly invocable — say so in the 4.8 hand-off for autonomous runs.
+
 ##### 4.8 Hand-off message
 
 ```
@@ -415,7 +524,9 @@ text, and type /mi-continue when done. The free-form findings will be canonicali
 canonicalize pass on the next /mi-continue.
 ```
 
-**Autonomous env-mode only:** append a line listing the millwright-started background services (with their task ids) and note they are still running so the inspector can stop them once done exercising the environment (the runner does not tear them down automatically).
+**Guided and autonomous env-modes:** append a line listing the millwright-started background services (with their task ids) and note they are still running so the inspector can stop them once done exercising the environment (the runner does not tear them down automatically).
+
+**Autonomous env-mode only:** when the inspector declined the 4.7.1 guided re-run offer, append: `"Changed your mind? /mi-manual-test-run --rerun-guided walks you through the same plan with your own verdicts."`
 
 ## Branch B — `--seed-only` invocation
 
@@ -468,6 +579,8 @@ $CLAUDE_PLUGIN_ROOT/scripts/progress.sh set sub-flow=none manual-test-state=comp
 
 After finalization, the next `/mi-continue` lands in the Inspector Handler.
 
+Branch B does **not** fire the Step 4.7.1 guided re-run offer, even when the run it is recovering was autonomous — it is a seeding-recovery path, not the end of a run, and re-prompting there would compete with its own auto-seed prompt. Mention `/mi-manual-test-run --rerun-guided` in Branch B's closing message when `manual-test-env-mode == autonomous`, so the option is still visible.
+
 ## Branch C — `--finalize-skipped` invocation
 
 Rare-path bulk-skip-and-finalize escape hatch. Branch C is **not** part of Branch A's flow: it does not run the local-environment-up phase, does not render the current scenario, and does not prompt the inspector for a verdict on any scenario. It writes skip verdicts for every uncommitted scenario, then converges directly into the auto-seed/finalization logic in Branch A step 4.
@@ -491,7 +604,7 @@ On any of the run-state preconditions failing:
 
 ### Branch C — pre-bulk-skip cursor-integrity check
 
-Before writing any skip verdicts, parse verdict blocks per `docs/manual-testing/plan.md` § 4.2.1 (block boundary `^### <SCENARIO_ID> — ` to next `^### `/`^## `/EOF; bullet keys exact-match), apply duplicate self-healing (keep latest, warn on stderr), and validate that every scenario id ordered before `current-scenario` in the plan has exactly one **valid parsed verdict block**. Heading-only is not enough — missing `Verdict:`, invalid verdict value, or any other parser-refusal counts as missing/corrupt.
+Before writing any skip verdicts, parse verdict blocks (scoped to `## Per-scenario verdicts` per step 3.4's parsing-scope rule; block boundary `^### <SCENARIO_ID> — ` to next `^### `/`^## `/EOF; bullet keys exact-match), apply duplicate self-healing (keep latest, warn on stderr), and validate that every scenario id ordered before `current-scenario` in the plan has exactly one **valid parsed verdict block**. Heading-only is not enough — missing `Verdict:`, invalid verdict value, or any other parser-refusal counts as missing/corrupt.
 
 If any scenario before the cursor lacks a valid verdict, refuse:
 
@@ -505,11 +618,65 @@ No mutation. This makes `--finalize-skipped` an honest finalization escape hatch
 
 ### Branch C — flow
 
-1. **Parse and self-heal verdict blocks** (§ 4.2.1), then run the cursor-integrity check above. Refuse on any failure.
+1. **Parse and self-heal verdict blocks** (scoped per step 3.4's parsing-scope rule), then run the cursor-integrity check above. Refuse on any failure.
 2. **Write bulk-skip verdicts.** For every scenario id from `current-scenario` onward (in plan order), upsert a verdict block with `Verdict: skip`, `Observation: bulk-skipped`, a `Recorded at` timestamp, and `Seeded: false`. **Pre-existing verdicts at or after `current-scenario` are left as-is** (Branch C never overwrites a real verdict; it only writes for scenarios that lack one). Recompute counts from the body. Set frontmatter `current-scenario: null`.
 3. **Converge into Branch A step 4 (loop completion).** From here, the auto-seed prompt fires for any failed scenarios (bulk-skipped scenarios are NOT failures and do not enter the auto-seed loop), the helper writes seeded IRs per the family-inspection rules, and the LAST mutation is `progress.sh set sub-flow=none manual-test-state=complete`. **Terminal state is `manual-test-state=complete`, NOT `skipped`** — the run reached its terminal state, just with a higher skipped count.
 
-Branch C does NOT run the local-environment-up phase, the per-scenario present/perform loop (interactive render-and-wait or autonomous execute-and-judge), or the pre-render verdict-already-committed check from Branch A step 3.1.
+Branch C does NOT run the local-environment-up phase, the per-scenario present/perform loop (interactive render-and-wait, guided walkthrough, or autonomous execute-and-judge), or the pre-render verdict-already-committed check from Branch A step 3.1.
+
+## Branch D — `--rerun-guided` invocation
+
+Re-runs an **already-finished** manual test as a guided walkthrough, against the same plan. Its reason to exist: a `y-autonomous` run produces the millwright's verdicts, and the inspector may still want to see the feature with their own eyes. Fired from the Step 4.7.1 offer at the end of an autonomous run, or typed directly at any point afterwards while the cycle is still at stage 5.
+
+Branch D is a **thin front-end onto Branch A**: it validates, rotates the finished results file into history, flips the markers back to a running guided run, and then converges into Branch A's flow. Everything after the reset — results-file render, env-up, the per-scenario loop, auto-seed, finalization — is Branch A's, unmodified.
+
+### Branch D — preconditions
+
+All read-only. Any failure refuses with the diagnostic and leaves `progress.md` byte-identical and the filesystem untouched.
+
+- Common preconditions (including `current-stage == 5`).
+- `workflow-stream/<feature>/test/manual-test-plan.md` exists. Refuse: `"No manual-test plan for <feature>; nothing to re-run. Generate one with /mi-manual-test-plan."`
+- `workflow-stream/<feature>/test/manual-test-results.md` exists. Refuse: `"No finished manual-test run for <feature> to re-run. Start one with /mi-manual-test-run."`
+- **Same corruption + active-plan ownership validation as Branch A** — YAML parses, required keys present, `state` in `[in-progress, complete]`, and `results.feature` / `results.plan-id` / `results.seed-family-id` all match the active feature and current plan. Same diagnostic shape.
+- Results frontmatter `state: complete`. On `in-progress`, refuse: `"That run isn't finished — resume it with /mi-manual-test-run, or end it with /mi-manual-test-run --finalize-skipped. --rerun-guided re-runs a completed run."`
+- `sub-flow == none`. On `manual-testing`, refuse: `"A manual-test run is still open (sub-flow=manual-testing). Type /mi-continue to finish it, then re-run with --rerun-guided."`
+- `manual-test-state == complete`, OR the recoverable stale-progress shape Branch B also accepts (`none` AND `sub-flow == none` AND results `state: complete`). Refuse on `running` (`"a run is in flight — /mi-continue resumes it"`) and on `skipped` (`"the manual-test phase was declined for this cycle; /mi-manual-test-plan --force starts one"`).
+- `RUN_ROOT` resolves, and the plan's `generated-against-run-root` matches it — the **same worktree-drift guard as Branches A and B** (Branch D executes scenarios, so a drifted plan is as wrong here as on a first run).
+
+Env-mode flags do not combine with `--rerun-guided` (it already implies `guided`); `--seed-only` and `--finalize-skipped` do not either. See the Dispatch order.
+
+### Branch D — flow
+
+1. **Run every precondition above.** Nothing is mutated until all of them pass.
+2. **Rotate the finished results file into history** — filesystem mutation, before any `progress.md` write:
+
+   ```bash
+   $CLAUDE_PLUGIN_ROOT/scripts/blueprints.sh manual-test-results-rotate-only "$active_feature"
+   ```
+
+   The prior run's verdicts are preserved at `test/manual-test-results.history/<UTC-timestamp>/manual-test-results.md` — a guided re-run never destroys the autonomous record it is second-guessing. `manual-test-plan.md` is **not** rotated: the whole point is to re-run the *same* plan, so its `id`, `seed-family-id`, and `generated-in-activation` all survive.
+
+   If the rotation fails, stop with its diagnostic and do NOT touch `progress.md`.
+3. **Reset the markers for a fresh guided run:**
+
+   ```bash
+   $CLAUDE_PLUGIN_ROOT/scripts/progress.sh set sub-flow=manual-testing manual-test-state=running \
+     manual-test-env-mode=guided manual-test-failure-policy=none
+   ```
+
+   `manual-test-failure-policy=none` is deliberate: the re-run gets its own auto-seed prompt rather than silently inheriting the previous run's answer.
+4. **Converge into Branch A's flow, starting at Branch A Step 1.** The state Branch A now sees is exactly a fresh run: results file absent (just rotated), `(sub-flow, manual-test-state) == (manual-testing, running)` so its normalization is a no-op, and `env_mode == guided` so Step 2 uses the millwright-driven bring-up and Step 3 the guided walkthrough. Branch A Step 0's cross-activation auto-rotation is a no-op (no results file to rotate).
+
+   Step 2's idempotent readiness pre-check matters here: the services the autonomous run started are usually still up, so the re-run reuses them instead of failing on port-in-use.
+5. **Auto-seeding is idempotent across the two runs**, because the plan's `seed-family-id` is unchanged: a scenario that failed in both runs upserts the same base IR (its observation updated to the inspector's own words) rather than creating a duplicate.
+
+### Branch D — what a re-run does NOT do
+
+- **It does not close or reopen IRs on its own.** A scenario the autonomous run failed and the inspector now passes leaves the seeded IR exactly as it was — the runner only ever seeds failures. Closing it is the inspector's call in `inspector-review.md`, which is the right place for that judgment. Say this plainly in the hand-off when the re-run's pass set differs from the rotated run's.
+- **It does not edit the plan.** Gaps the inspector notices during the walkthrough are recorded as `INS-<n>` blocks (3.3c) and/or findings; regenerating the plan is `/mi-manual-test-plan --force`.
+- **It does not stack.** Each `--rerun-guided` rotates the current results and starts one new run; there is no accumulation of parallel result sets, only the history folder.
+
+Branch D can be invoked repeatedly (each invocation rotates the then-current results file), and it is not restricted to following an autonomous run — a guided re-run of an interactive or guided run is legal, just rarely useful.
 
 ## Auto-seed ownership recap
 
@@ -521,6 +688,7 @@ The deterministic **seed-id** (`manual-test:<seed-family-id>:<scenario-id>`) wri
 
 - Each scenario's full prompt is **rendered fresh from the plan file** every iteration, not held in conversation as a growing block.
 - The chat echo per scenario is one line.
-- Detailed verdicts (multi-line observations — inspector-typed in interactive mode, millwright-generated in autonomous mode) go to `manual-test-results.md` body, not to chat history. When an observation is long, the skill writes it to the file and echoes back only `<ID> ❌ failed (observation written to results file)`.
+- Detailed verdicts (multi-line observations — inspector-typed in interactive and guided modes, millwright-generated in autonomous mode) go to `manual-test-results.md` body, not to chat history. When an observation is long, the skill writes it to the file and echoes back only `<ID> ❌ failed (observation written to results file)`.
+- Guided mode's per-scenario presentation is the one deliberate exception to the one-line-per-scenario echo rule: the explanation, example, and steps ARE the interface. It stays bounded by the 3.2c bars (≤ 2 sentences of explanation, one example, the plan's steps with placeholders resolved) and is rendered fresh from the plan each iteration, never accumulated in conversation.
 
-See `docs/manual-testing/plan.md` § 2.2 for the full design rationale, § 3.7.1 for the helper contract, § 4.2.1 for the verdict-block parsing contract.
+See `docs/millwright-inspector-project.md` § 6.2 (stage 5) for how this runner sits in the workflow. The verdict-block parsing contract is stated inline at step 3.4 ("Parsing scope" + "Duplicate-verdict-block recovery"); the helper contract is `scripts/review.sh upsert-manual-test-failure`.

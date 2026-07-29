@@ -11,10 +11,19 @@ commits: []
      Cover: goals, constraints, acceptance criteria, out-of-scope items.
      Goals items name the existing seam (folder / module / layer) where
      each change lands and sketch a high-level solution — not code-level
-     details. Directly beneath EVERY item (Goals / Planned / Non-goals), add a
+     details.
+
+     EVERY Goals item carries a NORMATIVE nested sub-bullet
+     `- **Shipped-code impact:** …` stating what already-shipped behaviour the
+     item touches, what changes for its existing consumers, and what must keep
+     holding. Sourced from grounding-report.md; `none — additive only` is a
+     valid answer, omission is not. Planned / Non-goals items do not carry it.
+
+     Directly beneath EVERY item (Goals / Planned / Non-goals), add a
      NON-NORMATIVE nested sub-bullet that restates the item in plain language
      with one concrete example — format `- _In plain terms:_ … _Example:_ …`.
-     It must be a nested (indented) sub-bullet so the blueprint reviewer treats
-     it as part of the item, not a new requirement. See
+
+     Both must be nested (indented) sub-bullets so the blueprint reviewer treats
+     them as part of the item, not new requirements. See
      docs/blueprint-regeneration.md Step A for the exact format and altitude
      rules. -->

@@ -33,3 +33,23 @@ Each verdict block is upserted by scenario id as follows. The runner emits all f
 - **Seeded:** false   ← only meaningful for `fail` verdicts; flipped to `true` after a *successful seed action* (helper exit 0 with no `^warning:` on stderr). Display/cache only — NOT a correctness mechanism. The seed-id grep-and-replace in `mi-manual-test-run` is what makes seeding idempotent. `--seed-only` mode ignores this field entirely.
 - **Cited as IR-NNN:** (populated by review-context.md generation; cleared to blank-after-colon when the cited family is deleted)
 -->
+
+<!--
+GUIDED MODE ONLY — an optional `## Inspector-added checks` section may be appended at the
+END of the body when the inspector asks, mid-walkthrough, for something to be recorded that
+is not one of the plan's scenarios (an extra check they ran, a case the plan missed). Blocks
+use the same bullet shape with ids `INS-1`, `INS-2`, …:
+
+## Inspector-added checks
+
+### INS-1 — <one-line title>
+
+- **Verdict:** pass | fail | skip
+- **Observation:** <what the inspector asked to record>
+- **Recorded at:** <timestamp>
+
+These are NOT plan scenarios: they never enter the frontmatter `total` / `passed` / `failed`
+/ `skipped` counters, never move `current-scenario`, and never seed IRs. The counters
+describe the plan, and the scenario-block parser only reads blocks under
+`## Per-scenario verdicts`. See commands/mi-manual-test-run.md § 3.3c.
+-->

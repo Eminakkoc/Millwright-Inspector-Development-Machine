@@ -187,6 +187,8 @@ Then fill the body via `Edit`, following the template's section guide:
         "- **Cited as IR-NNN:**" with no value after the colon (the literal string "null" is invalid)
   ```
 
+  **Scoping.** "Failed scenario" means a `### <SCENARIO_ID> — ` block under `## Per-scenario verdicts` with `Verdict: fail`. Guided runs may also write `### INS-<n>` blocks under a `## Inspector-added checks` section (ad-hoc checks the inspector asked to record mid-walkthrough) — those are **not** plan scenarios: they have no seed-id, are excluded from the frontmatter counters, and must not be iterated here or given a `Cited as IR-NNN:` line. See `commands/mi-manual-test-run.md` § 3.3c and § 3.4 ("Parsing scope").
+
   Two important invariants: (1) the `Cited as IR-NNN:` field in `manual-test-results.md` is a **cache** populated by review-context generation, NOT by `/mi-manual-test-run` — auto-seed writes blocks but does not write back the resulting `IR-NNN` to the results file (it would race with the review session's renumbering). Review-context regeneration is the unique writer. (2) `find-by-seed-id-family` returning empty is a *recoverable* state, not an error: emit the "no IR" form and clear the cache to a blank-after-colon shape.
 
   Brainstorming sub-agents reading `review-context.md` get the manual-test signal in their first read with up-to-date IR citations, without main needing to re-narrate.

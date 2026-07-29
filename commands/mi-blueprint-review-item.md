@@ -142,6 +142,7 @@ Print the returned `new_region` to stdout (with any remaining `T1-<n>` REVIEW-FI
 
 ## Notes
 
+- Severity vocabulary is `blocker | critical | high | medium` (v1.6.8 — no `low`; the batch reviewer drops any `low` the reviewer emits). Per-item shipped-code regression is in scope for both modes. See `/mi-blueprint-review` Notes.
 - All shared logic lives in the orchestrator (`commands/mi-blueprint-review.md`) and the batch reviewer sub-agent (`agents/blueprint-batch-reviewer.md`). This wrapper just builds a single-item batch and routes through Phases A / B / C / F / G.
 - The `:item-id` separator is colon. Use `--file <path> --item <id>` for paths containing colons (rare on macOS, common on Windows).
 

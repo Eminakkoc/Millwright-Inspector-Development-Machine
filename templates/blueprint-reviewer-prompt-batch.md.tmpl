@@ -15,13 +15,40 @@ Focus on re-evaluating existing findings + issues the fix step introduced.
 ## Scope (per item)
 
 In-scope: missing acceptance criteria, missing seam reference, internal contradictions,
-genuinely-ambiguous edge cases.
+genuinely-ambiguous edge cases, **shipped-code regression** (see below).
 
 Out of scope (defer to consistency review): cross-item issues, style nits, speculative
 "what if" cases. Also out of scope: the `_In plain terms:_ … _Example:_ …` sub-bullet
 under an item — it is a NON-NORMATIVE plain-language restatement for human readers.
 Never flag it and never treat its wording as a requirement, even if it simplifies,
 omits detail, or reads informally.
+
+## Shipped-code regression check (mandatory per item)
+
+These items will be implemented on top of code that is **already shipped and working**.
+For every item, ask explicitly: *what already-shipped behavior does this change, and
+does the item say what happens to it?* Report a finding when:
+
+- The item changes a seam that existing callers, persisted data, public APIs, events,
+  or UI flows depend on, and it does **not** state whether that behavior is preserved,
+  intentionally changed, or migrated.
+- The item's stated behavior **contradicts** behavior the shipped code guarantees today
+  (e.g. it re-specifies an existing endpoint's response shape, tightens a validation
+  that existing data violates, or renames/removes something still referenced).
+- The item declares an existing behavior "unchanged" but its own acceptance criteria
+  cannot hold while that behavior stays as-is.
+
+Severity for this class: a silent, unmigrated break of shipped behavior is `blocker` or
+`critical`; an unstated-but-recoverable impact on existing callers is `high`; a merely
+under-specified compatibility boundary is `medium`.
+
+**Grounding.** Prefer the evidence you were handed: the item's own
+`**Shipped-code impact:**` bullet, the grounding report, and any reference material in
+the session opener. You have **read-only** access to the repository — you MAY open a
+file to confirm or refute a suspected regression when the item names a concrete path or
+symbol, but cap that at ~5 files per batch and never survey the repo broadly. Never
+report a regression you have neither evidence nor a named symbol for; a speculative
+"this might break something" is not a finding.
 
 ## Reference inputs
 
@@ -48,9 +75,21 @@ Both sections are optional and may be absent from any given session.
 
 ## Severity
 
-- high   — two implementations WILL diverge and one is wrong.
-- medium — ambiguity an implementer would need to ask about before proceeding.
-- low    — minor wording; tolerated as success.
+Four severities, all reportable. There is **no `low` severity** — minor wording,
+style polish, and anything an implementer would never need to ask about is OUT OF
+SCOPE. Do not report it in `new[]`, and do not downgrade a real finding to squeeze
+it in. If the only thing you can say about an item is a nit, return no finding for
+that item.
+
+- blocker  — the item cannot be implemented as written (self-contradictory,
+             depends on something that does not exist, or violates a stated hard
+             constraint), OR implementing it as written breaks already-shipped
+             behavior with no stated migration. A human must resolve it before
+             implementation starts.
+- critical — implementations WILL diverge AND the wrong branch causes data loss,
+             a security hole, or a silent regression in already-shipped code.
+- high     — two implementations WILL diverge and one is wrong.
+- medium   — ambiguity an implementer would need to ask about before proceeding.
 
 ## Reconciliation contract
 
@@ -76,7 +115,7 @@ nothing to flag still appear with empty `existing` and `new` arrays.
         { "id": "F-NNN-or-T1-N", "status": "...", "resolved_by_change": "...", "refined_finding": "...", "refined_suggested_fix": "..." }
       ],
       "new": [
-        { "severity": "high|medium|low", "phase": "item", "target": "<item_id>", "finding": "...", "suggested_fix": "..." }
+        { "severity": "blocker|critical|high|medium", "phase": "item", "target": "<item_id>", "finding": "...", "suggested_fix": "..." }
       ]
     }
   ]

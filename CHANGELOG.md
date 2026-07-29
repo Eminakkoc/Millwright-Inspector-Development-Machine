@@ -1,5 +1,91 @@
 # Changelog
 
+## 1.6.8 — Blueprint-review severities, shipped-code regression checks, guided manual tests
+
+Three changes, one theme: make the quality gates say what actually matters and let the
+inspector see it for themselves.
+
+### Blueprint-review severities: `blocker | critical | high | medium` (no `low`)
+
+- **Two new severities.** `blocker` — the item cannot be implemented as written, or
+  implementing it breaks already-shipped behavior with no stated migration; work stops
+  until a human resolves it. `critical` — implementations will diverge AND the wrong
+  branch costs data, security, or a silent regression. `high` and `medium` keep their
+  existing meanings.
+- **`low` is out of scope, not just deprioritized.** Both reviewer prompt templates
+  declare the class unreportable, and both reviewer sub-agents apply a deterministic
+  severity gate that **drops** any `low` the reviewer emits anyway — no block appended,
+  no `F-NNN` allocated, never re-mapped up to `medium`, reported as `dropped-low: N`. A
+  round whose `new[]` was entirely dropped counts as empty for every convergence check,
+  so nits can no longer keep a loop iterating.
+- **Backward compatible.** `severity: low` blocks written by earlier versions stay in
+  place, still parse, and still reconcile. `build-summary`'s rank table keeps `low` last
+  (`blocker < critical < high < medium < low`) so legacy histories truncate
+  deterministically, and legacy `low` is now the *only* severity the truncation loop may
+  drop — an over-budget summary of reportable findings accepts the overrun instead.
+- Reporting updated end to end: the consistency reviewer's `stable-medium` exit no longer
+  fires while a blocker or critical is kept, count lines read `<B>B/<C>C/<H>H/<M>M`, and
+  Phase G escalates each remaining blocker/critical on its own line.
+
+### Requirements are written and reviewed against already-shipped code
+
+- **Grounding pass (stage 2).** `codebase-grounder` now assesses regression risk as a
+  first-class deliverable: a per-item `**Shipped-code impact:**` line (which call sites,
+  consumers, routes, events, tables, or UI flows depend on the seam today; what changes
+  for them; what must keep holding and how to observe it) plus a cross-item
+  `## Shipped-code regression risks` section in `grounding-report.md`. Symbol and
+  call-site searches are explicitly free against the ≤ 5-file-per-item budget.
+- **Requirements body.** Every `## Goals` item carries a **normative** nested
+  `- **Shipped-code impact:** …` bullet. `none — additive only` is a valid answer;
+  omission is not, and an item the grounding pass never assessed is written `unassessed`
+  and surfaced in the hand-off rather than guessed at. `/mi-update-blueprint` re-derives
+  the same bullet from the `base-commit..HEAD` diff.
+- **Review.** Shipped-code regression is an in-scope finding class for both passes — per
+  item in the batch template, file-wide (two items that jointly break a contract, a
+  Non-goal contradicted by a Goal) in the consistency template. Reviewers ground findings
+  in the item's own bullet, the grounding report, and bounded read-only repo access
+  (~5 files, only when a concrete path or symbol is named).
+- **Manual testing.** The plan's regression-seam coverage cell now starts from those
+  bullets: every named consumer that "must keep holding" is a required scenario.
+
+### Manual testing: guided mode + post-autonomous re-run
+
+- **New `guided` env-mode — what `y` now selects.** The millwright brings the whole local
+  environment up itself (the same bring-up machinery as autonomous), then walks the
+  inspector through the plan one scenario at a time: what it checks in ≤ 2 plain
+  sentences, one concrete example, exactly what to do — then waits for the inspector's
+  `pass` / `fail` / `skip` / `pause`. Verdicts stay the inspector's; the millwright never
+  self-determines one, and never presents two scenarios in a turn.
+- **Mid-walk additions.** The inspector can ask for anything to be recorded as they go:
+  notes fold into that scenario's `Observation:`; ad-hoc extra checks land as
+  `### INS-<n>` blocks under a new `## Inspector-added checks` section that is excluded
+  from the plan-shaped counters, the cursor, and seeding. Verdict-block parsing is now
+  explicitly scoped to `## Per-scenario verdicts` so the two never mix.
+- **`interactive` is unchanged and still reachable** via `/mi-manual-test-run
+  --interactive-env` (and remains the compatibility reading of a *missing*
+  `manual-test-env-mode`); `y` simply no longer selects it, because "run the app for me,
+  then walk me through it" is the common case. Two follow-ons so nothing defaults
+  silently: a forced plan regeneration resets the mode to `guided` (matching what `y`
+  selects) rather than `interactive`, and a bare `/mi-manual-test-run` on a fresh run
+  with no persisted mode and no flag **asks** which mode to use instead of assuming —
+  never on a resume, and never on an auto-fire path, both of which always have an
+  explicit value.
+- **Guided re-run after a hands-off run.** An autonomous run now always offers a guided
+  walkthrough when it finishes — a machine's verdicts are not the same as the inspector's
+  eyes. `/mi-manual-test-run --rerun-guided` (Branch D) is the same path, directly
+  invocable later: it rotates the finished results into history, keeps the plan (so the
+  `seed-family-id` and therefore idempotent re-seeding survive), resets the markers to a
+  running guided run, and converges into the normal Branch A flow. It never closes or
+  reopens IRs — a scenario the millwright failed and the inspector passes stays seeded
+  until the inspector resolves it.
+
+### Tests
+
+`tests/blueprint-review/run.sh` gains three cases: blocker > critical > high > medium
+ordering in `build-summary`, no reportable severity dropped from an over-budget summary,
+and a wiring guard that the templates/agents declare the new vocabulary and carry no stale
+`high|medium|low` enum. 52 pass, 0 fail.
+
 ## 1.6.6 — Canonical `$CLAUDE_PLUGIN_ROOT` resolver documentation (§8.14)
 
 Claude Code does not inject `$CLAUDE_PLUGIN_ROOT` into Bash tool subshells

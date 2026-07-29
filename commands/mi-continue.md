@@ -975,7 +975,7 @@ skipped="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get implementation-diagrams-s
 >
 > Before reviewing the implementation, would you like a manual test plan generated for this feature? (`y`/`n`)
 >
->   - `y` — I'll generate `workflow-stream/<active_feature>/test/manual-test-plan.md` based on the blueprint + implementation diff + a codebase scan. After generation I'll offer to run it interactively. Failures can auto-seed as findings.
+>   - `y` — I'll generate `workflow-stream/<active_feature>/test/manual-test-plan.md` based on the blueprint + implementation diff + a codebase scan. After generation I'll offer to run it — either as a guided walkthrough (I bring the environment up and walk you through each case) or fully hands-off. Failures can auto-seed as findings.
 >   - `n` — skip manual testing; go directly to findings authoring (write into `implementation/inspector-review.md`, or leave empty to approve).
 >
 > Reply `y` or `n`."
@@ -986,7 +986,7 @@ skipped="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get implementation-diagrams-s
 >
 > Before reviewing the implementation, would you like a manual test plan generated for this feature? (`y`/`n`)
 >
->   - `y` — generate `manual-test-plan.md` and offer to run it. Failures can auto-seed as findings.
+>   - `y` — generate `manual-test-plan.md` and offer to run it (guided walkthrough or fully hands-off). Failures can auto-seed as findings.
 >   - `n` — skip manual testing; go directly to findings authoring (write into `implementation/inspector-review.md`, or leave empty to approve). To generate implementation diagrams now, run `/mi-draw-diagrams` first.
 >
 > Reply `y` or `n`."
@@ -1033,7 +1033,7 @@ fi
 | ---------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `plan_exists=1`, `results_exists=0`                                                | Plan was generated and `/mi-manual-test-run` was auto-fired, but the run crashed before step 1 created the results file. Print `"Resuming manual test — results file missing, will recreate from template."` Auto-fire `/mi-manual-test-run` (Branch A); step 1 of the run renders the results template from scratch and step 2 runs the env-up phase as if from fresh. |
 | `plan_exists=0`, `results_exists=0`                                                | Inconsistent state — markers say a run is in progress but neither input file exists. Print: `"Inconsistent manual-test state: sub-flow=manual-testing but no plan or results file. Reset with progress.sh set sub-flow=none manual-test-state=none and start over via /mi-continue (which will re-prompt for plan generation), OR run /mi-resume-workflow for full diagnosis."` **Stop. Do NOT auto-mutate.** |
-| `plan_exists=1`, `results_exists=1`, `results_state=in-progress`, `results_cursor` non-null | Paused mid-run. Print `"Resuming manual test at scenario $results_cursor."` — then, per the persisted `manual-test-env-mode` (`progress.sh get manual-test-env-mode`; missing/null = `interactive`): interactive → append `"Re-confirm your local environment is up."`; autonomous → append `"The millwright will re-probe and relaunch any stopped services, then continue performing the remaining scenarios itself."` Auto-fire `/mi-manual-test-run` (Branch A). |
+| `plan_exists=1`, `results_exists=1`, `results_state=in-progress`, `results_cursor` non-null | Paused mid-run. Print `"Resuming manual test at scenario $results_cursor."` — then, per the persisted `manual-test-env-mode` (`progress.sh get manual-test-env-mode`; missing/null = `interactive`): interactive → append `"Re-confirm your local environment is up."`; guided → append `"The millwright will re-probe and relaunch any stopped services, then walk you through the remaining scenarios."`; autonomous → append `"The millwright will re-probe and relaunch any stopped services, then continue performing the remaining scenarios itself."` Auto-fire `/mi-manual-test-run` (Branch A). |
 | `plan_exists=1`, `results_exists=1`, `results_state=in-progress`, `results_cursor` null     | Results file rendered but loop never reached scenario 1. Same as above — auto-fire `/mi-manual-test-run` (Branch A) to start from scenario 1.                                                                                  |
 | `plan_exists=1`, `results_exists=1`, `results_state=complete`                      | **Reachable, not defensive.** `/mi-manual-test-run` writes `state=complete` BEFORE the auto-seed loop and BEFORE clearing `sub-flow` (deliberately, so a crash mid-seed leaves `sub-flow=manual-testing` for re-entry). The handler must NOT clear sub-flow and fall through to the Inspector Handler — that would bypass the seed-recovery path. **Auto-fire `/mi-manual-test-run --seed-only`** (Branch B). Branch B's entry-guard table dispatches on `manual-test-failure-policy` and either re-prompts, re-runs the upsert loop, or finalizes. Branch B clears `sub-flow=none` as its last mutation; the next `/mi-continue` lands in the Inspector Handler. |
 

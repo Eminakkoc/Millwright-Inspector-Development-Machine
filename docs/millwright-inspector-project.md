@@ -771,6 +771,22 @@ queues.
   flavor (`greenfield` → "add …"; `bugfix` → "change X from doing A to doing B";
   `improvement` → "extend X to also …"). Planned items WILL ship later — the current
   implementation must leave architectural seams. Non-goals are truly out of scope.
+
+  **Shipped-code impact (v1.6.8).** Every cycle lands on code that is already shipped and
+  working, so the grounding pass assesses regression risk as a first-class deliverable:
+  per item it records a `**Shipped-code impact:**` line (which existing call sites,
+  consumers, routes, events, tables, or UI flows depend on the seam today; what changes
+  for them; what must keep holding and how to observe it), and the report carries a
+  cross-item `## Shipped-code regression risks` section. Symbol/call-site searches are
+  cheap and do not count against the ≤ 5-file budget. Main copies each item's assessment
+  into a **normative** nested `- **Shipped-code impact:** …` bullet on every Goals item —
+  `none — additive only` is a valid answer, omission is not; an unassessed item is
+  written as `unassessed` and surfaced in the hand-off rather than guessed at. The chain
+  is load-bearing downstream: the blueprint reviewer judges regression findings against
+  these bullets (§7.9) and stage 5's manual-test plan turns them into regression-seam
+  scenarios. `/mi-update-blueprint` re-derives the same bullet from the
+  `base-commit..HEAD` diff instead of the grounding report, so a rotated blueprint states
+  the regression impact the implementation actually had.
 - *Step B* — scan `.claude/skills/` and `.claude/rules/`; write `config.md`'s auto-block
   (≤ 10 entries / ≤ 2 lines each; `## Skills`, `## Rules`, `## Load on demand`); pre-fill
   `## GIT BRANCH` from HEAD when non-trunk; preserve `## Inspector Additions` verbatim.
@@ -835,8 +851,9 @@ atomic `progress.sh advance-to 3 5 --set sub-flow=none`. Steps:
 - *Step 5 — auto-fire `/mi-draw-diagrams`* (renders implementation diagrams).
 - *Step 6 — initialize the `inspector-review.md` skeleton* via `review.sh init` (idempotent).
 - *Step 7 — manual-test offer* (`y`/`n`). On `y`, auto-fires `/mi-manual-test-plan
-  --from-resume` then `/mi-manual-test-run` under `sub-flow=manual-testing`. On `n`, atomic
-  finalize `advance-to 3 5`.
+  --from-resume` then `/mi-manual-test-run` under `sub-flow=manual-testing` (the plan
+  command's own prompt then picks the env-mode: `y` → guided, `y-autonomous` → autonomous,
+  `n` → defer). On `n`, atomic finalize `advance-to 3 5`.
 
 **Stage 5 — Presented for inspector evaluation (Inspector Handler).** Stage 5 widens from
 "findings only" to "optional manual test, then findings." If the manual-testing sub-flow
@@ -1070,12 +1087,35 @@ results into `test/manual-test-results.history/<timestamp>/` (cross-activation g
 on `generated-in-activation` vs `progress.md.active.activation-id`). Sets
 `sub-flow=manual-testing`.
 
-**`/mi-manual-test-run [--seed-only [...]] | [--finalize-skipped]`** *(auto or manual)* —
+**`/mi-manual-test-run [--guided-env|--autonomous-env|--interactive-env] | [--rerun-guided] | [--seed-only [...]] | [--finalize-skipped]`** *(auto or manual)* —
 auto-fired by Resume Step 7 right after the plan is generated; also auto-fired by the
-Manual-Test-Resume Handler on re-entry. Walks the plan's scenarios, asking the inspector
-for `pass` / `fail <observation>` / `skip <reason>` / `pause`, and captures outcomes into
-`test/manual-test-results.md` (`state ∈ {in-progress, complete}`, `current-scenario`
-cursor, counts). It is the **single owner** of manual-test → `inspector-review.md`
+Manual-Test-Resume Handler on re-entry. Walks the plan's scenarios and captures outcomes
+into `test/manual-test-results.md` (`state ∈ {in-progress, complete}`, `current-scenario`
+cursor, counts) in one of three env-modes (`manual-test-env-mode`, persisted in
+`active.*` so it survives pause/resume):
+
+- **`guided`** — what the plan prompt's `y` answer selects (v1.6.8). The millwright brings
+  the whole local environment up itself, then walks the inspector through the plan one
+  scenario at a time: what it checks in ≤ 2 plain sentences, one concrete example, exactly
+  what to do — then waits for the inspector's `pass` / `fail <observation>` /
+  `skip <reason>` / `pause`. Verdicts are always the inspector's, never self-determined.
+  Mid-walk the inspector can ask for notes or ad-hoc checks to be recorded; notes fold into
+  the scenario's `Observation:`, ad-hoc checks land as `### INS-<n>` blocks under a
+  `## Inspector-added checks` section that is excluded from the plan-shaped counters, the
+  cursor, and seeding.
+- **`interactive`** — the inspector brings the services up AND gives every verdict.
+  Reachable via `--interactive-env`; also the backward-compatible meaning of a missing
+  `manual-test-env-mode`.
+- **`autonomous`** — what `y-autonomous` selects: the millwright brings the environment up
+  and performs every scenario itself, self-determining each verdict (no `pause`). On
+  completion it **offers a guided re-run** (v1.6.8) so the inspector can walk the same plan
+  with their own eyes; `--rerun-guided` (Branch D) is the same path, directly invocable. A
+  re-run rotates the finished results into
+  `test/manual-test-results.history/<timestamp>/`, keeps the plan (and therefore the
+  `seed-family-id`, so re-seeding stays idempotent), resets the markers to a running guided
+  run, and converges into the normal Branch A flow. It never closes or reopens IRs — a
+  scenario the millwright failed and the inspector passes stays seeded until the inspector
+  resolves it in `inspector-review.md`. It is the **single owner** of manual-test → `inspector-review.md`
 mutations: under `failure-policy=auto-seed` it calls `review.sh upsert-manual-test-failure`
 to seed a `### IR-NNN` finding with a deterministic `seed-id:
 manual-test:<seed-family-id>:<scenario-id>` (idempotent across re-runs); under `manual`
@@ -1230,10 +1270,40 @@ codex-reply availability.
 
 Findings live **inline in the reviewed file** as `<!-- REVIEW-FINDING ... -->` HTML
 comments — invisible in rendered markdown, visible to both agents in raw text. Each
-carries a `severity: high | medium | low`, a unique lifetime-monotonic `F-NNN` id, and a
-`suggested-fix:` block. Resolved findings are removed when the fixer addresses them;
-unresolved findings stay in the file when the loop exits and are persisted as a history
-entry in `review-history.md` (see below).
+carries a `severity: blocker | critical | high | medium`, a unique lifetime-monotonic
+`F-NNN` id, and a `suggested-fix:` block. Resolved findings are removed when the fixer
+addresses them; unresolved findings stay in the file when the loop exits and are
+persisted as a history entry in `review-history.md` (see below).
+
+**Severity vocabulary (v1.6.8).** The review reports four severities and **no `low`**:
+
+| Severity | Meaning |
+| --- | --- |
+| `blocker` | The item cannot be implemented as written (self-contradictory, depends on something that does not exist, violates a stated hard constraint), OR implementing it as written breaks already-shipped behavior with no stated migration. |
+| `critical` | Implementations will diverge AND the wrong branch causes data loss, a security hole, or a silent regression in already-shipped code. |
+| `high` | Two implementations WILL diverge and one is wrong. |
+| `medium` | Ambiguity an implementer would need to ask about before proceeding. |
+
+Low-severity nits are **out of scope**, not merely deprioritized: the reviewer prompt
+templates declare the class unreportable, and both reviewer sub-agents apply a
+deterministic severity gate that drops any `low` entry the reviewer emits anyway
+(reported back as `dropped-low: N`, never re-mapped up to `medium`, never allocated an
+`F-NNN`). Blocks carrying `severity: low` written before v1.6.8 stay in place, still
+parse, and still reconcile — they are just never created again. `build-summary`'s rank
+table keeps `low` last so those legacy histories truncate deterministically, and it is
+the only severity the truncation loop may drop.
+
+**Shipped-code regression is a first-class finding class (v1.6.8).** Both passes check
+the spec against code that is already shipped and working: the per-item pass asks, for
+every item, what already-shipped behavior the item changes and whether the item says
+what happens to it; the consistency pass catches the file-wide version (two items that
+are individually fine but jointly break an existing contract, a Non-goal that claims an
+area is untouched while a Goal touches it). The evidence chain is the item's own
+`**Shipped-code impact:**` bullet (written at stage 2 — see §6.2), the grounding
+report injected via `--reference-file`, and bounded read-only repo access (~5 files per
+batch/round, only when the spec names a concrete path or symbol). A silent unmigrated
+break is `blocker`/`critical`; an unstated impact on existing callers is `high`; an
+under-specified compatibility boundary is `medium`.
 
 The commands are **standalone** — they work on any markdown file with or without an
 active mi-workflow. The orchestrator is **also auto-fired at stage 2** (see §6.2) so the
@@ -1310,9 +1380,9 @@ Every review loop has four exit reasons, evaluated in order on each iteration:
 
 | Exit | When |
 | --- | --- |
-| `success` | Zero high/medium findings (kept or new) after a reviewer call. |
+| `success` | Zero reportable findings (kept or new) after a reviewer call. |
 | `stable` | Iter ≥ 2, no new findings, every existing finding is `still_present` or `refined`. The loop has converged — further iterations cannot make progress. |
-| `stable-medium-only` | Iter ≥ 2, no high findings, no new mediums (only stable ones remain). Surface to inspector but don't burn more iterations. |
+| `stable-medium-only` | Iter ≥ 2, no blocker / critical / high findings (kept or new), no new mediums (only stable ones remain). Surface to inspector but don't burn more iterations. A kept blocker or critical never qualifies — those fall through to `max-iter` and the inspector prompt. |
 | `max-iter` | None of the above and iter ≥ `--auto-iter`. The orchestrator prompts the inspector `y/n` for another loop. |
 
 The reason is carried in the sub-agent's `Findings / risks:` body so the orchestrator
@@ -1349,10 +1419,13 @@ Two writers / one reader:
 
 - **`scripts/blueprint-review.sh build-summary`** (read-side renderer) — produces a
   deterministic ≤ 1500-token summary the orchestrator injects into every Phase C and
-  Phase D session opener. A truncation invariant protects unresolved-high findings and
-  current-item-tied resolved findings; surplus content is dropped from the **oldest
-  low-severity unresolved entries first** (v1.5 fix — earlier behavior dropped the
-  newest first).
+  Phase D session opener. A truncation invariant protects every unresolved reportable
+  finding (blocker / critical / high / medium) and current-item-tied resolved findings;
+  surplus content is dropped from resolved entries first, then from the **oldest legacy
+  low-severity unresolved entries** (v1.5 fix — earlier behavior dropped the newest
+  first; since v1.6.8 `low` is legacy-only and the sole droppable severity). When only
+  reportable severities remain, the summary accepts the overrun rather than dropping
+  one.
 - **`scripts/blueprint-review.sh persist-findings`** (write-side, Phase F) — appends
   the new run's findings and updates earlier entries whose status flipped to resolved
   or dropped, then recomputes the file's frontmatter counters (`unresolved-high-count`,
@@ -1524,7 +1597,7 @@ refit for per-batch use in v1.5; rendered by the sub-agents at review-call time,
 | `info-bar.sh` | Pull-only Claude Code `statusLine` renderer (not a hook). Reads stdin JSON, prints one line, exits 0; ≤ 100 ms hot-path target. |
 | `ledger.sh` | Manage `context-ledger.md`. Subcommands: `init`, `append`. Append failures warn but never block. |
 | `pr-review.sh` | Drive `/mi-analyze-review`. Subcommands: `parse-url`, `new-session`, `fetch`, `canonicalize`, `count-marked`, `find-awaiting`, `list-actionable`, `normalize`, `set-status`, `post-reply`, `report-status`. |
-| `blueprint-review.sh` | Drive the three `/mi-blueprint-review*` commands (v1.2.0+; v1.5 refit; see §7.9). Subcommands: `resolve-tool` (agent name → MCP tool name), `enumerate` (deterministic byte-offset computation from reviewer-supplied `{id, anchor_line, occurrence_index}`), `parse-findings` (extract `<!-- REVIEW-FINDING -->` blocks as JSON), `alloc-final-id` (lifetime-monotonic F-NNN allocator backed by `last-finding-id` frontmatter), `diff-drift` (heads-up diff against `summary.md` / `todo-list.md` after stage-2 review), `build-summary` (v1.5; deterministic ≤ 1500-token `review-history.md` summary for reviewer-session openers; truncation invariant protects unresolved-high and current-item-tied resolved findings, drops oldest low-severity unresolved first), `persist-findings` (v1.5; append new + flip earlier entries to resolved/dropped + recompute frontmatter counters). |
+| `blueprint-review.sh` | Drive the three `/mi-blueprint-review*` commands (v1.2.0+; v1.5 refit; see §7.9). Subcommands: `resolve-tool` (agent name → MCP tool name), `enumerate` (deterministic byte-offset computation from reviewer-supplied `{id, anchor_line, occurrence_index}`), `parse-findings` (extract `<!-- REVIEW-FINDING -->` blocks as JSON), `alloc-final-id` (lifetime-monotonic F-NNN allocator backed by `last-finding-id` frontmatter), `diff-drift` (heads-up diff against `summary.md` / `todo-list.md` after stage-2 review), `build-summary` (v1.5; deterministic ≤ 1500-token `review-history.md` summary for reviewer-session openers; truncation invariant protects every unresolved reportable severity — blocker/critical/high/medium — plus current-item-tied resolved findings, and drops oldest legacy low-severity unresolved first), `persist-findings` (v1.5; append new + flip earlier entries to resolved/dropped + recompute frontmatter counters). |
 | `lessons.sh` | Manage `lessons-learned.md` (cumulative PR-review + workflow-completion lessons). Subcommands: `path`, `append` (auto-increments `L-NNN` ids, self-validates after each write). |
 | `migrate-diagrams-readme.sh` | One-shot back-fill of `requirements-id` / `id` into legacy diagram READMEs. |
 | `migrate-test-folder.sh` | One-shot migration of legacy manual-test artifacts into the feature-permanent `test/` folder. |
@@ -1548,7 +1621,7 @@ contract doc's "Payload JSON extension" section). There are **15 profiles**:
 | `journal-folder-digester` | haiku / medium | `mi-run` Step 2.5 Tier 2 — one journal subfolder (> 5 files AND > 40 KB) | writes `quest/<active-slug>/.scratch/folder-digest-<folder>.md` |
 | `dependency-mapper` | sonnet / medium | `mi-continue` Pre-flight Step 4c (stage 1.5) | a 2–3 sentence ordering proposal — no file writes; main composes `queue-rationale.md` |
 | `lessons-filter` | haiku / medium | `mi-apply-impact` Pre-Step A (stage 2) | reads `lessons-learned.md`, picks blueprint-relevant entries for the active feature, and fills `implementation/blueprint-lessons.md`. Read-only on the source lessons file; main owns artifact init and all frontmatter fields except `selected-count` |
-| `codebase-grounder` | sonnet / high | `mi-apply-impact` Step A (stage 2) | writes `implementation/grounding-report.md`; sets `seam-classification`. ≤ 5 files per todo |
+| `codebase-grounder` | sonnet / high | `mi-apply-impact` Step A (stage 2) | writes `implementation/grounding-report.md`; sets `seam-classification`; assesses per-item shipped-code impact + the cross-item regression-risk section. ≤ 5 files per todo (symbol/call-site searches are free) |
 | `blueprint-diagrammer` | sonnet / high | `mi-apply-impact` Step C (stage 2) | writes `.puml` sources into `blueprints/current/diagrams/` (has the PlantUML MCP tools) |
 | `implementation-analyst` | opus / high | `mi-generate-implementation-diagrams` / `mi-draw-diagrams` (stage 4) | writes `implementation/change-summary.md`; re-renders `implementation/diagrams/` |
 | `review-iteration-runner` | opus / high | `mi-review` (stage 6 brainstorming mode) | calls `review.sh set-status`; has the `Skill` tool and chains into `brainstorming`/`writing-plans` for `re-spec`/`re-plan` cascades |
@@ -1557,7 +1630,7 @@ contract doc's "Payload JSON extension" section). There are **15 profiles**:
 | `sidequest-writer` | sonnet | `/mi-sidequest --write` | answers + performs a small fix; edits project source only — workflow artifacts stay read-only |
 | `review-comment-analyst` | sonnet / high | `/mi-analyze-review` | appends one `### PR-NNN` block per comment to `report.md`; read-only on source |
 | `pr-review-fixer` | sonnet / high | `/mi-continue` PR-Review Apply Handler | applies marked fix blocks, commits them, appends lessons to `lessons-learned.md`; enforces a clean-worktree invariant |
-| `blueprint-consistency-reviewer` | opus / high | `/mi-blueprint-review-consistency` and `/mi-blueprint-review` Phase D (v1.5+; §7.9) | runs one whole-file consistency review, owning a single codex session (round 1 via `mcp__codex__codex`, rounds 2+ via `mcp__codex__codex-reply` with delta-only prompts). Writes the reviewed file directly between rounds (safe — always serial). Exits on `success`, `stable`, `stable-medium`, or `max-iter`. |
+| `blueprint-consistency-reviewer` | opus / high | `/mi-blueprint-review-consistency` and `/mi-blueprint-review` Phase D (v1.5+; §7.9) | runs one whole-file consistency review, owning a single codex session (round 1 via `mcp__codex__codex`, rounds 2+ via `mcp__codex__codex-reply` with delta-only prompts). Writes the reviewed file directly between rounds (safe — always serial). Applies the severity gate (drops `low` entries before allocating ids). Exits on `success`, `stable`, `stable-medium`, or `max-iter`. |
 | `blueprint-batch-reviewer` | opus / high | `/mi-blueprint-review` Phase C and `/mi-blueprint-review-item` (v1.5+; §7.9; replaces `blueprint-item-reviewer`) | runs one review on a batch of 1..N items, owning a single codex session per batch. **Structurally read-only** — `tools:` contains ONLY codex MCP tools (`mcp__codex__codex`, `mcp__codex__codex-reply`), no filesystem tools. Returns multi-item Payload JSON; calling command applies each item's region replacement via Edit-exact-match in main. |
 
 **Do NOT delegate** (these stay with main): workflow state mutations (`progress.sh`,

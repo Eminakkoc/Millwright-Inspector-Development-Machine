@@ -254,16 +254,29 @@ properties:
               invariant.
           manual-test-env-mode:
             type: string
-            enum: [interactive, autonomous]
+            enum: [guided, interactive, autonomous]
             description: >
               Stage-5 manual-test execution mode. Controls how
-              `/mi-manual-test-run` brings the environment up (Step 2) and, in
-              autonomous mode, who drives the per-scenario verdict loop (Step 3).
+              `/mi-manual-test-run` brings the environment up (Step 2) and who
+              drives the per-scenario verdict loop (Step 3). Two independent
+              axes — who starts the services, and who judges each scenario —
+              which these three values combine as follows:
+                - `guided` (the `y` answer at the plan prompt) — the millwright
+                  brings the environment up itself (same machinery as
+                  `autonomous`), then walks the INSPECTOR through the plan one
+                  scenario at a time: a brief plain-language explanation (≤ 2
+                  sentences), a concrete example, and exactly what to do — then
+                  waits for the inspector's `pass`/`fail`/`skip`/`pause`
+                  verdict before moving on. Verdicts are the inspector's, never
+                  self-determined. The inspector may also ask for notes or extra
+                  checks to be recorded into manual-test-results.md mid-walk.
                 - `interactive` — the runner renders the plan's Prerequisites +
                   What-to-run commands to the inspector and waits for the
                   inspector to run the services and reply `ready`/`skip-env`,
                   then renders each scenario and waits for the inspector's
-                  `pass`/`fail`/`skip`/`pause` verdict.
+                  `pass`/`fail`/`skip`/`pause` verdict. Reachable via
+                  `/mi-manual-test-run --interactive-env`; also the
+                  backward-compatible default for a missing/null value.
                 - `autonomous` — the runner brings the environment up itself
                   (runs the plan's What-to-run commands from the resolved
                   RUN_ROOT — long-running services in the background, one-shot
@@ -275,10 +288,21 @@ properties:
                   fabricated pass. On any bring-up failure it stops and hands
                   control back to the inspector rather than testing against a
                   half-up environment.
-              Set by `/mi-manual-test-plan` Step 7 (`y` → interactive,
+              Set by `/mi-manual-test-plan` Step 7 (`y` → guided,
               `y-autonomous` → autonomous) and overridable via
-              `/mi-manual-test-run`'s `--autonomous-env` / `--interactive-env`
-              flags. Persisted in `active.*` so the mode survives pause/resume
+              `/mi-manual-test-run`'s `--guided-env` / `--autonomous-env` /
+              `--interactive-env` flags. Also set to `guided` by
+              `/mi-manual-test-run --rerun-guided`, the post-autonomous re-run
+              path that lets the inspector walk a plan themselves after a
+              hands-off run already finished it.
+              `/mi-manual-test-plan` Step 3.5 (forced regeneration) resets the
+              field to `guided` — the mode a later bare `/mi-manual-test-run`
+              then uses on the deferred path, matching what `y` would have
+              selected. A **missing** value reading as `interactive` is a
+              compatibility rule for cycles predating the field, not a chosen
+              default; on a fresh run with no persisted value and no flag, the
+              runner asks which mode to use instead of assuming.
+              Persisted in `active.*` so the mode survives pause/resume
               (`/mi-continue`'s Manual-Test-Resume Handler re-fires the runner
               WITHOUT invocation flags — the persisted field is the only place
               the choice can be recovered from). Optional — a missing/null

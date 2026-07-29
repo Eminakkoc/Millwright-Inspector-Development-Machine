@@ -116,7 +116,14 @@ against the per-item file budget; the artifact is a small intake file
 
    Projects with non-standard layouts: pick the closest match by intent (a folder of HTTP request handlers is `backend` even if it's named `endpoints/`). When the closest match is genuinely ambiguous, prefer `mixed` over guessing.
 
-4. **Classify the cycle flavor** as one of `greenfield | bugfix | improvement`. Detection rules (apply in order; first match wins):
+4. **Assess the item's impact on already-shipped code.** The codebase you are reading is already shipped and working; this cycle lands on top of it. For this item, establish:
+   - **Who depends on the seam today** — call sites of the functions/classes it touches, routes or events it exposes, DB tables/columns it reads or writes, UI flows that reach it. Find them by searching for the symbol / route / column name; do not assume "nothing calls this". Symbol searches are cheap and do NOT count against the ≤ 5-file budget — only files you open do.
+   - **What this item would change for them** — signature or contract changes, tightened validation that existing data may violate, altered response shapes, renamed/removed symbols, changed defaults, new required fields, migrations.
+   - **What must keep holding** — the specific existing behavior that is load-bearing and must survive the change, and the cheapest way to observe it (a route response, a log line, a DB row, an existing test).
+
+   Record the result as the item's `**Shipped-code impact:**` bullet. `none — additive only (no existing caller reaches this path)` is a valid answer for a genuinely greenfield item, but it must be a conclusion you reached by looking, not a line you skipped. This bullet is load-bearing downstream: main turns it into the requirements item's own shipped-code-impact bullet, the blueprint reviewer judges regression findings against it, and stage 5's manual-test plan turns it into regression-seam scenarios.
+
+5. **Classify the cycle flavor** as one of `greenfield | bugfix | improvement`. Detection rules (apply in order; first match wins):
 
    - **Bugfix** if the todo description contains an explicit defect signal: keywords like "fix", "bug", "broken", "regression", "crash", "incorrect", "resolve issue", or links to a defect ticket; AND the seam already contains the targeted functionality (the buggy code is what's being fixed).
    - **Improvement** if the seam already contains a working version of the feature the todo names AND the todo description signals enhancement: keywords like "improve", "extend", "optimize", "enhance", "expand", "upgrade", "speed up", "make … faster / more accurate / more reliable".
@@ -132,9 +139,10 @@ against the per-item file budget; the artifact is a small intake file
 **Write the report.** Fill `<report_dest>` (already initialized with frontmatter by main):
 
 1. **Update the `seam-classification` frontmatter** to the overall classification across all items in this cycle (`backend` if every item is backend; `frontend` if every item is frontend; `mixed` if items span buckets; `infra` if every item is infra). Use `scripts/frontmatter.sh set <report_dest> seam-classification <value>`.
-2. **Fill `## Per-item findings`** with one subsection per item id (`### <ITEM-ID> — <description>`) covering: seam, pre-existing components, cycle flavor, notes. Follow the template's example.
-3. **Fill `## Overall seam summary`** with 2–4 bullets summarizing the cross-item picture and the classification rationale.
-4. Validate the file: `scripts/frontmatter.sh validate <report_dest> grounding-report`.
+2. **Fill `## Per-item findings`** with one subsection per item id (`### <ITEM-ID> — <description>`) covering: seam, pre-existing components, cycle flavor, **shipped-code impact**, notes. Every item gets a `**Shipped-code impact:**` bullet — no omissions; write `none — additive only (no existing caller reaches this path)` when that is the honest finding. Follow the template's example.
+3. **Fill `## Shipped-code regression risks`** with the cross-item view: one bullet per distinct risk (not one per item), naming the shipped symbol/contract at risk, its consumers, the items that touch it, what must keep holding, and the cheapest observable check. Write `- (none — no in-scope item touches shipped behavior)` when the whole cycle is genuinely additive. Leaving the section empty is a defect — main and the stage-5 test plan both read it.
+4. **Fill `## Overall seam summary`** with 2–4 bullets summarizing the cross-item picture and the classification rationale.
+5. Validate the file: `scripts/frontmatter.sh validate <report_dest> grounding-report`.
 
 ---
 
@@ -155,8 +163,11 @@ Total return must fit under ~1k tokens.
 
 **Receive the sub-agent return** and proceed. Main now reads `$report_dest` to extract:
 - The `seam-classification` frontmatter value (drives Step C's optional-structural-diagram decision).
-- The per-item findings (drive the Goals body — phrasing follows the cycle flavor noted in each subsection).
+- The per-item findings (drive the Goals body — phrasing follows the cycle flavor noted in each subsection; the `**Shipped-code impact:**` bullet becomes the Goals item's own shipped-code-impact bullet).
+- The shipped-code regression risks (drive the compatibility wording across Goals items and, at stage 5, the manual-test plan's regression-seam scenarios).
 - The overall seam summary (provides the cross-item context for Goals composition).
+
+**If the report has no `## Shipped-code regression risks` section, or a per-item subsection is missing its `**Shipped-code impact:**` bullet**, do not silently proceed on an assumption of safety: say so in the stage-2 hand-off message (Step 3.2 of `mi-apply-impact`) so the inspector knows the regression assessment is incomplete, and write the affected Goals items' shipped-code-impact bullets as `unassessed — the grounding pass did not cover this` rather than inventing a reassuring answer.
 
 The grounding pass writes nothing else on its own — the report is the only artifact. The findings feed Goals (below) and the diagrams in Step C.
 
@@ -169,6 +180,28 @@ Then write the requirements body with **three clearly-labeled scope sections**:
    - **Improvement** — phrase as an extension or upgrade of the existing capability: "extend the existing `services/CartService.addItem` to also accept bulk-add requests; keep the single-item path unchanged." Be specific about what changes versus what's preserved — the chain at stage 3 needs to know which existing behaviour is load-bearing.
 
    This is the primary deliverable.
+
+   **Shipped-code impact bullet (mandatory on every Goals item).** The project is already shipped and working — a requirement that only describes the new behaviour is half a requirement. Give every Goals item a nested `- **Shipped-code impact:** …` bullet (2-space indent, alongside the acceptance-criteria bullets), sourced from that item's `**Shipped-code impact:**` line in `grounding-report.md`. It states three things in one or two sentences:
+
+   1. **What already-shipped behaviour this item touches** — the named call sites, consumers, routes, events, tables, or UI flows that depend on the seam today.
+   2. **What changes for them** — signature/contract change, tightened validation, altered response shape, new required field, migration; or explicitly *nothing*.
+   3. **What must keep holding** — the load-bearing existing behaviour that must survive, phrased so it can be verified.
+
+   ```markdown
+   - **CART-002** — Extend `services/cart/CartService.addItem` to accept bulk add requests.
+     - Acceptance criteria: a bulk request adds every line atomically; a single-item request behaves exactly as today.
+     - **Shipped-code impact:** `CartService.addItem` is called by `routes/cart.ts` and `jobs/AbandonedCartJob.ts`, both single-item and both reading `{ ok, cartId }`. The single-item signature and return shape stay unchanged — bulk arrives as a separate entry point — so both callers keep working untouched.
+     - _In plain terms:_ …
+   ```
+
+   Unlike `_In plain terms:_`, this bullet **is normative** — it constrains the implementation and the blueprint reviewer flags items whose shipped-code impact is missing, contradicted by the code, or silently breaking. Rules:
+
+   - **Never omit it.** `**Shipped-code impact:** none — additive only; no existing caller reaches this path.` is a complete and valid answer for a genuinely greenfield item. Silence is not.
+   - **Name real symbols.** Take them from the grounding report; do not invent call sites. If the grounding pass did not assess the item, write `unassessed — the grounding pass did not cover this` and surface it in the hand-off message rather than guessing.
+   - **Deliberate breaks are allowed, silent ones are not.** When an item intentionally changes shipped behaviour, say so and say what happens to the existing consumers (migrated, versioned, dropped with the reason).
+   - **Keep it at requirement altitude** — which behaviour and which consumers, not which lines of code.
+
+   `## Planned` and `## Non-goals` items do **not** carry this bullet: they change nothing this cycle, so there is nothing to assess. (`## Planned` items keep their forward-compat design guidance; that is a different question.)
 
    **Altitude rule (applies to all three flavors).** Name the seam, sketch the integration, describe behaviour at the input/output level; do **not** prescribe code-level details. "Add a service in `services/`" / "change `CartService.addItem` to reject quantity 0" / "extend `CartService.addItem` to accept bulk arrays" are the right altitude. "Add `CartService.addItem(itemId, quantity)` returning `{ ok, cartId }`" is too low — that belongs in the brainstorming spec at stage 3. The seam-naming is a hint, not a contract; the chain may pick a different approach during brainstorming, in which case the stage-4 drift check + `/mi-update-blueprint` flow rotates the blueprint to match.
 
@@ -196,6 +229,7 @@ Then write the requirements body with **three clearly-labeled scope sections**:
 - **PAY-001** — Add a webhook receiver under `services/payments/` that validates incoming Stripe events.
   - Reject malformed events with an HTTP error.
   - Acceptance criteria: events with invalid signatures are rejected; valid events return success.
+  - **Shipped-code impact:** the existing `services/payments/` router and its `/payments/*` routes stay as they are — this adds a sibling route, so the shipped checkout flow (`routes/checkout.ts` → `PaymentService.capture`) is untouched and must keep working end to end.
   - _In plain terms:_ Stripe "phones home" to tell us about payments; this adds the phone line and checks the caller really is Stripe before we trust the message. _Example:_ a forged request with a bad signature is turned away, while a genuine `payment_intent.succeeded` from Stripe is accepted.
 ```
 

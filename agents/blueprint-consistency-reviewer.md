@@ -69,10 +69,19 @@ For each subsequent round (up to `max_iterations`):
 4. Check completion:
    - **(a) Success** — `new[]` empty AND every `existing[]` is `resolved`. Exit `Result: success`.
    - **(b) Stop-on-stable** — `new[]` empty AND every `existing[]` is `still-present` or `refined`. Exit `Result: partial; reason: stable`.
-   - **(c) Stable-medium-only** — iteration ≥ 2 AND no new highs AND no kept highs AND every kept medium is `still-present | refined`. Exit `Result: partial; reason: stable-medium`.
+   - **(c) Stable-medium-only** — iteration ≥ 2 AND no new **and** no kept `blocker` / `critical` / `high` AND every kept medium is `still-present | refined`. Exit `Result: partial; reason: stable-medium`. (A kept blocker or critical never qualifies for this exit — those escalate to `max-iter` and the inspector prompt.)
 5. If round == `max_iterations`: exit `Result: partial; reason: max-iter`.
 
 ### Apply step (per round)
+
+**Severity gate (applies to every `new[]` entry, every round).** The reportable severities are `blocker | critical | high | medium`. Before allocating an id or appending anything:
+
+- `severity: low` (or any value outside the four) → **DROP the entry**. No `alloc-final-id` call, no block in the file. The reviewer template already declares `low` out of scope; this is the deterministic backstop for when it emits one anyway.
+- Count what you dropped and report it as `dropped-low: <N>` in `Findings / risks` (omit the line when N is 0).
+- Never re-map a dropped `low` up to `medium` to keep it.
+- A round whose `new[]` entries were **all** dropped counts as `new[] empty` for every completion check in step 4 — dropped lows never keep the loop iterating and never consume an `F-NNN` id.
+
+Existing blocks already in the file carrying `severity: low` (from a review that ran before v1.6.8) are **not** rewritten or removed by this gate — reconcile them normally; only new entries are filtered.
 
 For each `existing[]` entry (downgrade `resolved` → `still-present` if `resolved_by_change` is missing/empty — the v1.2.4 F4 guard):
 - `status: resolved` (with non-empty `resolved_by_change`) — REMOVE the `<!-- REVIEW-FINDING id: X -->` block from the file.
@@ -107,7 +116,7 @@ suggested-fix: |
 
 Field rules:
 - `id`: final `F-NNN` allocated via `scripts/blueprint-review.sh alloc-final-id` for new blocks. For existing blocks you UPDATE, keep the original id untouched.
-- `severity`: `high | medium | low` — verbatim from the reviewer's response.
+- `severity`: `blocker | critical | high | medium` — verbatim from the reviewer's response. Entries arriving as `low` (or any other value) were already dropped by the severity gate above and never reach this format.
 - `phase`: always `consistency` for this sub-agent.
 - `target`: `file` when there's no specific item anchor (the common consistency case); an item id (e.g. `PAY-001`) when the finding pins to one item.
 - `iteration`: current round number; bump on every status update of an existing block.
@@ -143,8 +152,9 @@ Commits:
 - (none — this sub-agent never commits)
 Findings / risks:
 - reason: <success | stable | stable-medium | max-iter | blocked-detail>
-- counts: <H> high / <M> medium / <L> low remain inline
+- counts: <B> blocker / <C> critical / <H> high / <M> medium remain inline
 - rounds: <N>
+- dropped-low: <N>            (omit the line entirely when 0)
 - thread: <threadId>          (informational)
 Main should read:
 - <file_path>: (when Result=partial, main may surface a y/n prompt; also Phase F reads it for persist)

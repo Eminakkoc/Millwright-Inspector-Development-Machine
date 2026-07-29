@@ -74,7 +74,7 @@ history_summary = history_summary_consistency (from A.4)
 file_metadata_brief = (from A.3)
 ```
 
-On `success` / `partial` / `blocked`: continue to Step 4 regardless. On `partial` with `reason: max-iter`: surface `"<H>H/<M>M findings remain after <K> rounds — run another loop? (y/n)"`. On `y`: re-spawn with the file's current state. On `n`: continue.
+On `success` / `partial` / `blocked`: continue to Step 4 regardless. On `partial` with `reason: max-iter`: surface `"<B>B/<C>C/<H>H/<M>M findings remain after <K> rounds — run another loop? (y/n)"` (drop the zero-count severities from the string). On `y`: re-spawn with the file's current state. On `n`: continue.
 
 ### Step 4 — Run Phase F (persist)
 
@@ -82,11 +82,13 @@ Same logic as `/mi-blueprint-review` Step 6 (collect inline findings, classify a
 
 ### Step 5 — Final report
 
-- `"No high/medium findings remain (Success)"` — if inline count is 0.
-- `"<H>H/<M>M findings remain inline in <file>; <N> recorded in <review_history>"` otherwise (omit the second clause if `review_history` is empty).
+- `"No findings remain (Success)"` — if inline count is 0.
+- `"<B>B/<C>C/<H>H/<M>M findings remain inline in <file>; <N> recorded in <review_history>"` otherwise — drop the zero-count severities, and omit the second clause if `review_history` is empty.
+- Any remaining `blocker` / `critical` gets its own line plus the escalation sentence from `/mi-blueprint-review` G.2.
 
 ## Notes
 
+- Severity vocabulary is `blocker | critical | high | medium` (v1.6.8 — no `low`); see `/mi-blueprint-review` Notes.
 - Thin wrapper. All shared logic lives in `commands/mi-blueprint-review.md` and the `blueprint-consistency-reviewer` sub-agent — this wrapper just skips Phases B and C.
 - File frontmatter is preserved byte-for-byte (the sub-agent revalidates after each disk write).
 

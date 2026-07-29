@@ -197,7 +197,12 @@ phase = sys.argv[2]
 scope_ids = set(sys.argv[3:])
 
 BUDGET_CHARS = 7500   # ~1500 tokens at ~5 chars/token average
-SEVERITY_RANK = {"high": 0, "medium": 1, "low": 2}
+# Reportable severities since v1.6.8: blocker > critical > high > medium.
+# "low" is no longer emitted by the reviewers but stays ranked (last) so
+# history files written before v1.6.8 still sort and truncate deterministically.
+SEVERITY_RANK = {"blocker": 0, "critical": 1, "high": 2, "medium": 3, "low": 4}
+UNKNOWN_RANK = 5      # any severity outside the table sorts after "low"
+LEGACY_DROPPABLE = ("low",)   # only legacy lows may be dropped from the summary
 
 with open(history_path, encoding="utf-8", errors="replace") as f:
     text = f.read()
@@ -247,10 +252,11 @@ if not relevant_findings:
 unresolved = [f for f in relevant_findings if f["last_status"] != "resolved"]
 resolved   = [f for f in relevant_findings if f["last_status"] == "resolved"]
 
-unresolved.sort(key=lambda f: (SEVERITY_RANK.get(f["severity"], 3), f["id"]))
+unresolved.sort(key=lambda f: (SEVERITY_RANK.get(f["severity"], UNKNOWN_RANK), f["id"]))
 resolved.sort(key=lambda f: f["last_status_at"], reverse=True)
 
-# Truncation invariant: protect unresolved-high + current-item-tied resolved
+# Truncation invariant: protect every unresolved reportable severity
+# (blocker/critical/high/medium) + current-item-tied resolved
 def render(u, r):
     out = ["## Prior review context (review-history.md)"]
     if u:
@@ -271,16 +277,19 @@ block = render(unresolved, resolved)
 while len(block) > BUDGET_CHARS:
     if resolved:
         resolved.pop()  # drop oldest resolved first (sort is recency-desc, so [-1] is oldest)
-    elif any(f["severity"] == "low" for f in unresolved):
-        # drop OLDEST low-severity unresolved. The unresolved list is sorted
-        # by (severity_rank, id_asc) — so lows live at the tail of the list,
-        # with the LOWEST id (oldest) appearing FIRST in the low range. Iterate
-        # forward and pop the first low found to drop the oldest one.
+    elif any(f["severity"] in LEGACY_DROPPABLE for f in unresolved):
+        # drop OLDEST legacy low-severity unresolved. The unresolved list is
+        # sorted by (severity_rank, id_asc) — so lows live at the tail of the
+        # list, with the LOWEST id (oldest) appearing FIRST in the low range.
+        # Iterate forward and pop the first low found to drop the oldest one.
+        # Only pre-v1.6.8 histories still contain lows; new reviews never emit them.
         for i, f in enumerate(unresolved):
-            if f["severity"] == "low":
+            if f["severity"] in LEGACY_DROPPABLE:
                 unresolved.pop(i); break
     else:
-        break  # accept overrun; never drop unresolved high/medium (protected per spec §6.2)
+        # accept overrun; never drop an unresolved blocker/critical/high/medium
+        # (protected per spec §6.2)
+        break
     block = render(unresolved, resolved)
 
 print(block)

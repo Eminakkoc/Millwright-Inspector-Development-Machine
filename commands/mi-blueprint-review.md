@@ -328,7 +328,7 @@ file_metadata_brief = (from A.3, updated after Phase B with item-ids in scope)
 reference_block = $reference_block (from A.5; may be empty)
 ```
 
-On `success` / `partial` / `blocked`: continue to Step 6 (Phase F) regardless. Phase F persists whatever findings the file ended up with. On `partial` with `reason: max-iter`: surface a y/n prompt: `"<H>H/<M>M consistency findings remain after <K> rounds — run another loop? (y/n)"`. On `y`: re-spawn the sub-agent with the file's current state. On `n`: continue.
+On `success` / `partial` / `blocked`: continue to Step 6 (Phase F) regardless. Phase F persists whatever findings the file ended up with. On `partial` with `reason: max-iter`: surface a y/n prompt: `"<B>B/<C>C/<H>H/<M>M consistency findings remain after <K> rounds — run another loop? (y/n)"` (drop the zero-count severities from the string). On `y`: re-spawn the sub-agent with the file's current state. On `n`: continue.
 
 Once the loop resolves (whichever terminal outcome), record Phase D — set `--findings` to the number of consistency findings that remain inline:
 
@@ -386,8 +386,10 @@ Show the table stdout to the inspector **verbatim** — it is the mandated "each
 
 **G.2 — Summarize inline findings.** Inspect the file's final `<!-- REVIEW-FINDING -->` block count + severity breakdown (via `scripts/blueprint-review.sh parse-findings`). Print:
 
-- `"No high/medium findings remain (Success)"` — if 0 H + 0 M remain inline.
-- Otherwise: `"<H>H/<M>M remain inline in <file>; <N> findings recorded in <review_history>"` (omit the second clause if `review_history` is empty).
+- `"No findings remain (Success)"` — if nothing at a reportable severity remains inline.
+- Otherwise: `"<B>B/<C>C/<H>H/<M>M remain inline in <file>; <N> findings recorded in <review_history>"` — drop the zero-count severities from the string, and omit the second clause if `review_history` is empty.
+
+**Escalate blockers and criticals explicitly.** When any `blocker` or `critical` block remains inline, follow the count line with one line per such finding — `<F-NNN> [<severity>, <target>]: <first line of finding>` — and this sentence: `"Blocker/critical findings mean the blueprint is not implementable as written; resolve them before advancing past stage 2."` They are still not a hard gate (this command never blocks the workflow), but they must not be buried in a count.
 
 **G.3 — Mark Phase G done + cleanup:**
 
@@ -400,6 +402,8 @@ The ledger file itself lives under `$TMPDIR` keyed by the reviewed file's path; 
 
 ## Notes
 
+- **Severity vocabulary (v1.6.8).** Findings carry `blocker | critical | high | medium`. There is no `low` — the reviewer templates declare it out of scope and both reviewer sub-agents drop any `low` entry that arrives anyway (reported as `dropped-low: N` in their return). Blocks carrying `severity: low` from a pre-v1.6.8 run are left alone in place and still parse; they are simply never created again.
+- **Shipped-code regression is in scope.** Both reviewer passes check every item against already-shipped behavior — see the "Shipped-code regression check" section in `templates/blueprint-reviewer-prompt-batch.md.tmpl` (per item) and `…-consistency.md.tmpl` (file-wide). The evidence comes from the item's own `**Shipped-code impact:**` bullet and the grounding report injected via `--reference-file`.
 - This command does NOT mutate `progress.md` or any quest file. It is workflow-neutral when invoked manually. Stage-2 auto-invocation is wired in `commands/mi-apply-impact.md` (see Step B.5).
 - All file writes happen in main (Step 4 write-back loop, Step 5 sub-agent direct writes, Step 6 persist). Sub-agents read but never write the spec file (batch reviewer is structurally read-only; consistency reviewer is serial-safe).
 - Session-expiry behavior: if `codex-reply` errors with `Session not found for thread_id`, the affected sub-agent re-issues that round as a fresh `reviewer_tool_name` call (full prompt cost for one round; subsequent rounds continue on the new session).

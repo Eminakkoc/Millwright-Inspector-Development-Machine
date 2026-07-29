@@ -62,7 +62,7 @@ The `tools:` list carries **both spellings** of each codex tool because the serv
 
 ### Rounds 2..N (via codex-reply)
 
-1. Drop converged items from `active_items` (item is converged if its round N-1 entry has `new: []` AND every `existing[]` is `still-present | resolved | refined`).
+1. Drop converged items from `active_items` (item is converged if its round N-1 entry has `new: []` AND every `existing[]` is `still-present | resolved | refined`). An item whose `new[]` entries were **all discarded by the severity gate** counts as `new: []` here — dropped lows never keep a batch iterating.
 2. If `active_items` is empty: exit `Result: success`.
 3. Compose the delta prompt:
    ```
@@ -87,6 +87,14 @@ The `tools:` list carries **both spellings** of each codex tool because the serv
 ### Apply step (in-memory per item)
 
 For each item's response entry, downgrade `resolved` → `still-present` if `resolved_by_change` is missing/empty (the v1.2.4 F4 guard).
+
+**Severity gate (applies to every `new[]` entry, every round).** The reportable severities are `blocker | critical | high | medium`. Before appending anything:
+
+- `severity: low` (or any value outside the four) → **DROP the entry**. Do not append a block, do not allocate a tmp-id, do not carry it in `remaining_findings`. The reviewer template already declares `low` out of scope; this is the deterministic backstop for when it emits one anyway.
+- Count what you dropped and report it as `dropped-low: <N>` in `Findings / risks` (omit the line when N is 0). A dropped entry is not a failure — it is the contract working.
+- Never re-map a dropped `low` up to `medium` to keep it. If it was worth reporting it would have arrived as `medium` or higher.
+
+Existing blocks already in `working_copy` carrying `severity: low` (from a review that ran before v1.6.8) are **not** rewritten or removed by this gate — reconcile them normally; only new entries are filtered.
 
 For each `existing[]` entry:
 - `status: resolved` (with non-empty `resolved_by_change`) — REMOVE the matching `<!-- REVIEW-FINDING -->` block from `working_copy`.
@@ -118,7 +126,7 @@ suggested-fix: |
 
 Field rules:
 - `id`: tmp-id (`<sub_agent_instance_id>-<n>`, e.g. `T1-1`) for newly-appended blocks; main rewrites tmp-ids to final `F-NNN` after your return. For existing blocks you UPDATE, keep the original id untouched.
-- `severity`: `high | medium | low` — verbatim from the reviewer's response.
+- `severity`: `blocker | critical | high | medium` — verbatim from the reviewer's response. Entries arriving as `low` (or any other value) were already dropped by the severity gate above and never reach this format.
 - `phase`: always `item` for this sub-agent.
 - `target`: the item_id (e.g. `PAY-001`). For consistency-only blocks the value would be `file`, but Phase C blocks are always item-scoped.
 - `finding:` / `suggested-fix:` — keys are **kebab-case in the on-disk block** even though the reviewer's JSON contract uses snake_case (`suggested_fix`). The parser expects kebab-case. Use the YAML pipe (`|`) and put the text on the lines below; the parser strips per-line whitespace, so any leading indentation is fine.
@@ -176,6 +184,7 @@ Findings / risks:
 - batch-id: <batch_id>
 - reason: <success | stable | stable-medium | max-iter | blocked-detail>
 - rounds: <N>
+- dropped-low: <N>            (omit the line entirely when 0)
 Main should read:
 - (none — main reads the Payload JSON above)
 ````

@@ -819,6 +819,96 @@ fi
 
 rm -rf "$led_dir"; rm -f "$led_path"
 
+# ---- v1.6.8: severity vocabulary (blocker/critical/high/medium, no low) ---
+
+sev_dir="$(mktemp -d)"
+
+# Build a history with one unresolved finding per severity, in an id order that
+# is deliberately the REVERSE of severity order, so a correct sort has to
+# reorder them.
+sev_hist="$sev_dir/review-history.md"
+{
+  printf -- '---\n'
+  printf 'id: 11111111-1111-4111-9111-111111111111\n'
+  printf 'feature: sev-test\n'
+  printf 'requirements-id: null\n'
+  printf 'last-finding-id: F-004\n'
+  printf 'finding-count-total: 4\n'
+  printf 'finding-count-unresolved: 4\n'
+  printf 'last-review-at: "2026-07-29T00:00:00Z"\n'
+  printf -- '---\n\n# Review history — sev-test\n'
+  i=1
+  for sev in medium high critical blocker; do
+    printf '\n## F-00%d\n' "$i"
+    printf -- '- severity: %s\n' "$sev"
+    printf -- '- phase: item\n- target: PAY-00%d\n' "$i"
+    printf -- '- first-seen: 2026-07-0%d T00:00:00Z (cycle x, iter 1)\n' "$i"
+    printf -- '- last-status: still-present\n- last-status-at: 2026-07-0%dT00:00:00Z\n' "$i"
+    printf -- '- finding: |\n    %s finding text\n' "$sev"
+    printf -- '- suggested-fix: |\n    fix.\n'
+    i=$((i + 1))
+  done
+} > "$sev_hist"
+
+t="build-summary: blocker > critical > high > medium ordering"
+out="$("$REPO_ROOT/scripts/blueprint-review.sh" build-summary "$sev_hist" consistency 2>/dev/null)"
+order="$(printf '%s\n' "$out" | grep -o 'F-00[0-9] \[[a-z]*' | sed 's/.*\[//' | paste -sd, -)"
+if [[ "$order" == "blocker,critical,high,medium" ]]; then
+  ok "$t"
+else
+  ng "$t" "expected blocker,critical,high,medium; got '${order}'"
+fi
+
+t="build-summary: reportable severities survive an over-budget summary"
+# 4 unresolved reportable findings, each body far over the 7500-char budget.
+big_hist="$sev_dir/review-history-big.md"
+{
+  sed -n '1,10p' "$sev_hist"
+  i=1
+  for sev in medium high critical blocker; do
+    printf '\n## F-00%d\n' "$i"
+    printf -- '- severity: %s\n' "$sev"
+    printf -- '- phase: item\n- target: PAY-00%d\n' "$i"
+    printf -- '- first-seen: 2026-07-0%dT00:00:00Z (cycle x, iter 1)\n' "$i"
+    printf -- '- last-status: still-present\n- last-status-at: 2026-07-0%dT00:00:00Z\n' "$i"
+    printf -- '- finding: |\n    %s %s\n' "$sev" "$(head -c 4000 /dev/zero | tr '\0' 'x')"
+    printf -- '- suggested-fix: |\n    fix.\n'
+    i=$((i + 1))
+  done
+} > "$big_hist"
+out="$("$REPO_ROOT/scripts/blueprint-review.sh" build-summary "$big_hist" consistency 2>/dev/null)"
+kept="$(printf '%s\n' "$out" | grep -c -- '^- F-00')"
+if [[ "$kept" -eq 4 ]]; then
+  ok "$t"
+else
+  ng "$t" "expected all 4 reportable findings retained despite overrun; kept $kept"
+fi
+
+t="severity wiring: templates + agents declare the v1.6.8 vocabulary"
+missing=()
+for f in templates/blueprint-reviewer-prompt-batch.md.tmpl \
+         templates/blueprint-reviewer-prompt-consistency.md.tmpl; do
+  grep -q 'blocker|critical|high|medium' "$REPO_ROOT/$f" || missing+=("$f: JSON severity enum")
+  grep -q 'no `low` severity' "$REPO_ROOT/$f" || missing+=("$f: low-out-of-scope statement")
+  grep -q 'Shipped-code regression check' "$REPO_ROOT/$f" || missing+=("$f: shipped-code regression check")
+done
+for f in agents/blueprint-batch-reviewer.md agents/blueprint-consistency-reviewer.md; do
+  grep -q 'blocker | critical | high | medium' "$REPO_ROOT/$f" || missing+=("$f: severity field rule")
+  grep -q 'Severity gate' "$REPO_ROOT/$f" || missing+=("$f: severity gate")
+  grep -q 'dropped-low' "$REPO_ROOT/$f" || missing+=("$f: dropped-low reporting")
+done
+grep -q 'high|medium|low' "$REPO_ROOT/templates/blueprint-reviewer-prompt-batch.md.tmpl" \
+  && missing+=("template batch: stale high|medium|low enum")
+grep -q 'high|medium|low' "$REPO_ROOT/templates/blueprint-reviewer-prompt-consistency.md.tmpl" \
+  && missing+=("template consistency: stale high|medium|low enum")
+if [[ ${#missing[@]} -eq 0 ]]; then
+  ok "$t"
+else
+  ng "$t" "missing severity wiring: ${missing[*]}"
+fi
+
+rm -rf "$sev_dir"
+
 # ---- Summary --------------------------------------------------------------
 
 printf "\n--- summary: %d pass, %d fail ---\n" "$pass" "$fail"

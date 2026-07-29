@@ -25,6 +25,7 @@ Stage-2 audit artifact. Captured by `/mi-apply-impact` at stage-2 entry by a fre
 - **Seam:** `<folder/path>` (existing files: `<file1>`, `<file2>`, ...).
 - **Pre-existing components:** `<existing class/function/module the new code must integrate with>`. Empty list if none (greenfield case).
 - **Cycle flavor:** greenfield | bugfix | improvement.
+- **Shipped-code impact:** what already-shipped, working behavior this item changes or risks breaking — named call sites / consumers / persisted data / public contracts — and what must keep holding. `none — additive only (no existing caller reaches this path)` is a valid, expected answer for a genuinely greenfield item; write it explicitly rather than omitting the line.
 - **Notes:** one or two lines on the integration shape, naming any constraints the requirements should respect.
 
 Example:
@@ -34,8 +35,26 @@ Example:
 - **Seam:** `services/cart/` (existing files: `services/cart/CartService.ts`, `services/cart/CartRepository.ts`).
 - **Pre-existing components:** `CartService.addItem(itemId, quantity)`, `CartRepository.upsertLine(...)`.
 - **Cycle flavor:** improvement.
+- **Shipped-code impact:** `CartService.addItem` is called from `routes/cart.ts` and `jobs/AbandonedCartJob.ts`; both pass a single item and depend on the current `{ ok, cartId }` return shape. Changing the signature in place would break both. The single-item path and its return shape must keep working unchanged.
 - **Notes:** extends the existing single-item path; the bulk variant should reuse `CartRepository.upsertLine` per row to avoid duplicating idempotency logic.
 -->
+
+## Shipped-code regression risks
+
+<!-- Cross-item view of what this cycle could break in code that is already shipped
+     and working. One bullet per distinct risk (NOT one per item) — a single risk
+     touched by three items is one bullet naming all three. Pattern:
+
+- **<risk>** — `<symbol / route / table / contract>` is relied on by `<consumers>`;
+  items <ITEM-ID>, <ITEM-ID> touch it. Must keep holding: <the behavior that cannot
+  change>. Verify by: <the cheapest observable check — a route response, a log line,
+  a DB row, an existing test>.
+
+     Write `- (none — no in-scope item touches shipped behavior)` when the whole cycle
+     is genuinely additive. An empty section is a defect, not an assertion of safety:
+     main reads this section to write each Goals item's `**Shipped-code impact:**`
+     bullet, and stage 5's manual-test plan turns these bullets into regression-seam
+     scenarios. -->
 
 ## Overall seam summary
 

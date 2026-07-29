@@ -16,6 +16,7 @@ ambiguity.
 
 In-scope (consistency):
 - Cross-item contradictions, missing references, terminology drift, file-wide AC ambiguity that crosses items.
+- **File-wide shipped-code regression** (see below).
 
 Out of scope (defer to per-item review):
 - Per-item completeness within a single item, style nits, speculative edge cases.
@@ -49,9 +50,47 @@ Both sections are optional and may be absent from any given session.
 
 ## Severity
 
-- high   — two implementations WILL diverge and one is wrong.
-- medium — ambiguity an implementer would need to ask about before proceeding.
-- low    — minor wording; tolerated as success.
+Four severities, all reportable. There is **no `low` severity** — minor wording,
+style polish, and anything an implementer would never need to ask about is OUT OF
+SCOPE. Do not report it in `new[]`, and do not downgrade a real finding to squeeze
+it in. If the only thing you can say is a nit, return no finding.
+
+- blocker  — the spec cannot be implemented as written (irreconcilable contradiction
+             across items, a reference to something that does not exist, or a
+             violation of a stated hard constraint), OR implementing it as written
+             breaks already-shipped behavior with no stated migration. A human must
+             resolve it before implementation starts.
+- critical — implementations WILL diverge AND the wrong branch causes data loss,
+             a security hole, or a silent regression in already-shipped code.
+- high     — two implementations WILL diverge and one is wrong.
+- medium   — ambiguity an implementer would need to ask about before proceeding.
+
+## Shipped-code regression check (file-wide)
+
+This spec will be implemented on top of code that is **already shipped and working**.
+At the whole-file altitude, report a finding when:
+
+- Two items **jointly** change already-shipped behavior in incompatible ways (each is
+  fine alone; together they break an existing caller, contract, or data shape).
+- The file's stated compatibility position is inconsistent — one item declares an
+  existing behavior preserved while another changes it, or a `## Non-goals` entry
+  claims an area is untouched that a Goals item demonstrably touches.
+- A shipped behavior the file relies on is asserted but never anchored (no seam, no
+  `**Shipped-code impact:**` bullet, nothing in the grounding report).
+
+Per-item regressions inside a single item belong to the per-item pass — don't restate
+them here.
+
+Severity: a silent, unmigrated break of shipped behavior is `blocker` or `critical`;
+an unstated-but-recoverable impact on existing callers is `high`; a merely
+under-specified compatibility boundary is `medium`.
+
+**Grounding.** Prefer the evidence you were handed (the items' `**Shipped-code impact:**`
+bullets, the grounding report, reference material in the session opener). You have
+**read-only** access to the repository and MAY open a file to confirm or refute a
+suspected regression when the spec names a concrete path or symbol — cap at ~5 files
+per round and never survey the repo broadly. A speculative "this might break something"
+is not a finding.
 
 ## Reconciliation contract
 
@@ -82,7 +121,7 @@ ONLY a JSON object, fenced as ```json ... ```, this exact shape. **All field nam
     { "id": "F-NNN", "status": "...", "resolved_by_change": "...", "refined_finding": "...", "refined_suggested_fix": "..." }
   ],
   "new": [
-    { "severity": "high|medium|low", "phase": "consistency", "target": "file", "finding": "...", "suggested_fix": "..." }
+    { "severity": "blocker|critical|high|medium", "phase": "consistency", "target": "file", "finding": "...", "suggested_fix": "..." }
   ]
 }
 ```
