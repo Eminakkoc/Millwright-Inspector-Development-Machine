@@ -188,9 +188,9 @@ Then write the requirements body with **three clearly-labeled scope sections**:
    3. **What must keep holding** — the load-bearing existing behaviour that must survive, phrased so it can be verified.
 
    ```markdown
-   - **CART-002** — Extend `services/cart/CartService.addItem` to accept bulk add requests.
+   - **CART-002** — Extend `services/cart/CartService.addItem` (add-to-cart path) to accept bulk add requests.
      - Acceptance criteria: a bulk request adds every line atomically; a single-item request behaves exactly as today.
-     - **Shipped-code impact:** `CartService.addItem` is called by `routes/cart.ts` and `jobs/AbandonedCartJob.ts`, both single-item and both reading `{ ok, cartId }`. The single-item signature and return shape stay unchanged — bulk arrives as a separate entry point — so both callers keep working untouched.
+     - **Shipped-code impact:** `CartService.addItem` is called by `routes/cart.ts` (cart HTTP routes) and `jobs/AbandonedCartJob.ts` (reminder emails), both single-item and both reading `{ ok, cartId }`. The single-item signature and return shape stay unchanged — bulk arrives as a separate entry point — so both callers keep working untouched.
      - _In plain terms:_ …
    ```
 
@@ -226,14 +226,32 @@ Then write the requirements body with **three clearly-labeled scope sections**:
 **Plain-language explanation after every item (reader aid).** Directly beneath **each** item in all three sections — every `## Goals` item, every `## Planned` item, and every `## Non-goals` item — add a **nested** sub-bullet (2-space indent, alongside any acceptance-criteria bullets) that restates the item in everyday language and gives one concrete example:
 
 ```markdown
-- **PAY-001** — Add a webhook receiver under `services/payments/` that validates incoming Stripe events.
+- **PAY-001** — Add a webhook (Stripe calls us) receiver under `services/payments/` (payment handlers) that validates incoming Stripe events.
   - Reject malformed events with an HTTP error.
   - Acceptance criteria: events with invalid signatures are rejected; valid events return success.
-  - **Shipped-code impact:** the existing `services/payments/` router and its `/payments/*` routes stay as they are — this adds a sibling route, so the shipped checkout flow (`routes/checkout.ts` → `PaymentService.capture`) is untouched and must keep working end to end.
+  - **Shipped-code impact:** the existing `services/payments/` router and its `/payments/*` routes stay as they are — this adds a sibling route, so the shipped checkout flow — `routes/checkout.ts` (checkout endpoint) calling `PaymentService.capture` (charges the card) — is untouched and must keep working end to end.
   - _In plain terms:_ Stripe "phones home" to tell us about payments; this adds the phone line and checks the caller really is Stripe before we trust the message. _Example:_ a forged request with a bad signature is turned away, while a genuine `payment_intent.succeeded` from Stripe is accepted.
 ```
 
 Two hard rules: (1) the explanation MUST be a **nested** sub-bullet (2-space indent) so the blueprint-review enumerator treats it as part of the item, not as a separate reviewable requirement; (2) it is **non-normative** — a reader aid only. Keep it to 1–2 sentences of plain language plus one concrete example; do **not** introduce new requirements, seams, acceptance criteria, or scope in it, and keep it consistent with the item above it. For `## Planned` / `## Non-goals` items that carry no other sub-bullets, the single `- _In plain terms:_ … _Example:_ …` line is the item's only nested bullet.
+
+**Inline glosses on references and abbreviations (reader aid).** The inspector reads this file to approve it, and a bare item id, path, symbol, link, or acronym costs them a lookup to understand a sentence. Whenever an item — in its top-level bullet **or any of its nested sub-bullets**, including `**Shipped-code impact:**` and `_In plain terms:_` — names one of the following, put a gloss of **at most 3 words** in parentheses immediately after it, on **first mention within that item**:
+
+| What | Gloss it as | Example |
+|---|---|---|
+| Another item id | what that item delivers | `AUTH-003 (JWT role claims)` |
+| A file / folder / module path | what lives there | `services/payments/ (payment handlers)` |
+| A symbol — function, class, table, route, event | what it does | `CartService.addItem (add-to-cart path)` |
+| A link or document reference | what it contains | `docs/api-contract.md (response shapes)` |
+| An abbreviation or acronym | its plain expansion | `JWT (signed login token)`, `SSE (server-push stream)` |
+
+Rules:
+
+- **≤ 3 words, plain language.** The gloss is the shortest thing that saves the lookup. No jargon inside a gloss — `JWT (JSON Web Token)` re-states the acronym without explaining it; `JWT (signed login token)` is the right altitude.
+- **First mention per item, every item.** Gloss a reference once inside an item and never again in that item's later sub-bullets. Items are read one at a time (and reviewed one at a time), so a reference that reappears in a *different* item is glossed again there — repetition across items is correct, repetition inside one item is clutter.
+- **Non-normative.** A gloss never adds scope, constraints, acceptance criteria, or a seam. If the explanation needs more than 3 words, it belongs in the item body or the `_In plain terms:_` bullet, not in parentheses.
+- **Skip when redundant.** If the surrounding sentence already says what the reference is (`the existing add-to-cart path \`CartService.addItem\``), adding `(add-to-cart path)` is noise — leave it out. Same for universally-known terms: HTTP, URL, JSON, ID, API, CLI, UI, DB need no gloss.
+- **Never rename to avoid a gloss.** The reference itself stays verbatim — an item id, path, or symbol must remain copy-pasteable and greppable. The gloss goes *beside* it, never *instead of* it.
 
 **Critical distinction:** "Planned (future cycles)" items WILL be implemented — just later. The design of this cycle must accommodate them. "Non-goals" items are truly out of scope and can be assumed away.
 

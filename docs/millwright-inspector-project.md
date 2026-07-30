@@ -772,6 +772,19 @@ queues.
   `improvement` → "extend X to also …"). Planned items WILL ship later — the current
   implementation must leave architectural seams. Non-goals are truly out of scope.
 
+  **Reader aids on every item (non-normative).** Two conventions make the file readable by
+  the inspector who has to approve it, and neither is ever treated as a requirement by the
+  blueprint reviewer (§7.9): a nested `- _In plain terms:_ … _Example:_ …` sub-bullet under
+  every item in all three sections, and — new in v1.6.11 — an **inline gloss of at most 3
+  words** in parentheses after every reference an item makes (another item id, a
+  file/folder/module path, a symbol, a link, an abbreviation), on first mention inside that
+  item, in the top-level bullet and in every sub-bullet: `AUTH-003 (JWT role claims)`,
+  `services/payments/ (payment handlers)`, `JWT (signed login token)`. Glosses repeat across
+  items (each item is read on its own) but never within one, are skipped when the sentence
+  already explains the reference or the term is universally known (HTTP, URL, JSON, ID, API),
+  and never replace the reference itself — ids and paths stay verbatim and greppable.
+  `/mi-update-blueprint` carries both conventions into rotated blueprints.
+
   **Shipped-code impact (v1.6.8).** Every cycle lands on code that is already shipped and
   working, so the grounding pass assesses regression risk as a first-class deliverable:
   per item it records a `**Shipped-code impact:**` line (which existing call sites,
@@ -800,9 +813,11 @@ After Steps A and B, Step B.4 lazily initializes `review-history.md` (the v1.5 c
   back-reference.
 
 The stage-2 hand-off message offers an **optional requirements walkthrough** (Step 3.3):
-on `walkthrough`, the millwright presents each `requirements.md` item one at a time —
-plain language, brief, one concrete example each — waiting for the inspector's go-ahead
-between items. Purely conversational (no state mutation, repeatable); scope decisions
+on `walkthrough`, the millwright presents each `requirements.md` item one at a time as
+three bars of increasing concreteness — a one-sentence summary in very simple language
+(no ids, paths, symbols, or acronyms; outcome before mechanism), a 2–4 sentence
+explanation, then one concrete example — waiting for the inspector's go-ahead between
+items. Purely conversational (no state mutation, repeatable); scope decisions
 voiced mid-walkthrough are persisted immediately (requirements edit or `decisions.md`)
 rather than left to the Approve Handler's end-of-stage sweep. The walkthrough does not
 substitute for the explicit `/mi-continue` approval.

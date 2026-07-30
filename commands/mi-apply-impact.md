@@ -458,7 +458,7 @@ Tell the inspector (append `$effort_suggestion` only when non-empty):
 >
 > ${scope_gate_note}
 >
-> Optional: reply **`walkthrough`** and I'll go over `requirements.md` with you item by item — each item explained briefly in plain language with a concrete example, waiting for your go-ahead before moving to the next one.
+> Optional: reply **`walkthrough`** and I'll go over `requirements.md` with you item by item — each item gets a one-sentence summary in plain language, a short explanation, and a concrete example, waiting for your go-ahead before moving to the next one.
 >
 > When ready, type **`/mi-continue`**.${effort_suggestion}"
 
@@ -488,13 +488,18 @@ Item <i>/<N> — <section name>
 
 > <the item's top-level bullet, verbatim>
 
+In one sentence: <one-sentence summary in very simple language>
+
 <plain-language explanation>
 
 Example: <one concrete example>
 ```
 
-- **Explanation bar:** 2–4 sentences, very simple language — no workflow or domain jargon (define any term that can't be avoided), name the real files/behaviors the item touches. Go a step deeper than the item's inline `_In plain terms:_` sub-bullet — expand on it, never just repeat it.
+- **One-sentence bar:** exactly one sentence, the simplest language you can manage — what this item makes the software do, as you'd say it to someone who has never opened the codebase. No item ids, no file paths, no symbol names, no acronyms; if a term can't be avoided, it isn't the right sentence. This is the "if you read nothing else" line, so lead with the outcome, not the mechanism ("Users will be able to add several items to the cart in one go" — not "Extends the cart service with a bulk entry point"). Present it before the fuller explanation, never as a replacement for it.
+- **Explanation bar:** 2–4 sentences, very simple language — no workflow or domain jargon (define any term that can't be avoided), name the real files/behaviors the item touches. Go a step deeper than both the one-sentence bar above and the item's inline `_In plain terms:_` sub-bullet — expand on them, never just repeat them.
 - **Example bar:** one concrete before/after or input → observable-outcome walk-through the inspector could actually try ("you click X / call Y → today you get A; after this feature you get B"). If the inline `_Example:_` sub-bullet already covers the same case, pick a different one so the inspector gets two angles on the item.
+
+The three bars are a ladder — one sentence, then the paragraph, then the worked example — each one a level more concrete than the last. Never collapse them into one another, and never skip the one-sentence bar because the item "is already simple".
 
 **Then wait for the inspector before advancing.** Accepted replies:
 

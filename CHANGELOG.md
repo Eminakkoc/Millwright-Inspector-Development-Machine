@@ -1,5 +1,39 @@
 # Changelog
 
+## 1.6.11 — Readable requirements: inline reference glosses + one-sentence walkthrough summaries
+
+Both changes target the same reader: the inspector approving `requirements.md` at the
+stage-2 gate. The file was written at the right altitude but still assumed the reader
+already knew what `AUTH-003`, `services/payments/`, or `JWT` meant, and the optional
+walkthrough opened each item with a paragraph rather than a takeaway.
+
+### What changed
+
+- **Inline glosses on every reference (non-normative, ≤ 3 words).** New rule in
+  `docs/blueprint-regeneration.md` Step A: whenever an item names another item id, a
+  file/folder/module path, a symbol, a link, or an abbreviation, a parenthetical gloss of
+  at most 3 words follows it on first mention **inside that item** — `AUTH-003 (JWT role
+  claims)`, `services/payments/ (payment handlers)`, `JWT (signed login token)`. It
+  applies to the top-level bullet and every nested sub-bullet (`**Shipped-code impact:**`
+  included). Repeat across items (each is read on its own), never within one. Skipped when
+  the sentence already explains the reference and for universally-known terms (HTTP, URL,
+  JSON, ID, API, CLI, UI, DB). The reference itself always stays verbatim — the gloss goes
+  beside it, never instead of it, so ids and paths remain greppable. Mirrored in
+  `templates/requirements.md.tmpl` and in `/mi-update-blueprint` Step 4b, where the
+  rewritten Goals items gloss the real post-implementation symbols read out of the diff.
+- **Both reviewer prompts treat glosses as invisible.** `blueprint-reviewer-prompt-batch`
+  and `-consistency` now put glosses out of scope alongside the `_In plain terms:_`
+  sub-bullet: never flagged as vague or as introducing a component, never a source of a
+  requirement, and — for the consistency pass — two differently-worded glosses on the same
+  reference are not terminology drift. Without this the ≤ 3-word aid would have read as an
+  under-specified requirement and the review would have grown the file fixing it.
+- **A one-sentence summary opens every walkthrough item.** `/mi-apply-impact` Step 3.3 now
+  presents three bars per item instead of two — a single plain sentence, then the 2–4
+  sentence explanation, then the worked example — each a level more concrete than the last.
+  The new bar carries no item ids, paths, symbols, or acronyms and leads with the outcome
+  rather than the mechanism; it is never skipped for "simple" items and never collapsed
+  into the paragraph below it. The stage-2 hand-off message advertises it.
+
 ## 1.6.10 — Scope-expansion gate: blueprint review stops growing `requirements.md`
 
 Field report: blueprint reviews kept adding new mechanisms to the requirements without

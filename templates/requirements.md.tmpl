@@ -24,6 +24,14 @@ commits: []
      with one concrete example — format `- _In plain terms:_ … _Example:_ …`.
 
      Both must be nested (indented) sub-bullets so the blueprint reviewer treats
-     them as part of the item, not new requirements. See
-     docs/blueprint-regeneration.md Step A for the exact format and altitude
+     them as part of the item, not new requirements.
+
+     Every reference an item makes — another item id, a file/folder path, a
+     symbol, a link, an abbreviation — carries a NON-NORMATIVE inline gloss of
+     AT MOST 3 words in parentheses on its first mention inside that item, e.g.
+     `AUTH-003 (JWT role claims)`, `services/payments/ (payment handlers)`,
+     `JWT (signed login token)`. Skip it when the sentence already explains the
+     reference, or for universally-known terms (HTTP, URL, JSON, ID, API).
+
+     See docs/blueprint-regeneration.md Step A for the exact format and altitude
      rules. -->
