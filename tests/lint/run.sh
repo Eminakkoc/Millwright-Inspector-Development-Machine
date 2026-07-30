@@ -78,6 +78,44 @@ for tok in Read Write Edit Bash Grep; do
 done
 report "blueprint-batch-reviewer tools: contains no filesystem tools (Read/Write/Edit/Bash/Grep)" "$bad"
 
+# --- delegation contract note (v1.6.12) -------------------------------------
+# Every command that spawns a sub-agent must carry the "Delegation contract"
+# note under its H1 and cite §8.15. Without it an agent running the command
+# hits Claude Code's "do not call the Agent tool unless the user requested it"
+# default, and either stops to ask or silently does the delegated work in main
+# — breaking the §8.13 main-read budget. See docs/millwright-inspector-project.md §8.15.
+DELEGATING_COMMANDS=(
+  mi-run mi-continue mi-apply-impact mi-generate-implementation-diagrams
+  mi-review mi-complete-workflow mi-analyze-review mi-sidequest
+  mi-blueprint-review mi-blueprint-review-item mi-blueprint-review-consistency
+)
+missing=""
+for c in "${DELEGATING_COMMANDS[@]}"; do
+  f="commands/$c.md"
+  [[ -f "$f" ]] || { missing="${missing}${f} (file absent) "; continue; }
+  grep -qF '**Delegation contract.**' "$f" || missing="${missing}${f} (no note) "
+  grep -qF '§8.15' "$f" || missing="${missing}${f} (no §8.15 citation) "
+done
+report "every delegating command carries the Delegation contract note" "$missing"
+
+# Reverse drift net: a command that names a subagent_type but is not on the
+# list above is a new delegation site that never got the note.
+untracked=""
+while IFS= read -r f; do
+  base="$(basename "$f" .md)"
+  for c in "${DELEGATING_COMMANDS[@]}"; do
+    [[ "$base" == "$c" ]] && { base=""; break; }
+  done
+  [[ -n "$base" ]] && untracked="${untracked}${f} "
+done < <(git grep -l 'subagent_type' -- 'commands/*.md' || true)
+report "no delegating command missing from the DELEGATING_COMMANDS list" "$untracked"
+
+# The note points at §8.15 — it must exist.
+m=""
+grep -qF '### 8.15 Delegation is part of the command contract' \
+  docs/millwright-inspector-project.md || m="§8.15 missing from the project doc"
+report "project doc defines §8.15 (delegation contract)" "$m"
+
 echo
 if [[ "$fail" -ne 0 ]]; then
   echo "rename lint guard FAILED — rename the tokens above to the inspector/mi names" >&2

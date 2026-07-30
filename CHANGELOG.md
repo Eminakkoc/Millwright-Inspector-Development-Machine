@@ -1,5 +1,42 @@
 # Changelog
 
+## 1.6.12 — Delegation is part of the command contract
+
+Field report: a stage-2 run stopped mid-flight and asked the inspector to adjudicate a
+rule collision. `/mi-apply-impact` structurally requires three sub-agents
+(`codebase-grounder`, `blueprint-diagrammer`, `lessons-filter`), and §8.13's main-read
+budget *forbids* main from doing that work itself — while Claude Code ships a default
+instruction not to call the Agent tool unless the user requested it. Refusing to delegate
+left only two outs: blow the budget, or ship an ungrounded blueprint.
+
+**Root cause — the plugin never granted its own permission.** Eleven commands (16 call
+sites) name sub-agents they cannot run without, but no command said that invoking it
+*constitutes* requesting them. The collision was structural and would recur at nearly
+every stage, since 11 of the 24 commands delegate.
+
+### What changed
+
+- **New project-doc §8.15 — "Delegation is part of the command contract".** Invoking an
+  `mi-*` command *is* the user requesting the delegations that command declares: the
+  sub-agents are named in the command body, their contracts live in `agents/`, and the
+  command cannot satisfy its own spec without them. A default aimed at *unrequested*
+  fan-out does not reach a delegation the user requested by name when they typed the
+  command. The boundary is stated exactly so the default keeps its teeth — sanctioned
+  means a sub-agent this command names, at the step that names it, for the work described
+  there; everything else (unnamed sub-agents, invented parallelism) stays forbidden.
+- **Self-sufficient "Delegation contract" note in all 11 delegating commands**, under the
+  H1 next to the Runtime-bootstrap note, each naming its own sub-agents and the step that
+  spawns them — so an agent can act on it without reading §8.15. `mi-continue` additionally
+  records that handlers auto-firing another `mi-*` command inherit that command's contract.
+- **No silent downgrade.** Every note states that a delegation which genuinely cannot run
+  (type unavailable, harness refusal) must be reported and stop the command — never
+  quietly performed in main. §8.13 now cross-references §8.15 for the same reason: the
+  budget forbidding main from the work is what makes the delegation mandatory.
+- **Lint guard (3 new checks).** Every command on the delegating list carries the note and
+  cites §8.15; a reverse drift net fails when a command names a `subagent_type` but is
+  absent from that list (a new delegation site that never got the note); and §8.15 must
+  exist in the project doc. Negative-tested: removing one note fails the suite.
+
 ## 1.6.11 — Readable requirements: inline reference glosses + one-sentence walkthrough summaries
 
 Both changes target the same reader: the inspector approving `requirements.md` at the

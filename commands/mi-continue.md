@@ -6,6 +6,8 @@ description: Universal advancement signal for the mi-workflow. Dispatches to the
 
 **The single advancement signal the inspector types throughout the workflow.** Reads `progress.md` (and a few sibling files) for the current state, decides where we are, and runs the appropriate handler.
 
+**Delegation contract.** This command REQUIRES the sub-agents listed below; §8.13's main-read budget forbids main from doing their work itself. **Invoking `/mi-continue` IS the user requesting them** — Claude Code's default "do not call the Agent tool unless the user requested it" (and any stricter house rule layered on it) does not reach a sub-agent this command names at the step that names it, so spawn them without asking for extra confirmation. The default still holds everywhere else: never spawn a sub-agent this command does not name, and never invent fan-out to parallelize a step main is supposed to run. If a named delegation genuinely cannot run (type unavailable, harness refusal), say so and stop — never silently do its work in main. Sub-agents: `dependency-mapper` (Pre-flight Step 4c — only when feature ordering is ambiguous), `pr-review-fixer` (PR-Review Apply Handler). Handlers that auto-fire another `mi-*` command inherit that command's own delegation contract. Canonical rule: `docs/millwright-inspector-project.md` §8.15.
+
 The inspector types `/mi-continue` at every gate where they previously typed a free-form approval:
 
 1. **After marking PENDING items** in the active cycle's `todo-list.md` (stage 1.5; lives under `quest/<active-slug>/todo-list.md`). Runs the Pre-flight Handler — promotes the marked items, analyzes feature dependencies, and proposes a workflow order.

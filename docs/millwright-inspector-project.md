@@ -1860,6 +1860,11 @@ Enforcement is currently a documented contract; the `context-ledger.md` telemetr
 is the regression-detection oracle — a `large`-class read with `location: main` in a stage
 that forbids it surfaces in the ledger as a budget violation.
 
+Because this table *forbids* main from doing the delegated work, the delegations it names
+are mandatory, not optional — see §8.15 for why invoking the command constitutes
+requesting them, and why a command must never quietly do a delegated step in main to
+avoid spawning a sub-agent.
+
 ---
 
 ### 8.14 Resolving `$CLAUDE_PLUGIN_ROOT` in Bash blocks
@@ -1903,6 +1908,45 @@ Subsequent Bash blocks re-source it with:
 Every command that uses `$CLAUDE_PLUGIN_ROOT` cites this section in its **Runtime
 bootstrap** note; the full copy-pasteable resolver block lives in `mi-continue.md`
 Step 1a.
+
+---
+
+### 8.15 Delegation is part of the command contract (v1.6.12)
+
+Claude Code ships a default instruction along the lines of *"do not call the Agent tool
+unless the user requested it"*, and some users add a stricter house rule on top. The
+intent is sound: an agent should not invent fan-out, spawning sub-agents nobody asked
+for. But eight `mi-*` commands (16 call sites) **require** delegation to run correctly,
+and §8.13's main-read budget actively *forbids* main from doing that work itself. Read
+naively, the two collide: at stage 2 the millwright can obey the no-delegation default
+or obey the budget, not both.
+
+Field report: a stage-2 run stopped and asked the inspector to adjudicate, because
+refusing to delegate left only two outs — blow the main-read budget, or ship an
+ungrounded blueprint.
+
+**The resolution, and it is not a judgment call:** invoking an `mi-*` command *is* the
+user requesting the delegations that command declares. The sub-agents are named in the
+command body by `subagent_type`, their contracts live in `agents/`, and the command
+cannot satisfy its own spec without them — they are as much a part of the command as its
+Bash blocks. A default aimed at unrequested fan-out does not reach a delegation the user
+requested by name when they typed the command.
+
+The boundary is exact, and it is what keeps the default's intent intact:
+
+- **Sanctioned** — a sub-agent this command names by `subagent_type`, spawned at the step
+  that names it, for the work described there. No confirmation needed; the command was
+  the confirmation.
+- **Not sanctioned** — any other delegation. A sub-agent the command does not name,
+  spawned to parallelize something main could do itself, or fan-out invented because a
+  step "looks big". That is exactly what the default forbids, and it still forbids it.
+
+Every delegating command carries a self-sufficient **Delegation contract** note under its
+H1 naming its own sub-agents, so an agent can act on it without reading this section. A
+command must never silently downgrade to doing a delegated step in main; if a delegation
+genuinely cannot run (sub-agent type unavailable, harness refusal), say so and stop —
+`docs/blueprint-regeneration.md`'s grounding pass and §8.13's budget both assume the
+sub-agent ran.
 
 ## 9. End-to-end happy-path walkthrough
 
