@@ -1,5 +1,64 @@
 # Changelog
 
+## 1.6.13 — Stage-4 first-run deadlock, and YAML auto-typing in frontmatter
+
+Two reported bugs, plus a third of the same root cause found while verifying the fix.
+
+### Stage 4 could never generate its first diagram set
+
+`commits.sh diagrams-fresh` returns `missing` when there is no `.puml` set and no skip
+marker — which is the state of *every* first-ever stage-4 run, since nothing creates
+`implementation/diagrams/` before the generator does.
+`mi-generate-implementation-diagrams` Step 1.5 read that as an invariant violation,
+refused to generate, and told the inspector to run `/mi-draw-diagrams` — whose Step 2
+dispatches straight back into the same body and re-hits the same branch. The documented
+recovery was the loop. Step 1.5's own `stale` bullet meanwhile claimed it covered the
+"diagrams don't exist yet" case, which the enum never produced.
+
+- **Step 1.5's `missing` branch now generates** and prints *"no existing diagram set —
+  generating from scratch"*. The `stale` bullet no longer claims the missing case.
+- **The asymmetry is now the documented contract**, in `commits.sh` and at both call
+  sites: `missing` means only "no set, no marker" — the *generator* reads it as nothing to
+  reuse, while `mi-continue`'s Review-Resume Step 2.5 reads it, correctly, as an invariant
+  violation, because there it means stage 4 claimed success and left nothing behind. The
+  exit code is a routing hint, not a verdict.
+- The Step 1.5 snippet gained `|| true`, since `missing` exits 1 by contract and that is
+  now a normal path for this command.
+
+### Unquoted timestamps crashed the frontmatter validator
+
+YAML 1.1 auto-types an unquoted `2026-08-11T12:34:56Z` as a *datetime*, and
+`validate-frontmatter.sh` serializes frontmatter to JSON for ajv — so a date-typed value
+aborted validation with a raw `TypeError: Object of type datetime is not JSON
+serializable` instead of producing a verdict, while every schema declaring such a field
+declares it `type: string`.
+
+- **The validator no longer crashes.** Date-likes are serialized back to ISO-8601 text so
+  validation proceeds, with a one-line `warning:` naming each offending path so the
+  unquoted write stays visible. Backstop for drift, not a substitute for quoting.
+- **`manual-test-results.md.tmpl` was unrenderable**, which is what forced the frontmatter
+  to be hand-written in the first place: its illustrative `<!-- -->` block contained
+  `{{SCENARIO_ID}}` / `{{VERDICT}}` / `{{INSPECTOR_REPLY}}`, and the renderer fails loudly
+  on any unsubstituted `{{TOKEN}}` anywhere in the file. Now `<ANGLE_BRACKETS>`, matching
+  the sibling comment block. `frontmatter.sh init manual-test-results` works, and quotes
+  the timestamp on its own.
+- **`mi-manual-test-run` Step 1 now gives the exact `frontmatter.sh init` invocation**
+  (including `TOTAL=!RAW!<n>` — `total` is an integer and the default encoding would quote
+  it into a string) instead of leaving the render to be improvised. Step 4.1, which does
+  legitimately rewrite the whole file by hand, now quotes `finished-at` and says why.
+
+### Same root cause, found while verifying: `change-summary.md.tmpl`
+
+The template hand-quoted `base-commit: "{{BASE_COMMIT}}"` and `head: "{{HEAD}}"`, but
+`mi_render_template` already YAML-encodes frontmatter substitutions — so an all-numeric
+SHA came out as the double-quoted `"'1234567'"` and failed its own `^[0-9a-f]{7,40}$`
+pattern. This broke the all-numeric-SHA regression check documented in `commits.sh`'s own
+contract block, which fails on 1.6.12 and passes now. Quotes removed.
+
+**New project-doc §8.4 "Template authoring rules"** records all three lessons: never
+hand-quote a frontmatter placeholder, use `!RAW!` for integer fields, and never put a
+`{{PLACEHOLDER}}` in an illustrative body comment.
+
 ## 1.6.12 — Delegation is part of the command contract
 
 Field report: a stage-2 run stopped mid-flight and asked the inspector to adjudicate a

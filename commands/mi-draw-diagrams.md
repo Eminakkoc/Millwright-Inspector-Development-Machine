@@ -86,7 +86,7 @@ Wait for the reply. Branch on the answer:
   $CLAUDE_PLUGIN_ROOT/scripts/progress.sh set "diagram-prompt=auto"
   ```
   After the dispatch succeeds, also clear `implementation-diagrams-skipped=false`.
-- **`n`** — record the skip and clean any stale directory. **Order matters for crash safety**: remove the directory FIRST, then set the marker. If a session breaks between step 1 and step 2, the next `/mi-continue` sees `implementation-diagrams-skipped=false` (default) AND no `implementation/diagrams/` directory — `diagrams-fresh` (Phase 3.4) returns `missing`, which routes to the safe diagnostic recovery path. The reverse order would leave a window where the marker says skipped but stale `.puml` files still exist, and stage 8's archival loop (`[[ -d ... ]] && mv -n ...`) would silently archive them.
+- **`n`** — record the skip and clean any stale directory. **Order matters for crash safety**: remove the directory FIRST, then set the marker. If a session breaks between step 1 and step 2, the next `/mi-continue` sees `implementation-diagrams-skipped=false` (default) AND no `implementation/diagrams/` directory — `diagrams-fresh` (Phase 3.4) returns `missing`, which is safe in either reading: at Review-Resume Step 2.5 it surfaces the diagnostic prompt, and at the generator's Step 1.5 it simply regenerates the set that was just removed. The reverse order would leave a window where the marker says skipped but stale `.puml` files still exist, and stage 8's archival loop (`[[ -d ... ]] && mv -n ...`) would silently archive them.
 
   ```bash
   data_root="$($CLAUDE_PLUGIN_ROOT/scripts/data-root.sh)"

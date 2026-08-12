@@ -29,20 +29,23 @@ mkdir -p "$dest_dir"
 Before doing any diagram work, check whether the existing set is already current. The `diagrams-fresh` subcommand returns one of `fresh | stale | skipped | missing` (see `scripts/commits.sh diagrams-fresh` for the contract):
 
 ```bash
-freshness="$($CLAUDE_PLUGIN_ROOT/scripts/commits.sh diagrams-fresh "$active_feature")"
-freshness_exit=$?
+# `missing` exits 1 by contract, and that is a normal path for this command
+# (see the `missing` bullet) — the `|| true` keeps a `set -e` block from
+# aborting on it. Branch on the stdout enum; the exit code carries no
+# information the enum does not.
+freshness="$($CLAUDE_PLUGIN_ROOT/scripts/commits.sh diagrams-fresh "$active_feature" 2>/dev/null || true)"
 ```
 
 Branch on the output:
 
 - **`fresh`** (exit 0) — `implementation/diagrams/` exists with `.puml` files AND no commits since the last diagram-render commit. Print *"diagrams already current — skipping regeneration"* and exit 0. Do NOT proceed to Step 2.
-- **`stale`** (exit 0) — proceed to Step 2 to regenerate. (This is the typical case at stage-4 entry: diagrams either don't exist yet or new commits have landed.)
+- **`stale`** (exit 0) — a `.puml` set exists but commits have landed since it was rendered. Proceed to Step 2 to regenerate. (Note that a *missing* set reports `missing`, not `stale` — the two "regenerate" reasons are distinct enum values, so do not read either bullet as covering the other.)
 - **`skipped`** (exit 0) — `implementation-diagrams-skipped=true`. This command was invoked anyway (most likely from the manual recovery path or stage-7 refresh). Proceed to Step 2 to regenerate; after success, the caller (`/mi-draw-diagrams` or stage-7's Step 2.5) is responsible for clearing `implementation-diagrams-skipped=false`.
-- **`missing`** (exit non-zero) — invariant violation diagnostic. Surface to the inspector:
+- **`missing`** (exit non-zero) — nothing to reuse: no `.puml` files and no skip marker. **Proceed to Step 2 and generate.** This is the state of every first-ever diagram generation for a feature (`implementation/diagrams/` is created by Step 2, not before it), and it is also what a partial run leaves behind — both want the same thing from *this* command, which exists to generate. Do not abort.
 
-  > "diagrams-fresh returned `missing` for `$active_feature` — the workflow expected either `implementation/diagrams/` with `.puml` files OR `implementation-diagrams-skipped=true`, but neither holds. This may be the result of a partial run. Run `/mi-draw-diagrams` to regenerate, or `/mi-resume-workflow` for a state diagnosis."
+  Print a single line first so the distinction stays visible in the transcript: *"no existing diagram set — generating from scratch"*.
 
-  Then exit non-zero. Do NOT silently regenerate — the routing layer in callers handles the recovery prompt.
+  **Why this branch does not abort here, but does elsewhere.** `missing` is a genuine invariant violation only when read *after* stage 4 was supposed to have run — that is the reading at `/mi-continue`'s Review-Resume Step 2.5, where it means "stage 4 reported success yet left nothing behind," and that handler correctly surfaces a diagnostic. It is not a violation at the entry point of the generator itself. An earlier version aborted here and told the inspector to run `/mi-draw-diagrams`, which dispatches straight back into this body (Step 2 of `mi-draw-diagrams`) and re-hits this branch — no feature could ever produce its first diagram set. Keep the asymmetry: the generator generates; the callers diagnose.
 
 ### Step 2 — Resolve inputs and spawn the implementation-analyst sub-agent
 

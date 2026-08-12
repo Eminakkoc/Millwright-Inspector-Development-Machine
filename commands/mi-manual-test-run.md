@@ -169,6 +169,19 @@ case (sub-flow, manual-test-state):
 
 Render from `templates/manual-test-results.md.tmpl` if absent. The template includes `feature`, `plan-id` (copied from the current plan's `id`), `seed-family-id` (copied from the current plan's stable `seed-family-id`), `generated-in-activation` (copied from the current plan's `generated-in-activation`, NOT re-read from `progress.md` — preserves the "this run belongs to the plan it was rendered against" invariant; see `docs/manual-testing-folder/plan.md` § 4.3), `state: in-progress`, `current-scenario: null`, counts, `started-at: <timestamp>`, `finished-at: null`. If present, read its frontmatter — it tells us where to resume.
 
+**Render through the helper — do not hand-write the frontmatter.** `frontmatter.sh init` runs the file through `mi_render_template`, which YAML-encodes every frontmatter substitution: the timestamp comes out quoted (unquoted, YAML would auto-type it as a datetime rather than the `type: string` the schema declares) and the file is schema-validated at write time. `TOTAL` takes the `!RAW!` sentinel because `total` is an integer and the default encoding would quote it into a string.
+
+```bash
+$CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh init manual-test-results \
+  "$results_file" \
+  "FEATURE=$active_feature" \
+  "PLAN_ID=$plan_id" \
+  "SEED_FAMILY_ID=$seed_family_id" \
+  "ACTIVATION_ID=$generated_in_activation" \
+  "TOTAL=!RAW!$scenario_count" \
+  "TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+```
+
 #### Step 2 — Local-environment-up phase
 
 Always first, even on resume — env may have decayed since the pause.
@@ -365,9 +378,11 @@ Reached in interactive and guided mode — `pause` is not a verdict the autonomo
 
 ```
 state: complete
-finished-at: <timestamp>
+finished-at: "<timestamp>"
 current-scenario: null
 ```
+
+**Quote the timestamp.** `finished-at` and `started-at` are `type: string` in `schemas/manual-test-results.schema.yaml`; an unquoted ISO-8601 scalar is auto-typed by YAML as a datetime, not text. `frontmatter.sh validate` tolerates the drift but warns; every other reader of this file expects a string. The same applies anywhere this command writes frontmatter by hand.
 
 Recompute pass/fail/skip counts from the verdict blocks.
 

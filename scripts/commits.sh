@@ -20,10 +20,23 @@
 #   diagrams-fresh <feature>
 #     Output: stdout enum + exit code.
 #       Stdout: one of `fresh | stale | skipped | missing`.
-#       Exit:   0 for fresh/stale/skipped (normal-flow outcomes).
-#               1 for missing (diagnostic — invariant violation; callers
-#                              route to a recovery prompt rather than
-#                              silently regenerating).
+#       Exit:   0 for fresh/stale/skipped.
+#               1 for missing.
+#     `missing` means only "no .puml set and no skip marker" — this
+#     subcommand cannot tell a never-generated feature from a partial run,
+#     because nothing creates implementation/diagrams/ before the generator
+#     does. What that state MEANS is the caller's call, and the two canonical
+#     callers read it differently on purpose:
+#       - `mi-generate-implementation-diagrams` Step 1.5 (and therefore
+#         `/mi-draw-diagrams`, which dispatches into it) treats it as
+#         "nothing to reuse" and generates. Every first-ever stage-4 run of
+#         a feature lands here; aborting instead would deadlock, since the
+#         only documented recovery re-enters the same command.
+#       - `mi-continue` Review-Resume Step 2.5 treats it as an invariant
+#         violation and surfaces a diagnostic — read AFTER stage 4, it means
+#         stage 4 claimed success and left nothing behind.
+#     So the exit code is a routing hint, not a verdict: do not hard-code
+#     "exit 1 ⇒ refuse to generate" at a new call site.
 #     Cache key: (base-commit, latest-commit-touching-implementation/diagrams/).
 #     Call sites must handle all four enum values. Forgetting one — e.g.,
 #     treating `skipped` as `missing` — silently breaks the skip-recovery
@@ -263,9 +276,10 @@ PYEOF
   diagrams-fresh)
     # Multi-state freshness output for implementation/diagrams/. Prints one of
     # `fresh|stale|skipped|missing` to stdout. Exit codes:
-    #   0 — for `fresh`, `stale`, `skipped` (normal-flow outcomes)
-    #   1 — for `missing` (diagnostic — invariant violation; callers route to
-    #       a recovery prompt rather than silently regenerating)
+    #   0 — for `fresh`, `stale`, `skipped`
+    #   1 — for `missing` (routing hint only; whether it means "generate from
+    #       scratch" or "invariant violation" depends on the caller — see the
+    #       contract block at the top of this file)
     #
     # Cache key for `stale` detection: (base-commit,
     #   latest-commit-touching-implementation/diagrams/).

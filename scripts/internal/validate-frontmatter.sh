@@ -24,7 +24,7 @@ tmp_schema_json="$(mktemp).json"
 trap 'rm -f "$tmp_fm" "$tmp_schema_json"' EXIT
 
 python3 - "$file" "$tmp_fm" <<'PYEOF'
-import sys, re, json, yaml
+import sys, re, json, yaml, datetime
 src, dest = sys.argv[1], sys.argv[2]
 with open(src) as f:
     content = f.read()
@@ -33,6 +33,39 @@ if not m:
     print(f'error: {src} has no frontmatter', file=sys.stderr)
     sys.exit(1)
 fm = yaml.safe_load(m.group(1)) or {}
+
+# YAML 1.1 auto-types unquoted ISO-8601 scalars as date/datetime objects, which
+# json.dump cannot serialize — an unquoted `started-at: 2026-08-11T12:34:56Z`
+# used to abort this script with a raw `TypeError: Object of type datetime is
+# not JSON serializable` traceback instead of producing a validation verdict.
+# Every schema that declares such a field declares it `type: string`, so the
+# file is technically wrong; but a crash is the worst way to say so. Serialize
+# date-likes back to ISO-8601 text (validation proceeds normally) and warn once
+# per offending path so the unquoted write that produced it stays visible.
+# Write-side fix belongs in the producer: `mi_render_template` already quotes
+# via `yaml_scalar`; hand-written frontmatter must quote the value itself.
+drifted = []
+
+def deiso(node, path='$'):
+    if isinstance(node, dict):
+        return {k: deiso(v, f'{path}.{k}') for k, v in node.items()}
+    if isinstance(node, list):
+        return [deiso(v, f'{path}[{i}]') for i, v in enumerate(node)]
+    # datetime.datetime is a subclass of datetime.date — this covers both,
+    # plus bare `time` values.
+    if isinstance(node, (datetime.date, datetime.time)):
+        drifted.append(path)
+        return node.isoformat()
+    return node
+
+fm = deiso(fm)
+if drifted:
+    print(
+        f"warning: {src} has unquoted YAML date/datetime frontmatter values "
+        f"({', '.join(drifted)}); validated as ISO-8601 strings. Quote them at "
+        f"the write site.",
+        file=sys.stderr,
+    )
 with open(dest, 'w') as o:
     json.dump(fm, o)
 PYEOF

@@ -1645,6 +1645,27 @@ remaining `{{KEY}}` placeholders: `active-quest`, `blueprint-lessons`, `change-s
 the two `diagrams-readme-*` artifacts have no template — their READMEs are composed
 directly.)
 
+**Template authoring rules (v1.6.13).** Three rules, each learned from a shipped bug:
+
+1. **Never hand-quote a frontmatter placeholder.** `mi_render_template` YAML-encodes every
+   frontmatter substitution through `yaml_scalar`, quoting only when the value needs it —
+   so `head: "{{HEAD}}"` with an all-numeric SHA produced the double-quoted `"'1234567'"`
+   and failed its own schema pattern. Write `head: {{HEAD}}` and let the renderer decide.
+   The corollary matters just as much: an unquoted ISO-8601 timestamp is auto-typed by
+   YAML as a *datetime*, not text, so a frontmatter value the schema declares
+   `type: string` must reach the file through the renderer (or be quoted by hand if the
+   command writes frontmatter itself).
+2. **Integer fields need the `!RAW!` sentinel.** The default encoding quotes bare digits
+   into a string, which fails a `type: integer` schema. Pass `TOTAL=!RAW!3`.
+3. **Never put a `{{PLACEHOLDER}}` in an illustrative body comment.** The renderer fails
+   loudly on any unsubstituted `{{TOKEN}}` anywhere in the file, so a doc comment showing
+   the shape of a repeated block made the template unrenderable and forced callers to
+   hand-write the frontmatter — reintroducing rule 1. Use `<ANGLE_BRACKETS>` for
+   illustration.
+
+`frontmatter.sh validate` no longer crashes on a date-typed value (it warns and validates
+the ISO-8601 form), but that is a backstop for drift, not a licence to skip these rules.
+
 Three blueprint-review reviewer prompts (added in v1.2.0; per-item prompt renamed and
 refit for per-batch use in v1.5; rendered by the sub-agents at review-call time, not by
 `frontmatter.sh`) — see §7.9:
