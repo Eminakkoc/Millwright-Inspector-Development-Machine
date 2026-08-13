@@ -41,6 +41,11 @@
 #                                 # PENDING is refused (only stage-1.5 pend-selected writes PENDING);
 #                                 # IMPLEMENTED is refused (only mi-complete-workflow writes IMPLEMENTED).
 #                                 # Fails if item-id already exists in the file.
+#   todo.sh feature-test-status   # read-only predicate. Prints one TSV row:
+#                                 #   <status>\t<ft-name>\t<ft-item-id>\t<blocking-count>\t<fallback-assignee>
+#                                 # status ∈ none|blocked|ready|premature|selected.
+#                                 # "unselected" means checkbox `[ ]`; every [x] state
+#                                 # (including CANCELED) resolves an item.
 
 set -euo pipefail
 source "$(dirname "$0")/internal/common.sh"
@@ -331,8 +336,85 @@ print(f'mi: added {item_id} as [{state}] under ## {target_section}', file=sys.st
 PYEOF
     ;;
 
+  feature-test-status)
+    file="$(todo_file)"
+    [[ -f "$file" ]] || mi_die "todo-list.md not found"
+    python3 - "$file" <<'PYEOF'
+import sys, re, yaml
+
+path = sys.argv[1]
+with open(path) as f:
+    content = f.read()
+
+m = re.match(r'^---\n(.*?)\n---\n(.*)$', content, re.DOTALL)
+fm = (yaml.safe_load(m.group(1)) or {}) if m else {}
+body = m.group(2) if m else content
+ft_name = fm.get('feature-test')
+
+def kebab(s):
+    s = s.strip().lower()
+    s = re.sub(r'[\s_]+', '-', s)
+    s = re.sub(r'[^a-z0-9-]', '', s)
+    s = re.sub(r'-+', '-', s).strip('-')
+    return s
+
+def emit_none():
+    print('none\t\t\t0\t')
+    sys.exit(0)
+
+if not ft_name:
+    emit_none()
+
+target = kebab(ft_name)
+item_pat = re.compile(
+    r'^\s*-\s+\[([ xX])\]\s+(?:\(([^)]+)\)\s+)?'
+    r'(?:TODO|PENDING|IMPLEMENTING|IMPLEMENTED|CANCELED)\s+—\s+([A-Z0-9-]+)'
+)
+
+section = None
+ft_item_id = ''
+ft_checked = False
+blocking = 0
+fallback_assignee = ''
+
+for line in body.split('\n'):
+    if line.startswith('## '):
+        section = kebab(line[3:])
+        continue
+    mm = item_pat.match(line)
+    if not mm:
+        continue
+    checked = mm.group(1) in ('x', 'X')
+    assignee = mm.group(2) or ''
+    item_id = mm.group(3)
+    if section == target:
+        ft_item_id = item_id
+        ft_checked = checked
+    elif not checked:
+        blocking += 1
+    else:
+        fallback_assignee = assignee
+
+if not ft_item_id:
+    # Field present but no matching section/item — a hand-edited file. Warn and
+    # report `none` so callers no-op rather than stalling the cycle.
+    sys.stderr.write(
+        f"warning: feature-test '{ft_name}' is declared in frontmatter but no "
+        f"matching section with an item was found; reporting status=none\n"
+    )
+    emit_none()
+
+if ft_checked:
+    status = 'premature' if blocking else 'selected'
+else:
+    status = 'blocked' if blocking else 'ready'
+
+print(f'{status}\t{ft_name}\t{ft_item_id}\t{blocking}\t{fallback_assignee}')
+PYEOF
+    ;;
+
   *)
-    echo "usage: todo.sh {set-state|bulk-transition|pend-selected|list|add} ..." >&2
+    echo "usage: todo.sh {set-state|bulk-transition|pend-selected|list|add|feature-test-status} ..." >&2
     exit 2
     ;;
 esac

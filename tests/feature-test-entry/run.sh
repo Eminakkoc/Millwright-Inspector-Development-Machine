@@ -336,6 +336,129 @@ else
   ok "$t"
 fi
 
+# ---- Task 5: feature-test-status ------------------------------------------
+
+# ft_status <sandbox> — print the status row.
+ft_status() { MI_DATA_ROOT="$1" "$REPO_ROOT/scripts/todo.sh" feature-test-status 2>/dev/null; }
+# field <row> <n> — extract the nth tab-separated field.
+field() { printf '%s' "$1" | cut -f"$2"; }
+
+t="feature-test-status: 'none' when the frontmatter field is absent"
+sandbox="$(make_quest)"
+cat > "$(quest_dir "$sandbox")/todo-list.md" <<'EOF'
+---
+id: bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb
+related-features: [payments]
+description: Single-feature cycle.
+---
+
+# Todo list
+
+## payments
+
+- [ ] TODO — PAY-001: first payment item
+EOF
+row="$(ft_status "$sandbox")"
+if [[ "$(field "$row" 1)" == "none" ]]; then
+  ok "$t"
+else
+  ng "$t" "expected 'none', got '$(field "$row" 1)'"
+fi
+
+t="feature-test-status: 'blocked' with a count while ordinary [ ] items remain"
+sandbox="$(make_quest)"; seed_todo "$sandbox"
+row="$(ft_status "$sandbox")"
+if [[ "$(field "$row" 1)" == "blocked" && "$(field "$row" 4)" == "3" ]]; then
+  ok "$t"
+else
+  ng "$t" "expected 'blocked' with count 3, got '$(field "$row" 1)'/'$(field "$row" 4)'"
+fi
+
+t="feature-test-status: reports the ft name and item id"
+sandbox="$(make_quest)"; seed_todo "$sandbox"
+row="$(ft_status "$sandbox")"
+if [[ "$(field "$row" 2)" == "payments-feature-test" && "$(field "$row" 3)" == "FT-001" ]]; then
+  ok "$t"
+else
+  ng "$t" "expected name/id 'payments-feature-test'/'FT-001', got '$(field "$row" 2)'/'$(field "$row" 3)'"
+fi
+
+t="feature-test-status: 'ready' once every ordinary item is selected"
+sandbox="$(make_quest)"; seed_todo "$sandbox"
+for id in PAY-001 PAY-002 AUD-001; do
+  MI_DATA_ROOT="$sandbox" "$REPO_ROOT/scripts/todo.sh" \
+    set-state "$id" PENDING --assignee emin >/dev/null 2>&1
+done
+row="$(ft_status "$sandbox")"
+if [[ "$(field "$row" 1)" == "ready" && "$(field "$row" 4)" == "0" ]]; then
+  ok "$t"
+else
+  ng "$t" "expected 'ready' with count 0, got '$(field "$row" 1)'/'$(field "$row" 4)'"
+fi
+
+t="feature-test-status: CANCELED resolves an item (escape hatch)"
+sandbox="$(make_quest)"; seed_todo "$sandbox"
+MI_DATA_ROOT="$sandbox" "$REPO_ROOT/scripts/todo.sh" \
+  set-state PAY-001 PENDING --assignee emin >/dev/null 2>&1
+MI_DATA_ROOT="$sandbox" "$REPO_ROOT/scripts/todo.sh" \
+  set-state PAY-002 CANCELED --assignee emin >/dev/null 2>&1
+MI_DATA_ROOT="$sandbox" "$REPO_ROOT/scripts/todo.sh" \
+  set-state AUD-001 CANCELED --assignee emin >/dev/null 2>&1
+row="$(ft_status "$sandbox")"
+if [[ "$(field "$row" 1)" == "ready" ]]; then
+  ok "$t"
+else
+  ng "$t" "CANCELED did not resolve items; got '$(field "$row" 1)'"
+fi
+
+t="feature-test-status: 'premature' when marked by hand while items remain"
+sandbox="$(make_quest)"; seed_todo "$sandbox"
+MI_DATA_ROOT="$sandbox" "$REPO_ROOT/scripts/todo.sh" \
+  set-state FT-001 PENDING --assignee emin >/dev/null 2>&1
+row="$(ft_status "$sandbox")"
+if [[ "$(field "$row" 1)" == "premature" ]]; then
+  ok "$t"
+else
+  ng "$t" "expected 'premature', got '$(field "$row" 1)'"
+fi
+
+t="feature-test-status: 'selected' once promoted with no ordinary items left"
+sandbox="$(make_quest)"; seed_todo "$sandbox"
+for id in PAY-001 PAY-002 AUD-001 FT-001; do
+  MI_DATA_ROOT="$sandbox" "$REPO_ROOT/scripts/todo.sh" \
+    set-state "$id" PENDING --assignee emin >/dev/null 2>&1
+done
+row="$(ft_status "$sandbox")"
+if [[ "$(field "$row" 1)" == "selected" ]]; then
+  ok "$t"
+else
+  ng "$t" "expected 'selected', got '$(field "$row" 1)'"
+fi
+
+t="feature-test-status: fallback assignee is the last [x] ordinary line"
+sandbox="$(make_quest)"; seed_todo "$sandbox"
+MI_DATA_ROOT="$sandbox" "$REPO_ROOT/scripts/todo.sh" \
+  set-state PAY-001 PENDING --assignee alice >/dev/null 2>&1
+MI_DATA_ROOT="$sandbox" "$REPO_ROOT/scripts/todo.sh" \
+  set-state AUD-001 PENDING --assignee bob >/dev/null 2>&1
+row="$(ft_status "$sandbox")"
+if [[ "$(field "$row" 5)" == "bob" ]]; then
+  ok "$t"
+else
+  ng "$t" "expected fallback 'bob', got '$(field "$row" 5)'"
+fi
+
+t="feature-test-status: writes no files"
+sandbox="$(make_quest)"; seed_todo "$sandbox"
+before="$(shasum -a 256 "$(quest_dir "$sandbox")/todo-list.md" | cut -d' ' -f1)"
+ft_status "$sandbox" >/dev/null
+after="$(shasum -a 256 "$(quest_dir "$sandbox")/todo-list.md" | cut -d' ' -f1)"
+if [[ "$before" == "$after" ]]; then
+  ok "$t"
+else
+  ng "$t" "todo-list.md was modified by a read-only predicate"
+fi
+
 # ---- Summary --------------------------------------------------------------
 
 printf "\n%d passed, %d failed\n" "$pass" "$fail"
