@@ -83,6 +83,76 @@ else
   ng "$t" "valid feature-test field was rejected on summary"
 fi
 
+# ---- Task 2: derive-feature-test-name -------------------------------------
+
+t="derive: base case appends -feature-test to the first feature"
+sandbox="$(make_quest)"
+out="$(MI_DATA_ROOT="$sandbox" "$REPO_ROOT/scripts/folder-id.sh" \
+       derive-feature-test-name payments audit-log 2>/dev/null || true)"
+if [[ "$out" == "payments-feature-test" ]]; then
+  ok "$t"
+else
+  ng "$t" "expected 'payments-feature-test', got '$out'"
+fi
+
+t="derive: collision with an ordinary feature name appends an ordinal"
+sandbox="$(make_quest)"
+out="$(MI_DATA_ROOT="$sandbox" "$REPO_ROOT/scripts/folder-id.sh" \
+       derive-feature-test-name payments payments-feature-test 2>/dev/null || true)"
+if [[ "$out" == "payments-feature-test-2" ]]; then
+  ok "$t"
+else
+  ng "$t" "expected 'payments-feature-test-2', got '$out'"
+fi
+
+t="derive: an ordinal retry emits a rename note on stderr"
+sandbox="$(make_quest)"
+err="$(MI_DATA_ROOT="$sandbox" "$REPO_ROOT/scripts/folder-id.sh" \
+       derive-feature-test-name payments payments-feature-test 2>&1 >/dev/null || true)"
+if [[ "$err" == *"payments-feature-test-2"* ]]; then
+  ok "$t"
+else
+  ng "$t" "stderr did not mention the replacement name: '$err'"
+fi
+
+t="derive: the base case emits no rename note"
+sandbox="$(make_quest)"
+err="$(MI_DATA_ROOT="$sandbox" "$REPO_ROOT/scripts/folder-id.sh" \
+       derive-feature-test-name payments audit-log 2>&1 >/dev/null || true)"
+if [[ -z "$err" ]]; then
+  ok "$t"
+else
+  ng "$t" "expected empty stderr, got '$err'"
+fi
+
+t="derive: refuses fewer than two ordinary features (FTQ-007 guard)"
+sandbox="$(make_quest)"
+if MI_DATA_ROOT="$sandbox" "$REPO_ROOT/scripts/folder-id.sh" \
+   derive-feature-test-name payments >/dev/null 2>&1; then
+  ng "$t" "single-feature invocation was accepted — FTQ-007 violation would be silent"
+else
+  ok "$t"
+fi
+
+t="derive: lineage collision with an existing feature folder appends an ordinal"
+sandbox="$(make_quest)"
+mkdir -p "$sandbox/workflow-stream/payments-feature-test"
+cat > "$sandbox/workflow-stream/payments-feature-test/id.md" <<'EOF'
+---
+id: 55555555-5555-4555-8555-555555555555
+kind: feature
+---
+
+# Folder id
+EOF
+out="$(MI_DATA_ROOT="$sandbox" "$REPO_ROOT/scripts/folder-id.sh" \
+       derive-feature-test-name payments audit-log 2>/dev/null || true)"
+if [[ "$out" == "payments-feature-test-2" ]]; then
+  ok "$t"
+else
+  ng "$t" "expected 'payments-feature-test-2' after lineage collision, got '$out'"
+fi
+
 # ---- Summary --------------------------------------------------------------
 
 printf "\n%d passed, %d failed\n" "$pass" "$fail"
