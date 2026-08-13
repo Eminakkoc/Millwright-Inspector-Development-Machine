@@ -580,6 +580,74 @@ else
   ng "$t" "mi-run.md does not state the single-feature no-op"
 fi
 
+# ---- Task 8: mi-continue stage-1.5 ----------------------------------------
+
+MI_CONT="$REPO_ROOT/commands/mi-continue.md"
+
+t="mi-continue: Step 2A calls feature-test-status"
+if grep -q 'feature-test-status' "$MI_CONT"; then
+  ok "$t"
+else
+  ng "$t" "mi-continue.md never invokes feature-test-status"
+fi
+
+t="mi-continue: promotes with set-state --assignee"
+if grep -qE 'set-state .*PENDING --assignee' "$MI_CONT"; then
+  ok "$t"
+else
+  ng "$t" "mi-continue.md does not promote the entry with an inherited assignee"
+fi
+
+t="mi-continue: reverts a prematurely marked entry"
+if grep -q 'premature' "$MI_CONT"; then
+  ok "$t"
+else
+  ng "$t" "mi-continue.md does not handle the premature status"
+fi
+
+t="mi-continue: appends the entry via progress.sh enqueue"
+if grep -qE 'enqueue "\$ft_name"' "$MI_CONT"; then
+  ok "$t"
+else
+  ng "$t" "mi-continue.md does not enqueue the feature-test name"
+fi
+
+t="mi-continue: excludes the entry from the mid-cycle ordinary enqueue"
+if grep -qE 'excluding .*ft_name|exclude .*ft_name' "$MI_CONT"; then
+  ok "$t"
+else
+  ng "$t" "mi-continue.md does not exclude ft_name from the ordinary enqueue"
+fi
+
+t="mi-continue: validates the pin in both Step 2A and Step 2B"
+n="$(grep -c 'check-feature-test-pin' "$MI_CONT")"
+if [[ "$n" -ge 2 ]]; then
+  ok "$t"
+else
+  ng "$t" "expected >=2 check-feature-test-pin call sites, found $n"
+fi
+
+t="mi-continue: excludes the entry from dependency analysis"
+if grep -qE 'ft_name.*dependency-mapper|dependency-mapper.*ft_name' "$MI_CONT"; then
+  ok "$t"
+else
+  ng "$t" "mi-continue.md does not exclude ft_name from dependency analysis"
+fi
+
+t="mi-continue: records the pin rationale in queue-rationale.md"
+if grep -q 'pinned last' "$MI_CONT"; then
+  ok "$t"
+else
+  ng "$t" "mi-continue.md does not record the pin rationale"
+fi
+
+t="mi-continue: documents the Row A ordering invariant"
+if grep -qE 'Row A.*feature-test|feature-test.*Row A' "$MI_CONT"; then
+  ok "$t"
+else
+  ng "$t" "mi-continue.md does not tie the feature-test entry to the Row A invariant"
+fi
+
 # ---- Summary --------------------------------------------------------------
 
 printf "\n%d passed, %d failed\n" "$pass" "$fail"
