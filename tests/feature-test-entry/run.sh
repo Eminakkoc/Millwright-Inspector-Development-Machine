@@ -574,7 +574,7 @@ else
 fi
 
 t="mi-run: states single-feature cycles emit nothing (FTQ-007)"
-if grep -qE 'single-feature cycle .*(no|nothing)|exactly one feature.*no feature-test' "$MI_RUN"; then
+if grep -qE 'single-feature cycle never calls it.*\bemits no feature-test section\b' "$MI_RUN"; then
   ok "$t"
 else
   ng "$t" "mi-run.md does not state the single-feature no-op"
@@ -599,10 +599,10 @@ else
 fi
 
 t="mi-continue: reverts a prematurely marked entry"
-if grep -q 'premature' "$MI_CONT"; then
+if grep -qE 'set-state "\$ft_item_id" TODO' "$MI_CONT"; then
   ok "$t"
 else
-  ng "$t" "mi-continue.md does not handle the premature status"
+  ng "$t" "mi-continue.md does not revert the entry to TODO"
 fi
 
 t="mi-continue: appends the entry via progress.sh enqueue"

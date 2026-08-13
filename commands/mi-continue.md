@@ -181,8 +181,13 @@ Reached when the inspector has just finished marking items (`[x] TODO` lines exi
    ft_status="$(printf '%s' "$ft_row" | cut -f1)"
    ft_name="$(printf '%s' "$ft_row" | cut -f2)"
    ft_item_id="$(printf '%s' "$ft_row" | cut -f3)"
+   ft_blocking="$(printf '%s' "$ft_row" | cut -f4)"
    ft_fallback_assignee="$(printf '%s' "$ft_row" | cut -f5)"
+   printf 'feature-test: status=%s name=%s item=%s blocking=%s fallback=%s\n' \
+     "$ft_status" "$ft_name" "$ft_item_id" "$ft_blocking" "$ft_fallback_assignee"
    ```
+
+   This block **prints** what it read — the values themselves do not survive into later Bash blocks (each Bash tool call is a fresh subshell; see Step 1a), so the printed line is what the agent branches on here, and later items (3.5, 4, 5) re-derive their own copies rather than trusting an export from this fence.
 
    Branch on `$ft_status`:
 
@@ -218,17 +223,31 @@ Reached when the inspector has just finished marking items (`[x] TODO` lines exi
 
      Pass **only ordinary feature names** here, **excluding `$ft_name`** — the feature-test entry is appended separately by item 3.5 so it lands last in both the initial and the mid-cycle branch.
 
-3.5. **Append the feature-test entry to the queue.** Runs after item 3 regardless of which branch fired — both the initial-cycle branch (`queue_count > 0`) and the mid-cycle branch (`queue_count == 0`) fall through to this item. Within that, it actually enqueues when item 1.5 promoted, or when `$ft_status` is `selected` and the name is not yet queued:
+3.5. **Append the feature-test entry to the queue.** Runs after item 3 regardless of which branch fired — both the initial-cycle branch (`queue_count > 0`) and the mid-cycle branch (`queue_count == 0`) fall through to this item. Within that, it actually enqueues when `$ft_status` is `ready` or `selected` and the name is not already present in either the queue or `completed`. This is its own fence, so it re-derives `$ft_status`/`$ft_name` itself rather than trusting item 1.5's — each Bash tool call is a fresh subshell (Step 1a); relying on the earlier fence's export is exactly what makes this step fail silently:
 
    ```bash
-   if [[ -n "${ft_name:-}" && "$ft_status" != "none" && "$ft_status" != "blocked" && "$ft_status" != "premature" ]]; then
-     if ! $CLAUDE_PLUGIN_ROOT/scripts/progress.sh queue-remaining | grep -qx "$ft_name"; then
+   quest_dir="$($CLAUDE_PLUGIN_ROOT/scripts/quest.sh dir)"
+   ft_row="$($CLAUDE_PLUGIN_ROOT/scripts/todo.sh feature-test-status)"
+   ft_status="$(printf '%s' "$ft_row" | cut -f1)"
+   ft_name="$(printf '%s' "$ft_row" | cut -f2)"
+
+   if [[ -n "$ft_name" && "$ft_status" != "none" && "$ft_status" != "blocked" && "$ft_status" != "premature" ]]; then
+     queued_now="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh queue-remaining 2>/dev/null || true)"
+     completed_now="$($CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get "$quest_dir/progress.md" 'completed[]' 2>/dev/null || true)"
+     ft_already=0
+     if printf '%s\n' "$queued_now" | grep -qx "$ft_name"; then
+       ft_already=1
+     fi
+     if printf '%s\n' "$completed_now" | grep -qx "$ft_name"; then
+       ft_already=1
+     fi
+     if [[ "$ft_already" -eq 0 ]]; then
        $CLAUDE_PLUGIN_ROOT/scripts/progress.sh enqueue "$ft_name"
      fi
    fi
    ```
 
-   The guard matters: `enqueue` **errors** on a duplicate rather than no-opping, so a `/mi-continue` re-run after a session break would abort here without it. Splitting this from the promotion in item 1.5 is what guarantees last position in both branches — the initial cycle skips item 3's `enqueue` entirely, while the mid-cycle branch enqueues ordinary features first.
+   The guard matters: `enqueue` **errors** on a duplicate rather than no-opping, so a `/mi-continue` re-run after a session break would abort here without it. Checking `completed` alongside `queue-remaining` matters too — `enqueue` itself refuses against `queue ∪ completed`, not just `queue`. On a mid-cycle re-entry *after* the feature-test entry itself already finished its whole workflow, `$ft_status` reads `selected` (the checkbox is still `[x]` in `todo-list.md`) but the name now sits in `progress.completed`, not in `queue` — a queue-only guard would pass and then `enqueue` would abort stage 1.5 with no recovery short of hand-editing `progress.md`. A feature-test entry already in `completed` is deliberately not re-queued. Splitting this from the promotion in item 1.5 is what guarantees last position in both branches — the initial cycle skips item 3's `enqueue` entirely, while the mid-cycle branch enqueues ordinary features first.
 
 4. **Derive cross-feature ordering signals — journal-first, code-aware as fallback.** Replaces the prior unconditional codebase scan (which violated the "intake stages don't read code" invariant — see `docs/context optimization/recommendations.md` § "Issue 1"). Skip the whole step when there's only one feature in the queue.
 
@@ -243,13 +262,16 @@ Reached when the inspector has just finished marking items (`[x] TODO` lines exi
 
    This step writes nothing on its own — the proposed order is held in chat to be presented in step 5 below.
 
-   **Step 4b — Heuristic short-circuit (Phase 4.2).** Decide whether step 4a is enough or whether a code-aware scan is justified:
+   **Step 4b — Heuristic short-circuit (Phase 4.2).** Decide whether step 4a is enough or whether a code-aware scan is justified. This fence re-derives `ft_name` from frontmatter rather than trusting item 1.5's export (fresh subshell — see Step 1a):
 
    ```bash
    data_root="$($CLAUDE_PLUGIN_ROOT/scripts/data-root.sh)"
-   summary_file="$($CLAUDE_PLUGIN_ROOT/scripts/quest.sh dir)/summary.md"
+   quest_dir="$($CLAUDE_PLUGIN_ROOT/scripts/quest.sh dir)"
+   summary_file="$quest_dir/summary.md"
+   ft_name="$($CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get "$quest_dir/todo-list.md" feature-test 2>/dev/null || echo '')"
+   [[ "$ft_name" == "null" ]] && ft_name=""
    features_in_queue="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh queue-remaining | sed '/^$/d')"
-   if [[ -n "${ft_name:-}" ]]; then
+   if [[ -n "$ft_name" ]]; then
      features_in_queue="$(printf '%s\n' "$features_in_queue" | grep -vx "$ft_name" || true)"
    fi
 
@@ -356,13 +378,25 @@ PYEOF
 5. **Propose the prioritized order.** Print the order as a numbered list and the dependency reasoning underneath. End the message with:
    > "Reply `/mi-continue` to accept this order, or paste a different order (one feature per line) and then `/mi-continue` to confirm."
 
-   When the cycle carries a feature-test entry, append `$ft_name` **last** to the proposal, then assert the pin before printing:
+   When the feature-test entry is **in the queue** — not merely present in frontmatter — append `$ft_name` **last** to the proposal, then assert the pin before printing. Gate on queue membership, not frontmatter presence: item 3.5 only enqueues on `ready`/`selected`, so on a `blocked` partial selection (a common case — the inspector marks some but not all items) `ft_name` is populated in frontmatter but absent from the queue. Appending it to the proposal anyway would poison it with a name `check-feature-test-pin` happily accepts (it IS last in the *proposed* list) but that `progress.sh reorder` later rejects as "not in existing queue" — *after* Step 2B has already written `queue-rationale.md` with it in `features:`, breaking the Row A invariant (`queue-rationale.features − completed == queue`). This fence re-derives `ft_name` itself rather than trusting item 1.5's or item 3.5's export (fresh subshell — see Step 1a):
 
    ```bash
-   $CLAUDE_PLUGIN_ROOT/scripts/progress.sh check-feature-test-pin "$ft_name" "${proposed_order[@]}"
+   quest_dir="$($CLAUDE_PLUGIN_ROOT/scripts/quest.sh dir)"
+   ft_name="$($CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get "$quest_dir/todo-list.md" feature-test 2>/dev/null || echo '')"
+   [[ "$ft_name" == "null" ]] && ft_name=""
+   ft_queued=0
+   if [[ -n "$ft_name" ]]; then
+     q="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh queue-remaining 2>/dev/null || true)"
+     if printf '%s\n' "$q" | grep -qx "$ft_name"; then
+       ft_queued=1
+     fi
+   fi
+   if [[ "$ft_queued" -eq 1 ]]; then
+     $CLAUDE_PLUGIN_ROOT/scripts/progress.sh check-feature-test-pin "$ft_name" "${proposed_order[@]}"
+   fi
    ```
 
-   Show it in the numbered list with a one-line note that it is pinned and cannot be moved.
+   Show it in the numbered list with a one-line note that it is pinned and cannot be moved — only when `ft_queued=1`. When it's `0` (still `blocked`), the entry isn't part of this proposal at all; say nothing about it here, same as item 1.5's `blocked` branch.
 
 6. **Mid-cycle re-entry only — append a draft batch to `queue-rationale.md` (Item 7 of the v11 plan).** When this Step 2A run is the mid-cycle re-entry path (queue was empty + we just re-populated via `enqueue`), `queue-rationale.md` already exists from the prior cycle's batches and its top-level `status` is `confirmed`. Append a new `## Batch <N+1> — <today>` body with the proposed order in `### Order` (and `### Dependencies`/`### Notes` if applicable). Refresh top-level frontmatter atomically with the body write: `batch: N+1`, `status: draft`, `features: <previous confirmed cumulative + proposed order for new batch>`. This makes the next `/mi-continue` route to the draft-confirmation row in the dispatcher (Item 5) → Step 2B (extended) for confirmation.
 
@@ -407,12 +441,15 @@ fi
 1. **Resolve the confirmed order.** If the inspector typed a custom order in the previous turn, parse it. Otherwise, use the proposal from Step 2A (which the millwright still has in conversation context — if the session was compacted, re-derive it by re-grouping PENDING items + re-running dependency analysis). For the draft case (b), the proposal lives in the latest batch's `### Order` body and in top-level `features:` (the suffix corresponding to the draft batch).
 2. **Validate the order.** It must be a permutation of the current `progress.md` queue. If the inspector's custom order is malformed (extras, missing entries, duplicates), surface the error and ask them to retype.
 
-   **Pin validation.** When the cycle carries a feature-test entry, the confirmed order must keep it last:
+   **Pin validation.** When the feature-test entry is **in the queue** — not merely present in frontmatter — the confirmed order must keep it last. Gate on queue membership, not frontmatter presence: the same partial-selection gap as item 5 above applies here — `ft_name` can be populated in frontmatter while the entry is still `blocked` and was never enqueued:
 
    ```bash
    ft_name="$($CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get "$quest_dir/todo-list.md" feature-test 2>/dev/null || echo '')"
    if [[ -n "$ft_name" && "$ft_name" != "null" ]]; then
-     $CLAUDE_PLUGIN_ROOT/scripts/progress.sh check-feature-test-pin "$ft_name" "${confirmed_order[@]}"
+     q="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh queue-remaining 2>/dev/null || true)"
+     if printf '%s\n' "$q" | grep -qx "$ft_name"; then
+       $CLAUDE_PLUGIN_ROOT/scripts/progress.sh check-feature-test-pin "$ft_name" "${confirmed_order[@]}"
+     fi
    fi
    ```
 

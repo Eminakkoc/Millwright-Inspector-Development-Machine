@@ -392,7 +392,12 @@ for line in body.split('\n'):
         ft_checked = checked
     elif not checked:
         blocking += 1
-    else:
+    elif assignee:
+        # Only overwrite the fallback with a non-empty value — a checked
+        # ordinary item can have an empty tag (e.g. `set-state <id> CANCELED`
+        # with no --assignee preserves an unassigned line), and letting that
+        # clobber a good fallback from an earlier line forces the inspector
+        # to re-supply a name that was already available.
         fallback_assignee = assignee
 
 if not ft_item_id:
