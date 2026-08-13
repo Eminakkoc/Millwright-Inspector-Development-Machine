@@ -648,6 +648,59 @@ else
   ng "$t" "mi-continue.md does not tie the feature-test entry to the Row A invariant"
 fi
 
+# ---- Task 9: canonical project doc ----------------------------------------
+
+PROJ="$REPO_ROOT/docs/millwright-inspector-project.md"
+
+t="project doc: todo.sh table lists feature-test-status"
+if grep -qE '`todo\.sh`.*feature-test-status|feature-test-status.*todo\.sh' "$PROJ"; then
+  ok "$t"
+else
+  ng "$t" "todo.sh subcommand table does not list feature-test-status"
+fi
+
+t="project doc: folder-id.sh table lists derive-feature-test-name"
+if grep -q 'derive-feature-test-name' "$PROJ"; then
+  ok "$t"
+else
+  ng "$t" "folder-id.sh subcommand table does not list derive-feature-test-name"
+fi
+
+t="project doc: progress.sh reference lists check-feature-test-pin"
+if grep -q 'check-feature-test-pin' "$PROJ"; then
+  ok "$t"
+else
+  ng "$t" "progress.sh reference does not list check-feature-test-pin"
+fi
+
+t="project doc: set-state --assignee is documented"
+if grep -q 'set-state .*--assignee' "$PROJ"; then
+  ok "$t"
+else
+  ng "$t" "set-state --assignee is undocumented"
+fi
+
+t="project doc: schemas section records the feature-test property"
+if grep -q 'feature-test' "$PROJ"; then
+  ok "$t"
+else
+  ng "$t" "the feature-test property is not recorded anywhere in the project doc"
+fi
+
+t="project doc: stage-1.5 sub-state A describes the auto-select"
+if grep -qE 'auto-select|auto-selected' "$PROJ"; then
+  ok "$t"
+else
+  ng "$t" "stage-1.5 text does not describe the auto-select"
+fi
+
+t="project doc: records that reorder's contract is unchanged"
+if grep -qE "reorder.*(unchanged|contract stays|permutation-only)" "$PROJ"; then
+  ok "$t"
+else
+  ng "$t" "project doc does not state that reorder's contract is unchanged"
+fi
+
 # ---- Summary --------------------------------------------------------------
 
 printf "\n%d passed, %d failed\n" "$pass" "$fail"

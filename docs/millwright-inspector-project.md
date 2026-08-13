@@ -361,6 +361,13 @@ The per-cycle files under `quest/<active-slug>/`:
 to Pre-flight Step 2B. Older cycle subfolders are never deleted, moved, or overwritten;
 the dated slug doubles as a chronological index.
 
+**Feature-test section.** A cycle distilling to two or more features also carries a
+terminal `## <first-feature>-feature-test` section holding exactly one item (`FT-001: test
+the whole feature implementation`). It is named in the file's optional `feature-test:`
+frontmatter field, emitted last, and **auto-selected by the millwright** at stage 1.5
+rather than marked by the inspector. A single-feature cycle emits none of this — that
+feature's own workflow already tests it end to end.
+
 #### Todo-item state machine
 
 Items pass through five canonical states:
@@ -381,6 +388,11 @@ Assignee tag (the name in parentheses between the checkbox and the state word):
 - *Optional* on `[ ] TODO` lines (the inspector may pre-assign without selecting).
 - **Mandatory** on every `[x]` line. `todo.sh pend-selected` rejects unassigned
   selections with a list of offending IDs so the inspector can fix and retry.
+
+The one exception is the feature-test item, which stage 1 emits unassigned and stage 1.5
+promotes with an assignee **inherited** from the last item selected on the pass that
+completed the selection (`todo.sh set-state <id> PENDING --assignee <name>`). The
+invariant itself is unchanged: the line still carries a tag by the time it is `[x]`.
 
 Example progression:
 
@@ -751,13 +763,18 @@ so a new effort never mixes artifacts into a completed workflow's folder.
 queues.
 
 **Stage 1.5 — Selection + ordering (Pre-flight Handler).**
-- *Sub-state A* (`[x] TODO` lines exist): runs `todo.sh pend-selected`, groups PENDING
-  items by feature, repopulates the queue via `progress.sh enqueue` if mid-cycle, derives
-  cross-feature ordering signals (journal-first → heuristic short-circuit → optional
-  `dependency-mapper` sub-agent for code-aware ordering), and proposes a prioritized order
-  in chat.
-- *Sub-state B* (promotion done, `queue-rationale.md` missing or `status: draft`): writes
-  `queue-rationale.md`, runs `progress.sh reorder`, and auto-fires `/mi-apply-impact`.
+- *Sub-state A* (`[x] TODO` lines exist): runs `todo.sh pend-selected` (whose stdout
+  reports the promoted `<item-id>\t<assignee>` rows), evaluates `todo.sh
+  feature-test-status` and promotes the feature-test entry when it reports `ready`
+  (reverting it when it reports `premature`), groups PENDING items by feature,
+  repopulates the queue via `progress.sh enqueue` if mid-cycle, appends the feature-test
+  entry last via a separate `enqueue`, derives cross-feature ordering signals
+  (journal-first → heuristic short-circuit → optional `dependency-mapper` sub-agent for
+  code-aware ordering), and proposes a prioritized order in chat.
+- *Sub-state B* (promotion done, `queue-rationale.md` missing or `status: draft`):
+  validates the confirmed order with `progress.sh check-feature-test-pin` when the cycle
+  carries a feature-test entry, writes `queue-rationale.md`, runs `progress.sh reorder`,
+  and auto-fires `/mi-apply-impact`.
 
 **Stage 2 — Blueprint generation (`mi-apply-impact`).** Calls `progress.sh activate`
 (pops `queue[0]` into `active`), then follows the quest-driven runbook in
@@ -1071,6 +1088,11 @@ dispatches. **Step 1** sanity-checks `$CLAUDE_PLUGIN_ROOT` and reads workflow st
 | **Row A — between features:** queue non-empty, `queue-rationale.md.status` confirmed (or absent), `(features − completed) == queue` exactly | Auto-fire `/mi-apply-impact` for `queue[0]` (no prompt) |
 | **Row B — post-finish housekeeping recovery:** queue empty, no TODO marks, `completed` non-empty, `completed[-1]`'s latest `reason.kind == "completion"`, `quest/active.md.status == "active"` | Auto-fire `/mi-complete-workflow` (Branch I — Step 7 only) |
 | catch-all (queue empty, no `[x] TODO`) | Delegate to `/mi-resume-workflow` |
+
+The feature-test entry adds **no new dispatcher rows**: it rides the existing Step 2A /
+Step 2B rows. Row A's ordering invariant (`queue-rationale.features − completed ==
+queue`, in order) continues to hold because the confirmed order — and therefore both
+`features:` and `queue` — ends with the pinned name.
 
 **Active rows (`active != null`)** — keyed by `current-stage` + `sub-flow`:
 
@@ -1632,6 +1654,10 @@ or a `yq`-based structural fallback:
 | `pr-review-report` | `pr-reviews/*/report.md` — `id`, `pr-url`, `repo`, `pr-number`, `status` (`awaiting-marks \| partial \| applied`) |
 | `lessons-learned` | `lessons-learned.md` — `id` (the `L-NNN` lesson blocks in the body are appended by `lessons.sh`, not schema-validated) |
 
+`todo-list` and `summary` both carry an optional `feature-test` property (kebab-case
+string). Absent on single-feature cycles and on cycles generated before the field
+existed; when present it must also appear in `related-features` / `features`.
+
 ### 8.4 Templates (`templates/`)
 
 **27 templates.** Most are mustache-style and rendered by `frontmatter.sh init`, which
@@ -1684,9 +1710,9 @@ refit for per-batch use in v1.5; rendered by the sub-agents at review-call time,
 | `frontmatter.sh` | Read / write / init / validate YAML frontmatter. Subcommands: `init`, `get`, `set`, `validate`. |
 | `data-root.sh` | Resolve the data root: `MI_DATA_ROOT` → `CLAUDE_PLUGIN_USER_CONFIG_data_root` → `${PWD}/millwright-inspector`. Every other script sources this. |
 | `quest.sh` | Manage the `quest/active.md` pointer and resolve the active cycle's directory. Subcommands: `slug`, `start`, `end`, `init-pointer`, `current`, `dir`, `has-active`, `status`, `list`, `feature-section`. |
-| `progress.sh` | Manage the active cycle's `progress.md`. Subcommands: `init`, `activate`, `finish`, `requeue`, `reset`, `reorder`, `enqueue`, `get-active`, `queue-remaining`, `get`, `set`, `advance`, `advance-to`, `add-clear-recommendation`, `has-clear-recommendation`, `check-worktree`. |
-| `todo.sh` | Manage `todo-list.md`. Subcommands: `set-state`, `bulk-transition` (optional `--feature`), `pend-selected`, `list <state>`, `add`. Enforces the state machine and assignee invariants. |
-| `folder-id.sh` | Manage `id.md` markers and `reference.md`. Subcommands: `ensure`, `get`, `resolve <id>`, `list`, `init-reference`, `link-feature`. |
+| `progress.sh` | Manage the active cycle's `progress.md`. Subcommands: `init`, `activate`, `finish`, `requeue`, `reset`, `reorder`, `enqueue`, `get-active`, `queue-remaining`, `get`, `set`, `advance`, `advance-to`, `add-clear-recommendation`, `has-clear-recommendation`, `check-worktree`, `check-feature-test-pin <ft-name> <order...>` (stage-1.5 validation; exit 0 when the name is absent from the order or is its last element, exit 3 otherwise; reads no files; deliberately separate from `reorder`, whose permutation-only contract is **unchanged** — a guard inside `reorder` would alter behaviour for cycles that carry no feature-test entry at all). |
+| `todo.sh` | Manage `todo-list.md`. Subcommands: `set-state` (optional `--assignee`), `bulk-transition` (optional `--feature`), `pend-selected` (reports promoted `<item-id>\t<assignee>` rows on stdout), `list <state>`, `add`, `feature-test-status`. Enforces the state machine and assignee invariants. |
+| `folder-id.sh` | Manage `id.md` markers and `reference.md`. Subcommands: `ensure`, `get`, `resolve <id>`, `list`, `init-reference`, `link-feature`, `feature-lineage-check`, `derive-feature-test-name`. |
 | `blueprints.sh` | Manage `blueprints/`. Subcommands: `ensure-current`, `rotate`, `resume-partial`, `preserve-inspector-sections`, `check-current [--require-primer]`, `branch-status`. Rotation is resumable (`.partial.tmp → .partial → vN`). |
 | `review.sh` | Manage `inspector-review.md` / `review-context.md`. Subcommands: `init`, `add`, `set-status`, `iterate`, `list-open`, `list-open-summaries`, `sync-refs`, `canonicalize`, `strip-freeform`, plus the manual-test seeding helpers (`find-by-seed-id`, `find-by-seed-id-family`, `upsert-manual-test-failure`). IDs are `IR-NNN`, monotonically incremented. |
 | `commits.sh` | Query `base-commit..HEAD`. Subcommands: `list`, `yaml`, `populate-requirements`, `changed-files`, `changed-files-only`, `change-summary-fresh`, `diagrams-fresh`. |
