@@ -36,3 +36,11 @@ properties:
   description:
     type: string
     minLength: 1
+  feature-test:
+    type: string
+    pattern: "^[a-z0-9][a-z0-9-]*$"
+    description: >
+      The derived feature-test entry's name, when this cycle has one. Absent on
+      single-feature cycles and on cycles generated before this field existed.
+      When present it MUST also appear in features and have a matching
+      `## Feature: <name>` body section.
