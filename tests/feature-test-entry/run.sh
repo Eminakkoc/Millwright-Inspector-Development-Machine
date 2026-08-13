@@ -153,6 +153,95 @@ else
   ng "$t" "expected 'payments-feature-test-2' after lineage collision, got '$out'"
 fi
 
+# ---- Task 3: set-state --assignee -----------------------------------------
+
+# seed_todo <sandbox> — write a two-section todo-list.md with a feature-test
+# section into the sandbox's active cycle. Body only; frontmatter is minimal
+# but schema-valid.
+seed_todo() {
+  local sandbox="$1"
+  cat > "$(quest_dir "$sandbox")/todo-list.md" <<'EOF'
+---
+id: 66666666-6666-4666-8666-666666666666
+related-features: [payments, audit-log, payments-feature-test]
+description: Seed cycle for feature-test tests.
+feature-test: payments-feature-test
+---
+
+# Todo list
+
+## payments
+
+- [ ] TODO — PAY-001: first payment item
+- [ ] TODO — PAY-002: second payment item
+
+## audit-log
+
+- [ ] TODO — AUD-001: first audit item
+
+## payments-feature-test
+
+- [ ] TODO — FT-001: test the whole feature implementation
+EOF
+}
+
+t="set-state --assignee: sets the tag on a previously unassigned line"
+sandbox="$(make_quest)"; seed_todo "$sandbox"
+MI_DATA_ROOT="$sandbox" "$REPO_ROOT/scripts/todo.sh" \
+  set-state FT-001 PENDING --assignee emin >/dev/null 2>&1
+line="$(grep -- 'FT-001' "$(quest_dir "$sandbox")/todo-list.md")"
+if [[ "$line" == "- [x] (emin) PENDING — FT-001: test the whole feature implementation" ]]; then
+  ok "$t"
+else
+  ng "$t" "unexpected line: '$line'"
+fi
+
+t="set-state --assignee: overrides an existing assignee"
+sandbox="$(make_quest)"; seed_todo "$sandbox"
+MI_DATA_ROOT="$sandbox" "$REPO_ROOT/scripts/todo.sh" \
+  set-state FT-001 PENDING --assignee alice >/dev/null 2>&1
+MI_DATA_ROOT="$sandbox" "$REPO_ROOT/scripts/todo.sh" \
+  set-state FT-001 PENDING --assignee bob >/dev/null 2>&1
+line="$(grep -- 'FT-001' "$(quest_dir "$sandbox")/todo-list.md")"
+if [[ "$line" == *"(bob)"* ]]; then
+  ok "$t"
+else
+  ng "$t" "expected assignee bob, got: '$line'"
+fi
+
+t="set-state without --assignee preserves the existing tag (unchanged behaviour)"
+sandbox="$(make_quest)"; seed_todo "$sandbox"
+MI_DATA_ROOT="$sandbox" "$REPO_ROOT/scripts/todo.sh" \
+  set-state PAY-001 PENDING --assignee emin >/dev/null 2>&1
+MI_DATA_ROOT="$sandbox" "$REPO_ROOT/scripts/todo.sh" \
+  set-state PAY-001 IMPLEMENTING >/dev/null 2>&1
+line="$(grep -- 'PAY-001' "$(quest_dir "$sandbox")/todo-list.md")"
+if [[ "$line" == "- [x] (emin) IMPLEMENTING — PAY-001: first payment item" ]]; then
+  ok "$t"
+else
+  ng "$t" "unexpected line: '$line'"
+fi
+
+t="set-state without --assignee on an unassigned line stays unassigned"
+sandbox="$(make_quest)"; seed_todo "$sandbox"
+MI_DATA_ROOT="$sandbox" "$REPO_ROOT/scripts/todo.sh" \
+  set-state PAY-002 IMPLEMENTING >/dev/null 2>&1
+line="$(grep -- 'PAY-002' "$(quest_dir "$sandbox")/todo-list.md")"
+if [[ "$line" == "- [x] IMPLEMENTING — PAY-002: second payment item" ]]; then
+  ok "$t"
+else
+  ng "$t" "unexpected line: '$line'"
+fi
+
+t="set-state: unknown flag is refused"
+sandbox="$(make_quest)"; seed_todo "$sandbox"
+if MI_DATA_ROOT="$sandbox" "$REPO_ROOT/scripts/todo.sh" \
+   set-state PAY-001 PENDING --bogus x >/dev/null 2>&1; then
+  ng "$t" "unknown flag was accepted"
+else
+  ok "$t"
+fi
+
 # ---- Summary --------------------------------------------------------------
 
 printf "\n%d passed, %d failed\n" "$pass" "$fail"

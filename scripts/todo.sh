@@ -20,6 +20,9 @@
 #
 # Usage:
 #   todo.sh set-state <item-id> <TODO|PENDING|IMPLEMENTING|IMPLEMENTED|CANCELED>
+#                                 [--assignee <name>]
+#                                 # --assignee sets the (assignee) tag; omitted, the
+#                                 # existing tag is preserved verbatim (unchanged behaviour).
 #   todo.sh bulk-transition <from-state> <to-state> [--feature <kebab-name>]
 #                                 # with --feature: only items under `## <matching-header>` transition.
 #                                 # without it: operates on every item in the file (backward-compatible).
@@ -50,11 +53,22 @@ case "$cmd" in
   set-state)
     item_id="${1:?item-id required}"
     new_state="${2:?new-state required}"
+    shift 2
+    assignee_override=""
+    while [[ $# -gt 0 ]]; do
+      case "$1" in
+        --assignee)   assignee_override="${2:?--assignee requires a value}"; shift 2 ;;
+        --assignee=*) assignee_override="${1#*=}"; shift ;;
+        *)            mi_die "set-state: unknown argument: $1" ;;
+      esac
+    done
     file="$(todo_file)"
     [[ -f "$file" ]] || mi_die "todo-list.md not found"
-    python3 - "$file" "$item_id" "$new_state" <<'PYEOF'
+    python3 - "$file" "$item_id" "$new_state" "$assignee_override" <<'PYEOF'
 import sys, re
-path, item_id, new_state = sys.argv[1], sys.argv[2], sys.argv[3]
+path, item_id, new_state, assignee_override = (
+    sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
+)
 checkbox = '[ ]' if new_state == 'TODO' else '[x]'
 with open(path) as f:
     lines = f.readlines()
@@ -66,7 +80,7 @@ updated = 0
 for i, line in enumerate(lines):
     m = pattern.match(line.rstrip('\n'))
     if m:
-        assignee = m.group(2)
+        assignee = assignee_override or m.group(2)
         assignee_tag = f'({assignee}) ' if assignee else ''
         lines[i] = f'{m.group(1)}{checkbox} {assignee_tag}{new_state} — {item_id}{m.group(4)}\n'
         updated += 1
