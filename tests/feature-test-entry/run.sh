@@ -513,6 +513,73 @@ else
   ok "$t"
 fi
 
+# ---- Task 7: mi-run stage-1 emission --------------------------------------
+
+MI_RUN="$REPO_ROOT/commands/mi-run.md"
+
+t="mi-run: Step 3 calls derive-feature-test-name"
+if grep -q 'derive-feature-test-name' "$MI_RUN"; then
+  ok "$t"
+else
+  ng "$t" "mi-run.md never invokes derive-feature-test-name"
+fi
+
+t="mi-run: gates emission on two-or-more ordinary features"
+if grep -qE 'count\(ordinary features\) >= 2|>= 2 ordinary features|two or more' "$MI_RUN"; then
+  ok "$t"
+else
+  ng "$t" "mi-run.md does not state the >= 2 gate"
+fi
+
+t="mi-run: writes the feature-test frontmatter field via frontmatter.sh set"
+if grep -qF 'feature-test "$ft_name"' "$MI_RUN"; then
+  ok "$t"
+else
+  ng "$t" "mi-run.md does not set the feature-test field"
+fi
+
+t="mi-run: emits the FT-001 item"
+if grep -q 'FT-001: test the whole feature implementation' "$MI_RUN"; then
+  ok "$t"
+else
+  ng "$t" "mi-run.md does not show the FT-001 item line"
+fi
+
+t="mi-run: documents the FT prefix fallback"
+if grep -qE 'FT2-001' "$MI_RUN"; then
+  ok "$t"
+else
+  ng "$t" "mi-run.md does not document the FT2-001 prefix fallback"
+fi
+
+t="mi-run: Step 5 withholds the feature-test name from progress.sh init"
+if grep -qE 'only the ordinary features|ordinary features only' "$MI_RUN"; then
+  ok "$t"
+else
+  ng "$t" "mi-run.md Step 5 does not say the feature-test name is withheld from init"
+fi
+
+t="mi-run: hand-off tells the inspector not to mark the entry"
+if grep -qE 'leave this item unmarked|must not be marked|do not mark' "$MI_RUN"; then
+  ok "$t"
+else
+  ng "$t" "mi-run.md hand-off does not tell the inspector to leave the entry alone"
+fi
+
+t="mi-run: documents the CANCELED escape hatch"
+if grep -q 'set-state <id> CANCELED' "$MI_RUN"; then
+  ok "$t"
+else
+  ng "$t" "mi-run.md does not document the cancel escape hatch"
+fi
+
+t="mi-run: states single-feature cycles emit nothing (FTQ-007)"
+if grep -qE 'single-feature cycle .*(no|nothing)|exactly one feature.*no feature-test' "$MI_RUN"; then
+  ok "$t"
+else
+  ng "$t" "mi-run.md does not state the single-feature no-op"
+fi
+
 # ---- Summary --------------------------------------------------------------
 
 printf "\n%d passed, %d failed\n" "$pass" "$fail"
