@@ -209,7 +209,7 @@ Reached when the inspector has just finished marking items (`[x] TODO` lines exi
    ```bash
    queue_count="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh queue-remaining 2>/dev/null | sed '/^$/d' | wc -l | tr -d ' ')"
    ```
-   - **If `queue_count > 0`:** the queue was seeded by `/mi-run` (initial cycle). It already lists every feature found in the journal, in some default order. Skip to step 5.
+   - **If `queue_count > 0`:** the queue was seeded by `/mi-run` (initial cycle). It already lists every feature found in the journal, in some default order — no repopulation needed. Proceed to item 3.5, then item 4 and step 5.
    - **If `queue_count == 0`:** mid-cycle re-entry (Finding 6 — the cycle's first batch already completed and the inspector is marking more items now). The queue must be repopulated from the freshly-PENDING feature names:
      ```bash
      $CLAUDE_PLUGIN_ROOT/scripts/progress.sh enqueue <feat1> [<feat2> ...]
@@ -218,7 +218,7 @@ Reached when the inspector has just finished marking items (`[x] TODO` lines exi
 
      Pass **only ordinary feature names** here, **excluding `$ft_name`** — the feature-test entry is appended separately by item 3.5 so it lands last in both the initial and the mid-cycle branch.
 
-3.5. **Append the feature-test entry to the queue.** Runs when item 1.5 promoted, or when `$ft_status` is `selected` and the name is not yet queued:
+3.5. **Append the feature-test entry to the queue.** Runs after item 3 regardless of which branch fired — both the initial-cycle branch (`queue_count > 0`) and the mid-cycle branch (`queue_count == 0`) fall through to this item. Within that, it actually enqueues when item 1.5 promoted, or when `$ft_status` is `selected` and the name is not yet queued:
 
    ```bash
    if [[ -n "${ft_name:-}" && "$ft_status" != "none" && "$ft_status" != "blocked" && "$ft_status" != "premature" ]]; then
@@ -249,6 +249,7 @@ Reached when the inspector has just finished marking items (`[x] TODO` lines exi
    data_root="$($CLAUDE_PLUGIN_ROOT/scripts/data-root.sh)"
    summary_file="$($CLAUDE_PLUGIN_ROOT/scripts/quest.sh dir)/summary.md"
    features_in_queue="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh queue-remaining | sed '/^$/d')"
+   [[ -n "${ft_name:-}" ]] && features_in_queue="$(printf '%s\n' "$features_in_queue" | grep -vx "$ft_name")"
 
    ambiguous=0
    # Signal 1: any feature name appears inside another feature's section body
