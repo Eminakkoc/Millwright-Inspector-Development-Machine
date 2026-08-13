@@ -459,6 +459,60 @@ else
   ng "$t" "todo-list.md was modified by a read-only predicate"
 fi
 
+# ---- Task 6: check-feature-test-pin ---------------------------------------
+
+t="check-pin: exits 0 when the feature-test entry is last"
+if "$REPO_ROOT/scripts/progress.sh" check-feature-test-pin \
+   payments-feature-test payments audit-log payments-feature-test >/dev/null 2>&1; then
+  ok "$t"
+else
+  ng "$t" "rejected a correctly pinned order"
+fi
+
+t="check-pin: exits 0 when the feature-test entry is absent from the order"
+if "$REPO_ROOT/scripts/progress.sh" check-feature-test-pin \
+   payments-feature-test payments audit-log >/dev/null 2>&1; then
+  ok "$t"
+else
+  ng "$t" "rejected an order that contains nothing to pin"
+fi
+
+t="check-pin: exits 3 when the feature-test entry is not last"
+"$REPO_ROOT/scripts/progress.sh" check-feature-test-pin \
+  payments-feature-test payments payments-feature-test audit-log >/dev/null 2>&1
+rc=$?
+if [[ "$rc" -eq 3 ]]; then
+  ok "$t"
+else
+  ng "$t" "expected exit 3, got $rc"
+fi
+
+t="check-pin: names the displacing feature in its error message"
+err="$("$REPO_ROOT/scripts/progress.sh" check-feature-test-pin \
+       payments-feature-test payments payments-feature-test audit-log 2>&1 >/dev/null || true)"
+if [[ "$err" == *"audit-log"* ]]; then
+  ok "$t"
+else
+  ng "$t" "error did not name the displacing feature: '$err'"
+fi
+
+t="check-pin: writes nothing to stdout on success"
+out="$("$REPO_ROOT/scripts/progress.sh" check-feature-test-pin \
+       payments-feature-test payments payments-feature-test 2>/dev/null || true)"
+if [[ -z "$out" ]]; then
+  ok "$t"
+else
+  ng "$t" "expected empty stdout, got '$out'"
+fi
+
+t="check-pin: refuses an empty order"
+if "$REPO_ROOT/scripts/progress.sh" check-feature-test-pin \
+   payments-feature-test >/dev/null 2>&1; then
+  ng "$t" "empty order was accepted"
+else
+  ok "$t"
+fi
+
 # ---- Summary --------------------------------------------------------------
 
 printf "\n%d passed, %d failed\n" "$pass" "$fail"

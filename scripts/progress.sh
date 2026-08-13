@@ -72,6 +72,13 @@
 #                                            # same guard internally; this entry-point exists so
 #                                            # command markdowns can fail fast pre-implementation.
 #
+#   progress.sh check-feature-test-pin <ft-name> <feature1> [<feature2> ...]
+#                                            # stage-1.5 validation. Exit 0 when <ft-name>
+#                                            # is absent from the order or is its last
+#                                            # element; exit 3 otherwise. Reads no files and
+#                                            # writes nothing — `reorder`'s permutation-only
+#                                            # contract is deliberately left unchanged.
+#
 # Worktree fingerprint:
 #   The active block records `worktree-path`, `git-common-dir`, and
 #   `git-worktree-dir` at activation time (stage 2). Every state-mutating
@@ -771,8 +778,36 @@ PYEOF
     mi_assert_worktree_match
     ;;
 
+  check-feature-test-pin)
+    ft_name="${1:?feature-test name required}"
+    shift
+    [[ $# -gt 0 ]] || mi_die "check-feature-test-pin: at least one feature in the order required"
+    order=("$@")
+    found=0
+    for f in "${order[@]}"; do
+      if [[ "$f" == "$ft_name" ]]; then
+        found=1
+      fi
+    done
+    if [[ "$found" -eq 0 ]]; then
+      echo "mi: '$ft_name' is not in the given order; nothing to pin" >&2
+      exit 0
+    fi
+    last="${order[$(( ${#order[@]} - 1 ))]}"
+    if [[ "$last" == "$ft_name" ]]; then
+      echo "mi: pin OK — '$ft_name' is last" >&2
+      exit 0
+    fi
+    echo "error: '$ft_name' must be last in the queue order, but '$last' is." >&2
+    echo "       The feature-test entry exercises the assembled result of every ordinary" >&2
+    echo "       feature in this cycle, so it cannot run before them. This is a structural" >&2
+    echo "       constraint, not a priority judgement." >&2
+    echo "       Given order: ${order[*]}" >&2
+    exit 3
+    ;;
+
   *)
-    echo "usage: progress.sh {init|activate|finish|requeue|reset|reorder|enqueue|get-active|queue-remaining|get|set|advance|advance-to|check-worktree} ..." >&2
+    echo "usage: progress.sh {init|activate|finish|requeue|reset|reorder|enqueue|get-active|queue-remaining|get|set|advance|advance-to|check-worktree|check-feature-test-pin} ..." >&2
     exit 2
     ;;
 esac
