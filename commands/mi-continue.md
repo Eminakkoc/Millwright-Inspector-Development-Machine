@@ -249,7 +249,9 @@ Reached when the inspector has just finished marking items (`[x] TODO` lines exi
    data_root="$($CLAUDE_PLUGIN_ROOT/scripts/data-root.sh)"
    summary_file="$($CLAUDE_PLUGIN_ROOT/scripts/quest.sh dir)/summary.md"
    features_in_queue="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh queue-remaining | sed '/^$/d')"
-   [[ -n "${ft_name:-}" ]] && features_in_queue="$(printf '%s\n' "$features_in_queue" | grep -vx "$ft_name")"
+   if [[ -n "${ft_name:-}" ]]; then
+     features_in_queue="$(printf '%s\n' "$features_in_queue" | grep -vx "$ft_name" || true)"
+   fi
 
    ambiguous=0
    # Signal 1: any feature name appears inside another feature's section body
