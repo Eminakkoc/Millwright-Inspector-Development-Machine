@@ -242,6 +242,100 @@ else
   ok "$t"
 fi
 
+# ---- Task 4: pend-selected stdout -----------------------------------------
+
+t="pend-selected: emits one TSV row per promoted item, in document order"
+sandbox="$(make_quest)"
+cat > "$(quest_dir "$sandbox")/todo-list.md" <<'EOF'
+---
+id: 77777777-7777-4777-8777-777777777777
+related-features: [payments, audit-log]
+description: Two marked items with different assignees.
+---
+
+# Todo list
+
+## payments
+
+- [x] (alice) TODO — PAY-001: first payment item
+
+## audit-log
+
+- [x] (bob) TODO — AUD-001: first audit item
+EOF
+out="$(MI_DATA_ROOT="$sandbox" "$REPO_ROOT/scripts/todo.sh" pend-selected 2>/dev/null)"
+expected="$(printf 'PAY-001\talice\nAUD-001\tbob')"
+if [[ "$out" == "$expected" ]]; then
+  ok "$t"
+else
+  ng "$t" "expected '$expected', got '$out'"
+fi
+
+t="pend-selected: stderr summary line is unchanged"
+sandbox="$(make_quest)"
+cat > "$(quest_dir "$sandbox")/todo-list.md" <<'EOF'
+---
+id: 88888888-8888-4888-8888-888888888888
+related-features: [payments]
+description: One marked item.
+---
+
+# Todo list
+
+## payments
+
+- [x] (alice) TODO — PAY-001: first payment item
+EOF
+err="$(MI_DATA_ROOT="$sandbox" "$REPO_ROOT/scripts/todo.sh" pend-selected 2>&1 >/dev/null)"
+if [[ "$err" == *"transitioned 1 inspector-selected items from TODO to PENDING"* ]]; then
+  ok "$t"
+else
+  ng "$t" "stderr summary changed: '$err'"
+fi
+
+t="pend-selected: emits no rows when nothing was marked"
+sandbox="$(make_quest)"
+cat > "$(quest_dir "$sandbox")/todo-list.md" <<'EOF'
+---
+id: 99999999-9999-4999-8999-999999999999
+related-features: [payments]
+description: Nothing marked.
+---
+
+# Todo list
+
+## payments
+
+- [ ] TODO — PAY-001: first payment item
+EOF
+out="$(MI_DATA_ROOT="$sandbox" "$REPO_ROOT/scripts/todo.sh" pend-selected 2>/dev/null)"
+if [[ -z "$out" ]]; then
+  ok "$t"
+else
+  ng "$t" "expected empty stdout, got '$out'"
+fi
+
+t="pend-selected: still refuses a marked item with no assignee"
+sandbox="$(make_quest)"
+cat > "$(quest_dir "$sandbox")/todo-list.md" <<'EOF'
+---
+id: aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa
+related-features: [payments]
+description: Marked but unassigned.
+---
+
+# Todo list
+
+## payments
+
+- [x] TODO — PAY-001: first payment item
+EOF
+if MI_DATA_ROOT="$sandbox" "$REPO_ROOT/scripts/todo.sh" pend-selected >/dev/null 2>&1; then
+  ng "$t" "unassigned marked item was accepted"
+else
+  ok "$t"
+fi
+
 # ---- Summary --------------------------------------------------------------
 
 printf "\n%d passed, %d failed\n" "$pass" "$fail"

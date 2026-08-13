@@ -29,7 +29,9 @@
 #                                 # header matching is case-insensitive and kebab-normalized,
 #                                 # so `## Marketing site` matches `--feature marketing-site`.
 #   todo.sh pend-selected         # transform inspector-marked [xX] TODO items to [x] PENDING
-#                                 # (fails if any selected item lacks an assignee)
+#                                 # (fails if any selected item lacks an assignee).
+#                                 # stdout: one `<item-id>\t<assignee>` row per promoted
+#                                 # item, in document order.
 #   todo.sh list <state> [--feature <kebab-name>]
 #                                 # list item ids currently in <state>; with --feature,
 #                                 # only items under the matching ## <header> section.
@@ -188,13 +190,17 @@ if missing:
     for item in missing:
         print(f'  - {item}', file=sys.stderr)
     sys.exit(2)
-# Second pass: rewrite with (assignee) preserved.
+# Second pass: rewrite with (assignee) preserved, recording promoted items.
+promoted = []
 def _sub(m):
-    prefix, assignee = m.group(1), m.group(2)
-    return f'{prefix}[x] ({assignee}) PENDING — {m.group(3)}'
+    prefix, assignee, rest = m.group(1), m.group(2), m.group(3)
+    promoted.append((rest.split(':', 1)[0].strip(), assignee))
+    return f'{prefix}[x] ({assignee}) PENDING — {rest}'
 new_content, count = pattern.subn(_sub, content)
 with open(path, 'w') as f:
     f.write(new_content)
+for item_id, assignee in promoted:
+    print(f'{item_id}\t{assignee}')
 print(f'mi: transitioned {count} inspector-selected items from TODO to PENDING', file=sys.stderr)
 PYEOF
     ;;
