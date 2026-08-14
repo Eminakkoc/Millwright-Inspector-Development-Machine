@@ -228,6 +228,173 @@ else
   ng "$t" "plural requirements-ids was rejected on manual-test-plan"
 fi
 
+# ---- Task 4: feature-test-range -------------------------------------------
+
+# make_git_repo — a throwaway git repo with a linear history. Prints its path.
+# Commit subjects are c1..c4; SHAs are read back by the caller.
+make_git_repo() {
+  local repo
+  repo="$(mktemp -d)"
+  SANDBOXES+=("$repo")
+  (
+    cd "$repo" || exit 1
+    git init -q
+    git config user.email t@example.com
+    git config user.name Test
+    for n in 1 2 3 4; do
+      echo "$n" > "f$n.txt"
+      git add "f$n.txt"
+      git commit -q -m "c$n"
+    done
+  ) >/dev/null 2>&1
+  printf '%s' "$repo"
+}
+
+# sha_of <repo> <subject> — resolve a commit sha by its subject line.
+sha_of() { git -C "$1" log --format='%H %s' | awk -v s="$2" '$2==s {print $1; exit}'; }
+
+# seed_history <sandbox> <feature> <base> <head> — write an archived
+# change-summary for a finished feature at history/v1/.
+seed_history() {
+  local dir="$1/workflow-stream/$2/blueprints/history/v1/implementation"
+  mkdir -p "$dir"
+  cat > "$dir/change-summary.md" <<EOF
+---
+id: $(uuidgen | tr 'A-F' 'a-f')
+requirements-id: 22222222-2222-4222-8222-222222222222
+feature: $2
+base-commit: $3
+head: $4
+---
+
+# Change summary — $2
+EOF
+}
+
+# seed_completed <sandbox> <feature...> — progress.md with a completed list and
+# the feature-test entry active.
+seed_completed() {
+  local sandbox="$1"; shift
+  local feats=("$@")
+  local list=""
+  local f
+  for f in "${feats[@]}"; do list="$list- $f"$'\n'; done
+  cat > "$(quest_dir "$sandbox")/progress.md" <<EOF
+---
+todo-list-id: 66666666-6666-4666-8666-666666666666
+queue: []
+completed:
+$list
+active:
+  feature: payments-feature-test
+  branch: null
+  current-stage: 2
+  sub-flow: none
+  base-commit: null
+  execution-mode: none
+  planning-mode: none
+  review-mode: none
+  review-mode-suggestion: none
+  diagram-prompt: prompt
+  diagram-rendering: never
+  implementation-diagrams-skipped: false
+  implementation-completed: false
+  inspector-review-completed: false
+  manual-test-state: none
+  manual-test-failure-policy: none
+  worktree-path: null
+  git-common-dir: null
+  git-worktree-dir: null
+  activation-id: 77777777-7777-4777-8777-777777777777
+---
+
+# Progress
+EOF
+}
+
+ft_range() { ( cd "$2" && MI_DATA_ROOT="$1" "$REPO_ROOT/scripts/commits.sh" feature-test-range payments-feature-test ); }
+
+t="feature-test-range: stacked features yield the earliest base and HEAD"
+repo="$(make_git_repo)"; sandbox="$(make_quest)"; seed_todo "$sandbox"
+c1="$(sha_of "$repo" c1)"; c2="$(sha_of "$repo" c2)"; c3="$(sha_of "$repo" c3)"; c4="$(sha_of "$repo" c4)"
+seed_history "$sandbox" payments   "$c1" "$c2"
+seed_history "$sandbox" audit-log  "$c2" "$c3"
+seed_completed "$sandbox" payments audit-log
+row="$(ft_range "$sandbox" "$repo" 2>/dev/null | head -1)"
+if [[ "$row" == "$c1	$c4" ]]; then
+  ok "$t"
+else
+  ng "$t" "expected '$c1<TAB>$c4', got '$row'"
+fi
+
+t="feature-test-range: lists each contributing feature"
+repo="$(make_git_repo)"; sandbox="$(make_quest)"; seed_todo "$sandbox"
+c1="$(sha_of "$repo" c1)"; c2="$(sha_of "$repo" c2)"; c3="$(sha_of "$repo" c3)"
+seed_history "$sandbox" payments  "$c1" "$c2"
+seed_history "$sandbox" audit-log "$c2" "$c3"
+seed_completed "$sandbox" payments audit-log
+n="$(ft_range "$sandbox" "$repo" 2>/dev/null | grep -c '^contributor')"
+if [[ "$n" == "2" ]]; then ok "$t"; else ng "$t" "expected 2 contributor rows, got $n"; fi
+
+t="feature-test-range: excludes the feature-test entry from its own inputs"
+repo="$(make_git_repo)"; sandbox="$(make_quest)"; seed_todo "$sandbox"
+c1="$(sha_of "$repo" c1)"; c2="$(sha_of "$repo" c2)"
+seed_history "$sandbox" payments "$c1" "$c2"
+seed_completed "$sandbox" payments payments-feature-test
+out="$(ft_range "$sandbox" "$repo" 2>/dev/null)"
+if [[ "$out" != *"payments-feature-test"* ]]; then
+  ok "$t"
+else
+  ng "$t" "the entry appeared in its own input set"
+fi
+
+t="feature-test-range: exit 3 when a finished feature is unreachable from HEAD"
+repo="$(make_git_repo)"; sandbox="$(make_quest)"; seed_todo "$sandbox"
+c1="$(sha_of "$repo" c1)"
+( cd "$repo" && git checkout -q -b side "$c1" && echo x > x.txt && git add x.txt && git commit -q -m orphan ) >/dev/null 2>&1
+orphan="$(sha_of "$repo" orphan)"
+( cd "$repo" && git checkout -q - ) >/dev/null 2>&1
+seed_history "$sandbox" payments  "$c1" "$orphan"
+seed_completed "$sandbox" payments
+ft_range "$sandbox" "$repo" >/dev/null 2>&1; rc=$?
+if [[ "$rc" -eq 3 ]]; then ok "$t"; else ng "$t" "expected exit 3, got $rc"; fi
+
+t="feature-test-range: the unreachable diagnostic names the offending feature"
+err="$(ft_range "$sandbox" "$repo" 2>&1 >/dev/null || true)"
+if [[ "$err" == *"payments"* ]]; then
+  ok "$t"
+else
+  ng "$t" "diagnostic did not name the unreachable feature: '$err'"
+fi
+
+t="feature-test-range: exit 4 when no finished feature contributed commits"
+repo="$(make_git_repo)"; sandbox="$(make_quest)"; seed_todo "$sandbox"
+seed_completed "$sandbox" payments
+ft_range "$sandbox" "$repo" >/dev/null 2>&1; rc=$?
+if [[ "$rc" -eq 4 ]]; then ok "$t"; else ng "$t" "expected exit 4, got $rc"; fi
+
+t="feature-test-range: a zero-commit feature is omitted, not fatal"
+repo="$(make_git_repo)"; sandbox="$(make_quest)"; seed_todo "$sandbox"
+c1="$(sha_of "$repo" c1)"; c2="$(sha_of "$repo" c2)"
+seed_history "$sandbox" payments "$c1" "$c2"
+seed_completed "$sandbox" payments audit-log     # audit-log has no history at all
+out="$(ft_range "$sandbox" "$repo" 2>/dev/null)"
+if [[ "$out" == *"omitted	audit-log"* ]]; then
+  ok "$t"
+else
+  ng "$t" "zero-commit feature was not reported as omitted: '$out'"
+fi
+
+t="feature-test-range: writes no files"
+repo="$(make_git_repo)"; sandbox="$(make_quest)"; seed_todo "$sandbox"
+c1="$(sha_of "$repo" c1)"; c2="$(sha_of "$repo" c2)"
+seed_history "$sandbox" payments "$c1" "$c2"
+seed_completed "$sandbox" payments
+before="$(shasum -a 256 "$(quest_dir "$sandbox")/progress.md" | cut -d' ' -f1)"
+ft_range "$sandbox" "$repo" >/dev/null 2>&1
+after="$(shasum -a 256 "$(quest_dir "$sandbox")/progress.md" | cut -d' ' -f1)"
+if [[ "$before" == "$after" ]]; then ok "$t"; else ng "$t" "progress.md was modified"; fi
+
 # ---- Summary --------------------------------------------------------------
 
 printf "\n%d passed, %d failed\n" "$pass" "$fail"
