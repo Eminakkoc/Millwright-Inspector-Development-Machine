@@ -632,6 +632,59 @@ else
   ng "$t" "the refusal does not name the right command"
 fi
 
+# ---- Task 8: complete-feature diagrams ------------------------------------
+
+MI_DIAG="$REPO_ROOT/commands/mi-generate-implementation-diagrams.md"
+
+t="diagrams: detects the feature-test path"
+if grep -q 'is-feature-test' "$MI_DIAG"; then
+  ok "$t"
+else
+  ng "$t" "the command never detects a feature-test invocation"
+fi
+
+t="diagrams: uses the union range for a feature-test invocation"
+if grep -q 'feature-test-range' "$MI_DIAG"; then
+  ok "$t"
+else
+  ng "$t" "the command does not resolve the union range"
+fi
+
+t="diagrams: writes requirements-ids (plural) for a feature-test entry"
+if grep -q 'requirements-ids' "$MI_DIAG"; then
+  ok "$t"
+else
+  ng "$t" "the command does not write the plural requirements reference"
+fi
+
+t="diagrams: seeds from the ordinary features' archived blueprint diagrams"
+if grep -qE 'history/v\[N\]/diagrams|archived .*blueprint diagram' "$MI_DIAG"; then
+  ok "$t"
+else
+  ng "$t" "seeding source for a feature-test invocation is unstated"
+fi
+
+t="diagrams: states the larger cross-feature budget"
+if grep -qE 'up to 5' "$MI_DIAG"; then
+  ok "$t"
+else
+  ng "$t" "the enlarged sequence budget is not stated"
+fi
+
+t="diagrams: rejects sequences that redraw a single feature's own flow"
+if grep -qE 'cross feature boundaries|must cross feature|re-draws one feature' "$MI_DIAG"; then
+  ok "$t"
+else
+  ng "$t" "the cross-feature-only rule is not stated"
+fi
+
+t="diagrams: ordinary single-feature scoping is preserved"
+if grep -qiE 'ordinary invocations are unchanged' "$MI_DIAG"; then
+  ok "$t"
+else
+  ng "$t" "the ordinary-invocation invariant is not recorded"
+fi
+
 # ---- Summary --------------------------------------------------------------
 
 printf "\n%d passed, %d failed\n" "$pass" "$fail"

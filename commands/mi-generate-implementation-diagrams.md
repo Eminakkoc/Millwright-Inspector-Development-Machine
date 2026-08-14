@@ -24,7 +24,31 @@ dest_dir="$data_root/workflow-stream/$active_feature/implementation/diagrams"
 mkdir -p "$dest_dir"
 ```
 
+### Step 1.4 — Invocation mode (ordinary vs. feature-test)
+
+```bash
+if $CLAUDE_PLUGIN_ROOT/scripts/todo.sh is-feature-test "$active_feature"; then
+  ft_mode=1
+  range_line="$($CLAUDE_PLUGIN_ROOT/scripts/commits.sh feature-test-range "$active_feature" | head -1)"
+  union_base="$(printf '%s' "$range_line" | cut -f1)"
+else
+  ft_mode=0
+fi
+```
+
+Auto-detected rather than flag-driven so it cannot be forgotten by a caller. **An ordinary
+feature never matches**, so the single-feature path below — including its freshness
+short-circuit and its affected-subjects derivation — is unreachable from the feature-test
+code and its behaviour is unchanged.
+
+When `ft_mode=1`, `base-commit` was already pinned to `union_base` by the caller
+(`/mi-continue`'s feature-test sequence), so Step 1.5's `diagrams-fresh` and Step 2.1's
+`change-summary-fresh` both work **unchanged** — they key on `.active.base-commit` and HEAD.
+
 ### Step 1.5 — Diagram-set freshness check (skip regeneration when fresh)
+
+**Ordinary invocations are unchanged.** When `ft_mode=0` every branch below behaves exactly
+as it did before the feature-test path existed, including the `fresh` short-circuit.
 
 Before doing any diagram work, check whether the existing set is already current. The `diagrams-fresh` subcommand returns one of `fresh | stale | skipped | missing` (see `scripts/commits.sh diagrams-fresh` for the contract):
 
@@ -56,8 +80,30 @@ Diagram generation reads from a cached analysis artifact instead of re-running t
 #### Step 2.1 — Resolve sub-agent inputs (main)
 
 ```bash
-requirements_file="$data_root/workflow-stream/$active_feature/blueprints/current/requirements.md"
-requirements_id="$($CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get "$requirements_file" id)"
+if [[ "$ft_mode" == "1" ]]; then
+  # A feature-test entry has no requirements.md — it is framed against every
+  # finished feature's. Collect their archived ids in queue order.
+  #
+  # Portable newest-version resolution (macOS/BSD sed has no `\+` in BRE
+  # mode, so this loops instead of a one-line sed capture — same pattern as
+  # scripts/review.sh's `init` branch for a feature-test entry).
+  requirements_ids="$($CLAUDE_PLUGIN_ROOT/scripts/commits.sh feature-test-range "$active_feature" \
+    | awk -F'\t' '$1=="contributor" {print $2}' \
+    | while IFS= read -r feat; do
+        hist="$data_root/workflow-stream/$feat/blueprints/history"
+        latest_v=0
+        for d in "$hist"/v[0-9]*; do
+          [[ -d "$d" ]] || continue
+          v="${d##*/v}"
+          [[ "$v" =~ ^[0-9]+$ ]] || continue
+          (( v > latest_v )) && latest_v="$v"
+        done
+        [[ "$latest_v" -gt 0 ]] && $CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get "$hist/v$latest_v/requirements.md" id
+      done)"
+else
+  requirements_file="$data_root/workflow-stream/$active_feature/blueprints/current/requirements.md"
+  requirements_id="$($CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get "$requirements_file" id)"
+fi
 base_commit_sha="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get base-commit)"
 head_sha="$(git rev-parse HEAD)"
 diagram_rendering="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get diagram-rendering 2>/dev/null || echo 'never')"
@@ -77,12 +123,39 @@ When `summary_state=stale-or-missing`, pre-create the file with valid frontmatte
 
 ```bash
 if [[ "$summary_state" == "stale-or-missing" ]]; then
+  if [[ "$ft_mode" == "1" ]]; then
+    # Feature-test entry: plural requirements-ids (a YAML list), one per
+    # finished contributor, in the order collected in Step 2.1. Same
+    # REQUIREMENTS_FIELD + `!RAW!` shape review.sh init already established
+    # for inspector-review.md's oneOf field.
+    req_ids=()
+    while IFS= read -r rid; do
+      [[ -n "$rid" ]] && req_ids+=("$rid")
+    done <<< "$requirements_ids"
+    ids_csv="$(IFS=,; echo "${req_ids[*]}")"
+    requirements_field="!RAW!requirements-ids: [$ids_csv]"
+  else
+    requirements_field="!RAW!requirements-id: $requirements_id"
+  fi
   $CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh init change-summary \
     "$summary_file" \
-    "REQUIREMENTS_ID=$requirements_id" \
+    "REQUIREMENTS_FIELD=$requirements_field" \
     "FEATURE=$active_feature" \
     "BASE_COMMIT=$base_commit_sha" \
     "HEAD=$head_sha"
+  if [[ "$ft_mode" == "1" ]]; then
+    # A zero-commit finished feature contributes nothing to the union range
+    # and would otherwise vanish silently. Record it under the freshly
+    # initialized body's `## Omitted from analysis` (the template's final
+    # section, so a plain append lands there).
+    omitted_features="$($CLAUDE_PLUGIN_ROOT/scripts/commits.sh feature-test-range "$active_feature" \
+      | awk -F'\t' '$1=="omitted" {print $2}')"
+    if [[ -n "$omitted_features" ]]; then
+      while IFS= read -r feat; do
+        [[ -n "$feat" ]] && printf -- '- %s — zero-commit finished feature; omitted from the union range.\n' "$feat" >> "$summary_file"
+      done <<< "$omitted_features"
+    fi
+  fi
 fi
 ```
 
@@ -110,6 +183,28 @@ You are a fresh sub-agent invoked from `mi-generate-implementation-diagrams` (St
 - blueprint_diagrams_dir: <blueprint_diagrams_dir>  # source for seeding
 - diagram_rendering: <diagram_rendering>  # "never" (>99% path) or "on-request"
 - requirements_path: <requirements_file>
+- feature_test: <feature_test_flag>       # "true" when ft_mode=1 (derived from $ft_mode), else "false"
+
+**When this is a feature-test invocation** (`ft_mode=1`, passed as `feature_test: true`):
+
+- **Range.** `<union_base>..HEAD` spans every finished ordinary feature, not one feature's
+  own work.
+- **Seeding (Phase 2).** There is no `blueprints/current/diagrams` for this folder — it has
+  no blueprint by design. Skip the `<blueprint_diagrams_dir>` recipe in Phase 2 below
+  entirely; do not stat or create that path for this folder. Seed instead from each
+  **ordinary** feature's archived stage-2 set at
+  `workflow-stream/<feat>/blueprints/history/v[N]/diagrams/*.puml` (newest finalized
+  `v[N]`). A subject with no commits in the union range stays seeded and is tagged
+  `seeded-only` against the feature it came from.
+- **Budget (Phase 3).** 1 combined `use-case-<ft-feature>.puml`, **up to 5**
+  `sequence-<flow>.puml`, **up to 2** structural. Larger than an ordinary feature's
+  1 / 2–3 / ≤1 because the subject is larger.
+- **Sequences must cross feature boundaries.** A sequence that re-draws one feature's own
+  internal flow is rejected — that diagram already exists in that feature's history, and
+  redrawing it adds pages without adding information. Draw the seams: where one feature's
+  output becomes another's input, shared state, and handoffs.
+- **Attribution.** In `## Changed files`, label each area with the feature that contributed
+  it, so the framing can name the seams.
 
 **Your task — three phases:**
 

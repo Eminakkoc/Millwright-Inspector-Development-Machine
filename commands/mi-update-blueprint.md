@@ -322,7 +322,7 @@ Read into working memory:
   prev_req_id="$($CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get "$prev_req" id)"
   $CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh init change-summary \
     "$data_root/workflow-stream/$active_feature/implementation/change-summary.md" \
-    "REQUIREMENTS_ID=$prev_req_id" \
+    "REQUIREMENTS_FIELD=!RAW!requirements-id: $prev_req_id" \
     "FEATURE=$active_feature" \
     "BASE_COMMIT=$base_commit_sha" \
     "HEAD=$head_sha"
