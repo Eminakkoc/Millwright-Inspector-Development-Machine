@@ -40,7 +40,7 @@
 #   progress.sh advance-to <expected-current> <target> [--set field=value]...
 #                                            # atomic stage skip-transition. expected-current must
 #                                            # equal active.current-stage; target must be one of the
-#                                            # whitelisted skip pairs (3→5, 5→7, 6→7). Adjacent
+#                                            # whitelisted skip pairs (2→5, 3→5, 5→7, 6→7). Adjacent
 #                                            # transitions stay with `advance`. --set field=value pairs
 #                                            # are applied in the same atomic write as the stage update;
 #                                            # current-stage is rejected from --set (the helper owns it),
@@ -660,13 +660,14 @@ PYEOF
     # Stage-pair whitelist: only these skip-transitions are legal. Adjacent
     # transitions must use `advance` (which catches typo'd targets via the
     # off-by-one check). The whitelist exists so the dispatcher's intentional
-    # skips (3→5 after stage-4 collapses into the Resume Handler; 5→7 on the
-    # no-findings approve path; 6→7 on the review-resume finalize path) can't
-    # be confused with arbitrary stage jumps.
+    # skips (2→5 for a feature-test entry, whose abbreviated pipeline has no
+    # blueprint or planning stage; 3→5 after stage-4 collapses into the Resume
+    # Handler; 5→7 on the no-findings approve path; 6→7 on the review-resume
+    # finalize path) can't be confused with arbitrary stage jumps.
     case "${expected}-${target}" in
-      3-5|5-7|6-7) ;;
+      2-5|3-5|5-7|6-7) ;;
       *)
-        mi_die "advance-to: stage transition ${expected} → ${target} not in whitelist (allowed: 3→5, 5→7, 6→7). Adjacent transitions use 'advance'."
+        mi_die "advance-to: stage transition ${expected} → ${target} not in whitelist (allowed: 2→5, 3→5, 5→7, 6→7). Adjacent transitions use 'advance'."
         ;;
     esac
     # Parse --set field=value args (zero or more).

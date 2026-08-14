@@ -122,6 +122,66 @@ is_ft "$sandbox" payments-feature-test
 after="$(shasum -a 256 "$(quest_dir "$sandbox")/todo-list.md" | cut -d' ' -f1)"
 if [[ "$before" == "$after" ]]; then ok "$t"; else ng "$t" "read-only predicate modified todo-list.md"; fi
 
+# ---- Task 2: advance-to 2->5 ----------------------------------------------
+
+# make_progress <sandbox> — init a queue and activate the first feature, so
+# progress.md sits at current-stage=2 with a valid worktree fingerprint.
+make_progress() {
+  local sandbox="$1"
+  MI_DATA_ROOT="$sandbox" "$REPO_ROOT/scripts/progress.sh" \
+    init 66666666-6666-4666-8666-666666666666 payments audit-log >/dev/null 2>&1
+  MI_DATA_ROOT="$sandbox" "$REPO_ROOT/scripts/progress.sh" activate >/dev/null 2>&1
+}
+
+t="advance-to: 2->5 is accepted"
+sandbox="$(make_quest)"; seed_todo "$sandbox"; make_progress "$sandbox"
+if MI_DATA_ROOT="$sandbox" "$REPO_ROOT/scripts/progress.sh" \
+   advance-to 2 5 --set sub-flow=none >/dev/null 2>&1; then
+  ok "$t"
+else
+  ng "$t" "2->5 was refused"
+fi
+
+t="advance-to: 2->5 lands the stage and the --set field atomically"
+sandbox="$(make_quest)"; seed_todo "$sandbox"; make_progress "$sandbox"
+MI_DATA_ROOT="$sandbox" "$REPO_ROOT/scripts/progress.sh" \
+  advance-to 2 5 --set implementation-completed=true >/dev/null 2>&1
+st="$(MI_DATA_ROOT="$sandbox" "$REPO_ROOT/scripts/progress.sh" get current-stage 2>/dev/null)"
+ic="$(MI_DATA_ROOT="$sandbox" "$REPO_ROOT/scripts/progress.sh" get implementation-completed 2>/dev/null)"
+if [[ "$st" == "5" && "$ic" == "true" ]]; then
+  ok "$t"
+else
+  ng "$t" "expected stage 5 / impl true, got '$st' / '$ic'"
+fi
+
+t="advance-to: 2->4 is still refused"
+sandbox="$(make_quest)"; seed_todo "$sandbox"; make_progress "$sandbox"
+if MI_DATA_ROOT="$sandbox" "$REPO_ROOT/scripts/progress.sh" \
+   advance-to 2 4 >/dev/null 2>&1; then
+  ng "$t" "2->4 was accepted — whitelist is too wide"
+else
+  ok "$t"
+fi
+
+t="advance-to: 2->6 is still refused"
+sandbox="$(make_quest)"; seed_todo "$sandbox"; make_progress "$sandbox"
+if MI_DATA_ROOT="$sandbox" "$REPO_ROOT/scripts/progress.sh" \
+   advance-to 2 6 >/dev/null 2>&1; then
+  ng "$t" "2->6 was accepted — whitelist is too wide"
+else
+  ok "$t"
+fi
+
+t="advance-to: the refusal diagnostic lists 2->5 among the allowed pairs"
+sandbox="$(make_quest)"; seed_todo "$sandbox"; make_progress "$sandbox"
+err="$(MI_DATA_ROOT="$sandbox" "$REPO_ROOT/scripts/progress.sh" \
+       advance-to 2 4 2>&1 >/dev/null || true)"
+if [[ "$err" == *"2→5"* ]]; then
+  ok "$t"
+else
+  ng "$t" "diagnostic does not advertise 2->5: '$err'"
+fi
+
 # ---- Summary --------------------------------------------------------------
 
 printf "\n%d passed, %d failed\n" "$pass" "$fail"
