@@ -72,6 +72,8 @@
 #   commits.sh feature-test-range <ft-feature>
 #       Union commit range across every finished ordinary feature. Read-only.
 #       exit 3 unreachable | 4 nothing contributed | 5 diverged bases.
+#   commits.sh populate-feature-test <ft-feature>
+#       Stage-8 commits list into the entry's change-summary frontmatter.
 #
 # Manual regression checks (run from a throwaway repo with `progress.sh init`
 # + `progress.sh activate` + `progress.sh set base-commit=<sha>` already done;
@@ -441,6 +443,42 @@ for feat, base, feat_head in contributors:
 for feat in omitted:
     print(f"omitted\t{feat}")
 PYEOF
+    ;;
+
+  populate-feature-test)
+    # Stage-8 commits list for a feature-test entry, which has no
+    # requirements.md to carry it. Deliberately separate from
+    # populate-requirements: that path runs for every ordinary completion and
+    # must not grow feature-test branching.
+    feature="${1:?feature required}"
+    summary_file="$(mi_impl_dir "$feature")/change-summary.md"
+    [[ -f "$summary_file" ]] || mi_die "populate-feature-test: $summary_file not found (run the diagram pass first)"
+    range_line="$("${MI_PLUGIN_ROOT}/scripts/commits.sh" feature-test-range "$feature" | head -1)" || exit $?
+    union_base="$(printf '%s' "$range_line" | cut -f1)"
+    union_head="$(printf '%s' "$range_line" | cut -f2)"
+    python3 - "$summary_file" "${union_base}..${union_head}" <<'PYEOF'
+import sys, subprocess, re, yaml
+path, rng = sys.argv[1], sys.argv[2]
+log = subprocess.check_output(['git', 'log', '--pretty=format:%H\t%s', rng], text=True)
+commits = []
+for line in log.splitlines():
+    if not line.strip():
+        continue
+    sha, msg = line.split('\t', 1)
+    commits.append({'sha': sha, 'msg': msg})
+with open(path) as f:
+    content = f.read()
+m = re.match(r'^---\n(.*?)\n---\n(.*)$', content, re.DOTALL)
+fm = yaml.safe_load(m.group(1)) or {}
+fm['commits'] = commits
+with open(path, 'w') as f:
+    f.write('---\n')
+    f.write(yaml.safe_dump(fm, default_flow_style=False, sort_keys=False))
+    f.write('---\n')
+    f.write(m.group(2))
+print(f'mi: populated {len(commits)} commits into {path}', file=sys.stderr)
+PYEOF
+    "${MI_PLUGIN_ROOT}/scripts/frontmatter.sh" validate "$summary_file" change-summary >/dev/null
     ;;
 
   *)

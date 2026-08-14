@@ -414,6 +414,71 @@ ft_range "$sandbox" "$repo" >/dev/null 2>&1
 after="$(shasum -a 256 "$(quest_dir "$sandbox")/progress.md" | cut -d' ' -f1)"
 if [[ "$before" == "$after" ]]; then ok "$t"; else ng "$t" "progress.md was modified"; fi
 
+# ---- Task 5: populate-feature-test ----------------------------------------
+
+# seed_ft_change_summary <sandbox> <base> <head> — the live change-summary the
+# diagram pass writes for the entry.
+seed_ft_change_summary() {
+  local dir="$1/workflow-stream/payments-feature-test/implementation"
+  mkdir -p "$dir"
+  cat > "$dir/change-summary.md" <<EOF
+---
+id: 33333333-3333-4333-8333-333333333333
+requirements-ids:
+- 22222222-2222-4222-8222-222222222222
+feature: payments-feature-test
+base-commit: $2
+head: $3
+---
+
+# Change summary — payments-feature-test
+EOF
+}
+
+t="populate-feature-test: writes one commits entry per commit in the union range"
+repo="$(make_git_repo)"; sandbox="$(make_quest)"; seed_todo "$sandbox"
+c1="$(sha_of "$repo" c1)"; c2="$(sha_of "$repo" c2)"; c4="$(sha_of "$repo" c4)"
+seed_history "$sandbox" payments "$c1" "$c2"
+seed_completed "$sandbox" payments
+seed_ft_change_summary "$sandbox" "$c1" "$c4"
+( cd "$repo" && MI_DATA_ROOT="$sandbox" "$REPO_ROOT/scripts/commits.sh" \
+    populate-feature-test payments-feature-test ) >/dev/null 2>&1
+n="$(grep -c '^- sha: ' "$sandbox/workflow-stream/payments-feature-test/implementation/change-summary.md")"
+if [[ "$n" == "3" ]]; then
+  ok "$t"
+else
+  ng "$t" "expected 3 commits (c2..c4), got $n"
+fi
+
+t="populate-feature-test: the written file still validates"
+if "$REPO_ROOT/scripts/frontmatter.sh" validate \
+   "$sandbox/workflow-stream/payments-feature-test/implementation/change-summary.md" \
+   change-summary >/dev/null 2>&1; then
+  ok "$t"
+else
+  ng "$t" "populated change-summary failed schema validation"
+fi
+
+t="populate-feature-test: preserves requirements-ids"
+if grep -q '^requirements-ids:' \
+   "$sandbox/workflow-stream/payments-feature-test/implementation/change-summary.md"; then
+  ok "$t"
+else
+  ng "$t" "requirements-ids was dropped by the populate write"
+fi
+
+t="populate-feature-test: refuses when the change-summary is absent"
+repo="$(make_git_repo)"; sandbox="$(make_quest)"; seed_todo "$sandbox"
+c1="$(sha_of "$repo" c1)"; c2="$(sha_of "$repo" c2)"
+seed_history "$sandbox" payments "$c1" "$c2"
+seed_completed "$sandbox" payments
+if ( cd "$repo" && MI_DATA_ROOT="$sandbox" "$REPO_ROOT/scripts/commits.sh" \
+     populate-feature-test payments-feature-test ) >/dev/null 2>&1; then
+  ng "$t" "accepted a missing change-summary"
+else
+  ok "$t"
+fi
+
 # ---- Summary --------------------------------------------------------------
 
 printf "\n%d passed, %d failed\n" "$pass" "$fail"
