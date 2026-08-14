@@ -130,13 +130,18 @@ If `--discard-existing` was passed with no existing plan, treat it like a normal
 
 ### Step 1.5 — Plan-freshness gate (cross-activation, read-only)
 
-If `plan_path` does NOT exist, skip this step entirely (nothing to be stale about). Otherwise compute the freshness mismatch on `generated-from-base-commit` AND the requirements reference. For an ordinary feature (`ft_mode=0`) that reference is the singular `requirements-id`, unchanged from before. **When `ft_mode=1` the entry has no `requirements.md` of its own; the plan instead carries `requirements-ids`** (plural) — one id per finished ordinary feature. Staleness for a feature-test entry means **the cycle's finished set changed** since the plan was written, so the gate compares the id LIST, not a single id — a feature finishing (or being rebased out) after the plan was rendered has to flip `mismatch`:
+If `plan_path` does NOT exist, skip this step entirely (nothing to be stale about). Otherwise compute the freshness mismatch on `generated-from-base-commit` AND the requirements reference. For an ordinary feature (`ft_mode=0`) that reference is the singular `requirements-id`, unchanged from before. **When `ft_mode=1` the entry has no `requirements.md` of its own; the plan instead carries `requirements-ids`** (plural) — one id per finished ordinary feature. Staleness for a feature-test entry means **the cycle's finished set changed** since the plan was written, so the gate compares the id LIST, not a single id — a feature finishing (or being rebased out) after the plan was rendered has to flip `mismatch`.
+
+**Normalize before comparing.** `frontmatter.sh get` is a thin `yq eval` wrapper, and `yq` preserves whichever YAML style the array was written in: flow style (`[aaa, bbb]`) collapses onto one line, block style (`- aaa` / `- bbb`) spans one line per element with a `- ` bullet. `plan_req_ids` is read straight off `plan_path`'s frontmatter (whichever style it happens to be in) while `current_req_ids` is assembled bare-id-per-line from separate `frontmatter.sh get ... id` calls — comparing the two raw strings can never match even when the sets are identical. Pipe **both** sides through the same normalizer — strip `[`, `]`, and `"`, split on commas, strip a leading `- ` block-bullet and surrounding whitespace, drop blank lines, then sort — so flow style, block style, and a single-element list all reduce to the same shape:
 
 ```bash
 if [[ "$ft_mode" == "1" ]]; then
-  plan_req_ids="$($CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get "$plan_path" requirements-ids | tr -d ' ' | sort)"
+  norm() { tr -d '[]"' | tr ',' '\n' | sed -e 's/^- //' -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' | grep -v '^$' | sort; }
+
+  plan_req_ids="$($CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get "$plan_path" requirements-ids | norm)"
   plan_base_commit="$($CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get "$plan_path" generated-from-base-commit)"
   current_base_commit="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get base-commit)"
+
   # feature-test-range refuses (exit 3/4/5) when a finished feature's head is
   # unreachable, nothing contributed commits, or bases diverged. This is a
   # plain command substitution (no pipe to `head`), so its exit status
@@ -148,27 +153,52 @@ if [[ "$ft_mode" == "1" ]]; then
   if ! ft_range_out="$($CLAUDE_PLUGIN_ROOT/scripts/commits.sh feature-test-range "$active_feature")"; then
     exit 1
   fi
-  current_req_ids="$(
-    while IFS=$'\t' read -r row_kind row_feat _row_base _row_head; do
-      [[ "$row_kind" == "contributor" ]] || continue
-      hist="$data_root/workflow-stream/$row_feat/blueprints/history"
-      # Portable newest-version resolution — macOS/BSD sed has no `\+` in BRE
-      # mode, so this loops instead of a one-line sed capture. Same pattern
-      # Task 8 uses at mi-generate-implementation-diagrams.md Step 2.1 and
-      # review.sh's own feature-test `init` branch reuse rather than a third
-      # variant.
-      latest_v=0
-      for d in "$hist"/v[0-9]*; do
-        [[ -d "$d" ]] || continue
-        v="${d##*/v}"
-        [[ "$v" =~ ^[0-9]+$ ]] || continue
-        (( v > latest_v )) && latest_v="$v"
-      done
-      if [[ "$latest_v" -gt 0 ]]; then
-        $CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get "$hist/v$latest_v/requirements.md" id
-      fi
-    done <<< "$ft_range_out" | sort
-  )"
+
+  # Build the id list via a PLAIN (unpiped) while loop, not `while ... | sort`.
+  # A pipe forks the while loop into its own subshell, and without `pipefail`
+  # (not set here) the pipeline's reported exit status is the LAST stage's
+  # (`sort`'s, always 0) — an `exit 1` fired inside a piped loop would be
+  # silently swallowed, exactly the class of bug the `head -1` guard above
+  # exists to avoid. Using `<<<` with no trailing pipe keeps the loop in the
+  # current shell, so `exit 1` genuinely terminates the whole command.
+  current_ids=()
+  while IFS=$'\t' read -r row_kind row_feat _row_base _row_head; do
+    [[ "$row_kind" == "contributor" ]] || continue
+    hist="$data_root/workflow-stream/$row_feat/blueprints/history"
+    # Portable newest-version resolution — macOS/BSD sed has no `\+` in BRE
+    # mode, so this loops instead of a one-line sed capture. Same pattern
+    # Task 8 uses at mi-generate-implementation-diagrams.md Step 2.1 and
+    # review.sh's own feature-test `init` branch — reused, not a third
+    # variant.
+    latest_v=0
+    for d in "$hist"/v[0-9]*; do
+      [[ -d "$d" ]] || continue
+      v="${d##*/v}"
+      [[ "$v" =~ ^[0-9]+$ ]] || continue
+      (( v > latest_v )) && latest_v="$v"
+    done
+    # Hard-fail on an invariant violation — same shape as review.sh:107-109
+    # and Task 8's Step 2.1. A corrupted or missing archived blueprint must
+    # refuse loudly, never quietly shrink the comparison set: silently
+    # dropping a contributor here would make this gate blind to exactly the
+    # drift it exists to catch.
+    if [[ "$latest_v" -eq 0 ]]; then
+      echo "error: no archived requirements.md found for contributor $row_feat" >&2
+      exit 1
+    fi
+    req_file="$hist/v$latest_v/requirements.md"
+    if [[ ! -f "$req_file" ]]; then
+      echo "error: $req_file not found for contributor $row_feat" >&2
+      exit 1
+    fi
+    current_ids+=("$($CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get "$req_file" id)")
+  done <<< "$ft_range_out"
+  if [[ ${#current_ids[@]} -eq 0 ]]; then
+    echo "error: feature-test-range reported no contributors for $active_feature" >&2
+    exit 1
+  fi
+  current_req_ids="$(printf '%s\n' "${current_ids[@]}" | norm)"
+
   mismatch=0
   [[ "$plan_req_ids" != "$current_req_ids" || "$plan_base_commit" != "$current_base_commit" ]] && mismatch=1
 else
@@ -191,7 +221,11 @@ Branch on `(--from-resume, --force, mismatch)`:
 - **No `--force`, no mismatch:** no prompt. Set `freshness_forced_regen=false`. Continue to Step 2.
 - **No `--force`, mismatch detected (with OR without `--from-resume`):**
 
-  Prompt: `"Existing manual-test plan was generated against requirements <plan_req_id> / base-commit <plan_base_commit>; current cycle is <current_req_id> / <current_base_commit>. Regenerate? (y to rotate + regenerate, n to use the stale plan anyway, c to cancel.)"` Default to `c` on Ctrl-D.
+  Prompt (`ft_mode=0`): `"Existing manual-test plan was generated against requirements <plan_req_id> / base-commit <plan_base_commit>; current cycle is <current_req_id> / <current_base_commit>. Regenerate? (y to rotate + regenerate, n to use the stale plan anyway, c to cancel.)"`
+
+  Prompt (`ft_mode=1`): `"Existing manual-test plan was generated against requirements <plan_req_ids, comma-joined> / base-commit <plan_base_commit>; the cycle's finished set is now <current_req_ids, comma-joined> / <current_base_commit>. Regenerate? (y to rotate + regenerate, n to use the stale plan anyway, c to cancel.)"` `plan_req_ids` and `current_req_ids` are newline-separated after `norm`; join with `, ` for display so the inspector sees which ids actually changed instead of a blank interpolation.
+
+  Default to `c` on Ctrl-D (both prompts).
 
   - On `y`: set `freshness_forced_regen=true` (downstream branches treat as if `--force` had been passed — Steps 3.5, 4, 5, 6 run; no extra Step 2 prompt for the same regenerate decision).
   - On `n`: set `freshness_forced_regen=false`. Fall through to Step 2 unchanged; the user-typed `n` here is them explicitly opting into the stale plan.
@@ -309,6 +343,58 @@ The `seed-family-id` to preserve was already captured in step 1. Preserving `see
 
 Render `workflow-stream/<feature>/test/manual-test-plan.md` from `templates/manual-test-plan.md.tmpl`. Generate a fresh plan `id` (UUIDv4) every time, but reuse `preserved_seed_family_id` from step 1 when present; otherwise create a new UUIDv4 `seed-family-id`. Populate `{{ACTIVATION_ID}}` with the value from `progress.sh get activation-id` (already backfilled in Step 1.0 for in-flight cycles).
 
+**Resolve the requirements reference.** The template's frontmatter carries `{{REQUIREMENTS_FIELD}}` — a bare placeholder, not `requirements-id: {{REQUIREMENTS_ID}}` — the same `REQUIREMENTS_FIELD` + `!RAW!` sentinel shape `change-summary.md.tmpl` and `inspector-review.md.tmpl` already use (converted by Tasks 6 and 8). Resolve the value before rendering:
+
+```bash
+if [[ "$ft_mode" == "1" ]]; then
+  # Resolve req_ids exactly as review.sh's feature-test `init` branch does
+  # (scripts/review.sh:94-114) — reused, not a fourth variant. Same
+  # plain-(unpiped)-while-loop shape as Step 1.5 above, for the same reason:
+  # a hard `exit 1` inside a piped loop is swallowed by the pipeline's own
+  # (always-0) exit status unless pipefail is set, which it isn't here.
+  if ! ft_range_out="$($CLAUDE_PLUGIN_ROOT/scripts/commits.sh feature-test-range "$active_feature")"; then
+    exit 1
+  fi
+  req_ids=()
+  while IFS=$'\t' read -r row_kind row_feat _row_base _row_head; do
+    [[ "$row_kind" == "contributor" ]] || continue
+    hist="$data_root/workflow-stream/$row_feat/blueprints/history"
+    latest_v=0
+    for d in "$hist"/v[0-9]*; do
+      [[ -d "$d" ]] || continue
+      v="${d##*/v}"
+      [[ "$v" =~ ^[0-9]+$ ]] || continue
+      (( v > latest_v )) && latest_v="$v"
+    done
+    # Hard-fail on an invariant violation — same shape as review.sh:107-109.
+    # A corrupted or missing archived blueprint refuses loudly rather than
+    # rendering a plan silently framed against fewer requirements than the
+    # cycle actually finished.
+    if [[ "$latest_v" -eq 0 ]]; then
+      echo "error: no archived requirements.md found for contributor $row_feat" >&2
+      exit 1
+    fi
+    req_file="$hist/v$latest_v/requirements.md"
+    if [[ ! -f "$req_file" ]]; then
+      echo "error: $req_file not found for contributor $row_feat" >&2
+      exit 1
+    fi
+    req_ids+=("$($CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get "$req_file" id)")
+  done <<< "$ft_range_out"
+  if [[ ${#req_ids[@]} -eq 0 ]]; then
+    echo "error: feature-test-range reported no contributors for $active_feature" >&2
+    exit 1
+  fi
+  ids_csv="$(IFS=,; echo "${req_ids[*]}")"
+  requirements_field="!RAW!requirements-ids: [$ids_csv]"
+else
+  requirements_id="$($CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get "$data_root/workflow-stream/$active_feature/blueprints/current/requirements.md" id)"
+  requirements_field="!RAW!requirements-id: $requirements_id"
+fi
+```
+
+Pass `REQUIREMENTS_FIELD=$requirements_field` to `frontmatter.sh init manual-test-plan` alongside the other substitutions. The `ft_mode=0` branch renders the exact `requirements-id: <uuid>` line it always has — confirmed by rendering the template before and after this conversion with the same inputs and diffing (see the task report); the ordinary output is byte-identical. When Step 1.5 already ran this same resolution for the `ft_mode=1` regeneration path (an existing plan was present), its `current_ids`/`ids_csv` may be reused here instead of recomputing; on the first-ever render for an entry, Step 1.5 was skipped (no `plan_path` yet) so this is the only place the resolution happens.
+
 The body has four top-level sections:
 
 - `## 1. Prerequisites` — services to run, env vars, install/bootstrap, seed data. Filled from blueprint config.md + change-summary grep results.
@@ -322,6 +408,27 @@ The body has four top-level sections:
 
 - `## 3. Test scenarios` — grouped by Scenario letter (A, B, C, …), numbered within (`A.1, A.2, B.1, …`). This is the most consequential section of the plan — generate it against the depth & coverage bar below, not as a happy-path sketch.
 - `## 4. Coverage notes` — waived coverage-matrix cells, one line each with the reason (see the bar below). An empty section asserts full matrix coverage. Kept OUTSIDE § 3 so scenario-block parsers never mistake it for a scenario.
+
+**Feature-test derivation (`ft_mode=1`).** This governs the whole Step 5 render — § 2's command portability and § 3's merge anchor included, not only the coverage bar below. Scenarios are derived, never transcribed — the entry's todo item says only "test the whole feature implementation".
+
+Inputs, in priority order:
+
+1. `todo.sh list IMPLEMENTED` — everything that actually shipped this cycle, **excluding the feature-test item itself** (its id is field 3 of `todo.sh feature-test-status`).
+2. The implementation itself, over the union range. **Where the implementation and the stated intent disagree, the implementation is what gets tested.**
+
+Items the inspector left as `[ ] TODO` were **never built** and are out of scope — a partially-selected cycle produces a plan covering only what shipped.
+
+**Cross-feature scenarios dominate.** Prioritise the seams: one feature's output becoming another's input, shared state, ordering, and interactions no single-feature plan could have covered — cross-feature scenarios dominate this entry's plan by design, because that is the exact coverage gap it exists to close. A scenario that merely re-runs one feature's existing case is the exception and carries a one-line justification, because that case already ran during that feature's own workflow — repeating it wholesale would just reproduce the gap this entry exists to close.
+
+**Portability.** Every command in § 2 must be POSIX/BSD-portable and run on macOS. GNU-only flags (`cat -A`, `grep -P`, `sed -i` with no argument) are defects in the plan even when the underlying code is correct.
+
+**Merge anchor for `DTI-005`.** End `## 3. Test scenarios` with exactly this line:
+
+```markdown
+<!-- deferred-merge-point -->
+```
+
+The sibling `deferred-test-items` feature inserts carried-forward scenario groups immediately above it. A stable anchor, independent of scenario lettering, needing no schema change. This feature owns the anchor only — never the merge.
 
 #### Scenario depth & coverage bar (mandatory)
 
@@ -343,28 +450,7 @@ The manual test plan is one of the most important artifacts in the entire workfl
 
 **Autonomous-runnability:** write every scenario so a hands-off run (`/mi-manual-test-run`, autonomous env-mode) can execute it — each `Expected` bullet names WHERE the outcome is observable (HTTP response, log line, DB row, file, DOM state). When a scenario's headline verification is subjective visual judgment, additionally list the objective side-effects that CAN be machine-checked, so an autonomous run verifies those instead of skipping the scenario outright.
 
-**Self-check before writing the file:** after drafting § 3, walk the coverage matrix once more against Goals + changed areas and count scenarios per cell; add scenarios (or § 4 waivers) for every empty cell. Only then render the file.
-
-**Feature-test derivation (`ft_mode=1`).** Scenarios are derived, never transcribed — the entry's todo item says only "test the whole feature implementation". The coverage-matrix bar above still applies; it is grounded against a different set of inputs:
-
-Inputs, in priority order:
-
-1. `todo.sh list IMPLEMENTED` — everything that actually shipped this cycle, **excluding the feature-test item itself** (its id is field 3 of `todo.sh feature-test-status`).
-2. The implementation itself, over the union range. **Where the implementation and the stated intent disagree, the implementation is what gets tested.**
-
-Items the inspector left as `[ ] TODO` were **never built** and are out of scope — a partially-selected cycle produces a plan covering only what shipped.
-
-**Cross-feature scenarios dominate.** Prioritise the seams: one feature's output becoming another's input, shared state, ordering, and interactions no single-feature plan could have covered — cross-feature scenarios dominate this entry's plan by design, because that is the exact coverage gap it exists to close. A scenario that merely re-runs one feature's existing case is the exception and carries a one-line justification, because that case already ran during that feature's own workflow — repeating it wholesale would just reproduce the gap this entry exists to close.
-
-**Portability.** Every command must be POSIX/BSD-portable and run on macOS. GNU-only flags (`cat -A`, `grep -P`, `sed -i` with no argument) are defects in the plan even when the underlying code is correct.
-
-**Merge anchor for `DTI-005`.** End `## 3. Test scenarios` with exactly this line:
-
-```markdown
-<!-- deferred-merge-point -->
-```
-
-The sibling `deferred-test-items` feature inserts carried-forward scenario groups immediately above it. A stable anchor, independent of scenario lettering, needing no schema change. This feature owns the anchor only — never the merge.
+**Self-check before writing the file:** after drafting § 3, walk the coverage matrix once more against Goals + changed areas and count scenarios per cell; add scenarios (or § 4 waivers) for every empty cell. Only then render the file. For `ft_mode=1`, this coverage bar is grounded against the feature-test derivation inputs stated above (before "The body has four top-level sections:"), not against a single feature's `requirements.md`.
 
 ### Step 6 — Do NOT change `manual-test-state`
 

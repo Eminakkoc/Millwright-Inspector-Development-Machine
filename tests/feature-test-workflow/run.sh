@@ -775,6 +775,170 @@ else
   ng "$t" "portability constraint absent"
 fi
 
+# ---- Task 9 review fix round 1: normalizer, hard-fail, template -----------
+#
+# Critical 1: the flow-vs-block YAML style mismatch made the id-LIST
+# freshness gate permanently "stale" (naive `tr -d ' ' | sort` on only one
+# side never matched the other side's shape). Critical 2: the template
+# hardcoded a singular `requirements-id` field, so a feature-test plan could
+# never render the plural `requirements-ids` field the schema (and Step 1.5)
+# require. Important 3: the regenerate prompt interpolated undefined
+# singular variables on the ft_mode=1 path. Important 4: the fix must
+# hard-fail on an invariant violation (Task 8 / review.sh shape), not
+# silently shrink the comparison set.
+
+MI_MTP_TMPL="$REPO_ROOT/templates/manual-test-plan.md.tmpl"
+
+# Extract the literal `norm()` one-liner straight out of the command prose
+# and eval it, so these tests pin the ACTUAL prose content rather than a
+# hand-copied duplicate that could silently drift from it.
+norm_line="$(grep -m1 'norm() {' "$MI_MTP" || true)"
+
+t="test plan: Step 1.5 defines the id-list normalizer"
+if [[ -n "$norm_line" ]]; then
+  ok "$t"
+else
+  ng "$t" "no norm() one-liner found in $MI_MTP"
+fi
+
+if [[ -n "$norm_line" ]]; then
+  eval "$norm_line"
+fi
+
+t="test plan: normalizer — flow-style plan ids equal an identical bare current-id set"
+a="$(printf '[aaa,bbb]' | norm)"
+b="$(printf 'bbb\naaa\n' | norm)"
+if [[ "$a" == "$b" ]]; then
+  ok "$t"
+else
+  ng "$t" "flow-style '$a' != bare-line '$b' — a fresh plan would spuriously prompt as stale"
+fi
+
+t="test plan: normalizer — block-style plan ids equal an identical bare current-id set"
+a="$(printf -- '- aaa\n- bbb\n' | norm)"
+b="$(printf 'bbb\naaa\n' | norm)"
+if [[ "$a" == "$b" ]]; then
+  ok "$t"
+else
+  ng "$t" "block-style '$a' != bare-line '$b' — a fresh plan would spuriously prompt as stale"
+fi
+
+t="test plan: normalizer — a single-element list normalizes the same as a bare id"
+a="$(printf '[aaa]' | norm)"
+b="$(printf 'aaa\n' | norm)"
+if [[ "$a" == "$b" ]]; then
+  ok "$t"
+else
+  ng "$t" "single-element '$a' != bare '$b'"
+fi
+
+t="test plan: normalizer — a set that gained a feature compares unequal (staleness genuinely detected)"
+a="$(printf '[aaa,bbb]' | norm)"
+b="$(printf 'aaa\nbbb\nccc\n' | norm)"
+if [[ "$a" != "$b" ]]; then
+  ok "$t"
+else
+  ng "$t" "grown set '$b' still compared equal to '$a' — a feature finishing after the plan was written would go undetected"
+fi
+
+t="test plan: the naive single-space-strip normalization is gone"
+if [[ "$(grep -c "tr -d ' ' | sort" "$MI_MTP")" -eq 0 ]]; then
+  ok "$t"
+else
+  ng "$t" "the old broken normalization (tr -d ' ' | sort, one side only) is still present"
+fi
+
+t="test plan: hard-fails on a missing archived requirements.md (no silent skip)"
+n="$(grep -c 'no archived requirements.md found for contributor' "$MI_MTP")"
+if [[ "$n" -ge 2 ]]; then
+  ok "$t"
+else
+  ng "$t" "expected >=2 hard-fail sites (Step 1.5 + Step 5), found $n"
+fi
+
+t="test plan: hard-fails when feature-test-range reports no contributors"
+n="$(grep -c 'reported no contributors for' "$MI_MTP")"
+if [[ "$n" -ge 2 ]]; then
+  ok "$t"
+else
+  ng "$t" "expected >=2 zero-contributor guards (Step 1.5 + Step 5), found $n"
+fi
+
+t="test plan: the old soft latest_v-gt-0 skip is gone from Step 1.5"
+if grep -qF 'if [[ "$latest_v" -gt 0 ]]; then' "$MI_MTP"; then
+  ng "$t" "the silent-skip conditional is still present — a corrupted contributor would shrink the comparison set instead of refusing"
+else
+  ok "$t"
+fi
+
+t="test plan: the regenerate prompt is plural-aware for a feature-test entry"
+if grep -q 'comma-joined' "$MI_MTP"; then
+  ok "$t"
+else
+  ng "$t" "no ft_mode=1 prompt variant found — the prompt would interpolate undefined singular vars"
+fi
+
+t="template: manual-test-plan.md.tmpl no longer hardcodes the singular field"
+if grep -qF 'requirements-id: {{REQUIREMENTS_ID}}' "$MI_MTP_TMPL"; then
+  ng "$t" "template still hardcodes requirements-id: {{REQUIREMENTS_ID}} — a feature-test plan can never render"
+else
+  ok "$t"
+fi
+
+t="template: manual-test-plan.md.tmpl carries the shared REQUIREMENTS_FIELD placeholder"
+if grep -qF '{{REQUIREMENTS_FIELD}}' "$MI_MTP_TMPL"; then
+  ok "$t"
+else
+  ng "$t" "template does not carry {{REQUIREMENTS_FIELD}} — not converted to the change-summary.md.tmpl / inspector-review.md.tmpl shape"
+fi
+
+t="test plan: Step 5 reuses the ids_csv construction (not a fourth variant)"
+if grep -q 'ids_csv' "$MI_MTP"; then
+  ok "$t"
+else
+  ng "$t" "Step 5 does not build ids_csv the way review.sh's init branch does"
+fi
+
+# Real render tests: exercise frontmatter.sh init against the live template
+# (the same mechanism /mi-manual-test-plan's Step 5 prose now documents),
+# confirming both branches actually render and validate, not just that the
+# prose mentions them.
+render_mtp() {
+  # $1=dest $2=requirements_field
+  "$REPO_ROOT/scripts/frontmatter.sh" init manual-test-plan "$1" \
+    "UUID=11111111-1111-4111-8111-111111111111" \
+    "PLAN_REVISION_ID=11111111-1111-4111-8111-111111111111" \
+    "SEED_FAMILY_ID=22222222-2222-4222-8222-222222222222" \
+    "FEATURE=payments" \
+    "BASE_COMMIT=1111111" \
+    "HEAD_AT_GENERATION=2222222" \
+    "RUN_ROOT=/tmp/demo" \
+    "ACTIVATION_ID=44444444-4444-4444-8444-444444444444" \
+    "REQUIREMENTS_FIELD=$2" \
+    "SERVICES_BLOCK=none" "ENV_VARS_BLOCK=none" "INSTALL_BLOCK=none" "SEED_BLOCK=none" \
+    "TERMINAL_COMMANDS=none" "SCENARIOS=none" "COVERAGE_NOTES=none"
+}
+
+t="template: ordinary (ft_mode=0) render emits the singular field and validates"
+sandbox="$(mktemp -d)"; SANDBOXES+=("$sandbox")
+if render_mtp "$sandbox/ordinary.md" '!RAW!requirements-id: 33333333-3333-4333-8333-333333333333' >/dev/null 2>&1 \
+   && grep -qF 'requirements-id: 33333333-3333-4333-8333-333333333333' "$sandbox/ordinary.md" \
+   && ! grep -qF 'requirements-ids:' "$sandbox/ordinary.md"; then
+  ok "$t"
+else
+  ng "$t" "ordinary render did not emit the expected singular requirements-id line"
+fi
+
+t="template: feature-test (ft_mode=1) render emits the plural field and validates"
+sandbox="$(mktemp -d)"; SANDBOXES+=("$sandbox")
+if render_mtp "$sandbox/ft.md" '!RAW!requirements-ids: [33333333-3333-4333-8333-333333333333,55555555-5555-4555-8555-555555555555]' >/dev/null 2>&1 \
+   && grep -qF 'requirements-ids:' "$sandbox/ft.md" \
+   && ! grep -qF 'requirements-id:' "$sandbox/ft.md"; then
+  ok "$t"
+else
+  ng "$t" "feature-test render did not emit the expected plural requirements-ids line"
+fi
+
 # ---- Summary --------------------------------------------------------------
 
 printf "\n%d passed, %d failed\n" "$pass" "$fail"
