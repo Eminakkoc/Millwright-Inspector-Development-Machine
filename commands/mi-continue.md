@@ -214,7 +214,7 @@ stop. Nothing has been written by this sequence yet at this point.
    ```
 
 5. **Run the complete-feature diagram pass** — invoke `/mi-generate-implementation-diagrams`,
-   which auto-detects the feature-test path (see that command's Step 1.5).
+   which auto-detects the feature-test path (see that command's Step 1.4).
 
 6. **Initialize the findings skeleton** (idempotent — `review.sh init` refuses to overwrite):
 

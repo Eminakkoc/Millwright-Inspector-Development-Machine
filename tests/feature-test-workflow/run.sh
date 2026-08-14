@@ -685,6 +685,36 @@ else
   ng "$t" "the ordinary-invocation invariant is not recorded"
 fi
 
+# ---- Task 8 review fix round 1: refusal handling + dangling refs ----------
+
+t="diagrams: guards the union-range head-1 call against exit 3/4/5"
+if grep -qE 'if ! range_line=' "$MI_DIAG"; then
+  ok "$t"
+else
+  ng "$t" "feature-test-range's refusal exit status is not checked before union_base is used — head swallows it"
+fi
+
+t="diagrams: threads a feature-test seam-classification input to Phase 3"
+if grep -q 'requirements_paths' "$MI_DIAG"; then
+  ok "$t"
+else
+  ng "$t" "Phase 3's structural-diagram gate has no substitute for the empty <requirements_path> on a feature-test invocation"
+fi
+
+t="diagrams: guards the empty requirements-ids array before joining"
+if grep -qi 'unbound variable' "$MI_DIAG"; then
+  ok "$t"
+else
+  ng "$t" "no guard documented for the confirmed bash-3.2 unbound-variable abort on an empty req_ids array"
+fi
+
+t="diagrams: tells the sub-agent to append (not overwrite) the omitted-features section"
+if grep -qi 'do not delete or overwrite' "$MI_DIAG"; then
+  ok "$t"
+else
+  ng "$t" "the sub-agent's Phase 1 body-fill can clobber main's pre-written omitted-feature bullets"
+fi
+
 # ---- Summary --------------------------------------------------------------
 
 printf "\n%d passed, %d failed\n" "$pass" "$fail"

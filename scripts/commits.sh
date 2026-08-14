@@ -91,9 +91,13 @@
 #   # change-summary frontmatter should validate when the SHA happens to be
 #   # all-numeric (regression for the YAML int-coercion bug):
 #   frontmatter.sh init change-summary /tmp/x.md \
-#     REQUIREMENTS_ID=11111111-1111-4111-8111-111111111111 \
+#     "REQUIREMENTS_FIELD=!RAW!requirements-id: 11111111-1111-4111-8111-111111111111" \
 #     FEATURE=alpha BASE_COMMIT=abcdef1 HEAD=1234567
 #   frontmatter.sh validate /tmp/x.md change-summary
+#   # (REQUIREMENTS_ID= alone now fails with "unsubstituted ... {{REQUIREMENTS_FIELD}}" —
+#   # the template moved to a shared REQUIREMENTS_FIELD + !RAW! placeholder so it can
+#   # also carry the plural requirements-ids for a feature-test entry; see
+#   # commands/mi-generate-implementation-diagrams.md Step 2.2.)
 
 set -euo pipefail
 source "$(dirname "$0")/internal/common.sh"
