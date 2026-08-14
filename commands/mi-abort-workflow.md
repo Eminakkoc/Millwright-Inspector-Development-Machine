@@ -79,8 +79,8 @@ genuine first step, so only the guidance text branches.
 
 Retry semantics for `test/`:
 
-- **`manual-test-plan.md` is preserved.** It derives from the cycle's `IMPLEMENTED` items,
-  the deferred entries, and committed code — none of which an abort changes — so
+- **`manual-test-plan.md` is preserved.** It derives from the cycle's `IMPLEMENTED` items
+  and the committed code over the union range — neither of which an abort changes — so
   regenerating it would reproduce nearly the same file at real cost.
 - **`manual-test-results.md` does not carry forward.** This needs no new code:
   `progress.sh reset` mints a fresh `activation-id`, and `/mi-manual-test-plan`'s §4.1
@@ -128,5 +128,5 @@ esac
 ### Step 6 — Report
 
 - **`requeue`**: `> "Workflow aborted. '$active_feature' moved to the end of progress.md.queue. Next /mi-apply-impact will activate whatever is now at queue[0]."`
-- **(no flag), feature-test entry**: `> "Combined test aborted. '$active_feature' is back at its first step. Type /mi-continue to re-run the complete-feature diagram pass and regenerate the test plan. The existing manual-test plan is preserved; the previous run's results will be rotated into history on the next plan invocation."`
+- **(no flag), feature-test entry**: `> "Combined test aborted. '$active_feature' is back at its first step. Type /mi-continue to re-run the complete-feature diagram pass. The existing manual-test plan is reused unchanged; the previous run's results will be rotated into history on the next plan invocation."`
 - **(no flag), ordinary feature**: `> "Workflow aborted. '$active_feature' is back at stage 2 with blueprints preserved. Run /mi-plan-implementation to retry the chain, or /mi-apply-impact to regenerate the blueprint from scratch. (Auto-fire is suspended until you re-enter — both commands are safe to invoke manually here.)"`

@@ -1043,6 +1043,25 @@ else
   ng "$t" "the reuse invariant is unrecorded"
 fi
 
+# ---- Task 11 review fix round 1: feature-test report does not promise plan
+# regeneration ----------------------------------------------------------------
+#
+# The Step 6 feature-test report line originally said "re-run the diagram pass
+# and regenerate the test plan" one clause before "the existing manual-test
+# plan is preserved" — a direct self-contradiction, and false: on retry the
+# recomputed union base and requirements-id set match the stored plan's, so
+# /mi-manual-test-plan's freshness gate never flips and the shipped path
+# prints "Existing manual-test plan found; using it unchanged." The plan is
+# reused, never regenerated. Pin both halves so the contradiction can't
+# silently return.
+
+t="abort: feature-test report says the plan is reused unchanged, never regenerated"
+if grep -q 'reused unchanged' "$MI_AB" && ! grep -q 'regenerate the test plan' "$MI_AB"; then
+  ok "$t"
+else
+  ng "$t" "feature-test report either dropped the 'reused unchanged' claim or reintroduced the false 'regenerate the test plan' promise"
+fi
+
 # ---- Summary --------------------------------------------------------------
 
 printf "\n%d passed, %d failed\n" "$pass" "$fail"
