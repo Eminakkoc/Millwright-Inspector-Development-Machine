@@ -1169,6 +1169,442 @@ else
   ng "$t" "an ordinary dispatch row was damaged"
 fi
 
+# ---- Task 14: final fix-wave — C1 review-context oneOf gate ---------------
+#
+# Critical 1: /mi-review Step 2.5 unconditionally read
+# blueprints/current/requirements.md to render review-context.md's
+# frontmatter, which a feature-test entry never has (§1.2 of the
+# feature-test-workflow spec). schemas/review-context.schema.yaml is
+# converted to the same REQUIREMENTS_FIELD + oneOf shape review-file,
+# change-summary, and manual-test-plan already established; review.sh gains
+# a `resolve-requirements-field` subcommand so /mi-review's Step 2.5 reuses
+# the exact contributor-walk `review.sh init` already implements instead of
+# reimplementing it a fourth time.
+
+t="schema: an ordinary review-context still validates (back-compat)"
+if fm_valid "$FIXTURES/rc-ordinary/review-context.md" review-context; then
+  ok "$t"
+else
+  ng "$t" "singular requirements-id was rejected — breaks every existing file"
+fi
+
+t="schema: a feature-test review-context with requirements-ids validates"
+if fm_valid "$FIXTURES/rc-feature-test/review-context.md" review-context; then
+  ok "$t"
+else
+  ng "$t" "plural requirements-ids was rejected"
+fi
+
+t="schema: review-context carrying BOTH fields is rejected"
+if fm_valid "$FIXTURES/rc-both/review-context.md" review-context; then
+  ng "$t" "both fields were accepted — the oneOf gate is not enforcing"
+else
+  ok "$t"
+fi
+
+t="schema: review-context carrying NEITHER field is rejected"
+if fm_valid "$FIXTURES/rc-neither/review-context.md" review-context; then
+  ng "$t" "neither field was accepted — the requirement is unenforced"
+else
+  ok "$t"
+fi
+
+MI_RC_TMPL="$REPO_ROOT/templates/review-context.md.tmpl"
+
+t="template: review-context.md.tmpl no longer hardcodes the singular field"
+if grep -qF 'requirements-id: {{REQUIREMENTS_ID}}' "$MI_RC_TMPL"; then
+  ng "$t" "template still hardcodes requirements-id: {{REQUIREMENTS_ID}} — a feature-test review-context can never render"
+else
+  ok "$t"
+fi
+
+t="template: review-context.md.tmpl carries the shared REQUIREMENTS_FIELD placeholder"
+if grep -qF '{{REQUIREMENTS_FIELD}}' "$MI_RC_TMPL"; then
+  ok "$t"
+else
+  ng "$t" "template does not carry {{REQUIREMENTS_FIELD}} — not converted to the review-file.md.tmpl shape"
+fi
+
+# Real render tests: exercise frontmatter.sh init against the live template,
+# confirming both branches actually render and validate, not just that the
+# prose mentions them. Mirrors Task 9's render_mtp.
+render_rc() {
+  # $1=dest $2=requirements_field
+  "$REPO_ROOT/scripts/frontmatter.sh" init review-context "$1" \
+    "UUID=11111111-1111-4111-8111-111111111111" \
+    "REQUIREMENTS_FIELD=$2" \
+    "FEATURE=payments" \
+    "DATA_ROOT=/tmp/demo-root"
+}
+
+t="template: ordinary render emits the singular field and validates"
+sandbox="$(mktemp -d)"; SANDBOXES+=("$sandbox")
+if render_rc "$sandbox/ordinary.md" '!RAW!requirements-id: 33333333-3333-4333-8333-333333333333' >/dev/null 2>&1 \
+   && grep -qF 'requirements-id: 33333333-3333-4333-8333-333333333333' "$sandbox/ordinary.md" \
+   && ! grep -qF 'requirements-ids:' "$sandbox/ordinary.md"; then
+  ok "$t"
+else
+  ng "$t" "ordinary render did not emit the expected singular requirements-id line"
+fi
+
+t="template: feature-test render emits the plural field and validates"
+sandbox="$(mktemp -d)"; SANDBOXES+=("$sandbox")
+if render_rc "$sandbox/ft.md" '!RAW!requirements-ids: [33333333-3333-4333-8333-333333333333,55555555-5555-4555-8555-555555555555]' >/dev/null 2>&1 \
+   && grep -qF 'requirements-ids:' "$sandbox/ft.md" \
+   && ! grep -qF 'requirements-id:' "$sandbox/ft.md"; then
+  ok "$t"
+else
+  ng "$t" "feature-test render did not emit the expected plural requirements-ids line"
+fi
+
+t="review.sh resolve-requirements-field: ordinary feature returns the singular !RAW! line"
+sandbox="$(mktemp -d)"; SANDBOXES+=("$sandbox")
+mkdir -p "$sandbox/workflow-stream/payments/blueprints/current"
+cat > "$sandbox/workflow-stream/payments/blueprints/current/requirements.md" <<EOF
+---
+id: 55555555-5555-4555-8555-555555555555
+---
+
+# Requirements — payments
+EOF
+out="$(MI_DATA_ROOT="$sandbox" "$REPO_ROOT/scripts/review.sh" resolve-requirements-field payments 2>/dev/null)"
+if [[ "$out" == "!RAW!requirements-id: 55555555-5555-4555-8555-555555555555" ]]; then
+  ok "$t"
+else
+  ng "$t" "expected the singular !RAW! line, got '$out'"
+fi
+
+t="review.sh resolve-requirements-field: feature-test entry returns requirements-ids in contributor order"
+repo="$(make_git_repo)"; sandbox="$(make_quest)"; seed_todo "$sandbox"
+c1="$(sha_of "$repo" c1)"; c2="$(sha_of "$repo" c2)"; c3="$(sha_of "$repo" c3)"
+pay_id="44444444-4444-4444-8444-444444444444"
+aud_id="77777777-7777-4777-8777-777777777777"
+seed_history "$sandbox" payments   "$c1" "$c2"
+seed_history "$sandbox" audit-log  "$c2" "$c3"
+seed_history_requirements "$sandbox" payments   "$pay_id"
+seed_history_requirements "$sandbox" audit-log  "$aud_id"
+seed_completed "$sandbox" payments audit-log
+out="$( cd "$repo" && MI_DATA_ROOT="$sandbox" "$REPO_ROOT/scripts/review.sh" resolve-requirements-field payments-feature-test 2>/dev/null )"
+if [[ "$out" == "!RAW!requirements-ids: [$pay_id,$aud_id]" ]]; then
+  ok "$t"
+else
+  ng "$t" "expected the plural field in contributor order, got '$out'"
+fi
+
+t="mi-review repro: review-context.md initializes for a feature-test entry (C1 critical crash scenario)"
+repo="$(make_git_repo)"; sandbox="$(make_quest)"; seed_todo "$sandbox"
+c1="$(sha_of "$repo" c1)"; c2="$(sha_of "$repo" c2)"
+req_id="44444444-4444-4444-8444-444444444444"
+seed_history "$sandbox" payments "$c1" "$c2"
+seed_history_requirements "$sandbox" payments "$req_id"
+seed_completed "$sandbox" payments
+ctx_dest="$sandbox/workflow-stream/payments-feature-test/implementation/review-context.md"
+init_ok=1
+reqfield="$( cd "$repo" && MI_DATA_ROOT="$sandbox" "$REPO_ROOT/scripts/review.sh" resolve-requirements-field payments-feature-test 2>/dev/null )" || init_ok=0
+if [[ "$init_ok" == "1" ]]; then
+  ( cd "$repo" && MI_DATA_ROOT="$sandbox" "$REPO_ROOT/scripts/frontmatter.sh" init review-context "$ctx_dest" \
+      "REQUIREMENTS_FIELD=$reqfield" "FEATURE=payments-feature-test" "DATA_ROOT=$sandbox" ) >/dev/null 2>&1 || init_ok=0
+fi
+if [[ "$init_ok" == "1" && -f "$ctx_dest" ]]; then
+  ok "$t"
+else
+  ng "$t" "review-context.md failed to initialize for a feature-test entry — this is the C1 critical finding: /mi-review Step 2.5 read a requirements.md that does not exist for this entry, and the schema had no requirements-ids alternative"
+fi
+
+t="mi-review: Step 2.5 resolves review-context's requirements field via review.sh (not a direct blueprint read)"
+if grep -q 'resolve-requirements-field' "$REPO_ROOT/commands/mi-review.md"; then
+  ok "$t"
+else
+  ng "$t" "Step 2.5 does not call review.sh resolve-requirements-field"
+fi
+
+t="mi-review: Step 2.5 no longer reads blueprints/current/requirements.md unconditionally for review-context"
+block="$(awk '/ctx_dest=/{f=1} f{print} f && /frontmatter\.sh init review-context/{exit}' "$REPO_ROOT/commands/mi-review.md")"
+if printf '%s' "$block" | grep -q 'requirements_file=.*blueprints/current/requirements\.md'; then
+  ng "$t" "Step 2.5 still hardcodes a direct read of blueprints/current/requirements.md — the C1 crash for a feature-test entry (which has no such file) would return"
+else
+  ok "$t"
+fi
+
+# ---- Task 14: final fix-wave — C2 sync-refs guard --------------------------
+#
+# Critical 2: review.sh sync-refs read blueprints/current/requirements.md
+# unconditionally, 146 lines before the requirements-ids guard that existed
+# only for change-summary.md — dead code for its stated purpose, since the
+# unconditional read already killed the script for a feature-test entry
+# under set -euo pipefail. mi-review.md calls `sync-refs --refresh-body` at
+# the head of every review-loop iteration 2+, so any feature-test entry
+# whose findings take two passes hit this. The fix guards the read once and
+# lets --refresh-body keep working (body regeneration) even with no
+# requirements-id to sync.
+
+t="sync-refs: ordinary feature still re-points requirements-id in inspector-review.md and change-summary.md (regression)"
+sandbox="$(mktemp -d)"; SANDBOXES+=("$sandbox")
+new_id="99999999-9999-4999-8999-999999999999"
+old_id="22222222-2222-4222-8222-222222222222"
+mkdir -p "$sandbox/workflow-stream/payments/blueprints/current"
+cat > "$sandbox/workflow-stream/payments/blueprints/current/requirements.md" <<EOF
+---
+id: $new_id
+---
+
+# Requirements — payments
+EOF
+impl_dir="$sandbox/workflow-stream/payments/implementation"
+mkdir -p "$impl_dir"
+cat > "$impl_dir/inspector-review.md" <<EOF
+---
+id: 11111111-1111-4111-8111-111111111111
+requirements-id: $old_id
+---
+
+# Inspector review — payments
+
+## Implementation Review
+EOF
+cat > "$impl_dir/change-summary.md" <<EOF
+---
+id: 66666666-6666-4666-8666-666666666666
+requirements-id: $old_id
+feature: payments
+base-commit: 6f83e6557beefd113793867f8919fca5d677b07a
+head: 1feb5cb12438446df055d722289a8632bbf8edb5
+---
+
+# Change summary — payments
+EOF
+MI_DATA_ROOT="$sandbox" "$REPO_ROOT/scripts/review.sh" sync-refs payments >/dev/null 2>&1
+if grep -q "^requirements-id: $new_id$" "$impl_dir/inspector-review.md" \
+   && grep -q "^requirements-id: $new_id$" "$impl_dir/change-summary.md"; then
+  ok "$t"
+else
+  ng "$t" "ordinary feature's requirements-id was not re-pointed by sync-refs — the C2 fix must not disturb the pre-existing ordinary path"
+fi
+
+t="sync-refs: ordinary feature's review-context.md is still re-pointed and marker-stamped (regression)"
+sandbox="$(mktemp -d)"; SANDBOXES+=("$sandbox")
+new_id="99999999-9999-4999-8999-999999999999"
+old_id="22222222-2222-4222-8222-222222222222"
+mkdir -p "$sandbox/workflow-stream/payments/blueprints/current"
+cat > "$sandbox/workflow-stream/payments/blueprints/current/requirements.md" <<EOF
+---
+id: $new_id
+---
+
+# Requirements — payments
+EOF
+impl_dir="$sandbox/workflow-stream/payments/implementation"
+mkdir -p "$impl_dir"
+cat > "$impl_dir/review-context.md" <<EOF
+---
+id: 22222222-2222-4222-8222-222222222222
+requirements-id: $old_id
+feature: payments
+---
+
+# Review context — payments
+
+<!-- mi:sync-marker — managed by review.sh sync-refs; do not hand-edit -->
+
+## Active scope
+EOF
+MI_DATA_ROOT="$sandbox" "$REPO_ROOT/scripts/review.sh" sync-refs payments >/dev/null 2>&1
+if grep -q "^requirements-id: $new_id$" "$impl_dir/review-context.md" \
+   && grep -q 'last synced at' "$impl_dir/review-context.md"; then
+  ok "$t"
+else
+  ng "$t" "ordinary feature's review-context.md was not re-pointed/marker-stamped by sync-refs"
+fi
+
+# seed_ft_review_artifacts <sandbox> <ids-csv> — hand-crafted
+# inspector-review.md + review-context.md for a feature-test entry (no
+# blueprints/current/ — the trigger condition for the C2 bug), with one open
+# finding and the template's sync-marker + placeholder sections so
+# --refresh-body has real content to regenerate against.
+seed_ft_review_artifacts() {
+  local sandbox="$1" ids_csv="$2"
+  local dir="$sandbox/workflow-stream/payments-feature-test/implementation"
+  mkdir -p "$dir"
+  cat > "$dir/inspector-review.md" <<EOF
+---
+id: 11111111-1111-4111-8111-111111111111
+requirements-ids: [$ids_csv]
+---
+
+# Inspector review — payments-feature-test
+
+## Implementation Review
+
+### IR-001 — sample finding
+- severity: major
+- scope: fix
+- status: open
+- details: ""
+- fix-note: ""
+EOF
+  cat > "$dir/review-context.md" <<EOF
+---
+id: 22222222-2222-4222-8222-222222222222
+requirements-ids: [$ids_csv]
+feature: payments-feature-test
+---
+
+# Review context — payments-feature-test
+
+<!-- mi:sync-marker — managed by review.sh sync-refs; do not hand-edit -->
+
+## Active scope
+
+- branch: <branch>
+- base-commit: <sha>
+
+## Implemented surface
+
+<!-- placeholder -->
+
+## Open findings (snapshot)
+
+<!-- placeholder -->
+
+## Decisions
+
+_(none recorded)_
+EOF
+}
+
+t="sync-refs: does not crash for a feature-test entry with --refresh-body (C2 critical repro)"
+sandbox="$(mktemp -d)"; SANDBOXES+=("$sandbox")
+ids="44444444-4444-4444-8444-444444444444,77777777-7777-4777-8777-777777777777"
+seed_ft_review_artifacts "$sandbox" "$ids"
+if MI_DATA_ROOT="$sandbox" "$REPO_ROOT/scripts/review.sh" sync-refs payments-feature-test --refresh-body >/dev/null 2>&1; then
+  ok "$t"
+else
+  ng "$t" "sync-refs exited non-zero for a feature-test entry (no blueprints/current/requirements.md) — this is the C2 critical finding: the unconditional mi_fm_get read on a missing file kills the script under set -euo pipefail, and mi-review.md calls this at the head of every review-loop iteration 2+"
+fi
+
+t="sync-refs: does not crash for a feature-test entry without --refresh-body either"
+sandbox="$(mktemp -d)"; SANDBOXES+=("$sandbox")
+ids="44444444-4444-4444-8444-444444444444"
+seed_ft_review_artifacts "$sandbox" "$ids"
+if MI_DATA_ROOT="$sandbox" "$REPO_ROOT/scripts/review.sh" sync-refs payments-feature-test >/dev/null 2>&1; then
+  ok "$t"
+else
+  ng "$t" "sync-refs (no --refresh-body) exited non-zero for a feature-test entry"
+fi
+
+t="sync-refs: a feature-test entry's requirements-ids (plural) frontmatter is left untouched"
+sandbox="$(mktemp -d)"; SANDBOXES+=("$sandbox")
+ids="44444444-4444-4444-8444-444444444444,77777777-7777-4777-8777-777777777777"
+seed_ft_review_artifacts "$sandbox" "$ids"
+MI_DATA_ROOT="$sandbox" "$REPO_ROOT/scripts/review.sh" sync-refs payments-feature-test --refresh-body >/dev/null 2>&1
+ov="$sandbox/workflow-stream/payments-feature-test/implementation/inspector-review.md"
+ctx="$sandbox/workflow-stream/payments-feature-test/implementation/review-context.md"
+if grep -q "requirements-ids: \[$ids\]" "$ov" && grep -q "requirements-ids: \[$ids\]" "$ctx" \
+   && ! grep -q '^requirements-id:' "$ov" && ! grep -q '^requirements-id:' "$ctx"; then
+  ok "$t"
+else
+  ng "$t" "requirements-ids was mutated or a singular requirements-id was introduced — would violate the oneOf gate"
+fi
+
+t="sync-refs: --refresh-body actually regenerates review-context.md's body for a feature-test entry"
+sandbox="$(mktemp -d)"; SANDBOXES+=("$sandbox")
+ids="44444444-4444-4444-8444-444444444444"
+seed_ft_review_artifacts "$sandbox" "$ids"
+ctx="$sandbox/workflow-stream/payments-feature-test/implementation/review-context.md"
+MI_DATA_ROOT="$sandbox" "$REPO_ROOT/scripts/review.sh" sync-refs payments-feature-test --refresh-body >/dev/null 2>&1
+if grep -q 'IR-001' "$ctx" && ! grep -q '<!-- placeholder -->' "$ctx"; then
+  ok "$t"
+else
+  ng "$t" "the Implemented surface / Open findings (snapshot) sections were not regenerated from git state and inspector-review.md"
+fi
+
+t="sync-refs: change-summary.md's requirements-ids (plural) is left untouched for a feature-test entry"
+sandbox="$(mktemp -d)"; SANDBOXES+=("$sandbox")
+ids="44444444-4444-4444-8444-444444444444"
+seed_ft_review_artifacts "$sandbox" "$ids"
+cs_dir="$sandbox/workflow-stream/payments-feature-test/implementation"
+cat > "$cs_dir/change-summary.md" <<EOF
+---
+id: 33333333-3333-4333-8333-333333333333
+requirements-ids: [$ids]
+feature: payments-feature-test
+base-commit: 6f83e6557beefd113793867f8919fca5d677b07a
+head: 1feb5cb12438446df055d722289a8632bbf8edb5
+---
+
+# Change summary — payments-feature-test
+EOF
+MI_DATA_ROOT="$sandbox" "$REPO_ROOT/scripts/review.sh" sync-refs payments-feature-test --refresh-body >/dev/null 2>&1
+if grep -q "requirements-ids: \[$ids\]" "$cs_dir/change-summary.md" && ! grep -q '^requirements-id:' "$cs_dir/change-summary.md"; then
+  ok "$t"
+else
+  ng "$t" "change-summary.md's plural requirements-ids was mutated by sync-refs for a feature-test entry"
+fi
+
+# ---- Task 14: final fix-wave — I3 ft_mode defaulted at every site ---------
+#
+# Important 3: mi-generate-implementation-diagrams.md and
+# mi-manual-test-plan.md consumed bare "$ft_mode" in a fenced block separate
+# from the block that assigns it — each fenced Bash block is a separate
+# invocation with no shared state, so an un-defaulted read is either unset
+# (aborts under set -u) or evaluates false (silently routes a feature-test
+# entry down the ordinary path). Same class of bug commit 4ba9c53 fixed for
+# mi-complete-workflow.md and mi-abort-workflow.md already use the
+# ${ft_mode:-0} idiom.
+
+MI_GID="$REPO_ROOT/commands/mi-generate-implementation-diagrams.md"
+
+t="diagrams: ft_mode is never consumed bare (no un-defaulted \$ft_mode check)"
+if grep -q '"\$ft_mode"' "$MI_GID"; then
+  ng "$t" "found a bare \"\$ft_mode\" comparison — a fenced block that never ran mode-detection would abort under set -u or silently take the ordinary path; use \${ft_mode:-0} like mi-complete-workflow.md"
+else
+  ok "$t"
+fi
+
+t="diagrams: ft_mode defaulting uses the \${var:-0} idiom at every consumption site"
+n="$(grep -c '\${ft_mode:-0}' "$MI_GID")"
+if [[ "$n" -ge 3 ]]; then
+  ok "$t"
+else
+  ng "$t" "expected >=3 \${ft_mode:-0} guarded consumption sites (Step 2.1, Step 2.2 x2), found $n"
+fi
+
+t="test plan: ft_mode is never consumed bare (no un-defaulted \$ft_mode check)"
+if grep -q '"\$ft_mode"' "$MI_MTP"; then
+  ng "$t" "found a bare \"\$ft_mode\" comparison — a fenced block that never ran mode-detection would abort under set -u or silently take the ordinary path; use \${ft_mode:-0} like mi-complete-workflow.md"
+else
+  ok "$t"
+fi
+
+t="test plan: ft_mode defaulting uses the \${var:-0} idiom at every consumption site"
+n="$(grep -c '\${ft_mode:-0}' "$MI_MTP")"
+if [[ "$n" -ge 2 ]]; then
+  ok "$t"
+else
+  ng "$t" "expected >=2 \${ft_mode:-0} guarded consumption sites (Step 1.5, Step 5), found $n"
+fi
+
+# ---- Task 14: final fix-wave — I4 fresh-plan mismatch exit code -----------
+#
+# Important 4: `mismatch=0; [[ ... ]] && mismatch=1` was the last command of
+# both Step 1.5 branches, so the block's exit status was 1 whenever nothing
+# was stale — the sixth instance of the pattern commit 67d2e05 removed.
+
+t="test plan: the bare && mismatch guard is gone from Step 1.5"
+if [[ "$(grep -c '\]\] && mismatch=1' "$MI_MTP")" -eq 0 ]]; then
+  ok "$t"
+else
+  ng "$t" "the bare [[ ... ]] && mismatch=1 guard is still present — as the last command of the block, its exit-1 (when nothing is stale) aborts the block under set -e"
+fi
+
+t="test plan: mismatch=1 is set inside if/then/fi at both ft_mode branches"
+n="$(grep -c '^\s*mismatch=1$' "$MI_MTP")"
+if [[ "$n" -eq 2 ]]; then
+  ok "$t"
+else
+  ng "$t" "expected 2 'mismatch=1' guarded assignments (ft_mode=1 and ft_mode=0 branches), found $n"
+fi
+
 # ---- Summary --------------------------------------------------------------
 
 printf "\n%d passed, %d failed\n" "$pass" "$fail"

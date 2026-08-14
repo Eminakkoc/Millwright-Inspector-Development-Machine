@@ -17,6 +17,12 @@
 #       cache key matches the prior refresh stamp. See
 #       `docs/context optimization/recommendations.md` § "Cache Key
 #       Specifications" → `review-context.md` body refresh.
+#     Feature-test entry (no blueprints/current/requirements.md): there is
+#       no requirements-id to re-point to, so the frontmatter sync is a
+#       no-op for inspector-review.md, review-context.md, and
+#       change-summary.md alike — they carry `requirements-ids` (plural)
+#       instead, never rotated mid-cycle. --refresh-body still regenerates
+#       review-context.md's body sections in this case.
 #     Output: exit code only (0 success / non-zero error). No enum.
 #
 # Discipline rule: no new cache may be added without an entry here AND in
@@ -27,6 +33,10 @@
 #
 # Usage:
 #   review.sh init <feature>                              # writes skeleton
+#   review.sh resolve-requirements-field <feature>        # prints the !RAW!requirements-id / -ids
+#                                                          # frontmatter line `init` would use, without
+#                                                          # writing a file. Shared by /mi-review Step 2.5
+#                                                          # for review-context.md's oneOf-gated field.
 #   review.sh add <feature> <severity> <scope> <summary> [details-heredoc-via-stdin]
 #                                                          # severity ∈ blocker|major|minor
 #                                                          # scope    ∈ fix|re-implement|re-plan|re-spec
@@ -69,6 +79,58 @@ review_file() {
   echo "$(mi_impl_dir "$feature")/inspector-review.md"
 }
 
+# Resolve the `!RAW!requirements-id: <uuid>` (ordinary feature) or
+# `!RAW!requirements-ids: [<uuid>, ...]` (feature-test entry) frontmatter
+# line for a feature, in the `frontmatter.sh init` !RAW! sentinel shape.
+# Every schema this shape feeds (review-file, review-context) gates the same
+# oneOf on the same two field names, so every consumer resolves through this
+# one function rather than reimplementing the feature-test contributor walk.
+# Usage: mi_resolve_requirements_field <feature>   (prints the field line)
+mi_resolve_requirements_field() {
+  local feature="$1"
+  local requirements_file
+  requirements_file="$(mi_blueprints_current "$feature")/requirements.md"
+  if [[ -f "$requirements_file" ]]; then
+    # Ordinary feature — pull the requirements-id from the active blueprint.
+    local requirements_id
+    requirements_id="$(mi_fm_get "$requirements_file" id)"
+    echo "!RAW!requirements-id: $requirements_id"
+    return
+  fi
+
+  # Feature-test entry: this folder never has blueprints/current/ (§1.2 of
+  # the feature-test-workflow design — the fork never calls blueprints.sh
+  # ensure-current). Resolve requirements-ids (plural) instead: the id of
+  # each finished ordinary feature's newest archived
+  # blueprints/history/v[N]/requirements.md, in the order
+  # commits.sh feature-test-range reports its `contributor` rows.
+  local range_out
+  range_out="$("${MI_PLUGIN_ROOT}/scripts/commits.sh" feature-test-range "$feature")" \
+    || mi_die "mi_resolve_requirements_field: feature-test-range failed for $feature — cannot resolve requirements-ids"
+  local req_ids=()
+  local row_kind row_feat _row_base _row_head
+  while IFS=$'\t' read -r row_kind row_feat _row_base _row_head; do
+    [[ "$row_kind" == "contributor" ]] || continue
+    local hist_dir latest_v d v req_file
+    hist_dir="$(mi_data_root)/workflow-stream/$row_feat/blueprints/history"
+    latest_v=0
+    for d in "$hist_dir"/v[0-9]*; do
+      [[ -d "$d" ]] || continue
+      v="${d##*/v}"
+      [[ "$v" =~ ^[0-9]+$ ]] || continue
+      (( v > latest_v )) && latest_v="$v"
+    done
+    [[ "$latest_v" -gt 0 ]] || mi_die "mi_resolve_requirements_field: no archived requirements.md found for contributor $row_feat"
+    req_file="$hist_dir/v${latest_v}/requirements.md"
+    [[ -f "$req_file" ]] || mi_die "mi_resolve_requirements_field: $req_file not found for contributor $row_feat"
+    req_ids+=("$(mi_fm_get "$req_file" id)")
+  done <<< "$range_out"
+  [[ ${#req_ids[@]} -gt 0 ]] || mi_die "mi_resolve_requirements_field: feature-test-range reported no contributors for $feature"
+  local ids_csv
+  ids_csv="$(IFS=,; echo "${req_ids[*]}")"
+  echo "!RAW!requirements-ids: [$ids_csv]"
+}
+
 cmd="${1:-}"; shift || true
 
 case "$cmd" in
@@ -77,42 +139,7 @@ case "$cmd" in
     dest="$(review_file "$feature")"
     [[ ! -f "$dest" ]] || mi_die "$dest already exists"
 
-    requirements_file="$(mi_blueprints_current "$feature")/requirements.md"
-    if [[ -f "$requirements_file" ]]; then
-      # Ordinary feature — pull the requirements-id from the active blueprint
-      # to stitch the frontmatter. Unchanged from before the feature-test
-      # branch below was added.
-      requirements_id="$(mi_fm_get "$requirements_file" id)"
-      requirements_field="!RAW!requirements-id: $requirements_id"
-    else
-      # Feature-test entry: this folder never has blueprints/current/
-      # (§1.2 of the feature-test-workflow design — the fork never calls
-      # blueprints.sh ensure-current). Resolve requirements-ids (plural)
-      # instead: the id of each finished ordinary feature's newest archived
-      # blueprints/history/v[N]/requirements.md, in the order
-      # commits.sh feature-test-range reports its `contributor` rows.
-      range_out="$("${MI_PLUGIN_ROOT}/scripts/commits.sh" feature-test-range "$feature")" \
-        || mi_die "review.sh init: feature-test-range failed for $feature — cannot resolve requirements-ids"
-      req_ids=()
-      while IFS=$'\t' read -r row_kind row_feat _row_base _row_head; do
-        [[ "$row_kind" == "contributor" ]] || continue
-        hist_dir="$(mi_data_root)/workflow-stream/$row_feat/blueprints/history"
-        latest_v=0
-        for d in "$hist_dir"/v[0-9]*; do
-          [[ -d "$d" ]] || continue
-          v="${d##*/v}"
-          [[ "$v" =~ ^[0-9]+$ ]] || continue
-          (( v > latest_v )) && latest_v="$v"
-        done
-        [[ "$latest_v" -gt 0 ]] || mi_die "review.sh init: no archived requirements.md found for contributor $row_feat"
-        req_file="$hist_dir/v${latest_v}/requirements.md"
-        [[ -f "$req_file" ]] || mi_die "review.sh init: $req_file not found for contributor $row_feat"
-        req_ids+=("$(mi_fm_get "$req_file" id)")
-      done <<< "$range_out"
-      [[ ${#req_ids[@]} -gt 0 ]] || mi_die "review.sh init: feature-test-range reported no contributors for $feature"
-      ids_csv="$(IFS=,; echo "${req_ids[*]}")"
-      requirements_field="!RAW!requirements-ids: [$ids_csv]"
-    fi
+    requirements_field="$(mi_resolve_requirements_field "$feature")"
 
     mkdir -p "$(dirname "$dest")"
     "${MI_PLUGIN_ROOT}/scripts/frontmatter.sh" init inspector-review "$dest" \
@@ -120,6 +147,17 @@ case "$cmd" in
       "FEATURE=$feature"
     "${MI_PLUGIN_ROOT}/scripts/frontmatter.sh" validate "$dest" review-file >/dev/null
     mi_info "initialized $dest"
+    ;;
+
+  resolve-requirements-field)
+    # Print the `!RAW!requirements-id: <uuid>` / `!RAW!requirements-ids:
+    # [<uuid>, ...]` frontmatter line for a feature, without writing any
+    # file. Used by callers that render a DIFFERENT oneOf-gated template
+    # (e.g. /mi-review Step 2.5 rendering review-context.md) — reuses the
+    # exact same resolution `init` uses for inspector-review.md rather than
+    # reimplementing the feature-test contributor walk a second time.
+    feature="${1:?feature required}"
+    mi_resolve_requirements_field "$feature"
     ;;
 
   add)
@@ -314,6 +352,17 @@ PYEOF
     # loop keeps its frontmatter pointing at live scope. Silently skips files
     # that don't exist.
     #
+    # Feature-test entries have no blueprints/current/requirements.md by
+    # design (§1.2 of the feature-test-workflow spec) — there is nothing to
+    # re-point TO, since these entries carry `requirements-ids` (plural,
+    # never rotated mid-cycle) instead of a singular `requirements-id`.
+    # Whether `requirements_file` exists is the ONE signal that drives every
+    # skip below — inspector-review.md, review-context.md, and
+    # change-summary.md all leave their requirements-id(s) frontmatter
+    # untouched together when it's absent, rather than each independently
+    # re-deriving "is this a feature-test entry?" from its own frontmatter
+    # shape.
+    #
     # By default the body of review-context.md is NOT regenerated — only the
     # frontmatter is synced and a staleness marker is stamped. Pass
     # --refresh-body to ALSO regenerate the `## Implemented surface` and
@@ -321,7 +370,9 @@ PYEOF
     # `review.sh list-open` output. /mi-review's per-iteration loop calls
     # --refresh-body at iteration start so the snapshot reflects commits
     # made by the previous iteration's sub-agent (Phase 1.4 of the
-    # context-optimization plan).
+    # context-optimization plan) — this must keep working for a feature-test
+    # entry's (multi-iteration) review loop too, even though there is no
+    # requirements-id to sync there.
     feature=""
     refresh_body=0
     while [[ $# -gt 0 ]]; do
@@ -340,30 +391,51 @@ PYEOF
       esac
     done
     [[ -n "$feature" ]] || mi_die "sync-refs: feature required"
-    new_requirements_id="$(mi_fm_get "$(mi_blueprints_current "$feature")/requirements.md" id)"
+
+    requirements_file="$(mi_blueprints_current "$feature")/requirements.md"
+    new_requirements_id=""
+    if [[ -f "$requirements_file" ]]; then
+      new_requirements_id="$(mi_fm_get "$requirements_file" id)"
+    else
+      mi_info "sync-refs: no blueprints/current/requirements.md for $feature (feature-test entry) — requirements-id re-pointing skipped"
+    fi
+
     rf="$(review_file "$feature")"
-    if [[ -f "$rf" ]]; then
+    if [[ -n "$new_requirements_id" && -f "$rf" ]]; then
       mi_fm_set "$rf" requirements-id "$new_requirements_id"
       mi_info "synced refs in $rf (requirements-id=$new_requirements_id)"
     fi
     ctx="$(mi_impl_dir "$feature")/review-context.md"
     if [[ -f "$ctx" ]]; then
-      mi_fm_set "$ctx" requirements-id "$new_requirements_id"
+      if [[ -n "$new_requirements_id" ]]; then
+        mi_fm_set "$ctx" requirements-id "$new_requirements_id"
+      fi
       # Stamp a body marker so the staleness window is visible to readers.
       # The marker lives between `<!-- mi:sync-marker -->` and the next blank
-      # line / `<!--` so it can be replaced idempotently across re-runs.
-      ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-      python3 - "$ctx" "$ts" "$refresh_body" <<'PYEOF'
+      # line / `<!--` so it can be replaced idempotently across re-runs. Only
+      # stamp when there is something to report — a requirements-id was
+      # synced, or the body is about to be refreshed.
+      if [[ -n "$new_requirements_id" || "$refresh_body" == "1" ]]; then
+        ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+        python3 - "$ctx" "$ts" "$refresh_body" "$new_requirements_id" <<'PYEOF'
 import re, sys
-path, ts, refresh = sys.argv[1], sys.argv[2], sys.argv[3] == '1'
+path, ts, refresh, req_id = sys.argv[1], sys.argv[2], sys.argv[3] == '1', sys.argv[4]
 with open(path) as f:
     body = f.read()
-if refresh:
+if refresh and req_id:
     marker_text = (
         f"\n> _Body sections (`## Implemented surface`, `## Open findings (snapshot)`) "
         f"refreshed at {ts}. `requirements-id` also synced. Read canonical files "
         f"(`inspector-review.md`, `requirements.md`) when current state matters beyond "
         f"this snapshot._\n"
+    )
+elif refresh and not req_id:
+    marker_text = (
+        f"\n> _Body sections (`## Implemented surface`, `## Open findings (snapshot)`) "
+        f"refreshed at {ts}. This entry has no `requirements-id` to sync (feature-test "
+        f"entry — framed against `requirements-ids`, plural, which never rotates "
+        f"mid-cycle). Read canonical files (`inspector-review.md`) when current state "
+        f"matters beyond this snapshot._\n"
     )
 else:
     marker_text = (
@@ -382,6 +454,7 @@ if m:
     with open(path, 'w') as f:
         f.write(body)
 PYEOF
+      fi
 
       if [[ "$refresh_body" == "1" ]]; then
         # Regenerate the body's `## Implemented surface` and
@@ -479,24 +552,24 @@ ctx = replace_section(ctx, 'Open findings (snapshot)', findings_body)
 with open(ctx_path, 'w') as f:
     f.write(ctx)
 PYEOF
-        mi_info "synced refs in $ctx (requirements-id=$new_requirements_id; refreshed body)"
-      else
+        if [[ -n "$new_requirements_id" ]]; then
+          mi_info "synced refs in $ctx (requirements-id=$new_requirements_id; refreshed body)"
+        else
+          mi_info "refreshed body in $ctx (no requirements-id to sync — feature-test entry)"
+        fi
+      elif [[ -n "$new_requirements_id" ]]; then
         mi_info "synced refs in $ctx (requirements-id=$new_requirements_id; stamped sync marker)"
       fi
     fi
+    # A feature-test entry has no requirements_file (checked above), so
+    # new_requirements_id is empty and this is skipped — change-summary.md's
+    # own `requirements-ids` (plural) frontmatter is left untouched, exactly
+    # like rf and ctx above. There is no need to separately peek at $cs's own
+    # frontmatter shape to reach the same conclusion.
     cs="$(mi_impl_dir "$feature")/change-summary.md"
-    if [[ -f "$cs" ]]; then
-      cs_reqids="$(mi_fm_get "$cs" requirements-ids 2>/dev/null || echo '')"
-      if [[ -n "$cs_reqids" && "$cs_reqids" != "null" ]]; then
-        # A feature-test entry carries `requirements-ids` (plural) and has no
-        # blueprint to rotate, so sync-refs can never legitimately re-point it.
-        # Skip rather than write a singular field alongside the plural — that
-        # would produce a file the oneOf gate rejects.
-        mi_info "sync-refs: $cs carries requirements-ids (feature-test entry); leaving it unchanged"
-      else
-        mi_fm_set "$cs" requirements-id "$new_requirements_id"
-        mi_info "synced refs in $cs (requirements-id=$new_requirements_id)"
-      fi
+    if [[ -n "$new_requirements_id" && -f "$cs" ]]; then
+      mi_fm_set "$cs" requirements-id "$new_requirements_id"
+      mi_info "synced refs in $cs (requirements-id=$new_requirements_id)"
     fi
     ;;
 
@@ -1082,7 +1155,7 @@ PYEOF
     ;;
 
   *)
-    echo "usage: review.sh {init|add|set-status|iterate|list-open|list-open-summaries|sync-refs|canonicalize|strip-freeform|find-by-seed-id|find-by-seed-id-family|upsert-manual-test-failure} ..." >&2
+    echo "usage: review.sh {init|resolve-requirements-field|add|set-status|iterate|list-open|list-open-summaries|sync-refs|canonicalize|strip-freeform|find-by-seed-id|find-by-seed-id-family|upsert-manual-test-failure} ..." >&2
     exit 2
     ;;
 esac

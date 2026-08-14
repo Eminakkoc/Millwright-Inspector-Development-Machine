@@ -144,11 +144,17 @@ Compose a compact snapshot of the context the brainstorming review session needs
 
 ```bash
 ctx_dest="$data_root/workflow-stream/$active_feature/implementation/review-context.md"
-requirements_file="$data_root/workflow-stream/$active_feature/blueprints/current/requirements.md"
-requirements_id="$($CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get "$requirements_file" id)"
+# Resolves to `!RAW!requirements-id: <uuid>` for an ordinary feature, or
+# `!RAW!requirements-ids: [<uuid>, ...]` for a feature-test entry (which has
+# no blueprints/current/requirements.md of its own — §1.2 of the
+# feature-test-workflow spec). Same `{{REQUIREMENTS_FIELD}}` + `!RAW!` shape
+# and the same oneOf gate `review.sh init` already established for
+# inspector-review.md — this reuses that resolution rather than
+# reimplementing the feature-test contributor walk a second time.
+requirements_field="$($CLAUDE_PLUGIN_ROOT/scripts/review.sh resolve-requirements-field "$active_feature")"
 # frontmatter.sh init overwrites — safe to re-run if /mi-review is invoked again.
 $CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh init review-context "$ctx_dest" \
-  "REQUIREMENTS_ID=$requirements_id" \
+  "REQUIREMENTS_FIELD=$requirements_field" \
   "FEATURE=$active_feature" \
   "DATA_ROOT=$data_root"
 ```

@@ -135,7 +135,7 @@ If `plan_path` does NOT exist, skip this step entirely (nothing to be stale abou
 **Normalize before comparing.** `frontmatter.sh get` is a thin `yq eval` wrapper, and `yq` preserves whichever YAML style the array was written in: flow style (`[aaa, bbb]`) collapses onto one line, block style (`- aaa` / `- bbb`) spans one line per element with a `- ` bullet. `plan_req_ids` is read straight off `plan_path`'s frontmatter (whichever style it happens to be in) while `current_req_ids` is assembled bare-id-per-line from separate `frontmatter.sh get ... id` calls — comparing the two raw strings can never match even when the sets are identical. Pipe **both** sides through the same normalizer — strip `[`, `]`, and `"`, split on commas, strip a leading `- ` block-bullet and surrounding whitespace, drop blank lines, then sort — so flow style, block style, and a single-element list all reduce to the same shape:
 
 ```bash
-if [[ "$ft_mode" == "1" ]]; then
+if [[ "${ft_mode:-0}" == "1" ]]; then
   norm() { tr -d '[]"' | tr ',' '\n' | sed -e 's/^- //' -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' | grep -v '^$' | sort; }
 
   plan_req_ids="$($CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get "$plan_path" requirements-ids | norm)"
@@ -200,7 +200,9 @@ if [[ "$ft_mode" == "1" ]]; then
   current_req_ids="$(printf '%s\n' "${current_ids[@]}" | norm)"
 
   mismatch=0
-  [[ "$plan_req_ids" != "$current_req_ids" || "$plan_base_commit" != "$current_base_commit" ]] && mismatch=1
+  if [[ "$plan_req_ids" != "$current_req_ids" || "$plan_base_commit" != "$current_base_commit" ]]; then
+    mismatch=1
+  fi
 else
   plan_req_id="$($CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get "$plan_path" requirements-id)"
   plan_base_commit="$($CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get "$plan_path" generated-from-base-commit)"
@@ -209,7 +211,9 @@ else
   current_base_commit="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get base-commit)"
 
   mismatch=0
-  [[ "$plan_req_id" != "$current_req_id" || "$plan_base_commit" != "$current_base_commit" ]] && mismatch=1
+  if [[ "$plan_req_id" != "$current_req_id" || "$plan_base_commit" != "$current_base_commit" ]]; then
+    mismatch=1
+  fi
 fi
 ```
 
@@ -346,7 +350,7 @@ Render `workflow-stream/<feature>/test/manual-test-plan.md` from `templates/manu
 **Resolve the requirements reference.** The template's frontmatter carries `{{REQUIREMENTS_FIELD}}` — a bare placeholder, not `requirements-id: {{REQUIREMENTS_ID}}` — the same `REQUIREMENTS_FIELD` + `!RAW!` sentinel shape `change-summary.md.tmpl` and `inspector-review.md.tmpl` already use (converted by Tasks 6 and 8). Resolve the value before rendering:
 
 ```bash
-if [[ "$ft_mode" == "1" ]]; then
+if [[ "${ft_mode:-0}" == "1" ]]; then
   # Resolve req_ids exactly as review.sh's feature-test `init` branch does
   # (scripts/review.sh:94-114) — reused, not a fourth variant. Same
   # plain-(unpiped)-while-loop shape as Step 1.5 above, for the same reason:

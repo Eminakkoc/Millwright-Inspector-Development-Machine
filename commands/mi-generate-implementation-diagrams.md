@@ -94,7 +94,7 @@ Diagram generation reads from a cached analysis artifact instead of re-running t
 #### Step 2.1 — Resolve sub-agent inputs (main)
 
 ```bash
-if [[ "$ft_mode" == "1" ]]; then
+if [[ "${ft_mode:-0}" == "1" ]]; then
   # A feature-test entry has no requirements.md — it is framed against every
   # finished feature's. Resolve id + archived-path pairs in queue order.
   # requirements_paths (plural) feeds Phase 3's seam-classification gate
@@ -166,7 +166,7 @@ When `summary_state=stale-or-missing`, pre-create the file with valid frontmatte
 
 ```bash
 if [[ "$summary_state" == "stale-or-missing" ]]; then
-  if [[ "$ft_mode" == "1" ]]; then
+  if [[ "${ft_mode:-0}" == "1" ]]; then
     # Feature-test entry: plural requirements-ids (a YAML list), one per
     # finished contributor, in the order collected in Step 2.1. Same
     # REQUIREMENTS_FIELD + `!RAW!` shape review.sh init already established
@@ -195,7 +195,7 @@ if [[ "$summary_state" == "stale-or-missing" ]]; then
     "FEATURE=$active_feature" \
     "BASE_COMMIT=$base_commit_sha" \
     "HEAD=$head_sha"
-  if [[ "$ft_mode" == "1" ]]; then
+  if [[ "${ft_mode:-0}" == "1" ]]; then
     # A zero-commit finished feature contributes nothing to the union range
     # and would otherwise vanish silently. Record it under the freshly
     # initialized body's `## Omitted from analysis` (the template's final
