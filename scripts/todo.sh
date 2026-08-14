@@ -46,6 +46,9 @@
 #                                 # status ∈ none|blocked|ready|premature|selected.
 #                                 # "unselected" means checkbox `[ ]`; every [x] state
 #                                 # (including CANCELED) resolves an item.
+#   todo.sh is-feature-test <name>  # read-only predicate. Exit 0 when <name> is
+#                                   # this cycle's declared feature-test entry,
+#                                   # exit 1 otherwise. Silent on both streams.
 
 set -euo pipefail
 source "$(dirname "$0")/internal/common.sh"
@@ -418,8 +421,30 @@ print(f'{status}\t{ft_name}\t{ft_item_id}\t{blocking}\t{fallback_assignee}')
 PYEOF
     ;;
 
+  is-feature-test)
+    # Read-only identity predicate: does <name> match this cycle's declared
+    # feature-test entry? Exit 0 = yes, 1 = no. Never dies — callers use it
+    # directly in `if`, so a missing cycle or file is "no", not an error.
+    name="${1:?feature name required}"
+    file="$(todo_file 2>/dev/null || true)"
+    [[ -n "$file" && -f "$file" ]] || exit 1
+    python3 - "$file" "$name" <<'PYEOF'
+import sys, re, yaml
+path, name = sys.argv[1], sys.argv[2]
+try:
+    with open(path) as f:
+        content = f.read()
+except OSError:
+    sys.exit(1)
+m = re.match(r'^---\n(.*?)\n---\n', content, re.DOTALL)
+fm = (yaml.safe_load(m.group(1)) or {}) if m else {}
+ft = fm.get('feature-test')
+sys.exit(0 if ft and ft == name else 1)
+PYEOF
+    ;;
+
   *)
-    echo "usage: todo.sh {set-state|bulk-transition|pend-selected|list|add|feature-test-status} ..." >&2
+    echo "usage: todo.sh {set-state|bulk-transition|pend-selected|list|add|feature-test-status|is-feature-test} ..." >&2
     exit 2
     ;;
 esac
