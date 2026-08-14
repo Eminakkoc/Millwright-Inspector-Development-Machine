@@ -373,6 +373,25 @@ seed_completed "$sandbox" payments
 ft_range "$sandbox" "$repo" >/dev/null 2>&1; rc=$?
 if [[ "$rc" -eq 4 ]]; then ok "$t"; else ng "$t" "expected exit 4, got $rc"; fi
 
+t="feature-test-range: exit 5 when finished features' bases diverge"
+repo="$(make_git_repo)"; sandbox="$(make_quest)"; seed_todo "$sandbox"
+default_branch="$(git -C "$repo" rev-parse --abbrev-ref HEAD)"
+c1="$(sha_of "$repo" c1)"; c2="$(sha_of "$repo" c2)"; c3="$(sha_of "$repo" c3)"
+(
+  cd "$repo" \
+    && git checkout -q -b side "$c1" \
+    && echo s1 > s1.txt && git add s1.txt && git commit -q -m s1 \
+    && echo s2 > s2.txt && git add s2.txt && git commit -q -m s2 \
+    && git checkout -q "$default_branch" \
+    && git merge -q --no-ff side -m merge
+) >/dev/null 2>&1
+s1="$(sha_of "$repo" s1)"; s2="$(sha_of "$repo" s2)"
+seed_history "$sandbox" payments  "$c2" "$c3"
+seed_history "$sandbox" audit-log "$s1" "$s2"
+seed_completed "$sandbox" payments audit-log
+ft_range "$sandbox" "$repo" >/dev/null 2>&1; rc=$?
+if [[ "$rc" -eq 5 ]]; then ok "$t"; else ng "$t" "expected exit 5, got $rc"; fi
+
 t="feature-test-range: a zero-commit feature is omitted, not fatal"
 repo="$(make_git_repo)"; sandbox="$(make_quest)"; seed_todo "$sandbox"
 c1="$(sha_of "$repo" c1)"; c2="$(sha_of "$repo" c2)"
