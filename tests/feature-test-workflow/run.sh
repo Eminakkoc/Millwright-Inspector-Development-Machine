@@ -607,6 +607,31 @@ else
   ng "$t" "ordinary review.sh init branch was disturbed by the feature-test fix"
 fi
 
+# ---- Task 7: mi-apply-impact refusal guard --------------------------------
+
+MI_AI="$REPO_ROOT/commands/mi-apply-impact.md"
+
+t="mi-apply-impact: guards on the identity predicate"
+if grep -q 'is-feature-test' "$MI_AI"; then
+  ok "$t"
+else
+  ng "$t" "mi-apply-impact.md has no feature-test guard"
+fi
+
+t="mi-apply-impact: the guard refuses before activating or ensuring current/"
+if grep -qE 'before .*(activation|activate)|no activation, no ensure-current' "$MI_AI"; then
+  ok "$t"
+else
+  ng "$t" "the guard does not state that it precedes activation"
+fi
+
+t="mi-apply-impact: the refusal points at /mi-continue"
+if grep -q 'Type /mi-continue instead' "$MI_AI"; then
+  ok "$t"
+else
+  ng "$t" "the refusal does not name the right command"
+fi
+
 # ---- Summary --------------------------------------------------------------
 
 printf "\n%d passed, %d failed\n" "$pass" "$fail"
