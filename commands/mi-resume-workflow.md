@@ -67,6 +67,12 @@ stage="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get current-stage)"
 sub_flow="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get sub-flow)"
 impl_done="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get implementation-completed)"
 ov_done="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get inspector-review-completed)"
+
+if $CLAUDE_PLUGIN_ROOT/scripts/todo.sh is-feature-test "$active_feature"; then
+  ft_mode=1
+else
+  ft_mode=0
+fi
 ```
 
 ### Step 3 — Recommend based on state
@@ -87,6 +93,26 @@ ov_done="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get inspector-review-complete
 | 7     | — (inspector-review-completed = true)         | `/mi-complete-workflow` to finalize.                                                                             |
 | 8     | —                                            | Workflow already completed. Check the queue for next feature via `/mi-apply-impact`.                             |
 
+**When `ft_mode=1`, use this table instead** — the entry runs the abbreviated pipeline, and
+naming its steps after the ordinary stages would mislead:
+
+| Stage | Sub-flow / state | Step name | Recommendation |
+| --- | --- | --- | --- |
+| 2 | any | combined test — drawing implementation diagrams | `/mi-continue` (re-runs the diagram pass; idempotent) |
+| 5 | `none`, `manual-test-state=none` | combined test — test plan | `/mi-continue`, or `/mi-manual-test-plan` directly |
+| 5 | `manual-testing` | combined test — manual run | `/mi-continue` (Manual-Test-Resume Handler) |
+| 5 | `none`, `manual-test-state ∈ {complete, skipped}` | combined test — inspector review | Write findings, then `/mi-continue` |
+| 6 | `reviewing` | combined test — findings resolution | `/mi-continue` when the session returns |
+| 7 | — | combined test — finalizing | `/mi-complete-workflow` |
+
+The two stage-5 rows are separated by `manual-test-state`, **not** by whether a plan file
+exists: an inspector who declines the plan reaches the review step with
+`manual-test-state=skipped` and no file on disk, and keying on file presence would report
+them as still owing a plan.
+
+**Never recommend `/mi-apply-impact` or `/mi-plan-implementation` for a feature-test
+entry** — it has no blueprint or planning stage, and `/mi-apply-impact` refuses outright.
+
 Print the recommendation as a single-line message, plus the state snapshot underneath for context. Do NOT modify any files.
 
 ### Step 4 — Invariant checks
@@ -94,7 +120,10 @@ Print the recommendation as a single-line message, plus the state snapshot under
 Before printing the recommendation, verify:
 
 - If `stage ≥ 3`, then `base-commit` must be non-null.
-- If `stage ≥ 5`, then `implementation-completed` must be `true`.
+- If `stage ≥ 5`, then `implementation-completed` must be `true`. This holds for a
+  feature-test entry too: `/mi-continue`'s fork sets it in the same atomic write as
+  `advance-to 2 5`, precisely so this invariant keeps its meaning rather than needing an
+  exemption.
 - If `stage ≥ 7`, then `inspector-review-completed` must be `true`.
 
 If any invariant is violated, print "State corruption detected" and recommend `/mi-abort-workflow` instead.

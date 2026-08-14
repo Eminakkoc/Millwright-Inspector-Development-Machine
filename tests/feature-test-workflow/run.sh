@@ -1062,6 +1062,46 @@ else
   ng "$t" "feature-test report either dropped the 'reused unchanged' claim or reintroduced the false 'regenerate the test plan' promise"
 fi
 
+# ---- Task 12: reporting ----------------------------------------------------
+
+MI_RW="$REPO_ROOT/commands/mi-resume-workflow.md"
+INFO_BAR="$REPO_ROOT/scripts/info-bar.sh"
+
+t="resume: names the abbreviated steps"
+if grep -qE 'combined test|abbreviated pipeline' "$MI_RW"; then
+  ok "$t"
+else
+  ng "$t" "resume-workflow does not name the abbreviated steps"
+fi
+
+t="resume: derives identity from the feature name"
+if grep -q 'is-feature-test' "$MI_RW"; then
+  ok "$t"
+else
+  ng "$t" "resume-workflow does not derive feature-test identity"
+fi
+
+t="resume: stage-5 invariant tolerates the entry"
+if grep -q 'feature-test entry too' "$MI_RW"; then
+  ok "$t"
+else
+  ng "$t" "the stage>=5 invariant does not account for the entry"
+fi
+
+t="info-bar: renders feature-test step names"
+if grep -q 'feature-test' "$INFO_BAR"; then
+  ok "$t"
+else
+  ng "$t" "info-bar has no feature-test naming"
+fi
+
+t="info-bar: separates the two stage-5 steps by manual-test-state"
+if grep -q 'manual-test-state' "$INFO_BAR"; then
+  ok "$t"
+else
+  ng "$t" "info-bar cannot distinguish the plan step from the review step"
+fi
+
 # ---- Summary --------------------------------------------------------------
 
 printf "\n%d passed, %d failed\n" "$pass" "$fail"

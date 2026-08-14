@@ -42,6 +42,15 @@ STAGE_NAMES = {
     8: "finalizing",
 }
 
+FT_STEP_NAMES = {
+    2: "combined test · diagrams",
+    5: "combined test · review",
+    6: "combined test · resolution",
+    7: "combined test · finalizing",
+}
+FT_STAGE5_PLAN = "combined test · test plan"
+FT_STAGE5_RUN = "combined test · manual run"
+
 TRUNC_LIMIT = 24
 TRUNC_KEEP = 22
 
@@ -101,7 +110,18 @@ def render_cycle(slug):
     return f"mi-workflow · cycle {truncate(slug)} · Stage 1 · quest generated"
 
 
-def render_active(feature, stage):
+def render_active(feature, stage, ft_name=None, sub_flow=None, mt_state=None):
+    if ft_name and feature == ft_name:
+        if stage == 5:
+            if sub_flow == "manual-testing":
+                name = FT_STAGE5_RUN
+            elif mt_state in ("complete", "skipped"):
+                name = FT_STEP_NAMES[5]
+            else:
+                name = FT_STAGE5_PLAN
+        else:
+            name = FT_STEP_NAMES.get(stage, "unknown")
+        return f"mi-workflow · {truncate(feature)} · {name}"
     name = STAGE_NAMES.get(stage, "unknown")
     return f"mi-workflow · {truncate(feature)} · Stage {stage} · {name}"
 
@@ -172,5 +192,9 @@ try:
 except ValueError:
     print(render_unreadable(slug)); sys.exit(0)
 
-print(render_active(nested_feature, stage))
+todo_block = read_frontmatter_block(os.path.join(data_root, "quest", slug, "todo-list.md"))
+ft_name = yaml_top_level(todo_block, "feature-test") if todo_block else None
+sub_flow = yaml_nested(progress_block, "active", "sub-flow")
+mt_state = yaml_nested(progress_block, "active", "manual-test-state")
+print(render_active(nested_feature, stage, ft_name, sub_flow, mt_state))
 '
