@@ -939,6 +939,52 @@ else
   ng "$t" "feature-test render did not emit the expected plural requirements-ids line"
 fi
 
+# ---- Task 10: stage-8 substitution ----------------------------------------
+
+MI_CW="$REPO_ROOT/commands/mi-complete-workflow.md"
+
+t="stage 8: branches on the identity predicate"
+if grep -q 'is-feature-test' "$MI_CW"; then
+  ok "$t"
+else
+  ng "$t" "no feature-test branch at stage 8"
+fi
+
+t="stage 8: commits come from populate-feature-test"
+if grep -q 'populate-feature-test' "$MI_CW"; then
+  ok "$t"
+else
+  ng "$t" "the substituted commits source is missing"
+fi
+
+t="stage 8: skips the check-current preflight for the entry"
+if grep -qE 'check-current.*skip|skip.*check-current' "$MI_CW"; then
+  ok "$t"
+else
+  ng "$t" "the preflight skip is unstated"
+fi
+
+t="stage 8: skips rotation and the implementation archive move"
+if grep -qE 'no rotation|rotation .*skipped|permanent in place' "$MI_CW"; then
+  ok "$t"
+else
+  ng "$t" "rotation/archive skip is unstated"
+fi
+
+t="stage 8: keeps lessons distillation from the entry's own evidence"
+if grep -qE 'manual-test-results.*inspector-review|highest-value lesson source|working together' "$MI_CW"; then
+  ok "$t"
+else
+  ng "$t" "lessons substitution is unstated"
+fi
+
+t="stage 8: reuses the existing queue-empty closure"
+if grep -qE 'existing .*closure|closure .*unmodified|no second completion path' "$MI_CW"; then
+  ok "$t"
+else
+  ng "$t" "the single-closure invariant is unrecorded"
+fi
+
 # ---- Summary --------------------------------------------------------------
 
 printf "\n%d passed, %d failed\n" "$pass" "$fail"
