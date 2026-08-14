@@ -985,6 +985,32 @@ else
   ng "$t" "the single-closure invariant is unrecorded"
 fi
 
+# ---- Task 10 review fix round 1: ft_mode defaulted at every consumption site
+#
+# Important: ft_mode is assigned in a block positioned in Branch III's
+# narrative, but Steps 3 and 5 also run on Branches 0a and II — an executor
+# reaching those steps via 0a/II never ran the assigning block, so a bare
+# "$ft_mode" reference is either unset (aborts under set -u) or silently
+# takes the ordinary path for a feature-test entry. Every other cross-block
+# gate in this file (branch_route) is written defensively as
+# "${branch_route:-DEFAULT}" for exactly this reason; ft_mode must read the
+# same way. A grep for the bare form pins the fix.
+
+t="stage 8: ft_mode is never consumed bare (no un-defaulted \$ft_mode check)"
+if grep -q '"\$ft_mode"' "$MI_CW"; then
+  ng "$t" "found a bare \"\$ft_mode\" comparison — a block that never ran mode-detection (Branch 0a/II) would abort under set -u or silently take the ordinary path; use \${ft_mode:-0} like branch_route"
+else
+  ok "$t"
+fi
+
+t="stage 8: ft_mode defaulting uses the same \${var:-0} idiom at every site"
+n="$(grep -c '\${ft_mode:-0}' "$MI_CW")"
+if [[ "$n" -ge 5 ]]; then
+  ok "$t"
+else
+  ng "$t" "expected >=5 \${ft_mode:-0} guarded consumption sites (Steps 3, 3.5 x2, 4, 5), found $n"
+fi
+
 # ---- Summary --------------------------------------------------------------
 
 printf "\n%d passed, %d failed\n" "$pass" "$fail"
