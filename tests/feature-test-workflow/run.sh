@@ -1011,6 +1011,38 @@ else
   ng "$t" "expected >=5 \${ft_mode:-0} guarded consumption sites (Steps 3, 3.5 x2, 4, 5), found $n"
 fi
 
+# ---- Task 11: abort guidance ----------------------------------------------
+
+MI_AB="$REPO_ROOT/commands/mi-abort-workflow.md"
+
+t="abort: branches its guidance on the identity predicate"
+if grep -q 'is-feature-test' "$MI_AB"; then
+  ok "$t"
+else
+  ng "$t" "abort guidance does not branch for a feature-test entry"
+fi
+
+t="abort: tells a feature-test entry to re-run the diagram pass, not a blueprint"
+if grep -qE 'diagram pass|re-run the diagram' "$MI_AB"; then
+  ok "$t"
+else
+  ng "$t" "post-abort guidance still points at blueprint/planning recovery"
+fi
+
+t="abort: records that the plan is preserved and results do not carry forward"
+if grep -qE 'results .*(rotated|do not carry forward)' "$MI_AB"; then
+  ok "$t"
+else
+  ng "$t" "retry semantics for test/ are unstated"
+fi
+
+t="abort: no new abort mechanism is introduced"
+if grep -q 'need no new abort mechanism' "$MI_AB"; then
+  ok "$t"
+else
+  ng "$t" "the reuse invariant is unrecorded"
+fi
+
 # ---- Summary --------------------------------------------------------------
 
 printf "\n%d passed, %d failed\n" "$pass" "$fail"
