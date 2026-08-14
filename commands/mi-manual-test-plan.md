@@ -45,6 +45,18 @@ The §4.1 auto-rotation is a **filesystem mutation** but not a `progress.md` mut
 
 ### Step 1 — Resolve any existing plan + cross-cycle results auto-rotation
 
+**Mode detection (ordinary vs. feature-test), runs first.** Auto-detected rather than flag-driven so it cannot be forgotten by a caller:
+
+```bash
+if $CLAUDE_PLUGIN_ROOT/scripts/todo.sh is-feature-test "$active_feature"; then
+  ft_mode=1
+else
+  ft_mode=0
+fi
+```
+
+**An ordinary feature never matches**, so every branch below that is not explicitly gated on `ft_mode=1` runs exactly as it did before the feature-test path existed — this generator's single-feature behaviour, and the schema its output validates against, are unchanged.
+
 **Step 1.0 — Activation-id backfill (one-shot for in-flight cycles).**
 Cycles activated before `progress.md.active.activation-id` was introduced
 have a missing field. Read it; if missing, mint and store one. The
@@ -118,18 +130,60 @@ If `--discard-existing` was passed with no existing plan, treat it like a normal
 
 ### Step 1.5 — Plan-freshness gate (cross-activation, read-only)
 
-If `plan_path` does NOT exist, skip this step entirely (nothing to be stale about). Otherwise compute the freshness mismatch on `requirements-id` AND `generated-from-base-commit`:
+If `plan_path` does NOT exist, skip this step entirely (nothing to be stale about). Otherwise compute the freshness mismatch on `generated-from-base-commit` AND the requirements reference. For an ordinary feature (`ft_mode=0`) that reference is the singular `requirements-id`, unchanged from before. **When `ft_mode=1` the entry has no `requirements.md` of its own; the plan instead carries `requirements-ids`** (plural) — one id per finished ordinary feature. Staleness for a feature-test entry means **the cycle's finished set changed** since the plan was written, so the gate compares the id LIST, not a single id — a feature finishing (or being rebased out) after the plan was rendered has to flip `mismatch`:
 
 ```bash
-plan_req_id="$($CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get "$plan_path" requirements-id)"
-plan_base_commit="$($CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get "$plan_path" generated-from-base-commit)"
-req_path="$data_root/workflow-stream/$active_feature/blueprints/current/requirements.md"
-current_req_id="$($CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get "$req_path" id)"
-current_base_commit="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get base-commit)"
+if [[ "$ft_mode" == "1" ]]; then
+  plan_req_ids="$($CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get "$plan_path" requirements-ids | tr -d ' ' | sort)"
+  plan_base_commit="$($CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get "$plan_path" generated-from-base-commit)"
+  current_base_commit="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get base-commit)"
+  # feature-test-range refuses (exit 3/4/5) when a finished feature's head is
+  # unreachable, nothing contributed commits, or bases diverged. This is a
+  # plain command substitution (no pipe to `head`), so its exit status
+  # reaches `if !` directly — same shape as Step 1.4 of
+  # mi-generate-implementation-diagrams.md and review.sh's own feature-test
+  # `init` branch. commits.sh's own stderr diagnostic is not redirected, so
+  # it reaches the inspector directly; stop here rather than continuing with
+  # an empty id list.
+  if ! ft_range_out="$($CLAUDE_PLUGIN_ROOT/scripts/commits.sh feature-test-range "$active_feature")"; then
+    exit 1
+  fi
+  current_req_ids="$(
+    while IFS=$'\t' read -r row_kind row_feat _row_base _row_head; do
+      [[ "$row_kind" == "contributor" ]] || continue
+      hist="$data_root/workflow-stream/$row_feat/blueprints/history"
+      # Portable newest-version resolution — macOS/BSD sed has no `\+` in BRE
+      # mode, so this loops instead of a one-line sed capture. Same pattern
+      # Task 8 uses at mi-generate-implementation-diagrams.md Step 2.1 and
+      # review.sh's own feature-test `init` branch reuse rather than a third
+      # variant.
+      latest_v=0
+      for d in "$hist"/v[0-9]*; do
+        [[ -d "$d" ]] || continue
+        v="${d##*/v}"
+        [[ "$v" =~ ^[0-9]+$ ]] || continue
+        (( v > latest_v )) && latest_v="$v"
+      done
+      if [[ "$latest_v" -gt 0 ]]; then
+        $CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get "$hist/v$latest_v/requirements.md" id
+      fi
+    done <<< "$ft_range_out" | sort
+  )"
+  mismatch=0
+  [[ "$plan_req_ids" != "$current_req_ids" || "$plan_base_commit" != "$current_base_commit" ]] && mismatch=1
+else
+  plan_req_id="$($CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get "$plan_path" requirements-id)"
+  plan_base_commit="$($CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get "$plan_path" generated-from-base-commit)"
+  req_path="$data_root/workflow-stream/$active_feature/blueprints/current/requirements.md"
+  current_req_id="$($CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get "$req_path" id)"
+  current_base_commit="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get base-commit)"
 
-mismatch=0
-[[ "$plan_req_id" != "$current_req_id" || "$plan_base_commit" != "$current_base_commit" ]] && mismatch=1
+  mismatch=0
+  [[ "$plan_req_id" != "$current_req_id" || "$plan_base_commit" != "$current_base_commit" ]] && mismatch=1
+fi
 ```
+
+The `else` branch above is the pre-existing ordinary-feature computation, unedited — the `ft_mode=1` branch is new and is checked first, per the global constraint that a feature-test entry must never read `blueprints/current/` for its own folder (it has none).
 
 Branch on `(--from-resume, --force, mismatch)`:
 
@@ -206,7 +260,17 @@ fi
 
 No mutation on refusal — `manual-test-state` is unchanged, no plan rotation.
 
-**Read inputs:**
+**Feature-test input substitutions (`ft_mode=1`).** The entry owns no blueprint; it borrows from the finished features' archived `blueprints/history/v[N]/` instead of `blueprints/current/`:
+
+| Ordinary input | Feature-test substitute |
+| --- | --- |
+| `blueprints/current/requirements.md` | each finished feature's `history/v[N]/requirements.md` (newest archived version) |
+| `blueprints/current/config.md` | the **union** of the finished features' `history/v[N]/config.md` — merge Prerequisites, services, and env vars, de-duplicated |
+| `implementation/change-summary.md` | the entry's own, over the union range |
+
+The change-summary freshness gate, RUN_ROOT resolution, and the §4.1 results auto-rotation all work unchanged for `ft_mode=1`, because `base-commit` is already the union base (pinned by `/mi-continue`'s feature-test sequence at the `advance-to 2 5` transition).
+
+**Read inputs (`ft_mode=0`; see the substitution table above for `ft_mode=1`):**
 
 - `workflow-stream/<feature>/blueprints/current/requirements.md` — goals, planned, non-goals.
 - `workflow-stream/<feature>/blueprints/current/config.md` — services, env vars, runtime topology.
@@ -280,6 +344,27 @@ The manual test plan is one of the most important artifacts in the entire workfl
 **Autonomous-runnability:** write every scenario so a hands-off run (`/mi-manual-test-run`, autonomous env-mode) can execute it — each `Expected` bullet names WHERE the outcome is observable (HTTP response, log line, DB row, file, DOM state). When a scenario's headline verification is subjective visual judgment, additionally list the objective side-effects that CAN be machine-checked, so an autonomous run verifies those instead of skipping the scenario outright.
 
 **Self-check before writing the file:** after drafting § 3, walk the coverage matrix once more against Goals + changed areas and count scenarios per cell; add scenarios (or § 4 waivers) for every empty cell. Only then render the file.
+
+**Feature-test derivation (`ft_mode=1`).** Scenarios are derived, never transcribed — the entry's todo item says only "test the whole feature implementation". The coverage-matrix bar above still applies; it is grounded against a different set of inputs:
+
+Inputs, in priority order:
+
+1. `todo.sh list IMPLEMENTED` — everything that actually shipped this cycle, **excluding the feature-test item itself** (its id is field 3 of `todo.sh feature-test-status`).
+2. The implementation itself, over the union range. **Where the implementation and the stated intent disagree, the implementation is what gets tested.**
+
+Items the inspector left as `[ ] TODO` were **never built** and are out of scope — a partially-selected cycle produces a plan covering only what shipped.
+
+**Cross-feature scenarios dominate.** Prioritise the seams: one feature's output becoming another's input, shared state, ordering, and interactions no single-feature plan could have covered — cross-feature scenarios dominate this entry's plan by design, because that is the exact coverage gap it exists to close. A scenario that merely re-runs one feature's existing case is the exception and carries a one-line justification, because that case already ran during that feature's own workflow — repeating it wholesale would just reproduce the gap this entry exists to close.
+
+**Portability.** Every command must be POSIX/BSD-portable and run on macOS. GNU-only flags (`cat -A`, `grep -P`, `sed -i` with no argument) are defects in the plan even when the underlying code is correct.
+
+**Merge anchor for `DTI-005`.** End `## 3. Test scenarios` with exactly this line:
+
+```markdown
+<!-- deferred-merge-point -->
+```
+
+The sibling `deferred-test-items` feature inserts carried-forward scenario groups immediately above it. A stable anchor, independent of scenario lettering, needing no schema change. This feature owns the anchor only — never the merge.
 
 ### Step 6 — Do NOT change `manual-test-state`
 

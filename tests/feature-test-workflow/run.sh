@@ -715,6 +715,66 @@ else
   ng "$t" "the sub-agent's Phase 1 body-fill can clobber main's pre-written omitted-feature bullets"
 fi
 
+# ---- Task 9: whole-feature test plan --------------------------------------
+
+MI_MTP="$REPO_ROOT/commands/mi-manual-test-plan.md"
+
+t="test plan: detects the feature-test path"
+if grep -q 'is-feature-test' "$MI_MTP"; then
+  ok "$t"
+else
+  ng "$t" "no feature-test derivation path"
+fi
+
+t="test plan: derives scenarios from IMPLEMENTED items"
+if grep -qE 'list IMPLEMENTED' "$MI_MTP"; then
+  ok "$t"
+else
+  ng "$t" "the derivation does not read IMPLEMENTED items"
+fi
+
+t="test plan: excludes unselected TODO items from scope"
+if grep -qE 'never built|out of scope.*TODO|\[ \] TODO.*out of scope' "$MI_MTP"; then
+  ok "$t"
+else
+  ng "$t" "FTW-009 scope rule is unstated"
+fi
+
+t="test plan: excludes the feature-test item from its own inputs"
+if grep -qE 'excludes itself|its own input set|excluding the feature-test item' "$MI_MTP"; then
+  ok "$t"
+else
+  ng "$t" "the self-exclusion rule is unstated"
+fi
+
+t="test plan: cross-feature scenarios dominate"
+if grep -qE 'in combination|cross-feature scenarios dominate' "$MI_MTP"; then
+  ok "$t"
+else
+  ng "$t" "the cross-feature priority is unstated"
+fi
+
+t="test plan: emits the deferred merge anchor for DTI-005"
+if grep -q 'deferred-merge-point' "$MI_MTP"; then
+  ok "$t"
+else
+  ng "$t" "the merge anchor is missing"
+fi
+
+t="test plan: freshness gate compares the id LIST for a feature-test entry"
+if grep -q 'requirements-ids' "$MI_MTP"; then
+  ok "$t"
+else
+  ng "$t" "the freshness gate does not handle the plural field"
+fi
+
+t="test plan: restates the macOS portability rule"
+if grep -qE 'BSD|POSIX|macOS' "$MI_MTP"; then
+  ok "$t"
+else
+  ng "$t" "portability constraint absent"
+fi
+
 # ---- Summary --------------------------------------------------------------
 
 printf "\n%d passed, %d failed\n" "$pass" "$fail"
