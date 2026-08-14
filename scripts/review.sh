@@ -453,8 +453,17 @@ PYEOF
     fi
     cs="$(mi_impl_dir "$feature")/change-summary.md"
     if [[ -f "$cs" ]]; then
-      mi_fm_set "$cs" requirements-id "$new_requirements_id"
-      mi_info "synced refs in $cs (requirements-id=$new_requirements_id)"
+      cs_reqids="$(mi_fm_get "$cs" requirements-ids 2>/dev/null || echo '')"
+      if [[ -n "$cs_reqids" && "$cs_reqids" != "null" ]]; then
+        # A feature-test entry carries `requirements-ids` (plural) and has no
+        # blueprint to rotate, so sync-refs can never legitimately re-point it.
+        # Skip rather than write a singular field alongside the plural — that
+        # would produce a file the oneOf gate rejects.
+        mi_info "sync-refs: $cs carries requirements-ids (feature-test entry); leaving it unchanged"
+      else
+        mi_fm_set "$cs" requirements-id "$new_requirements_id"
+        mi_info "synced refs in $cs (requirements-id=$new_requirements_id)"
+      fi
     fi
     ;;
 

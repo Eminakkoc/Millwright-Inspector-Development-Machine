@@ -182,6 +182,52 @@ else
   ng "$t" "diagnostic does not advertise 2->5: '$err'"
 fi
 
+# ---- Task 3: schemas -------------------------------------------------------
+
+fm_valid() { "$REPO_ROOT/scripts/frontmatter.sh" validate "$1" "$2" >/dev/null 2>&1; }
+
+t="schema: an ordinary change-summary still validates (back-compat)"
+if fm_valid "$FIXTURES/cs-ordinary/change-summary.md" change-summary; then
+  ok "$t"
+else
+  ng "$t" "singular requirements-id was rejected — breaks every existing file"
+fi
+
+t="schema: a feature-test change-summary with requirements-ids validates"
+if fm_valid "$FIXTURES/cs-feature-test/change-summary.md" change-summary; then
+  ok "$t"
+else
+  ng "$t" "plural requirements-ids was rejected"
+fi
+
+t="schema: change-summary carrying BOTH fields is rejected"
+if fm_valid "$FIXTURES/cs-both/change-summary.md" change-summary; then
+  ng "$t" "both fields were accepted — the oneOf gate is not enforcing"
+else
+  ok "$t"
+fi
+
+t="schema: change-summary carrying NEITHER field is rejected"
+if fm_valid "$FIXTURES/cs-neither/change-summary.md" change-summary; then
+  ng "$t" "neither field was accepted — the requirement is unenforced"
+else
+  ok "$t"
+fi
+
+t="schema: an ordinary manual-test-plan still validates (back-compat)"
+if fm_valid "$FIXTURES/mtp-ordinary/manual-test-plan.md" manual-test-plan; then
+  ok "$t"
+else
+  ng "$t" "singular requirements-id was rejected on manual-test-plan"
+fi
+
+t="schema: a feature-test manual-test-plan with requirements-ids validates"
+if fm_valid "$FIXTURES/mtp-feature-test/manual-test-plan.md" manual-test-plan; then
+  ok "$t"
+else
+  ng "$t" "plural requirements-ids was rejected on manual-test-plan"
+fi
+
 # ---- Summary --------------------------------------------------------------
 
 printf "\n%d passed, %d failed\n" "$pass" "$fail"
