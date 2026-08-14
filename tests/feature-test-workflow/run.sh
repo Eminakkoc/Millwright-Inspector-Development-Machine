@@ -512,10 +512,18 @@ else
 fi
 
 t="mi-continue: the 2->5 write sets implementation-completed"
-if grep -qE 'advance-to 2 5.*implementation-completed|implementation-completed=true' "$MI_CONT"; then
+# Tightened per review round 1: the original grep's second alternative
+# (bare 'implementation-completed=true') already matched text elsewhere in
+# the file (the Resume Handler's unrelated 3->5 transition), so it passed
+# before the feature-test branch existed. Anchor on the actual advance-to 2 5
+# invocation (line ends in a line-continuation backslash, distinguishing it
+# from prose mentions of "advance-to 2 5") and require
+# implementation-completed=true within that same call's continuation lines.
+block="$(grep -A3 -E 'advance-to 2 5 \\$' "$MI_CONT")"
+if printf '%s' "$block" | grep -q 'implementation-completed=true'; then
   ok "$t"
 else
-  ng "$t" "the fork does not set implementation-completed — resume-workflow would report state corruption"
+  ng "$t" "the advance-to 2 5 call does not set implementation-completed=true in the same call — resume-workflow would report state corruption"
 fi
 
 t="mi-continue: both the entry branch and the recovery branch exist"
@@ -531,6 +539,72 @@ if grep -qE 'falls through to today|unchanged for ordinary|ordinary features are
   ok "$t"
 else
   ng "$t" "mi-continue.md does not record the ordinary-feature invariant at the fork"
+fi
+
+# ---- Task 6 review fix (finding 1): review.sh init for a feature-test entry -
+
+# seed_history_requirements <sandbox> <feature> <id> — archived requirements.md
+# at blueprints/history/v1/, alongside seed_history's change-summary. Real
+# history rotation moves requirements.md straight into history/v<N>/ (not
+# nested under implementation/) — see blueprints.sh rotate.
+seed_history_requirements() {
+  local dir="$1/workflow-stream/$2/blueprints/history/v1"
+  mkdir -p "$dir"
+  cat > "$dir/requirements.md" <<EOF
+---
+id: $3
+---
+
+# Requirements — $2
+EOF
+}
+
+t="review.sh init: succeeds for a feature-test entry (no blueprints/current/)"
+repo="$(make_git_repo)"; sandbox="$(make_quest)"; seed_todo "$sandbox"
+c1="$(sha_of "$repo" c1)"; c2="$(sha_of "$repo" c2)"
+req_id="44444444-4444-4444-8444-444444444444"
+seed_history "$sandbox" payments "$c1" "$c2"
+seed_history_requirements "$sandbox" payments "$req_id"
+seed_completed "$sandbox" payments
+if ( cd "$repo" && MI_DATA_ROOT="$sandbox" "$REPO_ROOT/scripts/review.sh" \
+     init payments-feature-test ) >/dev/null 2>&1; then
+  ok "$t"
+else
+  ng "$t" "review.sh init exited non-zero for a feature-test entry — this is the FTW-006 review Critical finding (init cannot run for a feature-test entry, stranding it in a non-progressing loop)"
+fi
+
+t="review.sh init: the feature-test result validates against review-file"
+if fm_valid "$sandbox/workflow-stream/payments-feature-test/implementation/inspector-review.md" review-file; then
+  ok "$t"
+else
+  ng "$t" "the initialized inspector-review.md failed review-file schema validation"
+fi
+
+t="review.sh init: the feature-test result carries requirements-ids (plural), not requirements-id"
+ov="$sandbox/workflow-stream/payments-feature-test/implementation/inspector-review.md"
+if grep -q "requirements-ids: \[$req_id\]" "$ov" && ! grep -q '^requirements-id:' "$ov"; then
+  ok "$t"
+else
+  ng "$t" "expected requirements-ids: [$req_id] and no singular requirements-id"
+fi
+
+t="review.sh init: an ordinary feature still writes the singular requirements-id (unchanged)"
+repo2="$(make_git_repo)"; sandbox2="$(make_quest)"; seed_todo_no_ft "$sandbox2"
+mkdir -p "$sandbox2/workflow-stream/payments/blueprints/current"
+cat > "$sandbox2/workflow-stream/payments/blueprints/current/requirements.md" <<EOF
+---
+id: 55555555-5555-4555-8555-555555555555
+---
+
+# Requirements — payments
+EOF
+( cd "$repo2" && MI_DATA_ROOT="$sandbox2" "$REPO_ROOT/scripts/review.sh" \
+    init payments ) >/dev/null 2>&1
+ov2="$sandbox2/workflow-stream/payments/implementation/inspector-review.md"
+if grep -q '^requirements-id: 55555555-5555-4555-8555-555555555555$' "$ov2" && ! grep -q '^requirements-ids:' "$ov2"; then
+  ok "$t"
+else
+  ng "$t" "ordinary review.sh init branch was disturbed by the feature-test fix"
 fi
 
 # ---- Summary --------------------------------------------------------------

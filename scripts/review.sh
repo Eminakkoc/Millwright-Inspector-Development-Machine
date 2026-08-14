@@ -77,13 +77,46 @@ case "$cmd" in
     dest="$(review_file "$feature")"
     [[ ! -f "$dest" ]] || mi_die "$dest already exists"
 
-    # Pull the requirements-id from the active blueprint to stitch the frontmatter.
     requirements_file="$(mi_blueprints_current "$feature")/requirements.md"
-    requirements_id="$(mi_fm_get "$requirements_file" id)"
+    if [[ -f "$requirements_file" ]]; then
+      # Ordinary feature — pull the requirements-id from the active blueprint
+      # to stitch the frontmatter. Unchanged from before the feature-test
+      # branch below was added.
+      requirements_id="$(mi_fm_get "$requirements_file" id)"
+      requirements_field="!RAW!requirements-id: $requirements_id"
+    else
+      # Feature-test entry: this folder never has blueprints/current/
+      # (§1.2 of the feature-test-workflow design — the fork never calls
+      # blueprints.sh ensure-current). Resolve requirements-ids (plural)
+      # instead: the id of each finished ordinary feature's newest archived
+      # blueprints/history/v[N]/requirements.md, in the order
+      # commits.sh feature-test-range reports its `contributor` rows.
+      range_out="$("${MI_PLUGIN_ROOT}/scripts/commits.sh" feature-test-range "$feature")" \
+        || mi_die "review.sh init: feature-test-range failed for $feature — cannot resolve requirements-ids"
+      req_ids=()
+      while IFS=$'\t' read -r row_kind row_feat _row_base _row_head; do
+        [[ "$row_kind" == "contributor" ]] || continue
+        hist_dir="$(mi_data_root)/workflow-stream/$row_feat/blueprints/history"
+        latest_v=0
+        for d in "$hist_dir"/v[0-9]*; do
+          [[ -d "$d" ]] || continue
+          v="${d##*/v}"
+          [[ "$v" =~ ^[0-9]+$ ]] || continue
+          (( v > latest_v )) && latest_v="$v"
+        done
+        [[ "$latest_v" -gt 0 ]] || mi_die "review.sh init: no archived requirements.md found for contributor $row_feat"
+        req_file="$hist_dir/v${latest_v}/requirements.md"
+        [[ -f "$req_file" ]] || mi_die "review.sh init: $req_file not found for contributor $row_feat"
+        req_ids+=("$(mi_fm_get "$req_file" id)")
+      done <<< "$range_out"
+      [[ ${#req_ids[@]} -gt 0 ]] || mi_die "review.sh init: feature-test-range reported no contributors for $feature"
+      ids_csv="$(IFS=,; echo "${req_ids[*]}")"
+      requirements_field="!RAW!requirements-ids: [$ids_csv]"
+    fi
 
     mkdir -p "$(dirname "$dest")"
     "${MI_PLUGIN_ROOT}/scripts/frontmatter.sh" init inspector-review "$dest" \
-      "REQUIREMENTS_ID=$requirements_id" \
+      "REQUIREMENTS_FIELD=$requirements_field" \
       "FEATURE=$feature"
     "${MI_PLUGIN_ROOT}/scripts/frontmatter.sh" validate "$dest" review-file >/dev/null
     mi_info "initialized $dest"
