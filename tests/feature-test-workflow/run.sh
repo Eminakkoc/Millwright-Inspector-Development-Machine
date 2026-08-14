@@ -1102,6 +1102,73 @@ else
   ng "$t" "info-bar cannot distinguish the plan step from the review step"
 fi
 
+# ---- Task 13: canonical project doc + regression --------------------------
+
+PROJ="$REPO_ROOT/docs/millwright-inspector-project.md"
+
+t="project doc: documents the feature-test folder layout"
+if grep -qE 'feature-test/' "$PROJ"; then
+  ok "$t"
+else
+  ng "$t" "the feature-test folder shape is undocumented"
+fi
+
+t="project doc: states the deliberate absence of blueprints/"
+if grep -qE 'deliberately omits .*blueprints|no .*blueprints/.*by design' "$PROJ"; then
+  ok "$t"
+else
+  ng "$t" "the intentional blueprints/ absence is not stated"
+fi
+
+t="project doc: defines the abbreviated pipeline's five steps"
+if grep -qE 'abbreviated pipeline' "$PROJ"; then
+  ok "$t"
+else
+  ng "$t" "the abbreviated pipeline is undefined"
+fi
+
+t="project doc: states which ordinary stages are skipped"
+if grep -qE 'stages 2 and 3 are skipped|skips stages 2 and 3' "$PROJ"; then
+  ok "$t"
+else
+  ng "$t" "the skipped stages are unstated"
+fi
+
+t="project doc: records the derivation scope rule"
+if grep -qE 'IMPLEMENTED.*contribute' "$PROJ"; then
+  ok "$t"
+else
+  ng "$t" "FTW-009 scope rule is unrecorded"
+fi
+
+t="project doc: records the stage-8 substitution"
+if grep -q 'populate-feature-test' "$PROJ"; then
+  ok "$t"
+else
+  ng "$t" "stage-8 substitution is unrecorded"
+fi
+
+t="project doc: todo.sh table lists is-feature-test"
+if grep -q 'is-feature-test' "$PROJ"; then
+  ok "$t"
+else
+  ng "$t" "is-feature-test is missing from the script reference"
+fi
+
+t="project doc: advance-to whitelist records 2->5"
+if grep -qE 'advance-to.*2→5|2→5, 3→5' "$PROJ"; then
+  ok "$t"
+else
+  ng "$t" "the widened whitelist is unrecorded"
+fi
+
+t="project doc: the ordinary 8-stage dispatch table is still intact"
+if grep -qE '\| 3 \| any \|' "$PROJ" && grep -qE '\| 6 \| .reviewing. \|' "$PROJ"; then
+  ok "$t"
+else
+  ng "$t" "an ordinary dispatch row was damaged"
+fi
+
 # ---- Summary --------------------------------------------------------------
 
 printf "\n%d passed, %d failed\n" "$pass" "$fail"

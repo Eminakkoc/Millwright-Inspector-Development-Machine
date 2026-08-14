@@ -474,6 +474,52 @@ Four regions:
    `mi-complete-workflow` housekeeping. Read-only consumers fold it into `primer.md`,
    `review-context.md`, and mid-cycle blueprint regen.
 
+#### 3.4.1 The feature-test folder — an abbreviated shape
+
+The terminal feature-test queue entry (`feature-test-queue-entry`) gets its own folder at
+`workflow-stream/<first-feature>-feature-test/`, laid out narrower than the ordinary
+four-region shape above:
+
+```
+workflow-stream/<first-feature>-feature-test/
+├── id.md                     # folder-identity marker, same as every feature folder
+├── implementation/
+│   ├── inspector-review.md   # findings file (IR-NNN blocks)
+│   ├── change-summary.md     # cached analysis of the union range
+│   └── diagrams/             # complete-feature render
+└── test/
+    ├── manual-test-plan.md
+    ├── manual-test-results.md
+    ├── manual-test-plan.history/
+    └── manual-test-results.history/
+```
+
+`id.md` is minted the same way and carries the same identity contract as every other
+feature folder (§3.6) — nothing about folder linking changes for this shape.
+
+**`blueprints/` is deliberately omitted — this is the first feature folder shape that
+carries no `blueprints/` directory at all, by design**, because the abbreviated pipeline
+(§6.4) borrows blueprint material from the finished ordinary features' archived
+`blueprints/history/v[N]/` rather than owning any of its own. The operations that assume a
+`blueprints/` exist are therefore forbidden against this folder:
+
+| Operation | Status for a feature-test folder |
+| --- | --- |
+| `blueprints.sh ensure-current` | Never called — the Row A branch (§7.4) omits it; `/mi-apply-impact` refuses if invoked manually |
+| `blueprints.sh check-current [--require-primer]` | Never called — the stage-2 approve gate is skipped; stage 8 skips its preflight (§7.3) |
+| `blueprints.sh rotate` | Never called — stage 8 skips rotation (§7.3) |
+| `/mi-update-blueprint` | Not reachable — it is a stage-3+ command and stage 3 does not exist here |
+
+**Both children are permanent.** `implementation/` and `test/` stay exactly where they are
+when the cycle closes — stage 8 performs **no** archive move (contrast with the ordinary
+`implementation/` region above, which is moved into `history/v[N+1]/implementation/`).
+There was never a `current/` to rotate out of, so there is no live-versus-archived
+distinction to draw: `<feature-name>-feature-test/implementation/` **is** the permanent
+record of the whole-feature review and diagrams, and `test/` is already feature-permanent
+under the ordinary layout. Accepted consequence: re-running a feature-test entry
+**overwrites** the prior run's `implementation/` contents rather than versioning them —
+there is no `history/` to move the old contents into.
+
 ### 3.5 `progress.md` — the central state file
 
 A single YAML-frontmatter Markdown file at `quest/<active-slug>/progress.md`. Its
@@ -531,7 +577,8 @@ On resume the millwright reads `active`:
 `progress.sh set` is atomic-batched (validate-all → same-dir temp file → schema-validate →
 atomic rename) so a partial multi-field write can't corrupt the file. `advance-to <expected>
 <target> [--set k=v]...` performs whitelisted skip-transitions in a single atomic write —
-the whitelist is `3→5`, `5→7`, and `6→7`. Adjacent transitions use `advance`. Every
+the whitelist is `2→5`, `3→5`, `5→7`, and `6→7` (`2→5` is the feature-test entry's
+abbreviated-pipeline skip, §6.4). Adjacent transitions use `advance`. Every
 state-mutating subcommand calls the worktree-fingerprint guard (`mi_assert_worktree_match`)
 before writing.
 
@@ -953,6 +1000,47 @@ If both worktrees do share a data root, the **worktree-fingerprint guard** catch
 most damaging case — a sibling worktree mutating an active block it doesn't own — and
 refuses with a guidance message before any state is written.
 
+### 6.4 The abbreviated pipeline (feature-test entries)
+
+A multi-feature cycle's terminal feature-test queue entry (`feature-test-queue-entry`) does
+not run the ordinary 8-stage workflow above. **The ordinary 8-stage narrative and its
+dispatch table (§6.1–6.2) are unedited and stay in force for every ordinary feature** — this
+section documents a second, narrower pipeline that runs *instead* of stages 2 and 3 for the
+one entry per cycle that carries the `feature-test:` identity, never as a replacement for
+the ordinary flow.
+
+The abbreviated pipeline validates the cycle's assembled work — every finished ordinary
+feature together — rather than building a new feature. It has **five steps**, all folded
+into the existing `current-stage` values `2`, `5`, `6`, `7`, `8`:
+
+| Step | Persisted state | Handler |
+| --- | --- | --- |
+| 1. Complete-feature diagrams | *not persisted* — runs in the 2→5 transition | Row A / `2 \| any` branch (§7.4) |
+| 2. Whole-feature test plan | `5` / `none` | `/mi-manual-test-plan` (feature-test path) |
+| 3. Manual test run | `5` / `manual-testing` | `/mi-manual-test-run` (unchanged) |
+| 4. Inspector review | `5` / `none` | Inspector Handler (unchanged) |
+| 5. Findings resolution | `6` / `reviewing` → `7` | Review-Resume Handler (unchanged) |
+
+In plain terms: **stages 2 and 3 are skipped** entirely — there is no blueprint approval
+gate and no planning chain, because there is nothing left to plan. The entry goes straight
+from activation (`current-stage=2`) to `current-stage=5` in one atomic transition
+(`progress.sh advance-to 2 5 --set sub-flow=none`), landing on the same `current-stage=5`
+findings-and-manual-test machinery every ordinary feature already uses. Stage 4 was already
+conceptual and unpersisted for ordinary features (§6.1); it has no persisted existence here
+either.
+
+This pipeline introduces **no new `current-stage` or `sub-flow` value** — every step above
+reuses a value the ordinary state machine already defines, and `progress.schema.yaml`
+therefore needs no edit for this feature. The fork lives entirely in dispatcher branches
+(§7.4) evaluated ahead of the ordinary rows' bodies, never in new schema-level state.
+
+**Derivation scope.** Wherever a step above derives material from the cycle (diagrams, the
+whole-feature test plan), only `IMPLEMENTED` items contribute — read via `todo.sh list
+IMPLEMENTED`. Unselected `[ ] TODO` items are out of scope: they were never built, so a
+partially-selected cycle produces a combined result covering only what shipped. The
+feature-test item excludes itself from its own derivation; its own id comes from
+`todo.sh feature-test-status` field 3.
+
 ---
 
 ## 7. The workflow commands (full reference)
@@ -1071,6 +1159,31 @@ workflow lessons (Step 3.5 — `lessons-distiller` sub-agent, Branch III only, i
 the `workflow:<feature>/<requirements-id>` source-prefix guard); rotate the blueprint;
 archive `implementation/`; `progress.sh finish`; housekeeping (§6.2 stage 8).
 
+**The stage-8 substitution for a feature-test entry.** Branch III's steps branch on
+`todo.sh is-feature-test` across the four blueprint-dependent steps — everything else in
+Branch III (Step 0's detection, Step 2, Step 6, Step 7) runs identically for both kinds of
+entry:
+
+| Step | Ordinary | Feature-test |
+| --- | --- | --- |
+| 2 — `IMPLEMENTING` → `IMPLEMENTED` | runs | runs (its own item) |
+| 3 — commits list | `commits.sh populate-requirements` → `requirements.md` | union range → the entry's `change-summary.md` via `commits.sh populate-feature-test` |
+| 3.5 — lessons distillation | evidence keyed by requirements id | evidence = the entry's `inspector-review.md` + `manual-test-results.md` |
+| 4 — `check-current --require-primer` preflight | required to return 0 | **skipped** — nothing to assert without a `blueprints/` folder (§3.4.1) |
+| 4 — `blueprints.sh rotate` | runs | **skipped** |
+| 5 — `implementation/` archive move | runs | **skipped** — permanent in place (§3.4.1) |
+| 6 — `progress.sh finish` | runs | runs |
+| 7 — housekeeping | runs | runs |
+
+`requirements.md` never exists for a feature-test entry, so its commits list needs a
+different home: `change-summary.md` gains an optional `commits` array (the same `{sha,
+msg}` shape `requirements.md` uses), populated by `commits.sh populate-feature-test
+<feature>`. `commits.sh populate-requirements` is untouched — every ordinary feature's
+stage 8 still calls exactly the subcommand it always called. Because the feature-test entry
+is pinned last in the queue, its completion is what empties the queue, so the existing
+queue-empty closure (`quest.sh end`) runs unmodified and the cycle closes in one pass — no
+second completion path is introduced.
+
 ### 7.4 The universal advancement signal — `/mi-continue`
 
 The single touchpoint at every inspector gate. Reads `progress.md` (and sibling files) and
@@ -1092,7 +1205,30 @@ dispatches. **Step 1** sanity-checks `$CLAUDE_PLUGIN_ROOT` and reads workflow st
 The feature-test entry adds **no new dispatcher rows**: it rides the existing Step 2A /
 Step 2B rows. Row A's ordering invariant (`queue-rationale.features − completed ==
 queue`, in order) continues to hold because the confirmed order — and therefore both
-`features:` and `queue` — ends with the pinned name.
+`features:` and `queue` — ends with the pinned name. **Row A and the `2 | any` row each
+carry a branch evaluated ahead of their existing body; the rows themselves, their order,
+and their match conditions for every other feature are unchanged**:
+
+- **Row A** gains a branch ahead of its `/mi-apply-impact` fire: when `todo.sh
+  is-feature-test queue[0]` exits 0, it instead runs `progress.sh activate`
+  (byte-identical to the ordinary path), `folder-id.sh ensure`, resolves and verifies the
+  union commit range (§6.4), sets `base-commit` to the earliest reachable base,
+  auto-fires `/mi-generate-implementation-diagrams`, initializes `review.sh init`, and
+  finishes with the atomic `progress.sh advance-to 2 5 --set sub-flow=none`. **No
+  `blueprints.sh ensure-current` call** — that omitted line is what separates this branch
+  from an ordinary activation.
+- **The `2 | any` row** gains the same branch ahead of the Approve Handler, for the two
+  states that leave a feature-test entry parked at `current-stage=2` (a no-flag
+  `/mi-abort-workflow`, or a session break between activation and the `advance-to 2 5`
+  above): when the active feature is the feature-test entry, it re-runs the same
+  diagram-pass-onward sequence instead of the blueprint sanity-check and the
+  `stage-2-to-3` clear gate. Accepted consequence: the diagram pass is **not resumable** —
+  an interruption re-runs it from scratch, which is safe because it is idempotent and
+  derives entirely from committed state.
+
+For any feature that is not the cycle's feature-test entry, `is-feature-test` exits 1 and
+control falls through to today's code path unchanged — the regression check this
+guarantees is run explicitly in `tests/feature-test-workflow/run.sh` (§9).
 
 **Active rows (`active != null`)** — keyed by `current-stage` + `sub-flow`:
 
@@ -1710,12 +1846,12 @@ refit for per-batch use in v1.5; rendered by the sub-agents at review-call time,
 | `frontmatter.sh` | Read / write / init / validate YAML frontmatter. Subcommands: `init`, `get`, `set`, `validate`. |
 | `data-root.sh` | Resolve the data root: `MI_DATA_ROOT` → `CLAUDE_PLUGIN_USER_CONFIG_data_root` → `${PWD}/millwright-inspector`. Every other script sources this. |
 | `quest.sh` | Manage the `quest/active.md` pointer and resolve the active cycle's directory. Subcommands: `slug`, `start`, `end`, `init-pointer`, `current`, `dir`, `has-active`, `status`, `list`, `feature-section`. |
-| `progress.sh` | Manage the active cycle's `progress.md`. Subcommands: `init`, `activate`, `finish`, `requeue`, `reset`, `reorder`, `enqueue`, `get-active`, `queue-remaining`, `get`, `set`, `advance`, `advance-to`, `add-clear-recommendation`, `has-clear-recommendation`, `check-worktree`, `check-feature-test-pin <ft-name> <order...>` (stage-1.5 validation; exit 0 when the name is absent from the order or is its last element, exit 3 otherwise; reads no files; deliberately separate from `reorder`, whose permutation-only contract is **unchanged** — a guard inside `reorder` would alter behaviour for cycles that carry no feature-test entry at all). |
-| `todo.sh` | Manage `todo-list.md`. Subcommands: `set-state` (optional `--assignee`), `bulk-transition` (optional `--feature`), `pend-selected` (reports promoted `<item-id>\t<assignee>` rows on stdout), `list <state>`, `add`, `feature-test-status`. Enforces the state machine and assignee invariants. |
+| `progress.sh` | Manage the active cycle's `progress.md`. Subcommands: `init`, `activate`, `finish`, `requeue`, `reset`, `reorder`, `enqueue`, `get-active`, `queue-remaining`, `get`, `set`, `advance`, `advance-to` (atomic skip-transition; stage-pair whitelist `2→5, 3→5, 5→7, 6→7` — `2→5` is the feature-test entry's abbreviated-pipeline skip, §6.4), `add-clear-recommendation`, `has-clear-recommendation`, `check-worktree`, `check-feature-test-pin <ft-name> <order...>` (stage-1.5 validation; exit 0 when the name is absent from the order or is its last element, exit 3 otherwise; reads no files; deliberately separate from `reorder`, whose permutation-only contract is **unchanged** — a guard inside `reorder` would alter behaviour for cycles that carry no feature-test entry at all). |
+| `todo.sh` | Manage `todo-list.md`. Subcommands: `set-state` (optional `--assignee`), `bulk-transition` (optional `--feature`), `pend-selected` (reports promoted `<item-id>\t<assignee>` rows on stdout), `list <state>`, `add`, `feature-test-status`, `is-feature-test <name>` (read-only predicate; exit 0 when `<name>` is the cycle's pinned feature-test entry, exit 1 otherwise). Enforces the state machine and assignee invariants. |
 | `folder-id.sh` | Manage `id.md` markers and `reference.md`. Subcommands: `ensure`, `get`, `resolve <id>`, `list`, `init-reference`, `link-feature`, `feature-lineage-check`, `derive-feature-test-name`. |
 | `blueprints.sh` | Manage `blueprints/`. Subcommands: `ensure-current`, `rotate`, `resume-partial`, `preserve-inspector-sections`, `check-current [--require-primer]`, `branch-status`. Rotation is resumable (`.partial.tmp → .partial → vN`). |
 | `review.sh` | Manage `inspector-review.md` / `review-context.md`. Subcommands: `init`, `add`, `set-status`, `iterate`, `list-open`, `list-open-summaries`, `sync-refs`, `canonicalize`, `strip-freeform`, plus the manual-test seeding helpers (`find-by-seed-id`, `find-by-seed-id-family`, `upsert-manual-test-failure`). IDs are `IR-NNN`, monotonically incremented. |
-| `commits.sh` | Query `base-commit..HEAD`. Subcommands: `list`, `yaml`, `populate-requirements`, `changed-files`, `changed-files-only`, `change-summary-fresh`, `diagrams-fresh`. |
+| `commits.sh` | Query `base-commit..HEAD`. Subcommands: `list`, `yaml`, `populate-requirements`, `changed-files`, `changed-files-only`, `change-summary-fresh`, `diagrams-fresh`, `feature-test-range <ft-feature>` (resolves and verifies the union commit range across the cycle's `IMPLEMENTED` features), `populate-feature-test <ft-feature>` (writes the union range's commits into the entry's `change-summary.md`, the `requirements.md`-shaped home used by stage 8's substitution, §7.3). |
 | `ingest.sh` | Convert non-text journal files to sibling `.md` (docling for documents, stub for images / short PDFs). |
 | `doctor.sh` | Dependency detection. JSON or human output; `--preflight` mode runs `git rev-parse --verify HEAD`. |
 | `bundle.sh` | Engine for `/mi-export-bundle`. Subcommand: `export`. |
@@ -2154,7 +2290,8 @@ invoke `/clear` programmatically).
 - **Primer** — a compact derived snapshot (`primer.md`, `review-context.md`) that bootstraps
   a long-running stage.
 - **`progress.sh advance-to`** — atomic skip-transition with a stage-pair whitelist
-  (`3→5`, `5→7`, `6→7`); `--set field=value` arguments land in the same atomic write.
+  (`2→5`, `3→5`, `5→7`, `6→7`); `--set field=value` arguments land in the same atomic
+  write.
 - **Quest** — the cycle-wide working state under `quest/<active-slug>/`, plus the permanent
   archive of past cycles, plus the `quest/active.md` pointer.
 - **re-spec / re-plan / re-implement / fix** — the four scope tiers for a finding, in
