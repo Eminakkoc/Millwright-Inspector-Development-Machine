@@ -479,6 +479,60 @@ else
   ok "$t"
 fi
 
+# ---- Task 6: mi-continue dispatcher fork ----------------------------------
+
+MI_CONT="$REPO_ROOT/commands/mi-continue.md"
+
+t="mi-continue: Row A branches on the identity predicate"
+if grep -q 'is-feature-test' "$MI_CONT"; then
+  ok "$t"
+else
+  ng "$t" "mi-continue.md never calls todo.sh is-feature-test"
+fi
+
+t="mi-continue: the fork never calls blueprints.sh ensure-current"
+if grep -qE 'never calls .*ensure-current' "$MI_CONT"; then
+  ok "$t"
+else
+  ng "$t" "mi-continue.md does not state that the fork skips ensure-current"
+fi
+
+t="mi-continue: the fork resolves the union range"
+if grep -q 'feature-test-range' "$MI_CONT"; then
+  ok "$t"
+else
+  ng "$t" "mi-continue.md does not resolve the union range"
+fi
+
+t="mi-continue: the fork advances with advance-to 2 5"
+if grep -qE 'advance-to 2 5' "$MI_CONT"; then
+  ok "$t"
+else
+  ng "$t" "mi-continue.md does not use the atomic 2->5 transition"
+fi
+
+t="mi-continue: the 2->5 write sets implementation-completed"
+if grep -qE 'advance-to 2 5.*implementation-completed|implementation-completed=true' "$MI_CONT"; then
+  ok "$t"
+else
+  ng "$t" "the fork does not set implementation-completed — resume-workflow would report state corruption"
+fi
+
+t="mi-continue: both the entry branch and the recovery branch exist"
+n="$(grep -c 'is-feature-test' "$MI_CONT")"
+if [[ "$n" -ge 2 ]]; then
+  ok "$t"
+else
+  ng "$t" "expected >=2 is-feature-test call sites (Row A + recovery), found $n"
+fi
+
+t="mi-continue: states that ordinary features are unaffected"
+if grep -qE 'falls through to today|unchanged for ordinary|ordinary features are unaffected|byte-identical' "$MI_CONT"; then
+  ok "$t"
+else
+  ng "$t" "mi-continue.md does not record the ordinary-feature invariant at the fork"
+fi
+
 # ---- Summary --------------------------------------------------------------
 
 printf "\n%d passed, %d failed\n" "$pass" "$fail"

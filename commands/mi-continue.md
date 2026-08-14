@@ -130,9 +130,88 @@ Order matters — Rows A/B (auto-fire) must be evaluated **after** the manual-ac
 | `[x] TODO` lines exist in `todo-list.md` (selections not yet promoted) | **Pre-flight Step 2A** — promote + propose order |
 | no `[x] TODO` lines, `queue_count > 0`, `queue-rationale.md` missing | **Pre-flight Step 2B** — confirm proposed order + auto-fire `/mi-apply-impact` |
 | no `[x] TODO` lines, `queue_count > 0`, `queue-rationale.md` present, top-level `status: draft` (Item 7 multi-batch) | **Pre-flight Step 2B** (extended) — confirm/update the latest batch, refresh top-level `features:`/`batch:`, flip `status` to `confirmed`, auto-fire `/mi-apply-impact` |
-| **Row A — between features:** active is null AND `queue_count > 0` AND `queue-rationale.md.status` (or absent → confirmed) is `confirmed` AND `(queue-rationale.md.features − progress.completed, preserving order)` equals `progress.queue` exactly | Auto-fire `/mi-apply-impact` |
+| **Row A — between features:** active is null AND `queue_count > 0` AND `queue-rationale.md.status` (or absent → confirmed) is `confirmed` AND `(queue-rationale.md.features − progress.completed, preserving order)` equals `progress.queue` exactly | Resolve `queue[0]`. If `todo.sh is-feature-test "$next"` exits 0, run `progress.sh activate` and then the **Feature-test entry sequence** above. Otherwise auto-fire `/mi-apply-impact` (unchanged). |
 | **Row B — post-finish housekeeping recovery:** active is null AND queue empty AND no `[x] TODO` AND no `[ ] TODO` AND `progress.completed` non-empty AND `blueprints/history/v[N]/reason.md.kind == "completion"` for `completed[-1]` AND `quest/active.md.status == "active"` | Auto-fire `/mi-complete-workflow` (short-circuits to its Branch I — Step 7 housekeeping only) |
 | `queue_count == 0` and no `[x] TODO` lines (catch-all) | Delegate to `/mi-resume-workflow` |
+
+### Feature-test entry sequence (shared by Row A and the `2 | any` recovery branch)
+
+Runs when the active — or about-to-be-active — feature is the cycle's feature-test entry.
+It replaces stages 2 and 3 entirely: no blueprint is generated, approved, or planned.
+
+**This sequence never calls `blueprints.sh ensure-current`.** That single omission is what
+separates it from an ordinary activation, and it is why the branch cannot delegate to
+`/mi-apply-impact` — see `docs/superpowers/specs/2026-08-14-feature-test-workflow-design.md`
+§1.2.
+
+```bash
+# 1. Resolve and verify the union range BEFORE any mutation. Exit 3/4/5 are
+#    refusals with their own diagnostics — relay and stop; nothing was written.
+if ! range_line="$($CLAUDE_PLUGIN_ROOT/scripts/commits.sh feature-test-range "$ft_feature" 2>&1 | head -1)"; then
+  echo "$range_line" >&2
+  exit 1
+fi
+union_base="$(printf '%s' "$range_line" | cut -f1)"
+
+# 2. Folder marker. NO ensure-current — this folder has no blueprints/.
+$CLAUDE_PLUGIN_ROOT/scripts/folder-id.sh ensure "$ft_feature"
+
+# 3. Pin the union base so the shipped freshness caches
+#    (commits.sh change-summary-fresh / diagrams-fresh) work unchanged —
+#    both key on .active.base-commit and HEAD.
+$CLAUDE_PLUGIN_ROOT/scripts/progress.sh set "base-commit=$union_base"
+```
+
+4. **Run the complete-feature diagram pass** — invoke `/mi-generate-implementation-diagrams`,
+   which auto-detects the feature-test path (see that command's Step 1.5).
+
+5. **Initialize the findings skeleton** (idempotent — `review.sh init` refuses to overwrite):
+
+```bash
+data_root="$($CLAUDE_PLUGIN_ROOT/scripts/data-root.sh)"
+ov_file="$data_root/workflow-stream/$ft_feature/implementation/inspector-review.md"
+[[ -f "$ov_file" ]] || $CLAUDE_PLUGIN_ROOT/scripts/review.sh init "$ft_feature"
+```
+
+6. **Atomic advance into the review step:**
+
+```bash
+$CLAUDE_PLUGIN_ROOT/scripts/progress.sh advance-to 2 5 \
+  --set sub-flow=none \
+  --set implementation-completed=true
+```
+
+`implementation-completed=true` is **load-bearing, not cosmetic**. `/mi-resume-workflow`'s
+Step 4 invariant asserts that any feature at stage ≥ 5 has it set; without it, every
+`/mi-resume-workflow` on a feature-test entry would report "State corruption detected" and
+recommend `/mi-abort-workflow`. It is also true on its face: the implementation is
+complete — that is the premise of running a combined test at all.
+
+7. **Hand off at stage 5** with the manual-test prompt, exactly as the stage-3 Resume
+   Handler's Step 7 does. Answering `y` auto-fires `/mi-manual-test-plan --from-resume`,
+   which takes its own feature-test derivation path.
+
+**Not resumable.** An interruption before step 6 leaves the entry at stage 2 and the pass
+re-runs from scratch on the next `/mi-continue`. Acceptable: the pass is idempotent and
+derives entirely from committed state.
+
+**Row A's feature-test branch.** `progress.sh activate` is called directly and stays
+**byte-identical** — it keeps writing `current-stage=2` for every feature without
+exception. Only the step *after* activation differs:
+
+```bash
+next="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh queue-remaining | sed '/^$/d' | head -1)"
+if $CLAUDE_PLUGIN_ROOT/scripts/todo.sh is-feature-test "$next"; then
+  ft_feature="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh activate)"
+  # → run the Feature-test entry sequence above, then stop.
+else
+  # Ordinary feature: falls through to today's path, byte-identical.
+  /mi-apply-impact
+fi
+```
+
+For any feature that is not the cycle's feature-test entry, `is-feature-test` exits 1 and
+control falls through to today's auto-fire unchanged. Ordinary features are unaffected.
 
 **Active cases (`active_feature != "null"`):**
 
@@ -143,13 +222,19 @@ sub_flow="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get sub-flow)"
 
 | Current stage | Sub-flow         | Handler                                                       |
 | ------------- | ---------------- | ------------------------------------------------------------- |
-| 2             | (any)            | **Approve Handler** — auto-fire `/mi-plan-implementation`     |
+| 2             | (any)            | `todo.sh is-feature-test "$active_feature"` → **Feature-test entry sequence** (recovery re-entry). Otherwise → **Approve Handler** |
 | 3             | (any)            | Post-chain resume (see Resume Handler below)                  |
 | **5**         | **`manual-testing`** | **Manual-Test-Resume Handler** (manual-test paused or in progress — re-enters `/mi-manual-test-run`) |
 | 5             | (any)            | Inspector-review received (see Inspector Handler below)         |
 | 6             | reviewing        | Post-review-session resume (see Review-Resume Handler below)  |
 | 7             | (any)            | Stage-7 finalize — auto-fire `/mi-complete-workflow` (Item 4 of v11 plan; idempotent via Branch II in mi-complete-workflow when re-entered after a partial finalize) |
 | any other     | —                | Delegate to `/mi-resume-workflow` for state diagnosis         |
+
+**Why the stage-2 row needs the branch too.** Two states park a feature-test entry at
+`current-stage=2`: `/mi-abort-workflow` with no flag (`progress.sh reset` sets stage 2),
+and a session break between activation and `advance-to 2 5`. Both re-enter here, and both
+want the same idempotent sequence. Ordinary features still reach the Approve Handler on
+exactly today's condition.
 
 The `5 | manual-testing` row covers paused or in-progress manual-test runs — the Manual-Test-Resume Handler re-enters `/mi-manual-test-run` to continue from the persisted `current-scenario`. It must come **before** the `5 | (any)` row in the table; tables evaluate top-down and a misordered append would shadow the manual-testing row, misrouting paused manual tests to the Inspector Handler and treating them as normal findings review.
 
