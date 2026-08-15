@@ -400,6 +400,11 @@ Two guided-only behaviors on top of the interactive contract:
   flipped. In the **same** commit unit, park the scenario:
 
   ```bash
+  # Resolve ft_name in THIS fence — per trap 5, a fenced bash block carries no
+  # state from any other block, and this is the one non-vocabulary site where
+  # ft_name is used for real effect (the upsert target), so it cannot rely on
+  # Step 2.9 having run earlier in the same invocation.
+  ft_name="$($CLAUDE_PLUGIN_ROOT/scripts/todo.sh feature-test-status | head -1 | cut -f2)"
   $CLAUDE_PLUGIN_ROOT/scripts/deferred-tests.sh upsert "$ft_name" \
     --feature "$active_feature" \
     --scenario "$THIS_ID" \
