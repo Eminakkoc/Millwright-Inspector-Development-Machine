@@ -1294,7 +1294,9 @@ cursor, counts) in one of three env-modes (`manual-test-env-mode`, persisted in
   the whole local environment up itself, then walks the inspector through the plan one
   scenario at a time: what it checks in ≤ 2 plain sentences, one concrete example, exactly
   what to do — then waits for the inspector's `pass` / `fail <observation>` /
-  `skip <reason>` / `pause`. Verdicts are always the inspector's, never self-determined.
+  `skip <reason>` / `defer <reason>` (offered only when the cycle has a feature-test entry
+  and the active feature is not it) / `pause`. Verdicts are always the inspector's, never
+  self-determined.
   Mid-walk the inspector can ask for notes or ad-hoc checks to be recorded; notes fold into
   the scenario's `Observation:`, ad-hoc checks land as `### INS-<n>` blocks under a
   `## Inspector-added checks` section that is excluded from the plan-shaped counters, the
@@ -1782,7 +1784,7 @@ Coverage policy:
 
 ### 8.3 Schemas (`schemas/`)
 
-**25 JSON-Schema-as-YAML files**, one per artifact type, validated by `ajv-cli` (preferred)
+**26 JSON-Schema-as-YAML files**, one per artifact type, validated by `ajv-cli` (preferred)
 or a `yq`-based structural fallback:
 
 | Schema | Validates |
@@ -1810,6 +1812,7 @@ or a `yq`-based structural fallback:
 | `diagrams-readme-implementation` | `implementation/diagrams/README.md` — `id`, `stage: implementation` |
 | `manual-test-plan` | `test/manual-test-plan.md` — `id`, `seed-family-id`, `feature`, `generated-in-activation`, `requirements-id`, … |
 | `manual-test-results` | `test/manual-test-results.md` — `id`, `plan-id`, `seed-family-id`, `state`, `current-scenario`, counts |
+| `deferred-tests` | `test/deferred-tests.md` — `id`, `feature-test`, `quest-slug`, `created-at`; body is `### <feature>/<scenario> — <title>` blocks keyed by composite identity, no separate numbering |
 | `pr-review-report` | `pr-reviews/*/report.md` — `id`, `pr-url`, `repo`, `pr-number`, `status` (`awaiting-marks \| partial \| applied`) |
 | `lessons-learned` | `lessons-learned.md` — `id` (the `L-NNN` lesson blocks in the body are appended by `lessons.sh`, not schema-validated) |
 
@@ -1819,16 +1822,18 @@ existed; when present it must also appear in `related-features` / `features`.
 
 ### 8.4 Templates (`templates/`)
 
-**27 templates.** Most are mustache-style and rendered by `frontmatter.sh init`, which
+**29 templates.** Most are mustache-style and rendered by `frontmatter.sh init`, which
 auto-injects a fresh UUID via `uuid.sh` if `UUID=` isn't passed, then substitutes the
-remaining `{{KEY}}` placeholders: `active-quest`, `blueprint-lessons`, `change-summary`,
-`config`, `context-ledger`, `decisions`, `folder-id`, `grounding-report`,
-`inspector-review`, `lessons-learned`, `manual-test-plan`, `manual-test-results`,
-`pr-review-report`, `primer`, `progress`, `queue-rationale`, `reason`, `reference`,
-`requirements`, `review-context`, `review-history`, `sub-agent-return`, `summary`,
-`todo-list`. (`inspector-review.md.tmpl` is the template for the `review-file` schema;
-the two `diagrams-readme-*` artifacts have no template — their READMEs are composed
-directly.)
+remaining `{{KEY}}` placeholders: `active-quest`, `blueprint-lessons`,
+`blueprint-review-context`, `change-summary`, `config`, `context-ledger`, `decisions`,
+`deferred-tests`, `folder-id`, `grounding-report`, `inspector-review`, `lessons-learned`,
+`manual-test-plan`, `manual-test-results`, `pr-review-report`, `primer`, `progress`,
+`queue-rationale`, `reason`, `reference`, `requirements`, `review-context`,
+`review-history`, `sub-agent-return`, `summary`, `todo-list`. (`inspector-review.md.tmpl`
+is the template for the `review-file` schema; `blueprint-review-context.md.tmpl` renders
+`blueprints/current/blueprint-review-context.md` (§7.9, Step B.4.5 of `mi-apply-impact`)
+and has no matching schema; the two `diagrams-readme-*` artifacts have no template —
+their READMEs are composed directly.)
 
 **Template authoring rules (v1.6.13).** Three rules, each learned from a shipped bug:
 
@@ -1873,7 +1878,7 @@ refit for per-batch use in v1.5; rendered by the sub-agents at review-call time,
 | `todo.sh` | Manage `todo-list.md`. Subcommands: `set-state` (optional `--assignee`), `bulk-transition` (optional `--feature`), `pend-selected` (reports promoted `<item-id>\t<assignee>` rows on stdout), `list <state>`, `add`, `feature-test-status`, `is-feature-test <name>` (read-only predicate; exit 0 when `<name>` is the cycle's pinned feature-test entry, exit 1 otherwise). Enforces the state machine and assignee invariants. |
 | `folder-id.sh` | Manage `id.md` markers and `reference.md`. Subcommands: `ensure`, `get`, `resolve <id>`, `list`, `init-reference`, `link-feature`, `feature-lineage-check`, `derive-feature-test-name`. |
 | `blueprints.sh` | Manage `blueprints/`. Subcommands: `ensure-current`, `rotate`, `resume-partial`, `preserve-inspector-sections`, `check-current [--require-primer]`, `branch-status`, `deferred-tests-path`. Rotation is resumable (`.partial.tmp → .partial → vN`). |
-| `deferred-tests.sh` | Manage `<ft-name>/test/deferred-tests.md`, the carried-forward manual-test scenarios. Subcommands: `path`, `ensure`, `count`, `list`, `upsert` (idempotent by the `<originating-feature>/<originating-scenario>` composite key; preserves an existing `Merged as:`), `set-merged-as`, `remove`, `offer-defer <feature>` (read-only predicate; exit 0 when `defer` should be offered for that feature, exit 1 otherwise). |
+| `deferred-tests.sh` | Manage `<ft-name>/test/deferred-tests.md`, the carried-forward manual-test scenarios. Subcommands: `path`, `ensure`, `count`, `list`, `upsert` (idempotent by the `<originating-feature>/<originating-scenario>` composite key; preserves an existing `Merged as:`), `set-merged-as`, `remove`, `unresolved <ft> <results-path>` (Gate 1's read; prints one TSV row per deferred entry with no `pass`/`fail`/`skip` verdict in the feature-test entry's results — empty output means nothing blocks), `offer-defer <feature>` (read-only predicate; exit 0 when `defer` should be offered for that feature, exit 1 otherwise). |
 | `review.sh` | Manage `inspector-review.md` / `review-context.md`. Subcommands: `init`, `add`, `set-status`, `iterate`, `list-open`, `list-open-summaries`, `sync-refs`, `canonicalize`, `strip-freeform`, plus the manual-test seeding helpers (`find-by-seed-id`, `find-by-seed-id-family`, `upsert-manual-test-failure`). IDs are `IR-NNN`, monotonically incremented. |
 | `commits.sh` | Query `base-commit..HEAD`. Subcommands: `list`, `yaml`, `populate-requirements`, `changed-files`, `changed-files-only`, `change-summary-fresh`, `diagrams-fresh`, `feature-test-range <ft-feature>` (resolves and verifies the union commit range across the cycle's `IMPLEMENTED` features), `populate-feature-test <ft-feature>` (writes the union range's commits into the entry's `change-summary.md`, the `requirements.md`-shaped home used by stage 8's substitution, §7.3). |
 | `ingest.sh` | Convert non-text journal files to sibling `.md` (docling for documents, stub for images / short PDFs). |

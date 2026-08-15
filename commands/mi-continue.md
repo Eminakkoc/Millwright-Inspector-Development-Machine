@@ -380,11 +380,12 @@ Reached when the inspector has just finished marking items (`[x] TODO` lines exi
      fi
 
      # Create the feature-test folder now (DTI-002) — see prose below. This
-     # sits inside the same guard as the enqueue call above, not after the
-     # fence closes, so a single-feature cycle ($ft_status=none, $ft_name
-     # empty) or a still-blocked entry never touches workflow-stream/ at
-     # all. Idempotent, so a mid-cycle re-entry that finds the entry
-     # already queued still confirms the folder is present.
+     # sits inside the enclosing ft_status guard above (the same one that
+     # wraps the enqueue call), not inside the narrower ft_already guard the
+     # enqueue call itself uses — so it re-runs on a mid-cycle re-entry even
+     # when ft_already=1 skipped the enqueue, while a single-feature cycle
+     # ($ft_status=none, $ft_name empty) or a still-blocked entry never
+     # touches workflow-stream/ at all. Idempotent either way.
      data_root="$($CLAUDE_PLUGIN_ROOT/scripts/data-root.sh)"
      ft_dir="$data_root/workflow-stream/$ft_name"
      mkdir -p "$ft_dir/implementation" "$ft_dir/test"
@@ -400,9 +401,11 @@ Reached when the inspector has just finished marking items (`[x] TODO` lines exi
    its folder comes into existence here — not at `/mi-run` name derivation, and not lazily
    on the first deferral. Deferrals happen during ordinary features, which by construction
    run before this entry is ever activated, so `deferred-tests.md` must be writable long
-   before Row A fires. The creation lines above live inside the same `if` guard as the
-   `enqueue` call, not after the fence closes — that placement is what keeps a
-   single-feature cycle or a still-`blocked` entry from ever touching `workflow-stream/`.
+   before Row A fires. The creation lines above live inside the enclosing `ft_status` guard
+   (the same one that wraps the `enqueue` call), not inside the narrower `ft_already` guard
+   the `enqueue` call itself uses — so creation re-runs on a mid-cycle re-entry even when
+   `ft_already=1` skipped the enqueue, while that placement still keeps a single-feature
+   cycle or a still-`blocked` entry from ever touching `workflow-stream/`.
 
    Every step is idempotent: `mkdir -p` no-ops, `ensure` returns the existing id, and
    `deferred-tests.sh ensure` returns the existing path without re-rendering — so a
@@ -1503,6 +1506,12 @@ if $CLAUDE_PLUGIN_ROOT/scripts/todo.sh is-feature-test "$active_feature" >/dev/n
 else
   unresolved=""
 fi
+# Print — per Step 2A item 1.5, a variable's value does not survive into a
+# later Bash block, so the printed line (empty or not) is what gets branched
+# on below. Without this, both the blocking and the clear case emit nothing,
+# and an empty transcript reads as "proceed" — a silent fail-open on this
+# feature's only blocking gate.
+printf '%s\n' "$unresolved"
 ```
 
 If `unresolved` is non-empty, **stop** — do not advance. Print one line per row:

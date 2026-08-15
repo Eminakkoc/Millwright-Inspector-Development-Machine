@@ -250,6 +250,26 @@ else
   ok "$t"
 fi
 
+t="upsert refuses without --action (Important 3)"
+guard_sandbox="$(make_sandbox)"
+if MI_DATA_ROOT="$guard_sandbox" "$DT" upsert payments-feature-test \
+     --feature payments --scenario B.2 --title "refund audit" \
+     --reason "later feature" --expected "- The refund appears" >/dev/null 2>&1; then
+  ng "$t" "upsert succeeded with no --action — an entry with no steps merges silently"
+else
+  ok "$t"
+fi
+
+t="upsert refuses without --expected (Important 3)"
+guard_sandbox="$(make_sandbox)"
+if MI_DATA_ROOT="$guard_sandbox" "$DT" upsert payments-feature-test \
+     --feature payments --scenario B.2 --title "refund audit" \
+     --reason "later feature" --action "1. Issue a refund" >/dev/null 2>&1; then
+  ng "$t" "upsert succeeded with no --expected — an entry with no expectations merges silently"
+else
+  ok "$t"
+fi
+
 t="upsert output validates against the schema"
 if "$FM" validate \
      "$sandbox/workflow-stream/payments-feature-test/test/deferred-tests.md" \
@@ -756,6 +776,49 @@ mk_results "$sandbox/results.md" "A.1:pass"
 n="$(MI_DATA_ROOT="$sandbox" "$DT" unresolved payments-feature-test "$sandbox/results.md" 2>/dev/null | sed '/^$/d' | wc -l | tr -d ' ')"
 if [[ "$n" == "0" ]]; then ok "$t"; else ng "$t" "want 0, got $n"; fi
 
+t="gate: bullet Verdict wins when heading and bullet disagree (Important 6)"
+sandbox="$(make_sandbox)"
+seed_dt "$sandbox" >/dev/null
+add_entry "$sandbox" payments B.2 "refund audit"
+MI_DATA_ROOT="$sandbox" "$DT" set-merged-as payments-feature-test payments B.2 C.1 >/dev/null 2>&1
+res="$sandbox/mismatch.md"
+cat > "$res" <<'EOF'
+---
+id: 22222222-2222-4222-8222-222222222222
+feature: payments-feature-test
+plan-id: 33333333-3333-4333-8333-333333333333
+seed-family-id: 44444444-4444-4444-8444-444444444444
+generated-in-activation: 55555555-5555-4555-8555-555555555555
+state: complete
+current-scenario: null
+total: 1
+passed: 1
+failed: 0
+skipped: 0
+deferred: 0
+started-at: "2026-08-15T09:00:00Z"
+finished-at: "2026-08-15T10:00:00Z"
+---
+
+# Manual test results
+
+## Per-scenario verdicts
+
+### C.1 — not-a-real-verdict
+
+- **Verdict:** pass
+- **Observation:** n/a
+- **Recorded at:** "2026-08-15T09:30:00Z"
+- **Seeded:** false
+- **Cited as IR-NNN:**
+EOF
+n="$(MI_DATA_ROOT="$sandbox" "$DT" unresolved payments-feature-test "$res" | sed '/^$/d' | wc -l | tr -d ' ')"
+if [[ "$n" == "0" ]]; then
+  ok "$t"
+else
+  ng "$t" "the heading word ('not-a-real-verdict') was used instead of the bullet ('pass') — want 0 unresolved, got $n"
+fi
+
 t="gate: an absent results file leaves every entry unresolved"
 sandbox="$(make_sandbox)"; setup_gate_case "$sandbox" C.1 "C.1:pass"
 n="$(MI_DATA_ROOT="$sandbox" "$DT" unresolved payments-feature-test "$sandbox/nope.md" 2>/dev/null | sed '/^$/d' | wc -l | tr -d ' ')"
@@ -889,6 +952,113 @@ if [[ "$n" == "1" ]]; then
   ok "$t"
 else
   ng "$t" "an INS block outside '## Per-scenario verdicts' wrongly resolved the entry"
+fi
+
+# ---- Fix wave (2026-08-15 final review): Important 5's three spec-mandated
+# tests. Each is a regression pin for behaviour already verified correct —
+# not a bug hunt — so all three are expected to pass on first run.
+# -----------------------------------------------------------------------------
+
+t="regression: derive-feature-test-name is stable across cycles once link-feature runs at creation (Important 5.1)"
+sandbox="$(mktemp -d)"; SANDBOXES+=("$sandbox")
+mkdir -p "$sandbox/journal/demo"
+slug1="2026-08-14-cycle1"
+mkdir -p "$sandbox/quest/$slug1"
+cat > "$sandbox/quest/active.md" <<EOF
+---
+slug: $slug1
+started: "2026-08-14"
+journal-folders: [demo]
+status: active
+---
+
+# Active quest pointer
+EOF
+MI_DATA_ROOT="$sandbox" "$REPO_ROOT/scripts/folder-id.sh" init-reference demo >/dev/null 2>&1
+
+# Cycle 1 creates the feature-test folder exactly as mi-continue.md's
+# stage-1.5 sequence does: mkdir, folder-id.sh ensure, folder-id.sh
+# link-feature — the last of which is the fix this test pins.
+ft_dir="$sandbox/workflow-stream/payments-feature-test"
+mkdir -p "$ft_dir/implementation" "$ft_dir/test"
+MI_DATA_ROOT="$sandbox" "$REPO_ROOT/scripts/folder-id.sh" ensure "$ft_dir" >/dev/null 2>&1
+MI_DATA_ROOT="$sandbox" "$REPO_ROOT/scripts/folder-id.sh" link-feature payments-feature-test >/dev/null 2>&1
+
+# Cycle 2 — a later cycle sourced from the SAME journal folder (genuine
+# continuation, not a collision).
+slug2="2026-08-15-cycle2"
+mkdir -p "$sandbox/quest/$slug2"
+cat > "$sandbox/quest/active.md" <<EOF
+---
+slug: $slug2
+started: "2026-08-15"
+journal-folders: [demo]
+status: active
+---
+
+# Active quest pointer
+EOF
+MI_DATA_ROOT="$sandbox" "$REPO_ROOT/scripts/folder-id.sh" init-reference demo >/dev/null 2>&1
+
+got="$(MI_DATA_ROOT="$sandbox" "$REPO_ROOT/scripts/folder-id.sh" derive-feature-test-name payments checkout 2>/dev/null)"
+if [[ "$got" == "payments-feature-test" ]]; then
+  ok "$t"
+else
+  ng "$t" "want payments-feature-test, got '$got' — without link-feature, feature-lineage-check can't prove lineage and derive-feature-test-name silently renames the entry to '-2'"
+fi
+
+t="regression: guided prompt strings are byte-identical to pre-feature text when offer_defer=0 (Important 5.2)"
+s1='Reply `pass`, `fail <what you saw>`, `skip <why>`, or `pause` after each one.'
+s2='Reply `pass`, `fail <what you saw>`, `skip <why>`, or `pause`.'
+if grep -qF -- "$s1" "$MI_MTR" && grep -qF -- "$s2" "$MI_MTR"; then
+  ok "$t"
+else
+  ng "$t" "the offer_defer=0 base-case prompt text is missing or was altered — the guided env-up announcement and/or the 3.2c reply line leak the offer_defer=1 clause unconditionally"
+fi
+
+t="regression: the verdict-block parser tolerates the [deferred from <feature>] attribution line (Important 5.3)"
+sandbox="$(make_sandbox)"
+seed_dt "$sandbox" >/dev/null
+add_entry "$sandbox" payments B.2 "refund audit"
+MI_DATA_ROOT="$sandbox" "$DT" set-merged-as payments-feature-test payments B.2 C.1 >/dev/null 2>&1
+res="$sandbox/attributed.md"
+cat > "$res" <<'EOF'
+---
+id: 22222222-2222-4222-8222-222222222222
+feature: payments-feature-test
+plan-id: 33333333-3333-4333-8333-333333333333
+seed-family-id: 44444444-4444-4444-8444-444444444444
+generated-in-activation: 55555555-5555-4555-8555-555555555555
+state: complete
+current-scenario: null
+total: 1
+passed: 1
+failed: 0
+skipped: 0
+deferred: 0
+started-at: "2026-08-15T09:00:00Z"
+finished-at: "2026-08-15T10:00:00Z"
+---
+
+# Manual test results
+
+## Per-scenario verdicts
+
+### C.1 — pass
+
+[deferred from payments]
+
+- **Verdict:** pass
+- **Observation:** n/a
+- **Recorded at:** "2026-08-15T09:30:00Z"
+- **Seeded:** false
+- **Cited as IR-NNN:**
+EOF
+n="$(MI_DATA_ROOT="$sandbox" "$DT" unresolved payments-feature-test "$res" | sed '/^$/d' | wc -l | tr -d ' ')"
+if [[ "$n" == "0" ]]; then
+  ok "$t"
+else
+  ng "$t" "the attribution line broke the verdict-block parser — want 0 unresolved, got $n"
 fi
 
 # ---- Summary --------------------------------------------------------------

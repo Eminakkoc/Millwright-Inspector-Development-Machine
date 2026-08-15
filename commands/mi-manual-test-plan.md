@@ -440,18 +440,63 @@ render, including renders with zero deferred entries, because a later deferral p
 regeneration must still find it.
 
 `deferred-tests.md` joins `todo.sh list IMPLEMENTED` and the union range as a derivation
-input for this render path. Read the entries:
+input for this render path. Render every entry as a scenario, in its own lettered group(s)
+continuing the plan's existing lettering, inserted **immediately above** the anchor.
+`list`'s TSV is `<originating-feature>\t<originating-scenario>\t<merged-as>\t<title>` — four
+fields, and neither `Action` nor `Expected` among them (they're multi-line block scalars,
+not TSV-safe). This is the one loop that both reads those two fields out of the entry's own
+block in `deferred-tests.md` and writes the merge back-reference — one loop, not two
+disconnected snippets:
 
 ```bash
-$CLAUDE_PLUGIN_ROOT/scripts/deferred-tests.sh list "$active_feature"
+dt="$($CLAUDE_PLUGIN_ROOT/scripts/deferred-tests.sh path "$active_feature")"
+while IFS=$'\t' read -r orig_feature orig_scenario merged title; do
+  [[ -z "$orig_feature" ]] && continue
+
+  # Action/Expected come from the entry's own block in "$dt", keyed by
+  # "### $orig_feature/$orig_scenario — " — the same block-scoped idiom
+  # deferred-tests.sh uses internally (its PARSING CONTRACT comment).
+  act_file="$(mktemp)"; exp_file="$(mktemp)"
+  python3 - "$dt" "$orig_feature" "$orig_scenario" "$act_file" "$exp_file" <<'PYEOF'
+import re, sys
+path, feature, scenario, act_out, exp_out = sys.argv[1:6]
+with open(path) as f:
+    content = f.read()
+sec = re.search(r'(?m)^## Deferred scenarios[ \t]*$', content)
+rest = content[sec.end():]
+nxt = re.search(r'(?m)^## ', rest)
+window = rest[:nxt.start()] if nxt else rest
+key_head = f"### {feature}/{scenario} — "
+m = re.search(r'(?m)^' + re.escape(key_head) + r'.*$', window)
+tail = window[m.end():]
+nb = re.search(r'(?m)^(###|##) ', tail)
+block = tail[:nb.start()] if nb else tail
+def field(name):
+    fm = re.search(r'(?m)^- \*\*' + name + r':\*\* \|\n((?:    .*\n?)*)', block)
+    body = fm.group(1) if fm else ''
+    lines = [l[4:] if l.startswith('    ') else l for l in body.rstrip('\n').split('\n')]
+    return '\n'.join(lines)
+with open(act_out, 'w') as f:
+    f.write(field('Action'))
+with open(exp_out, 'w') as f:
+    f.write(field('Expected'))
+PYEOF
+  scenario_action="$(cat "$act_file")"
+  scenario_expected="$(cat "$exp_file")"
+  rm -f "$act_file" "$exp_file"
+
+  # Render "### <letter>.<n> — [deferred from $orig_feature] $title" as the
+  # next scenario in the plan's continuing lettering, with $scenario_action /
+  # $scenario_expected as its Action/Expected — the entries are
+  # self-contained precisely so this needs nothing from the originating
+  # workflow. Let $new_scenario_id be the id just assigned (e.g. "C.1"), then
+  # write the back-reference in the same iteration — this is what makes the
+  # completion gate machine-checkable (`/mi-continue`, DTI-007) without
+  # touching the plan's or the results' own contracts:
+  $CLAUDE_PLUGIN_ROOT/scripts/deferred-tests.sh set-merged-as \
+    "$active_feature" "$orig_feature" "$orig_scenario" "$new_scenario_id"
+done < <($CLAUDE_PLUGIN_ROOT/scripts/deferred-tests.sh list "$active_feature")
 ```
-
-Each TSV row is `<originating-feature>\t<originating-scenario>\t<merged-as>\t<title>`.
-
-Render every entry as a scenario, in its own lettered group(s) continuing the plan's
-existing lettering, inserted **immediately above** the anchor. Take each scenario's `Action`
-and `Expected` from the entry's own block — the entries are self-contained precisely so this
-render needs nothing from the originating workflow.
 
 **Attribution (`DTI-006`).** The scenario title carries the marker:
 
@@ -464,18 +509,9 @@ The **scenario-id grammar stays byte-identical**, so neither the runner's one-to
 id↔verdict-block keying nor `review.sh`'s `seed-id` construction
 (`manual-test:<seed-family-id>:<scenario-id>`) sees anything new.
 
-After assigning each entry its scenario id, write the back-reference:
-
-```bash
-$CLAUDE_PLUGIN_ROOT/scripts/deferred-tests.sh set-merged-as \
-  "$active_feature" "$orig_feature" "$orig_scenario" "$new_scenario_id"
-```
-
-That field is what makes the completion gate machine-checkable (`/mi-continue`, DTI-007)
-without touching the plan's or the results' own contracts.
-
 **With zero deferred entries the render is unchanged from today** — no group is inserted,
-the anchor still emits, and `set-merged-as` is never called.
+the anchor still emits, and the loop above reads zero rows from `list` so `set-merged-as` is
+never called.
 
 #### Scenario depth & coverage bar (mandatory)
 
@@ -505,7 +541,18 @@ The manual test plan is one of the most important artifacts in the entire workfl
 
 ### Step 7 — "Perform manual test now?" prompt
 
-Always asked (regardless of `--from-resume`):
+Always asked (regardless of `--from-resume`). Resolve the defer offer first — an eighth
+vocabulary-rendering site beyond the seven the design table lists, gated on the same
+predicate as the other seven:
+
+```bash
+if $CLAUDE_PLUGIN_ROOT/scripts/deferred-tests.sh offer-defer "$active_feature" >/dev/null 2>&1; then
+  offer_defer=1
+else
+  offer_defer=0
+fi
+printf 'offer_defer=%s\n' "$offer_defer"
+```
 
 Prompt: `"Plan available at workflow-stream/<feature>/test/manual-test-plan.md. Perform the manual test now? Reply y, y-autonomous, or n.
 
@@ -526,6 +573,12 @@ Prompt: `"Plan available at workflow-stream/<feature>/test/manual-test-plan.md. 
 
   n             — defer — you can resume later by typing /mi-manual-test-run, or proceed directly
                   to findings authoring."`
+
+Gate the `y` bullet's wait-for list on `offer_defer` (computed above) — the same predicate
+every other vocabulary-rendering site uses. When `offer_defer=1`, the line reads "I wait for
+your `pass` / `fail <what you saw>` / `skip <why>` / `defer <reason>`"; when `offer_defer=0`
+it is exactly as shown in the prompt above, byte-identical to what shipped before this
+feature.
 
 Both `y` and `y-autonomous` bring the environment up for you; they differ in **who judges each scenario**. `y` (guided) keeps every verdict yours — the millwright explains and sets up, you look and decide, and there is a `pause` whenever you want to stop. `y-autonomous` self-determines the verdicts and runs straight through (no `pause`). In BOTH modes the end-of-run auto-seed prompt still asks you before writing any failures into `inspector-review.md`.
 

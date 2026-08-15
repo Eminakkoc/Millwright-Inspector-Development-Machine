@@ -158,6 +158,8 @@ PYEOF
     [[ -n "$scenario" ]] || mi_die "upsert: --scenario is required"
     [[ -n "$title" ]]    || mi_die "upsert: --title is required"
     [[ -n "$reason" ]]   || mi_die "upsert: --reason is required (an entry without one is not runnable later)"
+    [[ -n "$action" ]]   || mi_die "upsert: --action is required (an entry without one is not runnable later)"
+    [[ -n "$expected" ]] || mi_die "upsert: --expected is required (an entry without one is not runnable later)"
     if [[ -z "$deferred_at" ]]; then
       deferred_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
     fi
@@ -341,9 +343,20 @@ if os.path.isfile(results_path):
         rest = rc[sec.end():]
         nxt = re.search(r'(?m)^## ', rest)
         window = rest[:nxt.start()] if nxt else rest
-        for m in re.finditer(r'(?m)^### (\S+) — (\S+)\s*$', window):
-            if m.group(2) in ('pass', 'fail', 'skip'):
-                verdicts.add(m.group(1))
+        # Key off the `- **Verdict:**` bullet, not the heading word — every
+        # other reader in this codebase does the same (mi-manual-test-run.md
+        # Branch C: "Heading-only is not enough"). A heading/bullet
+        # disagreement (hand-edit, or a crash mid-write) must not clear the
+        # gate on a stale heading.
+        HEAD = re.compile(r'(?m)^### (\S+) — .*$')
+        for m in HEAD.finditer(window):
+            scenario_id = m.group(1)
+            tail = window[m.end():]
+            nb = re.search(r'(?m)^(###|##) ', tail)
+            block = tail[:nb.start()] if nb else tail
+            vm = re.search(r'(?m)^- \*\*Verdict:\*\*[ \t]*(\S+)', block)
+            if vm and vm.group(1) in ('pass', 'fail', 'skip'):
+                verdicts.add(scenario_id)
 
 with open(dt_path) as f:
     dc = f.read()

@@ -240,7 +240,7 @@ The millwright brings the environment up **itself** — the inspector is NOT ask
 6. **On any bring-up failure** — a one-shot non-zero exit, a service that never becomes ready within the bound, or an unclassifiable command — STOP the bring-up. Do NOT fall through to the scenario loop. Report exactly what failed (the command, and the tail of its captured stdout/stderr or background-task output), then hand control back to the inspector: `"Environment bring-up failed at <cmd>: <reason>. Fix it and re-run /mi-manual-test-run (add --interactive-env to bring the environment up yourself), or reply here to continue manually."` Leave `manual-test-state=running` so the run is resumable.
 7. **On success**, echo a concise one-line-per-service summary (service → background task id / URL, one-shots → `done`), then proceed directly to Step 3 — no `ready`/`skip-env` wait. Then:
    - `autonomous` — the millwright drives the per-scenario loop itself (Step 3, autonomous branch).
-   - `guided` — announce that the environment is up and the walkthrough is starting, naming the entry point the inspector will be using (the app URL / CLI command the plan's scenarios exercise): `"Environment is up — <URL or entry point>. I'll walk you through <N> test cases one at a time. Reply `pass`, `fail <what you saw>`, `skip <why>`, `defer <reason>` (only when offer_defer=1), or `pause` after each one."` Then start the walkthrough (Step 3, guided branch).
+   - `guided` — announce that the environment is up and the walkthrough is starting, naming the entry point the inspector will be using (the app URL / CLI command the plan's scenarios exercise): `"Environment is up — <URL or entry point>. I'll walk you through <N> test cases one at a time. Reply `pass`, `fail <what you saw>`, `skip <why>`, or `pause` after each one."` When `offer_defer=1`, insert a `` `defer <reason>` `` option into that reply list, right before `` `pause` ``; when `offer_defer=0` emit the string exactly as shown — byte-identical to what shipped before this feature. Then start the walkthrough (Step 3, guided branch).
 
 Background services the millwright starts here are its responsibility for the life of the run; their background task ids are surfaced (step 7 summary, and again in the pause/finalize messages) so the inspector can stop them when the run ends. The millwright does NOT tear them down automatically — the inspector may keep exercising the environment while authoring findings.
 
@@ -249,18 +249,21 @@ Background services the millwright starts here are its responsibility for the li
 ```bash
 if $CLAUDE_PLUGIN_ROOT/scripts/deferred-tests.sh offer-defer "$active_feature" >/dev/null 2>&1; then
   offer_defer=1
-  ft_name="$($CLAUDE_PLUGIN_ROOT/scripts/todo.sh feature-test-status | head -1 | cut -f2)"
 else
   offer_defer=0
-  ft_name=""
 fi
+printf 'offer_defer=%s\n' "$offer_defer"
 ```
 
 **Re-run this snippet in every block that renders the verdict vocabulary.** Each fenced
 bash block is a separate invocation with no shared shell state, so `offer_defer` does not
 survive from one block to the next — and defaulting it to `0` at a consumption site would
-silently disable the disposition rather than fail loudly. The predicate is cheap: two
-read-only `todo.sh` calls, no file writes.
+silently disable the disposition rather than fail loudly. The `printf` line is what makes
+the value observable in the transcript for the agent to branch on; without it the value
+computed here goes nowhere. The predicate itself is cheap: two read-only `todo.sh` calls,
+no file writes. (No `ft_name` here — the one site that needs it for real effect, the
+`defer` commit path in 3.4, re-resolves it in its own fence per the same rule; carrying it
+this far would invite exactly the cross-fence assumption that rule forbids.)
 
 `offer-defer` exits 0 only when the cycle has a feature-test entry in `ready`/`selected`
 state **and** the active feature is not that entry. A single-feature cycle fails the first
@@ -331,9 +334,12 @@ What to do:
 What you should see: <the plan's Expected bullets, restated as observable outcomes
 in plain language — one line each.>
 
-Reply `pass`, `fail <what you saw>`, `skip <why>`, `defer <reason>` (only when
-offer_defer=1), or `pause`.
+Reply `pass`, `fail <what you saw>`, `skip <why>`, or `pause`.
 ```
+
+Include a `` `defer <reason>` `` option (placed right before `` `pause` ``) in that last
+line only when `offer_defer=1`; when `offer_defer=0` the line is exactly as shown above —
+byte-identical to what shipped before this feature.
 
 Bars for this presentation:
 
@@ -381,7 +387,7 @@ Two guided-only behaviors on top of the interactive contract:
 1. **Confirmation before advancing is mandatory.** Never move to the next scenario without a verdict for the current one. A bare `next`/`ok` with no verdict word is ambiguous — ask which verdict they mean rather than assuming `pass`.
 2. **Inspector-requested additions to the results file.** During the walkthrough the inspector may ask for something to be recorded — an extra observation, a note, a check they ran that the plan didn't list, or a whole extra case they want captured. Honor it immediately and write it into `manual-test-results.md`:
    - **A note or observation about the current scenario** → fold it into that scenario's `Observation:` bullet at commit time (3.4). This is the common case, and it keeps one canonical block per scenario id.
-   - **An extra check the inspector wants recorded as its own item** → append a block under `## Inspector-added checks` (create the section at the end of the body if absent) in the same shape as a verdict block, with the id `INS-<n>` (`n` starting at 1, per results file) and the same `Verdict` / `Observation` / `Recorded at` bullets. These are **not** plan scenarios: they never enter `total`, never enter the `passed`/`failed`/`skipped` counts, never advance the cursor, and never seed IRs — the frontmatter counters describe the plan, and a plan-shaped counter that counted ad-hoc checks would break every ownership comparison in Branches A/B/C.
+   - **An extra check the inspector wants recorded as its own item** → append a block under `## Inspector-added checks` (create the section at the end of the body if absent) in the same shape as a verdict block, with the id `INS-<n>` (`n` starting at 1, per results file) and the same `Verdict` / `Observation` / `Recorded at` bullets. These are **not** plan scenarios: they never enter `total`, never enter the `passed`/`failed`/`skipped`/`deferred` counts, never advance the cursor, and never seed IRs — the frontmatter counters describe the plan, and a plan-shaped counter that counted ad-hoc checks would break every ownership comparison in Branches A/B/C.
    - **A gap in the plan itself** ("this case should have been in here") → record it as an `INS-<n>` block and say plainly that the plan file is not edited mid-run; the durable fix is `/mi-manual-test-plan --force` after this run, or a finding in `inspector-review.md`.
 
    Echo one line per addition (`recorded: <one-line summary>`), then return to the scenario you were on. An addition is never a verdict — after recording it, still wait for the verdict.
@@ -442,12 +448,11 @@ Two guided-only behaviors on top of the interactive contract:
   single most important behavioural guard in the disposition: a defer is neither a failure
   nor an abandonment.
 
-- Echo shape: `<ID> ⏸ deferred: <reason>`.
 - Write body + frontmatter via temp file + atomic rename where the platform supports it. Scenario verdict commit unit: parse existing verdict blocks into `map[scenario_id]`, replace `map[<THIS_ID>]`, render blocks in plan order, recompute all four counts, update cursor, write temp, rename.
 - **Parsing scope (load-bearing).** Verdict-block parsing — here, in Branch C's cursor-integrity check, and anywhere else the body is read — is scoped to the `## Per-scenario verdicts` section: start at that heading, stop at the next `## ` heading or EOF, and treat `### <id> — ` blocks inside that window as verdicts. Blocks outside it (notably `## Inspector-added checks`'s `### INS-<n>` blocks from guided mode) are NOT verdicts: they never enter `map[scenario_id]`, the counters, the cursor, or the auto-seed loop. An unscoped whole-body scan would swallow them and corrupt the counts.
 - **Duplicate-verdict-block recovery.** When parsing existing verdict blocks into `map[scenario_id]`, if two or more blocks share the same scenario id (corruption from a prior crash window or hand-edit), keep the latest block (the one that appears later in the file) as canonical, drop the earlier duplicate(s), emit a one-line `^warning:` to stderr naming the scenario id and the count of duplicates dropped. Then proceed with the upsert as normal. Refusal-and-prompt is NOT acceptable — silent self-healing matches the rest of the file's idempotency story.
-- Echo to chat as a single line: `<ID> ✅ <one-line outcome>` or `<ID> ❌ <one-line observation>` or `<ID> ⊘ skipped: <reason>`. Do NOT re-render the full scenario block in the echo.
-- **Guided mode only:** anything the inspector asked to record for this scenario (3.3c item 2) is folded into the `Observation:` bullet in the same commit — one write, not two. `INS-<n>` blocks under `## Inspector-added checks` are written the same way (parse → upsert by id → render → atomic rename) but do NOT touch `total` / `passed` / `failed` / `skipped` or the cursor.
+- Echo to chat as a single line: `<ID> ✅ <one-line outcome>` or `<ID> ❌ <one-line observation>` or `<ID> ⊘ skipped: <reason>` or `<ID> ⏸ deferred: <reason>`. Do NOT re-render the full scenario block in the echo.
+- **Guided mode only:** anything the inspector asked to record for this scenario (3.3c item 2) is folded into the `Observation:` bullet in the same commit — one write, not two. `INS-<n>` blocks under `## Inspector-added checks` are written the same way (parse → upsert by id → render → atomic rename) but do NOT touch `total` / `passed` / `failed` / `skipped` / `deferred` or the cursor.
 - Continue to the next scenario.
 
 ##### 3.5 On `pause` (interactive and guided modes)

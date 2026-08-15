@@ -207,7 +207,7 @@ already set by `review.sh`, `todo.sh`, `lessons.sh`, `pr-review.sh`, and `folder
 
 | Subcommand | Contract |
 | --- | --- |
-| `upsert <ft> <feature> <scenario> <title> <reason>` | Reads `Action`/`Expected` from stdin. Idempotent by composite key — replaces the existing block, never appends a second. Mirrors `review.sh upsert-manual-test-failure`'s shape. |
+| `upsert <ft> --feature <f> --scenario <s> --title <t> --reason <r> --action <a> --expected <e> [--deferred-at <iso8601>]` | All of `--feature`/`--scenario`/`--title`/`--reason`/`--action`/`--expected` are named flags, not read from stdin — stdin into a command-recipe fence is fragile, and every call site already agrees on flags. All six are mandatory; `--deferred-at` defaults to now when omitted. Idempotent by composite key — replaces the existing block, never appends a second. Mirrors `review.sh upsert-manual-test-failure`'s shape. |
 | `list <ft>` | TSV rows `<feature>\t<scenario>\t<merged-as>\t<title>`, one per entry. |
 | `set-merged-as <ft> <feature> <scenario> <id>` | Writes the `Merged as:` back-reference. |
 | `remove <ft> <feature> <scenario>` | Drops one entry. The escape hatch for § 3.4's aborted-feature case. |
@@ -266,8 +266,18 @@ never advertise a vocabulary the runner will not accept:
 | `mi-manual-test-run.md` 3.3b — autonomous self-judgment | **Never offered** — stated explicitly, not by silence |
 | `mi-manual-test-run.md` overview section | Conditional mention |
 | `mi-manual-test-run.md` guided env-up announcement | Conditional mention |
-| `templates/manual-test-plan.md.tmpl` | Conditional mention |
+| `templates/manual-test-plan.md.tmpl` | Static mention with an explicit cycle-shape caveat |
 | `commands/mi-manual-test-plan.md` generated-plan prose | Conditional mention |
+
+**`templates/manual-test-plan.md.tmpl`'s mention is static, not conditionally rendered.**
+The template names `defer <reason>` in every generated plan, with a caveat that it applies to
+multi-feature cycles only and never during the feature-test entry's own run — a
+generation-time snapshot of `offer_defer` would go stale the moment the cycle's shape changed
+after the plan was rendered, so static-with-caveat is the correct mechanism, not a shortcut.
+The live gate stays in `/mi-manual-test-run`, which calls
+`deferred-tests.sh offer-defer "$active_feature"` at each vocabulary-rendering site and only
+offers `defer` when it exits 0 — so a generated plan never advertises a vocabulary the runner
+will not accept, even though the plan's own mention of `defer` never varies.
 
 **Autonomous mode does not self-defer.** The journal frames deferral as inspector-driven —
 "I can tell the agent to defer a manual test item". An autonomous run that genuinely cannot
