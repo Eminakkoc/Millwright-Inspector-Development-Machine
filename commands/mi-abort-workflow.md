@@ -87,6 +87,17 @@ Retry semantics for `test/`:
   cross-activation guard then rotates the stale results into
   `manual-test-results.history/` on the next invocation. Carrying partial verdicts forward
   is how a scenario silently counts as passed without anyone re-running it.
+- **`deferred-tests.md` survives both abort shapes.** Aborting an *ordinary* feature targets
+  `workflow-stream/$active_feature/implementation` and never touches the feature-test
+  folder, so entries parked from that feature stay put. Aborting the *feature-test entry*
+  deletes only its `implementation/` and preserves `test/` with the rest of the
+  feature-permanent artifacts.
+
+  Entries parked by a feature that was later aborted are **preserved, not auto-pruned**: on
+  retry, re-deferring the same scenario upserts the same composite key and produces no
+  duplicate, and an entry that is never re-deferred still merges as a runnable scenario.
+  Over-inclusive rather than lossy is the correct direction here. Use
+  `deferred-tests.sh remove <ft> <feature> <scenario>` when an entry is known to be obsolete.
 
 ### Step 3 — Revert todos (active feature only)
 

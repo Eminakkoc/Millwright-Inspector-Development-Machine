@@ -490,9 +490,23 @@ workflow-stream/<first-feature>-feature-test/
 └── test/
     ├── manual-test-plan.md
     ├── manual-test-results.md
+    ├── deferred-tests.md
     ├── manual-test-plan.history/
     └── manual-test-results.history/
 ```
+
+**Creation timing.** The folder is created at **stage 1.5**, at the point in `/mi-continue`
+Pre-flight Step 2A item 3.5 where the feature-test entry is confirmed and enqueued — not at
+`/mi-run` name derivation, and not lazily. Creation makes `implementation/`, `test/`, the
+`id.md` marker, the `reference.md` link, and an empty `deferred-tests.md`. It is fully
+idempotent and never truncates parked entries.
+
+This timing exists because `deferred-tests.md` receives writes during *ordinary* features'
+manual-test runs, which by construction all finish before this entry is activated.
+
+**The timing change makes none of the four operations below reachable.** The folder gains
+`implementation/` and `test/` earlier than before; it still never gains a `blueprints/`, so
+every row of the table stands exactly as written.
 
 `id.md` is minted the same way and carries the same identity contract as every other
 feature folder (§3.6) — nothing about folder linking changes for this shape.
@@ -1183,6 +1197,10 @@ stage 8 still calls exactly the subcommand it always called. Because the feature
 is pinned last in the queue, its completion is what empties the queue, so the existing
 queue-empty closure (`quest.sh end`) runs unmodified and the cycle closes in one pass — no
 second completion path is introduced.
+
+Early folder creation (§ 3.4.1) adds **no fifth step** to this table. The entry performs no
+blueprint rotation and no archive move, and nothing Branch III reads depends on when the
+folder appeared.
 
 ### 7.4 The universal advancement signal — `/mi-continue`
 

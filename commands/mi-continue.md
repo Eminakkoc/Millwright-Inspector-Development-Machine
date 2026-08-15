@@ -378,10 +378,46 @@ Reached when the inspector has just finished marking items (`[x] TODO` lines exi
      if [[ "$ft_already" -eq 0 ]]; then
        $CLAUDE_PLUGIN_ROOT/scripts/progress.sh enqueue "$ft_name"
      fi
+
+     # Create the feature-test folder now (DTI-002) — see prose below. This
+     # sits inside the same guard as the enqueue call above, not after the
+     # fence closes, so a single-feature cycle ($ft_status=none, $ft_name
+     # empty) or a still-blocked entry never touches workflow-stream/ at
+     # all. Idempotent, so a mid-cycle re-entry that finds the entry
+     # already queued still confirms the folder is present.
+     data_root="$($CLAUDE_PLUGIN_ROOT/scripts/data-root.sh)"
+     ft_dir="$data_root/workflow-stream/$ft_name"
+     mkdir -p "$ft_dir/implementation" "$ft_dir/test"
+     $CLAUDE_PLUGIN_ROOT/scripts/folder-id.sh ensure "$ft_dir" >/dev/null
+     $CLAUDE_PLUGIN_ROOT/scripts/folder-id.sh link-feature "$ft_name"
+     $CLAUDE_PLUGIN_ROOT/scripts/deferred-tests.sh ensure "$ft_name" >/dev/null
    fi
    ```
 
    The guard matters: `enqueue` **errors** on a duplicate rather than no-opping, so a `/mi-continue` re-run after a session break would abort here without it. Checking `completed` alongside `queue-remaining` matters too — `enqueue` itself refuses against `queue ∪ completed`, not just `queue`. On a mid-cycle re-entry *after* the feature-test entry itself already finished its whole workflow, `$ft_status` reads `selected` (the checkbox is still `[x]` in `todo-list.md`) but the name now sits in `progress.completed`, not in `queue` — a queue-only guard would pass and then `enqueue` would abort stage 1.5 with no recovery short of hand-editing `progress.md`. A feature-test entry already in `completed` is deliberately not re-queued. Splitting this from the promotion in item 1.5 is what guarantees last position in both branches — the initial cycle skips item 3's `enqueue` entirely, while the mid-cycle branch enqueues ordinary features first.
+
+   **Create the feature-test folder now (DTI-002).** The entry is confirmed and queued, so
+   its folder comes into existence here — not at `/mi-run` name derivation, and not lazily
+   on the first deferral. Deferrals happen during ordinary features, which by construction
+   run before this entry is ever activated, so `deferred-tests.md` must be writable long
+   before Row A fires. The creation lines above live inside the same `if` guard as the
+   `enqueue` call, not after the fence closes — that placement is what keeps a
+   single-feature cycle or a still-`blocked` entry from ever touching `workflow-stream/`.
+
+   Every step is idempotent: `mkdir -p` no-ops, `ensure` returns the existing id, and
+   `deferred-tests.sh ensure` returns the existing path without re-rendering — so a
+   re-entrant Step 2A can never truncate parked entries.
+
+   **No `blueprints/`.** That omission is the whole point of the abbreviated shape
+   (§ 3.4.1) and creating the folder early does not change it.
+
+   **The `link-feature` call is load-bearing, not housekeeping.** Its only other caller is
+   `blueprints.sh ensure-current`, which § 3.4.1 forbids against a feature-test folder — so
+   without this line the folder is never linked into the cycle's `reference.md`. On a later
+   cycle `feature-lineage-check` then reports `unknown: … no quest cycle references it` and
+   exits 4, `derive-feature-test-name` reads any non-zero as "candidate taken", and the
+   entry silently renames itself to `<name>-2`. Early creation makes the folder always
+   present, which turns that latent rename into a certain one unless this call is here.
 
 4. **Derive cross-feature ordering signals — journal-first, code-aware as fallback.** Replaces the prior unconditional codebase scan (which violated the "intake stages don't read code" invariant — see `docs/context optimization/recommendations.md` § "Issue 1"). Skip the whole step when there's only one feature in the queue.
 

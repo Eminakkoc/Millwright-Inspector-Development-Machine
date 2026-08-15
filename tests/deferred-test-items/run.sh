@@ -302,6 +302,79 @@ else
   ok "$t"
 fi
 
+# ---- Task 4: stage-1.5 early creation --------------------------------------
+
+# Behavioural: the creation sequence itself, run against a sandbox exactly as
+# the recipe specifies it.
+create_ft_folder() {
+  local sandbox ft dir
+  sandbox="$1"; ft="$2"
+  dir="$sandbox/workflow-stream/$ft"
+  mkdir -p "$dir/implementation" "$dir/test"
+  MI_DATA_ROOT="$sandbox" "$REPO_ROOT/scripts/folder-id.sh" ensure "$dir" >/dev/null 2>&1
+  MI_DATA_ROOT="$sandbox" "$DT" ensure "$ft" >/dev/null 2>&1
+}
+
+t="creation produces implementation/ and test/ and no blueprints/"
+sandbox="$(make_sandbox)"
+create_ft_folder "$sandbox" payments-feature-test
+d="$sandbox/workflow-stream/payments-feature-test"
+if [[ -d "$d/implementation" && -d "$d/test" && ! -d "$d/blueprints" ]]; then
+  ok "$t"
+else
+  ng "$t" "wrong shape: implementation=$([[ -d $d/implementation ]] && echo y || echo n) test=$([[ -d $d/test ]] && echo y || echo n) blueprints=$([[ -d $d/blueprints ]] && echo y || echo n)"
+fi
+
+t="creation mints id.md"
+if [[ -f "$d/id.md" ]]; then ok "$t"; else ng "$t" "id.md was not minted"; fi
+
+t="creation renders deferred-tests.md"
+if [[ -f "$d/test/deferred-tests.md" ]]; then ok "$t"; else ng "$t" "deferred-tests.md absent"; fi
+
+t="re-running creation does not truncate a populated deferred-tests.md"
+add_entry "$sandbox" payments B.2 "refund audit"
+before="$(MI_DATA_ROOT="$sandbox" "$DT" count payments-feature-test)"
+create_ft_folder "$sandbox" payments-feature-test
+after="$(MI_DATA_ROOT="$sandbox" "$DT" count payments-feature-test)"
+if [[ "$before" == "1" && "$after" == "1" ]]; then
+  ok "$t"
+else
+  ng "$t" "entry count changed across a re-run: $before -> $after"
+fi
+
+t="aborting an ordinary feature leaves deferred-tests.md intact"
+mkdir -p "$sandbox/workflow-stream/payments/implementation"
+echo "review notes" > "$sandbox/workflow-stream/payments/implementation/inspector-review.md"
+rm -rf "$sandbox/workflow-stream/payments/implementation"
+after="$(MI_DATA_ROOT="$sandbox" "$DT" count payments-feature-test)"
+if [[ "$after" == "1" ]]; then
+  ok "$t"
+else
+  ng "$t" "an ordinary feature's implementation/ removal disturbed the entry count"
+fi
+
+# Prose: the recipe must carry the creation block and the link-feature call.
+t="mi-continue.md Step 2A creates the feature-test folder at stage 1.5"
+if grep -q 'deferred-tests.sh" ensure\|deferred-tests.sh ensure' "$MI_CONTINUE"; then
+  ok "$t"
+else
+  ng "$t" "no stage-1.5 deferred-tests ensure call in mi-continue.md"
+fi
+
+t="mi-continue.md stage-1.5 creation calls link-feature"
+if grep -q 'folder-id.sh link-feature' "$MI_CONTINUE"; then
+  ok "$t"
+else
+  ng "$t" "link-feature is never called — derive-feature-test-name will rename the entry on a later cycle"
+fi
+
+t="project doc 3.4.1 documents deferred-tests.md under test/"
+if grep -q 'deferred-tests.md' "$REPO_ROOT/docs/millwright-inspector-project.md"; then
+  ok "$t"
+else
+  ng "$t" "3.4.1 folder tree does not list deferred-tests.md"
+fi
+
 # ---- Summary --------------------------------------------------------------
 
 printf "\n%d passed, %d failed\n" "$pass" "$fail"
