@@ -360,6 +360,29 @@ if [[ "${branch_route:-III}" == "III" ]]; then
 fi
 ```
 
+**Deferred-scenario reporting (DTI-007, Gate 2 — report-only).** Read the `deferred`
+counter from the feature's `test/manual-test-results.md` when the file exists:
+
+```bash
+results_path="$($CLAUDE_PLUGIN_ROOT/scripts/blueprints.sh manual-test-results-path "$active_feature")"
+deferred_n=0
+if [[ -f "$results_path" ]]; then
+  deferred_n="$($CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get "$results_path" deferred 2>/dev/null || echo 0)"
+  if [[ -z "$deferred_n" || "$deferred_n" == "null" ]]; then
+    deferred_n=0
+  fi
+fi
+```
+
+`frontmatter.sh get` exits 0 and prints the literal string `null` for an absent field, so
+the value is tested rather than the exit code — a results file rendered before the counter
+existed reads as 0.
+
+When `deferred_n > 0`, say so in the completion summary — "completed; N scenario(s)
+deferred to the whole-feature test" — instead of describing the feature as fully tested.
+**This never blocks completion** and never affects the `IMPLEMENTED` promotion; the
+blocking gate lives on the feature-test entry (`/mi-continue`, Gate 1).
+
 ### Step 5 — Archive implementation/ into the rotated history version
 
 (Skipped on Branch I. Idempotent for Branch 0a re-entry — `mv -n` refuses to overwrite, so artifacts already moved on a prior partial run stay put.)

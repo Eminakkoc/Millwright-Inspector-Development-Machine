@@ -632,6 +632,20 @@ text, and type /mi-continue when done. The free-form findings will be canonicali
 canonicalize pass on the next /mi-continue.
 ```
 
+**When `deferred > 0` (DTI-007, Gate 2 — report-only).** Replace any fully-tested claim in
+the hand-off with an honest breakdown that names the deferrals:
+
+```
+Manual test done: <passed>/<total> passed, <failed> failed, <skipped> skipped,
+<deferred> deferred to the whole-feature test.
+```
+
+This feature is **not described as fully tested** while it carries a deferred scenario. The
+check is **report-only**: it changes wording only and never blocks this feature's stage-8
+completion or its promotion to `IMPLEMENTED`. Those scenarios are resolved later, at the
+feature-test entry, whose own gate (`/mi-continue`, Gate 1) is the blocking one. Blocking
+here would deadlock the cycle, because the entry that resolves them runs last.
+
 **Guided and autonomous env-modes:** append a line listing the millwright-started background services (with their task ids) and note they are still running so the inspector can stop them once done exercising the environment (the runner does not tear them down automatically).
 
 **Autonomous env-mode only:** when the inspector declined the 4.7.1 guided re-run offer, append: `"Changed your mind? /mi-manual-test-run --rerun-guided walks you through the same plan with your own verdicts."`

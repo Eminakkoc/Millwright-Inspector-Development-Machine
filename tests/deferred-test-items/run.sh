@@ -782,6 +782,38 @@ else
   ng "$t" "the additive-AND contract with the findings block is not stated"
 fi
 
+# ---- Task 9: Gate 2 (report-only) ------------------------------------------
+
+MI_CW="$REPO_ROOT/commands/mi-complete-workflow.md"
+
+t="the hand-off message reports deferred scenarios"
+if grep -q 'deferred to the whole-feature test' "$MI_MTR"; then
+  ok "$t"
+else
+  ng "$t" "mi-manual-test-run.md 4.8 does not report deferred scenarios"
+fi
+
+t="the ordinary-feature stage-8 preflight reads the deferred counter"
+if grep -q 'deferred' "$MI_CW"; then
+  ok "$t"
+else
+  ng "$t" "mi-complete-workflow.md never mentions the deferred counter"
+fi
+
+t="Gate 2 is explicitly report-only and never blocks"
+if grep -qi 'never block' "$MI_CW"; then
+  ok "$t"
+else
+  ng "$t" "the never-blocks contract is not stated in mi-complete-workflow.md"
+fi
+
+t="the runner states the ordinary feature is not fully tested while carrying deferrals"
+if grep -q 'not.*fully tested\|never described as fully tested' "$MI_MTR"; then
+  ok "$t"
+else
+  ng "$t" "the fully-tested wording rule is not stated"
+fi
+
 # ---- Summary --------------------------------------------------------------
 
 printf "\n%d passed, %d failed\n" "$pass" "$fail"
