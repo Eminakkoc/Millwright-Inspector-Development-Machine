@@ -1484,6 +1484,41 @@ If `open_ids` is empty, **prompt the inspector to confirm before completing the 
 - **On `n`** — stop. Do **not** advance the stage. State stays at `current-stage=5`, so the next `/mi-continue` re-enters this handler (idempotent: if findings were added, it routes to Step 3b instead; if still empty, it re-prompts).
 - **On `y`** — proceed with the atomic advance below.
 
+##### Deferred-scenario completion gate (DTI-007, Gate 1)
+
+Runs on **both** shipped entries into finalization — the Inspector Handler's
+no-open-findings `advance-to 5 7` here, and the Review-Resume Handler's `advance-to 6 7`
+below. It is deliberately **not inside generic `advance-to`**: putting it there would alter
+behaviour for cycles that carry no feature-test entry at all, whereas placing it on both
+handler paths guarantees neither branch bypasses it while leaving `advance-to`'s contract
+untouched.
+
+The existing open-findings block is **not replaced** — this is a second, independent
+`AND`-condition beside it.
+
+```bash
+if $CLAUDE_PLUGIN_ROOT/scripts/todo.sh is-feature-test "$active_feature" >/dev/null 2>&1; then
+  results_path="$($CLAUDE_PLUGIN_ROOT/scripts/blueprints.sh manual-test-results-path "$active_feature")"
+  unresolved="$($CLAUDE_PLUGIN_ROOT/scripts/deferred-tests.sh unresolved "$active_feature" "$results_path")"
+else
+  unresolved=""
+fi
+```
+
+If `unresolved` is non-empty, **stop** — do not advance. Print one line per row:
+
+> Cannot finalize `<active_feature>` — N deferred scenario(s) have no verdict:
+>   `<feature>/<scenario>` → `<merged-as or "(not merged)">`  (`<title>`)
+>
+> Run `/mi-manual-test-run` to complete them, or drop an obsolete entry with
+> `deferred-tests.sh remove <ft> <feature> <scenario>`.
+
+If `unresolved` is empty, proceed to the `advance-to` unchanged. **A cycle with zero
+deferred entries takes this path always**, so its behaviour is byte-identical to today.
+
+`pass`, `fail`, and `skip` all resolve an entry; the gate catches *absent* verdicts, not
+abandoned ones.
+
 ```bash
 $CLAUDE_PLUGIN_ROOT/scripts/progress.sh advance-to 5 7 \
   --set sub-flow=none \
@@ -1606,6 +1641,9 @@ On `abort` (only valid for the `missing` branch), invoke `/mi-abort-workflow` an
 ### Review-Resume Step 2.6 — Atomic finalize (advance-to 6 → 7)
 
 After the refresh prompt has been answered (or skipped), finalize the review-resume sequence in one atomic write. This collapses the old "set sub-flow=none + set inspector-review-completed=true + advance 6" trio into a single transition (Item 4 of the v11 plan), so a session break here cannot strand the workflow at stage 6 with sub-flow=none and the marker only half-set.
+
+**Run the deferred-scenario completion gate first** (the Inspector Handler's block above,
+verbatim — same predicate, same refusal). Only advance when it reports nothing unresolved.
 
 ```bash
 $CLAUDE_PLUGIN_ROOT/scripts/progress.sh advance-to 6 7 \

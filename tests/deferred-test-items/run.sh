@@ -670,6 +670,118 @@ else
   ng "$t" "processed $i entries, $blanks still have a blank Merged as"
 fi
 
+# ---- Task 8: Gate 1 (blocking) ---------------------------------------------
+
+# mk_results <path> <scenario-id:verdict> ... — minimal results file.
+mk_results() {
+  local path="$1"; shift
+  cat > "$path" <<'EOF'
+---
+id: 22222222-2222-4222-8222-222222222222
+feature: payments-feature-test
+plan-id: 33333333-3333-4333-8333-333333333333
+seed-family-id: 44444444-4444-4444-8444-444444444444
+generated-in-activation: 55555555-5555-4555-8555-555555555555
+state: complete
+current-scenario: null
+total: 2
+passed: 1
+failed: 0
+skipped: 0
+deferred: 0
+started-at: "2026-08-15T09:00:00Z"
+finished-at: "2026-08-15T10:00:00Z"
+---
+
+# Manual test results
+
+## Per-scenario verdicts
+EOF
+  local pair id verdict
+  for pair in "$@"; do
+    id="${pair%%:*}"; verdict="${pair##*:}"
+    cat >> "$path" <<EOF
+
+### $id — $verdict
+
+- **Verdict:** $verdict
+- **Observation:** n/a
+- **Recorded at:** "2026-08-15T09:30:00Z"
+- **Seeded:** false
+- **Cited as IR-NNN:**
+EOF
+  done
+}
+
+setup_gate_case() {
+  # $1 sandbox, $2 merged-as for payments/B.2, $3.. verdict pairs
+  local sandbox merged
+  sandbox="$1"; merged="$2"; shift 2
+  seed_dt "$sandbox" >/dev/null
+  add_entry "$sandbox" payments B.2 "refund audit"
+  if [[ -n "$merged" ]]; then
+    MI_DATA_ROOT="$sandbox" "$DT" set-merged-as payments-feature-test payments B.2 "$merged" >/dev/null 2>&1
+  fi
+  mk_results "$sandbox/results.md" "$@"
+}
+
+t="gate: an entry whose merged scenario has no verdict is unresolved"
+sandbox="$(make_sandbox)"; setup_gate_case "$sandbox" C.1 "A.1:pass"
+n="$(MI_DATA_ROOT="$sandbox" "$DT" unresolved payments-feature-test "$sandbox/results.md" 2>/dev/null | sed '/^$/d' | wc -l | tr -d ' ')"
+if [[ "$n" == "1" ]]; then ok "$t"; else ng "$t" "want 1 unresolved, got $n"; fi
+
+t="gate: a pass verdict resolves the entry"
+sandbox="$(make_sandbox)"; setup_gate_case "$sandbox" C.1 "C.1:pass"
+n="$(MI_DATA_ROOT="$sandbox" "$DT" unresolved payments-feature-test "$sandbox/results.md" 2>/dev/null | sed '/^$/d' | wc -l | tr -d ' ')"
+if [[ "$n" == "0" ]]; then ok "$t"; else ng "$t" "want 0 unresolved, got $n"; fi
+
+t="gate: a fail verdict resolves the entry"
+sandbox="$(make_sandbox)"; setup_gate_case "$sandbox" C.1 "C.1:fail"
+n="$(MI_DATA_ROOT="$sandbox" "$DT" unresolved payments-feature-test "$sandbox/results.md" 2>/dev/null | sed '/^$/d' | wc -l | tr -d ' ')"
+if [[ "$n" == "0" ]]; then ok "$t"; else ng "$t" "want 0 unresolved, got $n"; fi
+
+t="gate: a skip verdict resolves the entry"
+sandbox="$(make_sandbox)"; setup_gate_case "$sandbox" C.1 "C.1:skip"
+n="$(MI_DATA_ROOT="$sandbox" "$DT" unresolved payments-feature-test "$sandbox/results.md" 2>/dev/null | sed '/^$/d' | wc -l | tr -d ' ')"
+if [[ "$n" == "0" ]]; then ok "$t"; else ng "$t" "skip must resolve — want 0 unresolved, got $n"; fi
+
+t="gate: a blank Merged as is unresolved (fails closed)"
+sandbox="$(make_sandbox)"; setup_gate_case "$sandbox" "" "C.1:pass"
+n="$(MI_DATA_ROOT="$sandbox" "$DT" unresolved payments-feature-test "$sandbox/results.md" 2>/dev/null | sed '/^$/d' | wc -l | tr -d ' ')"
+if [[ "$n" == "1" ]]; then ok "$t"; else ng "$t" "a blank Merged as must fail closed — got $n"; fi
+
+t="gate: zero deferred entries means nothing blocks"
+sandbox="$(make_sandbox)"; seed_dt "$sandbox" >/dev/null
+mk_results "$sandbox/results.md" "A.1:pass"
+n="$(MI_DATA_ROOT="$sandbox" "$DT" unresolved payments-feature-test "$sandbox/results.md" 2>/dev/null | sed '/^$/d' | wc -l | tr -d ' ')"
+if [[ "$n" == "0" ]]; then ok "$t"; else ng "$t" "want 0, got $n"; fi
+
+t="gate: an absent results file leaves every entry unresolved"
+sandbox="$(make_sandbox)"; setup_gate_case "$sandbox" C.1 "C.1:pass"
+n="$(MI_DATA_ROOT="$sandbox" "$DT" unresolved payments-feature-test "$sandbox/nope.md" 2>/dev/null | sed '/^$/d' | wc -l | tr -d ' ')"
+if [[ "$n" == "1" ]]; then ok "$t"; else ng "$t" "want 1 unresolved for a missing results file, got $n"; fi
+
+t="mi-continue gates the Inspector Handler's advance-to 5 7"
+if grep -q 'deferred-tests.sh unresolved\|deferred-tests.sh" unresolved' "$MI_CONTINUE"; then
+  ok "$t"
+else
+  ng "$t" "mi-continue.md never calls the unresolved gate"
+fi
+
+t="mi-continue states the gate is not inside generic advance-to"
+if grep -q 'not inside generic `advance-to`\|Not inside generic' "$MI_CONTINUE"; then
+  ok "$t"
+else
+  ng "$t" "the gate-placement rationale is not stated"
+fi
+
+t="mi-continue states the existing open-findings block is not replaced"
+if grep -q 'not replaced' "$MI_CONTINUE"; then
+  ok "$t"
+else
+  ng "$t" "the additive-AND contract with the findings block is not stated"
+fi
+
 # ---- Summary --------------------------------------------------------------
 
 printf "\n%d passed, %d failed\n" "$pass" "$fail"

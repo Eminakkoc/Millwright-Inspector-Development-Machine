@@ -22,6 +22,7 @@
 #                               [--deferred-at <iso8601>]
 #   deferred-tests.sh set-merged-as <ft> <f> <s> <scenario-id>
 #   deferred-tests.sh remove <ft> <f> <s>
+#   deferred-tests.sh unresolved <ft> <results-path>
 #   deferred-tests.sh offer-defer <active-feature>
 
 set -euo pipefail
@@ -309,6 +310,63 @@ PYEOF
     dt_validate "$dest"
     ;;
 
+  unresolved)
+    # Print one TSV row per deferred entry that has no verdict in the
+    # feature-test entry's manual-test-results.md. Empty output = nothing
+    # blocks. Always exits 0 — the caller decides what to do with the rows.
+    #
+    # Resolution rule (DTI-007): pass / fail / skip all resolve. The gate
+    # catches ABSENT verdicts, not abandoned ones — a skip already carries a
+    # mandatory reason, and the autonomous pre-finalize skip audit
+    # (mi-manual-test-run.md Step 4.1) already refuses convenience skips.
+    # A blank `Merged as:` fails closed.
+    ft="${1:?feature-test name required}"
+    results="${2:?results-file path required}"
+    dest="$(dt_file "$ft")"
+    if [[ ! -f "$dest" ]]; then
+      exit 0
+    fi
+    python3 - "$dest" "$results" <<'PYEOF'
+import os, re, sys
+dt_path, results_path = sys.argv[1], sys.argv[2]
+
+verdicts = set()
+if os.path.isfile(results_path):
+    with open(results_path) as f:
+        rc = f.read()
+    # Scope to `## Per-scenario verdicts` — `## Inspector-added checks` blocks
+    # are not verdicts and must never resolve a deferred entry.
+    sec = re.search(r'(?m)^## Per-scenario verdicts[ \t]*$', rc)
+    if sec:
+        rest = rc[sec.end():]
+        nxt = re.search(r'(?m)^## ', rest)
+        window = rest[:nxt.start()] if nxt else rest
+        for m in re.finditer(r'(?m)^### (\S+) — (\S+)\s*$', window):
+            if m.group(2) in ('pass', 'fail', 'skip'):
+                verdicts.add(m.group(1))
+
+with open(dt_path) as f:
+    dc = f.read()
+# Scope to the `## Deferred scenarios` section — see the PARSING CONTRACT note.
+dsec = re.search(r'(?m)^## Deferred scenarios[ \t]*$', dc)
+if not dsec:
+    sys.exit(0)
+drest = dc[dsec.end():]
+dnxt = re.search(r'(?m)^## ', drest)
+window = drest[:dnxt.start()] if dnxt else drest
+HEAD = re.compile(r'(?m)^### ([^/\s]+)/([^\s]+) — (.*)$')
+for m in HEAD.finditer(window):
+    feature, scenario, title = m.group(1), m.group(2), m.group(3).strip()
+    tail = window[m.end():]
+    nb = re.search(r'(?m)^(###|##) ', tail)
+    block = tail[:nb.start()] if nb else tail
+    mm = re.search(r'(?m)^- \*\*Merged as:\*\*[ \t]*(.*)$', block)
+    merged = mm.group(1).strip() if mm else ''
+    if not merged or merged not in verdicts:
+        print('\t'.join([feature, scenario, merged, title]))
+PYEOF
+    ;;
+
   offer-defer)
     # Exit 0 when `defer` should be offered for <active-feature>, else exit 1.
     #
@@ -333,7 +391,7 @@ PYEOF
     ;;
 
   *)
-    echo "usage: deferred-tests.sh {path|ensure|count|list|upsert|set-merged-as|remove|offer-defer} ..." >&2
+    echo "usage: deferred-tests.sh {path|ensure|count|list|upsert|set-merged-as|remove|unresolved|offer-defer} ..." >&2
     exit 2
     ;;
 esac
