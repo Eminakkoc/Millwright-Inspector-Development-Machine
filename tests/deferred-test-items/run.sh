@@ -814,6 +814,83 @@ else
   ng "$t" "the fully-tested wording rule is not stated"
 fi
 
+# ---- Task 10: end-to-end ---------------------------------------------------
+
+t="e2e: defer -> merge -> verdict clears the gate"
+sandbox="$(make_sandbox)"
+seed_todo_ft "$sandbox" payments-feature-test
+create_ft_folder "$sandbox" payments-feature-test
+
+# 1. Two ordinary features each defer one scenario.
+MI_DATA_ROOT="$sandbox" "$DT" upsert payments-feature-test \
+  --feature payments --scenario B.2 --title "refund shows in the audit trail" \
+  --reason "audit-log ships later" \
+  --action "1. Issue a refund on order #1001" \
+  --expected "- The refund appears in the audit trail" \
+  --deferred-at "2026-08-15T10:00:00Z" >/dev/null 2>&1
+MI_DATA_ROOT="$sandbox" "$DT" upsert payments-feature-test \
+  --feature checkout --scenario A.4 --title "cart survives a session expiry" \
+  --reason "session feature ships later" \
+  --action "1. Expire the session" \
+  --expected "- The cart is intact" \
+  --deferred-at "2026-08-15T10:05:00Z" >/dev/null 2>&1
+
+# 2. The whole-feature plan generation assigns ids (list -> set-merged-as).
+i=0
+while IFS=$'\t' read -r f s m ttl; do
+  [[ -z "$f" ]] && continue
+  i=$((i + 1))
+  MI_DATA_ROOT="$sandbox" "$DT" set-merged-as payments-feature-test "$f" "$s" "C.$i" >/dev/null 2>&1
+done < <(MI_DATA_ROOT="$sandbox" "$DT" list payments-feature-test 2>/dev/null)
+
+# 3. Before the run, both are unresolved.
+res="$sandbox/workflow-stream/payments-feature-test/test/manual-test-results.md"
+mk_results "$res" "A.1:pass"
+before="$(MI_DATA_ROOT="$sandbox" "$DT" unresolved payments-feature-test "$res" | sed '/^$/d' | wc -l | tr -d ' ')"
+
+# 4. The whole-feature run gives both a verdict (one pass, one skip).
+mk_results "$res" "A.1:pass" "C.1:pass" "C.2:skip"
+after="$(MI_DATA_ROOT="$sandbox" "$DT" unresolved payments-feature-test "$res" | sed '/^$/d' | wc -l | tr -d ' ')"
+
+if [[ "$before" == "2" && "$after" == "0" ]]; then
+  ok "$t"
+else
+  ng "$t" "unresolved before=$before (want 2), after=$after (want 0)"
+fi
+
+t="e2e: the artifact still validates after the full round-trip"
+if "$FM" validate \
+     "$sandbox/workflow-stream/payments-feature-test/test/deferred-tests.md" \
+     deferred-tests >/dev/null 2>&1; then
+  ok "$t"
+else
+  ng "$t" "deferred-tests.md no longer validates after the e2e round-trip"
+fi
+
+t="e2e: inspector-added INS blocks never resolve a deferred entry"
+sandbox="$(make_sandbox)"
+seed_dt "$sandbox" >/dev/null
+add_entry "$sandbox" payments B.2 "refund audit"
+MI_DATA_ROOT="$sandbox" "$DT" set-merged-as payments-feature-test payments B.2 C.1 >/dev/null 2>&1
+res="$sandbox/results.md"
+mk_results "$res" "A.1:pass"
+cat >> "$res" <<'EOF'
+
+## Inspector-added checks
+
+### C.1 — pass
+
+- **Verdict:** pass
+- **Observation:** an ad-hoc check that happens to share the id
+- **Recorded at:** "2026-08-15T09:45:00Z"
+EOF
+n="$(MI_DATA_ROOT="$sandbox" "$DT" unresolved payments-feature-test "$res" | sed '/^$/d' | wc -l | tr -d ' ')"
+if [[ "$n" == "1" ]]; then
+  ok "$t"
+else
+  ng "$t" "an INS block outside '## Per-scenario verdicts' wrongly resolved the entry"
+fi
+
 # ---- Summary --------------------------------------------------------------
 
 printf "\n%d passed, %d failed\n" "$pass" "$fail"
