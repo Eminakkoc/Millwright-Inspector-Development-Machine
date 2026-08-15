@@ -1211,7 +1211,8 @@ and their match conditions for every other feature are unchanged**:
 
 - **Row A** gains a branch ahead of its `/mi-apply-impact` fire: when `todo.sh
   is-feature-test queue[0]` exits 0, it instead runs `progress.sh activate`
-  (byte-identical to the ordinary path), `folder-id.sh ensure`, resolves and verifies the
+  (byte-identical to the ordinary path), `folder-id.sh ensure` called with the resolved
+  folder path (`$data_root/workflow-stream/$ft_feature`), resolves and verifies the
   union commit range (§6.4), sets `base-commit` to the earliest reachable base,
   auto-fires `/mi-generate-implementation-diagrams`, initializes `review.sh init`, and
   finishes with the atomic `progress.sh advance-to 2 5 --set sub-flow=none`. **No

@@ -201,9 +201,17 @@ stop. Nothing has been written by this sequence yet at this point.
 
 3. **Folder marker. NO `ensure-current`** — this folder has no `blueprints/`.
 
+   `folder-id.sh ensure` takes a **folder path**, not a feature name — `_fid_ensure`
+   opens with `[[ -d "$folder" ]] || mi_die "folder not found: $folder"`. Passing a bare
+   name dies.
+
    ```bash
-   $CLAUDE_PLUGIN_ROOT/scripts/folder-id.sh ensure "$ft_feature"
+   data_root="$($CLAUDE_PLUGIN_ROOT/scripts/data-root.sh)"
+   $CLAUDE_PLUGIN_ROOT/scripts/folder-id.sh ensure "$data_root/workflow-stream/$ft_feature"
    ```
+
+   Idempotent: `ensure` returns the existing id when `id.md` is already present, which is
+   the normal case once stage 1.5 has created the folder (§ 3.4.1).
 
 4. **Pin the union base** so the shipped freshness caches (`commits.sh
    change-summary-fresh` / `diagrams-fresh`) work unchanged — both key on

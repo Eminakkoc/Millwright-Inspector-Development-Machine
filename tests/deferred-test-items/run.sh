@@ -276,6 +276,32 @@ else
   ng "$t" "multi-line action was not indented into the block scalar"
 fi
 
+# ---- Task 3: Row A ensure-argument repair ----------------------------------
+
+MI_CONTINUE="$REPO_ROOT/commands/mi-continue.md"
+
+t="folder-id.sh ensure is invoked with a folder path, not a bare feature name"
+if grep -qE 'folder-id\.sh" ensure "\$data_root/workflow-stream/\$ft_feature"|folder-id\.sh ensure "\$data_root/workflow-stream/\$ft_feature"' "$MI_CONTINUE"; then
+  ok "$t"
+else
+  ng "$t" "mi-continue.md still passes a bare feature name to folder-id.sh ensure"
+fi
+
+t="no bare 'folder-id.sh ensure \"\$ft_feature\"' call survives"
+if grep -qE 'folder-id\.sh ensure "\$ft_feature"' "$MI_CONTINUE"; then
+  ng "$t" "the defective bare-name call is still present"
+else
+  ok "$t"
+fi
+
+t="folder-id.sh ensure dies on a bare feature name (the behaviour being guarded)"
+sandbox="$(make_sandbox)"
+if MI_DATA_ROOT="$sandbox" "$REPO_ROOT/scripts/folder-id.sh" ensure payments-feature-test >/dev/null 2>&1; then
+  ng "$t" "ensure unexpectedly accepted a bare name — re-check the repair's premise"
+else
+  ok "$t"
+fi
+
 # ---- Summary --------------------------------------------------------------
 
 printf "\n%d passed, %d failed\n" "$pass" "$fail"
