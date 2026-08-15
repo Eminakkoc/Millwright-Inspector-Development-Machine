@@ -580,6 +580,96 @@ else
   ng "$t" "mi-manual-test-plan.md does not gate the vocabulary on offer-defer"
 fi
 
+# ---- Task 7: merge and attribution -----------------------------------------
+
+t="the merge anchor's exact text is still pinned in the plan generator"
+if grep -q '<!-- deferred-merge-point -->' "$MI_MTP"; then
+  ok "$t"
+else
+  ng "$t" "the deferred-merge-point anchor text was changed or removed"
+fi
+
+t="the anchor is documented as the last line of section 3"
+if grep -q 'End `## 3. Test scenarios` with exactly this line' "$MI_MTP"; then
+  ok "$t"
+else
+  ng "$t" "the anchor's position contract is no longer stated"
+fi
+
+t="the plan generator lists deferred-tests as a derivation input"
+if grep -q 'deferred-tests' "$MI_MTP"; then
+  ok "$t"
+else
+  ng "$t" "mi-manual-test-plan.md never mentions deferred-tests"
+fi
+
+t="the merge inserts above the anchor, not below"
+if grep -q 'immediately above' "$MI_MTP"; then
+  ok "$t"
+else
+  ng "$t" "insertion position relative to the anchor is not stated"
+fi
+
+t="the merge writes the Merged as back-reference"
+if grep -q 'set-merged-as' "$MI_MTP"; then
+  ok "$t"
+else
+  ng "$t" "the plan generator never calls set-merged-as"
+fi
+
+t="an empty deferred-tests produces an unchanged render (stated contract)"
+if grep -q 'zero deferred entries\|empty `deferred-tests.md`' "$MI_MTP"; then
+  ok "$t"
+else
+  ng "$t" "the zero-deferral no-op contract is not stated"
+fi
+
+t="attribution marker format is pinned in the plan generator"
+if grep -q '\[deferred from ' "$MI_MTP"; then
+  ok "$t"
+else
+  ng "$t" "the [deferred from <feature>] marker is not specified"
+fi
+
+t="the results side emits the attribution line"
+if grep -q '\[deferred from ' "$MI_MTR"; then
+  ok "$t"
+else
+  ng "$t" "mi-manual-test-run.md Step 3.4 does not emit the attribution line"
+fi
+
+t="the parser is documented to tolerate a non-bullet line before the bullets"
+if grep -q 'non-bullet line' "$MI_MTR"; then
+  ok "$t"
+else
+  ng "$t" "the parser-tolerance contract for the attribution line is not stated"
+fi
+
+t="the id grammar is explicitly unchanged"
+if grep -q 'id grammar\|scenario-id grammar' "$MI_MTP"; then
+  ok "$t"
+else
+  ng "$t" "the byte-identical id-grammar guarantee is not restated at the merge"
+fi
+
+# Behavioural: list -> set-merged-as round-trip is what the merge performs.
+t="merge round-trip populates Merged as for every entry"
+sandbox="$(make_sandbox)"; seed_dt "$sandbox" >/dev/null
+add_entry "$sandbox" payments B.2 "refund audit"
+add_entry "$sandbox" checkout A.4 "cart survives expiry"
+i=0
+while IFS=$'\t' read -r f s m ttl; do
+  [[ -z "$f" ]] && continue
+  i=$((i + 1))
+  MI_DATA_ROOT="$sandbox" "$DT" set-merged-as payments-feature-test "$f" "$s" "C.$i" >/dev/null 2>&1
+done < <(MI_DATA_ROOT="$sandbox" "$DT" list payments-feature-test 2>/dev/null)
+blanks="$(MI_DATA_ROOT="$sandbox" "$DT" list payments-feature-test 2>/dev/null | cut -f3 | grep -c '^$' || true)"
+if [[ "$i" == "2" && "$blanks" == "0" ]]; then
+  ok "$t"
+else
+  ng "$t" "processed $i entries, $blanks still have a blank Merged as"
+fi
+
 # ---- Summary --------------------------------------------------------------
 
 printf "\n%d passed, %d failed\n" "$pass" "$fail"

@@ -1055,6 +1055,10 @@ partially-selected cycle produces a combined result covering only what shipped. 
 feature-test item excludes itself from its own derivation; its own id comes from
 `todo.sh feature-test-status` field 3.
 
+Step 2's whole-feature test plan takes a third derivation input: the feature-test entry's
+`test/deferred-tests.md`, whose entries are merged into `## 3. Test scenarios` above the
+`<!-- deferred-merge-point -->` anchor (DTI-005).
+
 ---
 
 ## 7. The workflow commands (full reference)

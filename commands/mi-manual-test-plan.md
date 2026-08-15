@@ -428,13 +428,54 @@ Items the inspector left as `[ ] TODO` were **never built** and are out of scope
 
 **Portability.** Every command in § 2 must be POSIX/BSD-portable and run on macOS. GNU-only flags (`cat -A`, `grep -P`, `sed -i` with no argument) are defects in the plan even when the underlying code is correct.
 
-**Merge anchor for `DTI-005`.** End `## 3. Test scenarios` with exactly this line:
+**Merge anchor and the merge itself (`DTI-005`).** End `## 3. Test scenarios` with exactly this line:
 
 ```markdown
 <!-- deferred-merge-point -->
 ```
 
-The sibling `deferred-test-items` feature inserts carried-forward scenario groups immediately above it. A stable anchor, independent of scenario lettering, needing no schema change. This feature owns the anchor only — never the merge.
+The anchor is matched as a literal string. It keeps its exact text and its exact position —
+last line of § 3, immediately before `## 4. Coverage notes` — on **every** feature-test
+render, including renders with zero deferred entries, because a later deferral plus
+regeneration must still find it.
+
+`deferred-tests.md` joins `todo.sh list IMPLEMENTED` and the union range as a derivation
+input for this render path. Read the entries:
+
+```bash
+$CLAUDE_PLUGIN_ROOT/scripts/deferred-tests.sh list "$active_feature"
+```
+
+Each TSV row is `<originating-feature>\t<originating-scenario>\t<merged-as>\t<title>`.
+
+Render every entry as a scenario, in its own lettered group(s) continuing the plan's
+existing lettering, inserted **immediately above** the anchor. Take each scenario's `Action`
+and `Expected` from the entry's own block — the entries are self-contained precisely so this
+render needs nothing from the originating workflow.
+
+**Attribution (`DTI-006`).** The scenario title carries the marker:
+
+```markdown
+### C.1 — [deferred from payments] refund shows in the audit trail
+```
+
+Nothing else changes: no new id prefix, no reserved letter range, no new frontmatter field.
+The **scenario-id grammar stays byte-identical**, so neither the runner's one-to-one
+id↔verdict-block keying nor `review.sh`'s `seed-id` construction
+(`manual-test:<seed-family-id>:<scenario-id>`) sees anything new.
+
+After assigning each entry its scenario id, write the back-reference:
+
+```bash
+$CLAUDE_PLUGIN_ROOT/scripts/deferred-tests.sh set-merged-as \
+  "$active_feature" "$orig_feature" "$orig_scenario" "$new_scenario_id"
+```
+
+That field is what makes the completion gate machine-checkable (`/mi-continue`, DTI-007)
+without touching the plan's or the results' own contracts.
+
+**With zero deferred entries the render is unchanged from today** — no group is inserted,
+the anchor still emits, and `set-merged-as` is never called.
 
 #### Scenario depth & coverage bar (mandatory)
 

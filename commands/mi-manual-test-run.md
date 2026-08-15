@@ -389,6 +389,24 @@ Two guided-only behaviors on top of the interactive contract:
 ##### 3.4 On `pass` / `fail` / `skip` / `defer`
 
 - Upsert the verdict block for `<THIS_ID>` in `manual-test-results.md` body (one canonical block per scenario id). Do not append a second block if one already exists; replace that scenario's block.
+- **Carried-forward scenarios (`DTI-006`).** When the scenario's plan title begins with a
+  `[deferred from <feature>]` marker, emit that marker as its own line directly under the
+  `### <SCENARIO_ID> — <VERDICT>` heading and above the bullets, which keep their contract
+  verbatim:
+
+  ```markdown
+  ### C.1 — pass
+
+  [deferred from payments]
+
+  - **Verdict:** pass
+  - **Observation:** …
+  ```
+
+  **The verdict-block parser must tolerate a non-bullet line between the heading and the
+  first bullet.** It reads by bullet key within the block window, so it already does — this
+  makes that tolerance a contract rather than an accident. The block boundary
+  (`^### <id> — ` to the next `^### `/`^## `/EOF) and the five bullet keys are unchanged.
 - Recompute `passed`/`failed`/`skipped`/`deferred` counts from the full set of verdict
   blocks; `passed + failed + skipped + deferred == total` must hold. Then set `current-scenario` to the **next** uncommitted scenario id (or `null` if this was the last) — only AFTER the verdict block is committed, so the just-finished scenario is durable before the cursor advances.
 - **On `defer <reason>` (requires `offer_defer=1`).** The reason is mandatory — an entry
