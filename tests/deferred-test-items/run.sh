@@ -113,6 +113,169 @@ else
   ok "$t"
 fi
 
+# ---- Task 2: the helper ----------------------------------------------------
+
+# seed_dt <sandbox> — render an empty deferred-tests.md. Prints its path.
+seed_dt() {
+  local sandbox dest
+  sandbox="$1"
+  dest="$sandbox/workflow-stream/payments-feature-test/test/deferred-tests.md"
+  MI_DATA_ROOT="$sandbox" "$FM" init deferred-tests "$dest" \
+    "FEATURE_TEST=payments-feature-test" \
+    "QUEST_SLUG=2026-08-15-demo" \
+    "CREATED_AT=2026-08-15T09:04:00Z" >/dev/null 2>&1
+  printf '%s' "$dest"
+}
+
+# add_entry <sandbox> <feature> <scenario> <title>
+add_entry() {
+  MI_DATA_ROOT="$1" "$DT" upsert payments-feature-test \
+    --feature "$2" --scenario "$3" --title "$4" \
+    --reason "depends on a later feature" \
+    --action "1. Do the thing" \
+    --expected "- The thing happened" \
+    --deferred-at "2026-08-15T10:22:11Z" >/dev/null 2>&1
+}
+
+t="count returns 0 when the file is absent"
+sandbox="$(make_sandbox)"
+got="$(MI_DATA_ROOT="$sandbox" "$DT" count payments-feature-test 2>&1)"
+if [[ "$got" == "0" ]]; then ok "$t"; else ng "$t" "want 0, got '$got'"; fi
+
+t="count returns 0 for a freshly rendered (empty) file"
+# Regression pin: the template's entry-shape comment contains a worked example
+# with a `###` line. An unscoped parser counts it as a real entry, and a phantom
+# deferral would block the feature-test entry's completion forever.
+sandbox="$(make_sandbox)"; seed_dt "$sandbox" >/dev/null
+got="$(MI_DATA_ROOT="$sandbox" "$DT" count payments-feature-test 2>&1)"
+if [[ "$got" == "0" ]]; then
+  ok "$t"
+else
+  ng "$t" "want 0 for an empty artifact, got '$got' — the template's example is being parsed as an entry"
+fi
+
+t="list emits nothing for a freshly rendered (empty) file"
+n="$(MI_DATA_ROOT="$sandbox" "$DT" list payments-feature-test 2>/dev/null | sed '/^$/d' | wc -l | tr -d ' ')"
+if [[ "$n" == "0" ]]; then
+  ok "$t"
+else
+  ng "$t" "want 0 rows for an empty artifact, got $n"
+fi
+
+t="the template's example heading is not at column 0"
+if grep -qE '^### payments/B\.2' "$REPO_ROOT/templates/deferred-tests.md.tmpl"; then
+  ng "$t" "the entry-shape example is at column 0 — indent it two spaces (belt-and-braces for the scoped parser)"
+else
+  ok "$t"
+fi
+
+t="the template's entry-shape comment sits above the Deferred scenarios heading"
+cmt="$(grep -n 'ENTRY SHAPE' "$REPO_ROOT/templates/deferred-tests.md.tmpl" | head -1 | cut -d: -f1)"
+hdg="$(grep -n '^## Deferred scenarios$' "$REPO_ROOT/templates/deferred-tests.md.tmpl" | head -1 | cut -d: -f1)"
+if [[ -n "$cmt" && -n "$hdg" && "$cmt" -lt "$hdg" ]]; then
+  ok "$t"
+else
+  ng "$t" "the comment must precede the heading (comment line=$cmt, heading line=$hdg)"
+fi
+
+t="upsert auto-creates the file when absent"
+sandbox="$(make_sandbox)"
+add_entry "$sandbox" payments B.2 "refund shows in the audit trail"
+if [[ -f "$sandbox/workflow-stream/payments-feature-test/test/deferred-tests.md" ]]; then
+  ok "$t"
+else
+  ng "$t" "upsert did not create the artifact"
+fi
+
+t="upsert twice on the same key produces one entry"
+sandbox="$(make_sandbox)"; seed_dt "$sandbox" >/dev/null
+add_entry "$sandbox" payments B.2 "first title"
+add_entry "$sandbox" payments B.2 "second title"
+got="$(MI_DATA_ROOT="$sandbox" "$DT" count payments-feature-test 2>&1)"
+if [[ "$got" == "1" ]]; then ok "$t"; else ng "$t" "want 1 entry, got '$got'"; fi
+
+t="upsert replaces the block rather than appending"
+if MI_DATA_ROOT="$sandbox" "$DT" list payments-feature-test 2>/dev/null | grep -q 'second title' \
+   && ! MI_DATA_ROOT="$sandbox" "$DT" list payments-feature-test 2>/dev/null | grep -q 'first title'; then
+  ok "$t"
+else
+  ng "$t" "the replaced title is missing or the old one survived"
+fi
+
+t="upsert on two different keys produces two entries"
+sandbox="$(make_sandbox)"; seed_dt "$sandbox" >/dev/null
+add_entry "$sandbox" payments B.2 "refund audit"
+add_entry "$sandbox" checkout A.4 "cart survives expiry"
+got="$(MI_DATA_ROOT="$sandbox" "$DT" count payments-feature-test 2>&1)"
+if [[ "$got" == "2" ]]; then ok "$t"; else ng "$t" "want 2, got '$got'"; fi
+
+t="list emits TSV feature/scenario/merged-as/title"
+row="$(MI_DATA_ROOT="$sandbox" "$DT" list payments-feature-test 2>/dev/null | head -1)"
+f1="$(printf '%s' "$row" | cut -f1)"
+f2="$(printf '%s' "$row" | cut -f2)"
+f4="$(printf '%s' "$row" | cut -f4)"
+if [[ "$f1" == "payments" && "$f2" == "B.2" && "$f4" == "refund audit" ]]; then
+  ok "$t"
+else
+  ng "$t" "unexpected row: $(printf '%s' "$row" | tr '\t' '|')"
+fi
+
+t="merged-as is empty before the merge"
+f3="$(printf '%s' "$row" | cut -f3)"
+if [[ -z "$f3" ]]; then ok "$t"; else ng "$t" "want empty, got '$f3'"; fi
+
+t="set-merged-as writes the back-reference"
+MI_DATA_ROOT="$sandbox" "$DT" set-merged-as payments-feature-test payments B.2 C.1 >/dev/null 2>&1
+f3="$(MI_DATA_ROOT="$sandbox" "$DT" list payments-feature-test 2>/dev/null | grep '^payments' | cut -f3)"
+if [[ "$f3" == "C.1" ]]; then ok "$t"; else ng "$t" "want C.1, got '$f3'"; fi
+
+t="re-deferring preserves an existing Merged as"
+add_entry "$sandbox" payments B.2 "refund audit revised"
+f3="$(MI_DATA_ROOT="$sandbox" "$DT" list payments-feature-test 2>/dev/null | grep '^payments' | cut -f3)"
+if [[ "$f3" == "C.1" ]]; then
+  ok "$t"
+else
+  ng "$t" "re-defer wiped the merge back-reference (want C.1, got '$f3')"
+fi
+
+t="remove drops exactly one entry"
+MI_DATA_ROOT="$sandbox" "$DT" remove payments-feature-test payments B.2 >/dev/null 2>&1
+got="$(MI_DATA_ROOT="$sandbox" "$DT" count payments-feature-test 2>&1)"
+if [[ "$got" == "1" ]]; then ok "$t"; else ng "$t" "want 1 remaining, got '$got'"; fi
+
+t="remove on a missing entry exits non-zero"
+if MI_DATA_ROOT="$sandbox" "$DT" remove payments-feature-test payments B.2 >/dev/null 2>&1; then
+  ng "$t" "remove succeeded on an absent entry"
+else
+  ok "$t"
+fi
+
+t="upsert output validates against the schema"
+if "$FM" validate \
+     "$sandbox/workflow-stream/payments-feature-test/test/deferred-tests.md" \
+     deferred-tests >/dev/null 2>&1; then
+  ok "$t"
+else
+  ng "$t" "the file no longer validates after mutation"
+fi
+
+t="multi-line action round-trips through the block scalar"
+sandbox="$(make_sandbox)"; seed_dt "$sandbox" >/dev/null
+MI_DATA_ROOT="$sandbox" "$DT" upsert payments-feature-test \
+  --feature payments --scenario B.2 --title "multi" \
+  --reason "later feature" \
+  --action "1. First step
+2. Second step" \
+  --expected "- One
+- Two" \
+  --deferred-at "2026-08-15T10:22:11Z" >/dev/null 2>&1
+dest="$sandbox/workflow-stream/payments-feature-test/test/deferred-tests.md"
+if grep -q '^    2. Second step$' "$dest"; then
+  ok "$t"
+else
+  ng "$t" "multi-line action was not indented into the block scalar"
+fi
+
 # ---- Summary --------------------------------------------------------------
 
 printf "\n%d passed, %d failed\n" "$pass" "$fail"
