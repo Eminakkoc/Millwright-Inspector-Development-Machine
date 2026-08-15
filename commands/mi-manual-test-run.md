@@ -355,8 +355,9 @@ Two guided-only behaviors on top of the interactive contract:
 ##### 3.4 On `pass` / `fail` / `skip`
 
 - Upsert the verdict block for `<THIS_ID>` in `manual-test-results.md` body (one canonical block per scenario id). Do not append a second block if one already exists; replace that scenario's block.
-- Recompute `passed`/`failed`/`skipped` counts from the full set of verdict blocks. Then set `current-scenario` to the **next** uncommitted scenario id (or `null` if this was the last) — only AFTER the verdict block is committed, so the just-finished scenario is durable before the cursor advances.
-- Write body + frontmatter via temp file + atomic rename where the platform supports it. Scenario verdict commit unit: parse existing verdict blocks into `map[scenario_id]`, replace `map[<THIS_ID>]`, render blocks in plan order, recompute counts, update cursor, write temp, rename.
+- Recompute `passed`/`failed`/`skipped`/`deferred` counts from the full set of verdict
+  blocks; `passed + failed + skipped + deferred == total` must hold. Then set `current-scenario` to the **next** uncommitted scenario id (or `null` if this was the last) — only AFTER the verdict block is committed, so the just-finished scenario is durable before the cursor advances.
+- Write body + frontmatter via temp file + atomic rename where the platform supports it. Scenario verdict commit unit: parse existing verdict blocks into `map[scenario_id]`, replace `map[<THIS_ID>]`, render blocks in plan order, recompute all four counts, update cursor, write temp, rename.
 - **Parsing scope (load-bearing).** Verdict-block parsing — here, in Branch C's cursor-integrity check, and anywhere else the body is read — is scoped to the `## Per-scenario verdicts` section: start at that heading, stop at the next `## ` heading or EOF, and treat `### <id> — ` blocks inside that window as verdicts. Blocks outside it (notably `## Inspector-added checks`'s `### INS-<n>` blocks from guided mode) are NOT verdicts: they never enter `map[scenario_id]`, the counters, the cursor, or the auto-seed loop. An unscoped whole-body scan would swallow them and corrupt the counts.
 - **Duplicate-verdict-block recovery.** When parsing existing verdict blocks into `map[scenario_id]`, if two or more blocks share the same scenario id (corruption from a prior crash window or hand-edit), keep the latest block (the one that appears later in the file) as canonical, drop the earlier duplicate(s), emit a one-line `^warning:` to stderr naming the scenario id and the count of duplicates dropped. Then proceed with the upsert as normal. Refusal-and-prompt is NOT acceptable — silent self-healing matches the rest of the file's idempotency story.
 - Echo to chat as a single line: `<ID> ✅ <one-line outcome>` or `<ID> ❌ <one-line observation>` or `<ID> ⊘ skipped: <reason>`. Do NOT re-render the full scenario block in the echo.
@@ -384,18 +385,20 @@ current-scenario: null
 
 **Quote the timestamp.** `finished-at` and `started-at` are `type: string` in `schemas/manual-test-results.schema.yaml`; an unquoted ISO-8601 scalar is auto-typed by YAML as a datetime, not text. `frontmatter.sh validate` tolerates the drift but warns; every other reader of this file expects a string. The same applies anywhere this command writes frontmatter by hand.
 
-Recompute pass/fail/skip counts from the verdict blocks.
+Recompute `passed` / `failed` / `skipped` / `deferred` counts from the verdict blocks.
+The identity `passed + failed + skipped + deferred == total` must hold — deferred
+scenarios stay **inside** `total`.
 
 **Autonomous env-mode only — pre-finalize skip audit (runs BEFORE writing `state: complete`):** if `skipped > 0`, re-read every `skip` verdict block and check its recorded reason against the 3.3b bar — it must name a specific unobservable expectation and the channels attempted. Any skip whose reason reads as convenience ("similar to", "low value", time/effort, "likely passes", an empty or generic reason) is NOT terminal: re-enter Step 3 for that scenario and execute it properly — the 3.4 upsert replaces the skip verdict with the earned one. Only when every remaining skip is a genuine, attempt-backed capability gap may the run finalize. This audit is the enforcement backstop for the 100%-execution contract in 3.2b item 4.
 
-**Autonomous env-mode only:** the inspector was hands-off for the whole loop, so echo a one-line roll-up before the auto-seed decision: `"Autonomous manual test complete: <passed>/<total> passed, <failed> failed, <skipped> skipped."` When `skipped > 0`, follow it with one line per skipped scenario — `<ID> ⊘ <unobservable expectation> — attempted: <channels>` — so the inspector immediately sees that nothing was silently dropped. (Interactive mode already surfaced each verdict as the inspector gave it.)
+**Autonomous env-mode only:** the inspector was hands-off for the whole loop, so echo a one-line roll-up before the auto-seed decision: `"Autonomous manual test complete: <passed>/<total> passed, <failed> failed, <skipped> skipped, <deferred> deferred."` When `skipped > 0`, follow it with one line per skipped scenario — `<ID> ⊘ <unobservable expectation> — attempted: <channels>` — so the inspector immediately sees that nothing was silently dropped. (Interactive mode already surfaced each verdict as the inspector gave it.)
 
 ##### 4.2 Auto-seed prompt
 
 If `failed > 0`, ask the inspector:
 
 ```
-Manual test complete: <passed>/<total> passed, <failed> failed, <skipped> skipped.
+Manual test complete: <passed>/<total> passed, <failed> failed, <skipped> skipped, <deferred> deferred.
 Auto-seed <failed> failures as findings in inspector-review.md?
 Reply `y`, `n`, or `y --classify` to set scope per scenario (default if you reply `y`: scope=fix, severity=major).
 
@@ -512,7 +515,7 @@ A session break before this leaves `sub-flow=manual-testing` (re-enters cleanly 
 A hands-off run is a machine's opinion of the feature. The inspector may still want to see it with their own eyes — so after an autonomous run finalizes, **always offer the guided walkthrough**:
 
 ```
-Autonomous run finished: <passed>/<total> passed, <failed> failed, <skipped> skipped.
+Autonomous run finished: <passed>/<total> passed, <failed> failed, <skipped> skipped, <deferred> deferred.
 Want to walk through the same plan yourself now? I'll bring the environment back up
 (or reuse what's already running), explain each test case in plain language, and
 record YOUR verdicts. Reply y or n.
@@ -634,7 +637,7 @@ No mutation. This makes `--finalize-skipped` an honest finalization escape hatch
 ### Branch C — flow
 
 1. **Parse and self-heal verdict blocks** (scoped per step 3.4's parsing-scope rule), then run the cursor-integrity check above. Refuse on any failure.
-2. **Write bulk-skip verdicts.** For every scenario id from `current-scenario` onward (in plan order), upsert a verdict block with `Verdict: skip`, `Observation: bulk-skipped`, a `Recorded at` timestamp, and `Seeded: false`. **Pre-existing verdicts at or after `current-scenario` are left as-is** (Branch C never overwrites a real verdict; it only writes for scenarios that lack one). Recompute counts from the body. Set frontmatter `current-scenario: null`.
+2. **Write bulk-skip verdicts.** For every scenario id from `current-scenario` onward (in plan order), upsert a verdict block with `Verdict: skip`, `Observation: bulk-skipped`, a `Recorded at` timestamp, and `Seeded: false`. **Pre-existing verdicts at or after `current-scenario` are left as-is** (Branch C never overwrites a real verdict; it only writes for scenarios that lack one). Recompute `passed`/`failed`/`skipped`/`deferred` counts from the body; `passed + failed + skipped + deferred == total` must hold. Set frontmatter `current-scenario: null`.
 3. **Converge into Branch A step 4 (loop completion).** From here, the auto-seed prompt fires for any failed scenarios (bulk-skipped scenarios are NOT failures and do not enter the auto-seed loop), the helper writes seeded IRs per the family-inspection rules, and the LAST mutation is `progress.sh set sub-flow=none manual-test-state=complete`. **Terminal state is `manual-test-state=complete`, NOT `skipped`** — the run reached its terminal state, just with a higher skipped count.
 
 Branch C does NOT run the local-environment-up phase, the per-scenario present/perform loop (interactive render-and-wait, guided walkthrough, or autonomous execute-and-judge), or the pre-render verdict-already-committed check from Branch A step 3.1.

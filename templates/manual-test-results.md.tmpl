@@ -10,6 +10,7 @@ total: {{TOTAL}}
 passed: 0
 failed: 0
 skipped: 0
+deferred: 0
 started-at: {{TIMESTAMP}}
 finished-at: null
 ---
@@ -27,7 +28,7 @@ Each verdict block is upserted by scenario id as follows. The runner emits all f
 
 ### <SCENARIO_ID> — <VERDICT>
 
-- **Verdict:** pass | fail | skip
+- **Verdict:** pass | fail | skip | defer
 - **Observation:** <inspector reply>
 - **Recorded at:** <timestamp>
 - **Seeded:** false   ← only meaningful for `fail` verdicts; flipped to `true` after a *successful seed action* (helper exit 0 with no `^warning:` on stderr). Display/cache only — NOT a correctness mechanism. The seed-id grep-and-replace in `mi-manual-test-run` is what makes seeding idempotent. `--seed-only` mode ignores this field entirely.

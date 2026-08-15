@@ -375,6 +375,92 @@ else
   ng "$t" "3.4.1 folder tree does not list deferred-tests.md"
 fi
 
+# ---- Task 5: the deferred counter ------------------------------------------
+
+MTR_SCHEMA="$REPO_ROOT/schemas/manual-test-results.schema.yaml"
+MTR_TMPL="$REPO_ROOT/templates/manual-test-results.md.tmpl"
+MI_MTR="$REPO_ROOT/commands/mi-manual-test-run.md"
+
+t="results schema declares a deferred counter"
+if grep -qE '^  deferred:' "$MTR_SCHEMA"; then
+  ok "$t"
+else
+  ng "$t" "no 'deferred:' property in manual-test-results.schema.yaml"
+fi
+
+t="deferred is optional (absent from required:)"
+if awk '/^required:/{f=1;next} /^[a-z]/{f=0} f' "$MTR_SCHEMA" | grep -q 'deferred'; then
+  ng "$t" "deferred was added to required: — this invalidates every already-rendered results file"
+else
+  ok "$t"
+fi
+
+t="deferred declares default 0"
+if awk '/^  deferred:/{f=1;next} /^  [a-z]/{f=0} f' "$MTR_SCHEMA" | grep -q 'default: 0'; then
+  ok "$t"
+else
+  ng "$t" "deferred has no 'default: 0'"
+fi
+
+t="a results file WITHOUT deferred still validates"
+sandbox="$(make_sandbox)"
+old="$sandbox/old-results.md"
+cat > "$old" <<'EOF'
+---
+id: 22222222-2222-4222-8222-222222222222
+feature: payments
+plan-id: 33333333-3333-4333-8333-333333333333
+seed-family-id: 44444444-4444-4444-8444-444444444444
+generated-in-activation: 55555555-5555-4555-8555-555555555555
+state: in-progress
+current-scenario: null
+total: 3
+passed: 0
+failed: 0
+skipped: 0
+started-at: "2026-08-15T09:00:00Z"
+finished-at: null
+---
+
+# old
+EOF
+if "$FM" validate "$old" manual-test-results >/dev/null 2>&1; then
+  ok "$t"
+else
+  ng "$t" "back-compat broken: a pre-existing results file no longer validates"
+fi
+
+t="a results file WITH deferred validates"
+new="$sandbox/new-results.md"
+sed 's/^skipped: 0$/skipped: 0\ndeferred: 1/' "$old" > "$new"
+if "$FM" validate "$new" manual-test-results >/dev/null 2>&1; then
+  ok "$t"
+else
+  ng "$t" "schema rejects the new deferred key"
+fi
+
+t="results template carries deferred: 0"
+if grep -q '^deferred: 0$' "$MTR_TMPL"; then
+  ok "$t"
+else
+  ng "$t" "manual-test-results.md.tmpl does not render deferred: 0"
+fi
+
+t="the counter identity is stated in the runner"
+if grep -q 'passed + failed + skipped + deferred == total' "$MI_MTR"; then
+  ok "$t"
+else
+  ng "$t" "the four-term counter identity is not written down in mi-manual-test-run.md"
+fi
+
+t="all three recompute sites mention deferred"
+n="$(grep -c 'deferred' "$MI_MTR")"
+if [[ "$n" -ge 6 ]]; then
+  ok "$t"
+else
+  ng "$t" "expected >=6 'deferred' mentions across recompute sites and roll-ups, found $n"
+fi
+
 # ---- Summary --------------------------------------------------------------
 
 printf "\n%d passed, %d failed\n" "$pass" "$fail"

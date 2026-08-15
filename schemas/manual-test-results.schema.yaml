@@ -94,6 +94,17 @@ properties:
   skipped:
     type: integer
     minimum: 0
+  deferred:
+    type: integer
+    minimum: 0
+    default: 0
+    description: >
+      Count of scenarios the inspector deferred to this cycle's whole-feature
+      test. Optional with a default so results files rendered before this key
+      existed stay valid — a reader that sees no key reads 0. Deferred
+      scenarios remain inside `total`: they are plan scenarios that were
+      reached and dispositioned, unlike `INS-<n>` inspector-added checks,
+      which stay outside every counter.
   started-at:
     type: string
     minLength: 1
