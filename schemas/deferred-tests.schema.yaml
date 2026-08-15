@@ -1,0 +1,57 @@
+$schema: "http://json-schema.org/draft-07/schema#"
+$id: millwright-inspector-development-machine/deferred-tests.schema.yaml
+title: workflow-stream/<ft-name>/test/deferred-tests.md frontmatter
+description: >
+  Carried-forward manual-test scenarios for a cycle's whole-feature test
+  entry. Written by /mi-manual-test-run when the inspector answers `defer`
+  during an ordinary feature's manual-test run; read by
+  /mi-manual-test-plan's feature-test render path, which merges every entry
+  into `## 3. Test scenarios` above the `<!-- deferred-merge-point -->`
+  anchor.
+
+  Body holds one `### <originating-feature>/<originating-scenario> — <title>`
+  block per entry under `## Deferred scenarios`; this schema validates
+  frontmatter shape only. The composite heading key is the entry's identity —
+  what the upsert matches on and what the merge matches on.
+
+  Lifecycle: created at stage 1.5 alongside the feature-test folder, lives in
+  `test/` which is feature-permanent, and is never rotated into history.
+
+  No resolution counters live here. Whether an entry has been answered is
+  derived at gate time from the feature-test entry's manual-test-results.md,
+  so it can never go stale.
+
+type: object
+additionalProperties: false
+required:
+  - id
+  - feature-test
+  - quest-slug
+  - created-at
+
+properties:
+  id:
+    type: string
+    pattern: "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"
+    description: UUID for cross-references; minted via scripts/uuid.sh.
+
+  feature-test:
+    type: string
+    minLength: 1
+    pattern: "^[a-z0-9][a-z0-9-]*$"
+    description: >
+      The feature-test entry that owns this file; mirrors the
+      workflow-stream/<name>/ folder holding it.
+
+  quest-slug:
+    type: string
+    minLength: 1
+    description: >
+      Slug of the quest cycle this file belongs to. Deferrals are
+      cycle-scoped; the slug makes a stale file from a prior cycle
+      identifiable by inspection.
+
+  created-at:
+    type: string
+    minLength: 1
+    description: ISO-8601 timestamp captured at stage-1.5 creation.
