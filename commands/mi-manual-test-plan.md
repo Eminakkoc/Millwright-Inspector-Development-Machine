@@ -347,6 +347,8 @@ The `seed-family-id` to preserve was already captured in step 1. Preserving `see
 
 Render `workflow-stream/<feature>/test/manual-test-plan.md` from `templates/manual-test-plan.md.tmpl`. Generate a fresh plan `id` (UUIDv4) every time, but reuse `preserved_seed_family_id` from step 1 when present; otherwise create a new UUIDv4 `seed-family-id`. Populate `{{ACTIVATION_ID}}` with the value from `progress.sh get activation-id` (already backfilled in Step 1.0 for in-flight cycles).
 
+**The rendered plan's `defer` mention is advisory, not a runtime gate.** `manual-test-plan.md.tmpl`'s reply-vocabulary lines always mention `defer <reason>` with the caveat that it applies to multi-feature cycles only and never during the feature-test entry's own run — the template is static text, not conditionally rendered. The actual gate lives in `/mi-manual-test-run`, which calls `deferred-tests.sh offer-defer "$active_feature"` at each vocabulary-rendering site and only offers `defer` when it exits 0. So a generated plan never advertises a vocabulary the runner will not accept: the plan's caveat and the runner's live predicate describe the same rule, just at different times.
+
 **Resolve the requirements reference.** The template's frontmatter carries `{{REQUIREMENTS_FIELD}}` — a bare placeholder, not `requirements-id: {{REQUIREMENTS_ID}}` — the same `REQUIREMENTS_FIELD` + `!RAW!` sentinel shape `change-summary.md.tmpl` and `inspector-review.md.tmpl` already use (converted by Tasks 6 and 8). Resolve the value before rendering:
 
 ```bash

@@ -461,6 +461,125 @@ else
   ng "$t" "expected >=6 'deferred' mentions across recompute sites and roll-ups, found $n"
 fi
 
+# ---- Task 6: the defer disposition -----------------------------------------
+
+MI_MTP="$REPO_ROOT/commands/mi-manual-test-plan.md"
+MTP_TMPL="$REPO_ROOT/templates/manual-test-plan.md.tmpl"
+
+# seed_todo_ft <sandbox> <ft-name|""> — todo-list.md with or without a feature-test entry.
+#
+# Controller ruling (verified against the real todo.sh): feature-test-status
+# reports `none` unless BOTH the `feature-test:` frontmatter key AND a
+# matching `## <ft-name>` section containing an item are present. So when a
+# feature-test name is passed, this fixture also emits that section — an item
+# line shaped `- [x] (assignee) STATE — ID: text` with an em dash, which is
+# what todo.sh's parser requires to resolve the entry as checked.
+seed_todo_ft() {
+  local sandbox ftname ftline
+  sandbox="$1"; ftname="$2"
+  if [[ -n "$ftname" ]]; then ftline="feature-test: $ftname"; else ftline=""; fi
+  cat > "$sandbox/quest/2026-08-15-demo/todo-list.md" <<EOF
+---
+id: 66666666-6666-4666-8666-666666666666
+related-features: [payments, audit-log]
+description: Seed cycle.
+$ftline
+---
+
+# Todo list
+
+## payments
+
+- [x] (emin) IMPLEMENTED — PAY-001: ship payments.
+
+## audit-log
+
+- [x] (emin) IMPLEMENTED — AUD-001: ship audit log.
+EOF
+  if [[ -n "$ftname" ]]; then
+    cat >> "$sandbox/quest/2026-08-15-demo/todo-list.md" <<EOF
+
+## $ftname
+
+- [x] (emin) TODO — FT-001: test the whole feature implementation.
+EOF
+  fi
+}
+
+t="offer-defer is true for an ordinary feature in a multi-feature cycle"
+sandbox="$(make_sandbox)"; seed_todo_ft "$sandbox" payments-feature-test
+if MI_DATA_ROOT="$sandbox" "$DT" offer-defer payments >/dev/null 2>&1; then
+  ok "$t"
+else
+  ng "$t" "offer-defer refused for an ordinary feature"
+fi
+
+t="offer-defer is false in a single-feature cycle (DTI-008)"
+sandbox="$(make_sandbox)"; seed_todo_ft "$sandbox" ""
+if MI_DATA_ROOT="$sandbox" "$DT" offer-defer payments >/dev/null 2>&1; then
+  ng "$t" "offer-defer allowed a defer with no feature-test destination"
+else
+  ok "$t"
+fi
+
+t="offer-defer is false for the feature-test entry's own run"
+sandbox="$(make_sandbox)"; seed_todo_ft "$sandbox" payments-feature-test
+if MI_DATA_ROOT="$sandbox" "$DT" offer-defer payments-feature-test >/dev/null 2>&1; then
+  ng "$t" "offer-defer allowed a defer during the terminal entry's own run"
+else
+  ok "$t"
+fi
+
+t="the runner computes offer_defer via the script predicate, not a carried flag"
+if grep -q 'deferred-tests.sh offer-defer\|deferred-tests.sh" offer-defer' "$MI_MTR"; then
+  ok "$t"
+else
+  ng "$t" "mi-manual-test-run.md does not call the offer-defer predicate"
+fi
+
+t="all three inspector-facing prompt sites offer defer"
+n="$(grep -c '`defer <reason>`' "$MI_MTR")"
+if [[ "$n" -ge 3 ]]; then
+  ok "$t"
+else
+  ng "$t" "expected >=3 '\`defer <reason>\`' prompt mentions, found $n"
+fi
+
+t="autonomous mode explicitly never defers"
+if grep -qi 'autonomous.*never.*defer\|no `defer` verdict in autonomous' "$MI_MTR"; then
+  ok "$t"
+else
+  ng "$t" "mi-manual-test-run.md does not state that autonomous mode never defers"
+fi
+
+t="the runner states defer never falls into the fail or skip branch"
+if grep -q 'never falls into the `fail` or `skip`' "$MI_MTR"; then
+  ok "$t"
+else
+  ng "$t" "the fail/skip parsing guard is not stated"
+fi
+
+t="the runner states a deferred scenario seeds no IR"
+if grep -q 'never spawns an `IR-NNN`\|never spawns an IR-NNN' "$MI_MTR"; then
+  ok "$t"
+else
+  ng "$t" "the no-auto-seed guarantee is not stated"
+fi
+
+t="the plan template gates the defer vocabulary on the predicate"
+if grep -q 'defer' "$MTP_TMPL"; then
+  ok "$t"
+else
+  ng "$t" "manual-test-plan.md.tmpl never mentions defer"
+fi
+
+t="the plan generator prose gates the defer vocabulary"
+if grep -q 'offer-defer' "$MI_MTP"; then
+  ok "$t"
+else
+  ng "$t" "mi-manual-test-plan.md does not gate the vocabulary on offer-defer"
+fi
+
 # ---- Summary --------------------------------------------------------------
 
 printf "\n%d passed, %d failed\n" "$pass" "$fail"
