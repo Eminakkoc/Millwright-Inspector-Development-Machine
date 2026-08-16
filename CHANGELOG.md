@@ -1,5 +1,85 @@
 # Changelog
 
+## 1.7.0 — The whole-feature test: a terminal cycle entry that validates the seams
+
+Testing each feature in isolation misses the places features meet. A multi-feature cycle
+now ends with one extra queue entry that exercises the assembled work as a whole, and
+scenarios that could not run during an individual feature can be deliberately carried
+forward into it. Three features, 50 commits.
+
+### A terminal feature-test entry in every multi-feature cycle
+
+Stage 1 now emits one extra section — `<first-feature>-feature-test`, holding a single
+item — whenever a cycle distils to more than one feature. The name is derived
+deterministically and passes the same uniqueness gate ordinary names do. The entry is
+auto-selected once no unselected ordinary item remains, and is **pinned last** in the
+queue: stage-1.5 reordering cannot promote it ahead of ordinary work, and the pin's
+rationale is recorded in `queue-rationale.md`.
+
+A cycle distilling to exactly **one** feature emits nothing anywhere — no section, no
+`## Feature:` digest, no queue entry, no folder. Single-feature cycles are byte-identical
+to before.
+
+### An abbreviated pipeline for that entry
+
+The entry does not run the ordinary 8-stage workflow — there is nothing left to plan.
+Stages 2 and 3 are skipped in a single atomic `advance-to 2 5`, landing directly on the
+findings-and-manual-test machinery every feature already uses. No new `current-stage` or
+`sub-flow` value was introduced; the fork lives entirely in dispatcher branches.
+
+- **`<name>-feature-test/` has a narrower folder shape** — `implementation/` and `test/`,
+  and deliberately **no `blueprints/`**. The four operations that assume a blueprint
+  (`ensure-current`, `check-current`, `rotate`, `/mi-update-blueprint`) are documented as
+  never called against it.
+- **Diagrams frame the complete feature**, over the union commit range across every
+  finished contributor rather than one feature's own work.
+- **The whole-feature test plan is derived at run time** from the cycle's `IMPLEMENTED`
+  items and the implementation itself. Items left `[ ] TODO` were never built and are out
+  of scope, so a partially-selected cycle produces a plan covering only what shipped.
+- **Findings reuse the existing loop verbatim** rather than forking it, and the entry is
+  terminal: completing it closes the cycle.
+
+### Deferred test items — carrying a scenario forward instead of losing it
+
+A manual-test scenario that depends on a feature later in the queue previously had nowhere
+to go: failing it was wrong, skipping it dropped the coverage silently. There is now a
+fourth disposition.
+
+- **`defer <reason>`** joins `pass` / `fail` / `skip` in the manual-test run, parking the
+  scenario in a new `deferred-tests.md` artifact under the feature-test folder's `test/`
+  child. Each entry carries its originating feature, scenario, action, expectations, and
+  reason — enough to be run weeks later by someone who never opens the source workflow.
+- **Offered only when a destination exists.** One predicate covers both cases that have
+  none: a single-feature cycle, and the feature-test entry's own terminal run. When it
+  refuses, every prompt string is exactly what shipped before. Autonomous runs never
+  defer — deferral is inspector-driven by design.
+- **A `DEFERRED` verdict** is recorded in the originating feature's own results via a new
+  `deferred` counter, optional and defaulting to 0 so results files rendered before this
+  release stay valid. Deferred scenarios remain inside `total`;
+  `passed + failed + skipped + deferred == total` holds at every recompute site.
+- **Merged into the whole-feature plan** at generation time, at a reserved anchor, each
+  scenario keeping a `[deferred from <feature>]` marker so it stays traceable. The
+  scenario-id grammar is unchanged.
+- **Two completion gates** stop deferral from becoming a silent skip. The feature-test
+  entry cannot finalize while a parked scenario has no verdict (`pass`, `fail`, and `skip`
+  all resolve — the gate catches *absent* verdicts). Ordinary features get a report-only
+  check that never blocks their own completion, because the entry that resolves those
+  scenarios runs last.
+- **The folder is created early**, at stage 1.5 when the entry is enqueued, so deferrals
+  written during ordinary features have somewhere to land.
+
+### Two shipped defects repaired along the way
+
+Both were prerequisites of early folder creation, and both changed behaviour for cycles
+that have nothing to do with deferral:
+
+- `folder-id.sh ensure` was called with a bare feature name where a folder path is
+  required, so the call died.
+- `link-feature` was never called for a feature-test folder — its only other caller is
+  forbidden against that shape. The folder therefore went unlinked, `feature-lineage-check`
+  reported "no quest cycle references it", and `derive-feature-test-name` silently renamed
+  the entry to `<name>-2` on the next cycle.
+
 ## 1.6.13 — Stage-4 first-run deadlock, and YAML auto-typing in frontmatter
 
 Two reported bugs, plus a third of the same root cause found while verifying the fix.
