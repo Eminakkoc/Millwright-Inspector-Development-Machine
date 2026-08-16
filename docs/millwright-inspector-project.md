@@ -361,6 +361,13 @@ The per-cycle files under `quest/<active-slug>/`:
 to Pre-flight Step 2B. Older cycle subfolders are never deleted, moved, or overwritten;
 the dated slug doubles as a chronological index.
 
+**Feature-test section.** A cycle distilling to two or more features also carries a
+terminal `## <first-feature>-feature-test` section holding exactly one item (`FT-001: test
+the whole feature implementation`). It is named in the file's optional `feature-test:`
+frontmatter field, emitted last, and **auto-selected by the millwright** at stage 1.5
+rather than marked by the inspector. A single-feature cycle emits none of this — that
+feature's own workflow already tests it end to end.
+
 #### Todo-item state machine
 
 Items pass through five canonical states:
@@ -381,6 +388,11 @@ Assignee tag (the name in parentheses between the checkbox and the state word):
 - *Optional* on `[ ] TODO` lines (the inspector may pre-assign without selecting).
 - **Mandatory** on every `[x]` line. `todo.sh pend-selected` rejects unassigned
   selections with a list of offending IDs so the inspector can fix and retry.
+
+The one exception is the feature-test item, which stage 1 emits unassigned and stage 1.5
+promotes with an assignee **inherited** from the last item selected on the pass that
+completed the selection (`todo.sh set-state <id> PENDING --assignee <name>`). The
+invariant itself is unchanged: the line still carries a tag by the time it is `[x]`.
 
 Example progression:
 
@@ -462,6 +474,66 @@ Four regions:
    `mi-complete-workflow` housekeeping. Read-only consumers fold it into `primer.md`,
    `review-context.md`, and mid-cycle blueprint regen.
 
+#### 3.4.1 The feature-test folder — an abbreviated shape
+
+The terminal feature-test queue entry (`feature-test-queue-entry`) gets its own folder at
+`workflow-stream/<first-feature>-feature-test/`, laid out narrower than the ordinary
+four-region shape above:
+
+```
+workflow-stream/<first-feature>-feature-test/
+├── id.md                     # folder-identity marker, same as every feature folder
+├── implementation/
+│   ├── inspector-review.md   # findings file (IR-NNN blocks)
+│   ├── change-summary.md     # cached analysis of the union range
+│   └── diagrams/             # complete-feature render
+└── test/
+    ├── manual-test-plan.md
+    ├── manual-test-results.md
+    ├── deferred-tests.md
+    ├── manual-test-plan.history/
+    └── manual-test-results.history/
+```
+
+**Creation timing.** The folder is created at **stage 1.5**, at the point in `/mi-continue`
+Pre-flight Step 2A item 3.5 where the feature-test entry is confirmed and enqueued — not at
+`/mi-run` name derivation, and not lazily. Creation makes `implementation/`, `test/`, the
+`id.md` marker, the `reference.md` link, and an empty `deferred-tests.md`. It is fully
+idempotent and never truncates parked entries.
+
+This timing exists because `deferred-tests.md` receives writes during *ordinary* features'
+manual-test runs, which by construction all finish before this entry is activated.
+
+**The timing change makes none of the four operations below reachable.** The folder gains
+`implementation/` and `test/` earlier than before; it still never gains a `blueprints/`, so
+every row of the table stands exactly as written.
+
+`id.md` is minted the same way and carries the same identity contract as every other
+feature folder (§3.6) — nothing about folder linking changes for this shape.
+
+**`blueprints/` is deliberately omitted — this is the first feature folder shape that
+carries no `blueprints/` directory at all, by design**, because the abbreviated pipeline
+(§6.4) borrows blueprint material from the finished ordinary features' archived
+`blueprints/history/v[N]/` rather than owning any of its own. The operations that assume a
+`blueprints/` exist are therefore forbidden against this folder:
+
+| Operation | Status for a feature-test folder |
+| --- | --- |
+| `blueprints.sh ensure-current` | Never called — the Row A branch (§7.4) omits it; `/mi-apply-impact` refuses if invoked manually |
+| `blueprints.sh check-current [--require-primer]` | Never called — the stage-2 approve gate is skipped; stage 8 skips its preflight (§7.3) |
+| `blueprints.sh rotate` | Never called — stage 8 skips rotation (§7.3) |
+| `/mi-update-blueprint` | Not reachable — it is a stage-3+ command and stage 3 does not exist here |
+
+**Both children are permanent.** `implementation/` and `test/` stay exactly where they are
+when the cycle closes — stage 8 performs **no** archive move (contrast with the ordinary
+`implementation/` region above, which is moved into `history/v[N+1]/implementation/`).
+There was never a `current/` to rotate out of, so there is no live-versus-archived
+distinction to draw: `<feature-name>-feature-test/implementation/` **is** the permanent
+record of the whole-feature review and diagrams, and `test/` is already feature-permanent
+under the ordinary layout. Accepted consequence: re-running a feature-test entry
+**overwrites** the prior run's `implementation/` contents rather than versioning them —
+there is no `history/` to move the old contents into.
+
 ### 3.5 `progress.md` — the central state file
 
 A single YAML-frontmatter Markdown file at `quest/<active-slug>/progress.md`. Its
@@ -519,7 +591,8 @@ On resume the millwright reads `active`:
 `progress.sh set` is atomic-batched (validate-all → same-dir temp file → schema-validate →
 atomic rename) so a partial multi-field write can't corrupt the file. `advance-to <expected>
 <target> [--set k=v]...` performs whitelisted skip-transitions in a single atomic write —
-the whitelist is `3→5`, `5→7`, and `6→7`. Adjacent transitions use `advance`. Every
+the whitelist is `2→5`, `3→5`, `5→7`, and `6→7` (`2→5` is the feature-test entry's
+abbreviated-pipeline skip, §6.4). Adjacent transitions use `advance`. Every
 state-mutating subcommand calls the worktree-fingerprint guard (`mi_assert_worktree_match`)
 before writing.
 
@@ -751,13 +824,18 @@ so a new effort never mixes artifacts into a completed workflow's folder.
 queues.
 
 **Stage 1.5 — Selection + ordering (Pre-flight Handler).**
-- *Sub-state A* (`[x] TODO` lines exist): runs `todo.sh pend-selected`, groups PENDING
-  items by feature, repopulates the queue via `progress.sh enqueue` if mid-cycle, derives
-  cross-feature ordering signals (journal-first → heuristic short-circuit → optional
-  `dependency-mapper` sub-agent for code-aware ordering), and proposes a prioritized order
-  in chat.
-- *Sub-state B* (promotion done, `queue-rationale.md` missing or `status: draft`): writes
-  `queue-rationale.md`, runs `progress.sh reorder`, and auto-fires `/mi-apply-impact`.
+- *Sub-state A* (`[x] TODO` lines exist): runs `todo.sh pend-selected` (whose stdout
+  reports the promoted `<item-id>\t<assignee>` rows), evaluates `todo.sh
+  feature-test-status` and promotes the feature-test entry when it reports `ready`
+  (reverting it when it reports `premature`), groups PENDING items by feature,
+  repopulates the queue via `progress.sh enqueue` if mid-cycle, appends the feature-test
+  entry last via a separate `enqueue`, derives cross-feature ordering signals
+  (journal-first → heuristic short-circuit → optional `dependency-mapper` sub-agent for
+  code-aware ordering), and proposes a prioritized order in chat.
+- *Sub-state B* (promotion done, `queue-rationale.md` missing or `status: draft`):
+  validates the confirmed order with `progress.sh check-feature-test-pin` when the cycle
+  carries a feature-test entry, writes `queue-rationale.md`, runs `progress.sh reorder`,
+  and auto-fires `/mi-apply-impact`.
 
 **Stage 2 — Blueprint generation (`mi-apply-impact`).** Calls `progress.sh activate`
 (pops `queue[0]` into `active`), then follows the quest-driven runbook in
@@ -936,6 +1014,51 @@ If both worktrees do share a data root, the **worktree-fingerprint guard** catch
 most damaging case — a sibling worktree mutating an active block it doesn't own — and
 refuses with a guidance message before any state is written.
 
+### 6.4 The abbreviated pipeline (feature-test entries)
+
+A multi-feature cycle's terminal feature-test queue entry (`feature-test-queue-entry`) does
+not run the ordinary 8-stage workflow above. **The ordinary 8-stage narrative and its
+dispatch table (§6.1–6.2) are unedited and stay in force for every ordinary feature** — this
+section documents a second, narrower pipeline that runs *instead* of stages 2 and 3 for the
+one entry per cycle that carries the `feature-test:` identity, never as a replacement for
+the ordinary flow.
+
+The abbreviated pipeline validates the cycle's assembled work — every finished ordinary
+feature together — rather than building a new feature. It has **five steps**, all folded
+into the existing `current-stage` values `2`, `5`, `6`, `7`, `8`:
+
+| Step | Persisted state | Handler |
+| --- | --- | --- |
+| 1. Complete-feature diagrams | *not persisted* — runs in the 2→5 transition | Row A / `2 \| any` branch (§7.4) |
+| 2. Whole-feature test plan | `5` / `none` | `/mi-manual-test-plan` (feature-test path) |
+| 3. Manual test run | `5` / `manual-testing` | `/mi-manual-test-run` (unchanged) |
+| 4. Inspector review | `5` / `none` | Inspector Handler (unchanged) |
+| 5. Findings resolution | `6` / `reviewing` → `7` | Review-Resume Handler (unchanged) |
+
+In plain terms: **stages 2 and 3 are skipped** entirely — there is no blueprint approval
+gate and no planning chain, because there is nothing left to plan. The entry goes straight
+from activation (`current-stage=2`) to `current-stage=5` in one atomic transition
+(`progress.sh advance-to 2 5 --set sub-flow=none`), landing on the same `current-stage=5`
+findings-and-manual-test machinery every ordinary feature already uses. Stage 4 was already
+conceptual and unpersisted for ordinary features (§6.1); it has no persisted existence here
+either.
+
+This pipeline introduces **no new `current-stage` or `sub-flow` value** — every step above
+reuses a value the ordinary state machine already defines, and `progress.schema.yaml`
+therefore needs no edit for this feature. The fork lives entirely in dispatcher branches
+(§7.4) evaluated ahead of the ordinary rows' bodies, never in new schema-level state.
+
+**Derivation scope.** Wherever a step above derives material from the cycle (diagrams, the
+whole-feature test plan), only `IMPLEMENTED` items contribute — read via `todo.sh list
+IMPLEMENTED`. Unselected `[ ] TODO` items are out of scope: they were never built, so a
+partially-selected cycle produces a combined result covering only what shipped. The
+feature-test item excludes itself from its own derivation; its own id comes from
+`todo.sh feature-test-status` field 3.
+
+Step 2's whole-feature test plan takes a third derivation input: the feature-test entry's
+`test/deferred-tests.md`, whose entries are merged into `## 3. Test scenarios` above the
+`<!-- deferred-merge-point -->` anchor (DTI-005).
+
 ---
 
 ## 7. The workflow commands (full reference)
@@ -1054,6 +1177,35 @@ workflow lessons (Step 3.5 — `lessons-distiller` sub-agent, Branch III only, i
 the `workflow:<feature>/<requirements-id>` source-prefix guard); rotate the blueprint;
 archive `implementation/`; `progress.sh finish`; housekeeping (§6.2 stage 8).
 
+**The stage-8 substitution for a feature-test entry.** Branch III's steps branch on
+`todo.sh is-feature-test` across the four blueprint-dependent steps — everything else in
+Branch III (Step 0's detection, Step 2, Step 6, Step 7) runs identically for both kinds of
+entry:
+
+| Step | Ordinary | Feature-test |
+| --- | --- | --- |
+| 2 — `IMPLEMENTING` → `IMPLEMENTED` | runs | runs (its own item) |
+| 3 — commits list | `commits.sh populate-requirements` → `requirements.md` | union range → the entry's `change-summary.md` via `commits.sh populate-feature-test` |
+| 3.5 — lessons distillation | evidence keyed by requirements id | evidence = the entry's `inspector-review.md` + `manual-test-results.md` |
+| 4 — `check-current --require-primer` preflight | required to return 0 | **skipped** — nothing to assert without a `blueprints/` folder (§3.4.1) |
+| 4 — `blueprints.sh rotate` | runs | **skipped** |
+| 5 — `implementation/` archive move | runs | **skipped** — permanent in place (§3.4.1) |
+| 6 — `progress.sh finish` | runs | runs |
+| 7 — housekeeping | runs | runs |
+
+`requirements.md` never exists for a feature-test entry, so its commits list needs a
+different home: `change-summary.md` gains an optional `commits` array (the same `{sha,
+msg}` shape `requirements.md` uses), populated by `commits.sh populate-feature-test
+<feature>`. `commits.sh populate-requirements` is untouched — every ordinary feature's
+stage 8 still calls exactly the subcommand it always called. Because the feature-test entry
+is pinned last in the queue, its completion is what empties the queue, so the existing
+queue-empty closure (`quest.sh end`) runs unmodified and the cycle closes in one pass — no
+second completion path is introduced.
+
+Early folder creation (§ 3.4.1) adds **no fifth step** to this table. The entry performs no
+blueprint rotation and no archive move, and nothing Branch III reads depends on when the
+folder appeared.
+
 ### 7.4 The universal advancement signal — `/mi-continue`
 
 The single touchpoint at every inspector gate. Reads `progress.md` (and sibling files) and
@@ -1071,6 +1223,35 @@ dispatches. **Step 1** sanity-checks `$CLAUDE_PLUGIN_ROOT` and reads workflow st
 | **Row A — between features:** queue non-empty, `queue-rationale.md.status` confirmed (or absent), `(features − completed) == queue` exactly | Auto-fire `/mi-apply-impact` for `queue[0]` (no prompt) |
 | **Row B — post-finish housekeeping recovery:** queue empty, no TODO marks, `completed` non-empty, `completed[-1]`'s latest `reason.kind == "completion"`, `quest/active.md.status == "active"` | Auto-fire `/mi-complete-workflow` (Branch I — Step 7 only) |
 | catch-all (queue empty, no `[x] TODO`) | Delegate to `/mi-resume-workflow` |
+
+The feature-test entry adds **no new dispatcher rows**: it rides the existing Step 2A /
+Step 2B rows. Row A's ordering invariant (`queue-rationale.features − completed ==
+queue`, in order) continues to hold because the confirmed order — and therefore both
+`features:` and `queue` — ends with the pinned name. **Row A and the `2 | any` row each
+carry a branch evaluated ahead of their existing body; the rows themselves, their order,
+and their match conditions for every other feature are unchanged**:
+
+- **Row A** gains a branch ahead of its `/mi-apply-impact` fire: when `todo.sh
+  is-feature-test queue[0]` exits 0, it instead runs `progress.sh activate`
+  (byte-identical to the ordinary path), `folder-id.sh ensure` called with the resolved
+  folder path (`$data_root/workflow-stream/$ft_feature`), resolves and verifies the
+  union commit range (§6.4), sets `base-commit` to the earliest reachable base,
+  auto-fires `/mi-generate-implementation-diagrams`, initializes `review.sh init`, and
+  finishes with the atomic `progress.sh advance-to 2 5 --set sub-flow=none`. **No
+  `blueprints.sh ensure-current` call** — that omitted line is what separates this branch
+  from an ordinary activation.
+- **The `2 | any` row** gains the same branch ahead of the Approve Handler, for the two
+  states that leave a feature-test entry parked at `current-stage=2` (a no-flag
+  `/mi-abort-workflow`, or a session break between activation and the `advance-to 2 5`
+  above): when the active feature is the feature-test entry, it re-runs the same
+  diagram-pass-onward sequence instead of the blueprint sanity-check and the
+  `stage-2-to-3` clear gate. Accepted consequence: the diagram pass is **not resumable** —
+  an interruption re-runs it from scratch, which is safe because it is idempotent and
+  derives entirely from committed state.
+
+For any feature that is not the cycle's feature-test entry, `is-feature-test` exits 1 and
+control falls through to today's code path unchanged — the regression check this
+guarantees is run explicitly in `tests/feature-test-workflow/run.sh` (§9).
 
 **Active rows (`active != null`)** — keyed by `current-stage` + `sub-flow`:
 
@@ -1113,7 +1294,9 @@ cursor, counts) in one of three env-modes (`manual-test-env-mode`, persisted in
   the whole local environment up itself, then walks the inspector through the plan one
   scenario at a time: what it checks in ≤ 2 plain sentences, one concrete example, exactly
   what to do — then waits for the inspector's `pass` / `fail <observation>` /
-  `skip <reason>` / `pause`. Verdicts are always the inspector's, never self-determined.
+  `skip <reason>` / `defer <reason>` (offered only when the cycle has a feature-test entry
+  and the active feature is not it) / `pause`. Verdicts are always the inspector's, never
+  self-determined.
   Mid-walk the inspector can ask for notes or ad-hoc checks to be recorded; notes fold into
   the scenario's `Observation:`, ad-hoc checks land as `### INS-<n>` blocks under a
   `## Inspector-added checks` section that is excluded from the plan-shaped counters, the
@@ -1601,7 +1784,7 @@ Coverage policy:
 
 ### 8.3 Schemas (`schemas/`)
 
-**25 JSON-Schema-as-YAML files**, one per artifact type, validated by `ajv-cli` (preferred)
+**26 JSON-Schema-as-YAML files**, one per artifact type, validated by `ajv-cli` (preferred)
 or a `yq`-based structural fallback:
 
 | Schema | Validates |
@@ -1629,21 +1812,28 @@ or a `yq`-based structural fallback:
 | `diagrams-readme-implementation` | `implementation/diagrams/README.md` — `id`, `stage: implementation` |
 | `manual-test-plan` | `test/manual-test-plan.md` — `id`, `seed-family-id`, `feature`, `generated-in-activation`, `requirements-id`, … |
 | `manual-test-results` | `test/manual-test-results.md` — `id`, `plan-id`, `seed-family-id`, `state`, `current-scenario`, counts |
+| `deferred-tests` | `test/deferred-tests.md` — `id`, `feature-test`, `quest-slug`, `created-at`; body is `### <feature>/<scenario> — <title>` blocks keyed by composite identity, no separate numbering |
 | `pr-review-report` | `pr-reviews/*/report.md` — `id`, `pr-url`, `repo`, `pr-number`, `status` (`awaiting-marks \| partial \| applied`) |
 | `lessons-learned` | `lessons-learned.md` — `id` (the `L-NNN` lesson blocks in the body are appended by `lessons.sh`, not schema-validated) |
 
+`todo-list` and `summary` both carry an optional `feature-test` property (kebab-case
+string). Absent on single-feature cycles and on cycles generated before the field
+existed; when present it must also appear in `related-features` / `features`.
+
 ### 8.4 Templates (`templates/`)
 
-**27 templates.** Most are mustache-style and rendered by `frontmatter.sh init`, which
+**29 templates.** Most are mustache-style and rendered by `frontmatter.sh init`, which
 auto-injects a fresh UUID via `uuid.sh` if `UUID=` isn't passed, then substitutes the
-remaining `{{KEY}}` placeholders: `active-quest`, `blueprint-lessons`, `change-summary`,
-`config`, `context-ledger`, `decisions`, `folder-id`, `grounding-report`,
-`inspector-review`, `lessons-learned`, `manual-test-plan`, `manual-test-results`,
-`pr-review-report`, `primer`, `progress`, `queue-rationale`, `reason`, `reference`,
-`requirements`, `review-context`, `review-history`, `sub-agent-return`, `summary`,
-`todo-list`. (`inspector-review.md.tmpl` is the template for the `review-file` schema;
-the two `diagrams-readme-*` artifacts have no template — their READMEs are composed
-directly.)
+remaining `{{KEY}}` placeholders: `active-quest`, `blueprint-lessons`,
+`blueprint-review-context`, `change-summary`, `config`, `context-ledger`, `decisions`,
+`deferred-tests`, `folder-id`, `grounding-report`, `inspector-review`, `lessons-learned`,
+`manual-test-plan`, `manual-test-results`, `pr-review-report`, `primer`, `progress`,
+`queue-rationale`, `reason`, `reference`, `requirements`, `review-context`,
+`review-history`, `sub-agent-return`, `summary`, `todo-list`. (`inspector-review.md.tmpl`
+is the template for the `review-file` schema; `blueprint-review-context.md.tmpl` renders
+`blueprints/current/blueprint-review-context.md` (§7.9, Step B.4.5 of `mi-apply-impact`)
+and has no matching schema; the two `diagrams-readme-*` artifacts have no template —
+their READMEs are composed directly.)
 
 **Template authoring rules (v1.6.13).** Three rules, each learned from a shipped bug:
 
@@ -1684,12 +1874,13 @@ refit for per-batch use in v1.5; rendered by the sub-agents at review-call time,
 | `frontmatter.sh` | Read / write / init / validate YAML frontmatter. Subcommands: `init`, `get`, `set`, `validate`. |
 | `data-root.sh` | Resolve the data root: `MI_DATA_ROOT` → `CLAUDE_PLUGIN_USER_CONFIG_data_root` → `${PWD}/millwright-inspector`. Every other script sources this. |
 | `quest.sh` | Manage the `quest/active.md` pointer and resolve the active cycle's directory. Subcommands: `slug`, `start`, `end`, `init-pointer`, `current`, `dir`, `has-active`, `status`, `list`, `feature-section`. |
-| `progress.sh` | Manage the active cycle's `progress.md`. Subcommands: `init`, `activate`, `finish`, `requeue`, `reset`, `reorder`, `enqueue`, `get-active`, `queue-remaining`, `get`, `set`, `advance`, `advance-to`, `add-clear-recommendation`, `has-clear-recommendation`, `check-worktree`. |
-| `todo.sh` | Manage `todo-list.md`. Subcommands: `set-state`, `bulk-transition` (optional `--feature`), `pend-selected`, `list <state>`, `add`. Enforces the state machine and assignee invariants. |
-| `folder-id.sh` | Manage `id.md` markers and `reference.md`. Subcommands: `ensure`, `get`, `resolve <id>`, `list`, `init-reference`, `link-feature`. |
-| `blueprints.sh` | Manage `blueprints/`. Subcommands: `ensure-current`, `rotate`, `resume-partial`, `preserve-inspector-sections`, `check-current [--require-primer]`, `branch-status`. Rotation is resumable (`.partial.tmp → .partial → vN`). |
+| `progress.sh` | Manage the active cycle's `progress.md`. Subcommands: `init`, `activate`, `finish`, `requeue`, `reset`, `reorder`, `enqueue`, `get-active`, `queue-remaining`, `get`, `set`, `advance`, `advance-to` (atomic skip-transition; stage-pair whitelist `2→5, 3→5, 5→7, 6→7` — `2→5` is the feature-test entry's abbreviated-pipeline skip, §6.4), `add-clear-recommendation`, `has-clear-recommendation`, `check-worktree`, `check-feature-test-pin <ft-name> <order...>` (stage-1.5 validation; exit 0 when the name is absent from the order or is its last element, exit 3 otherwise; reads no files; deliberately separate from `reorder`, whose permutation-only contract is **unchanged** — a guard inside `reorder` would alter behaviour for cycles that carry no feature-test entry at all). |
+| `todo.sh` | Manage `todo-list.md`. Subcommands: `set-state` (optional `--assignee`), `bulk-transition` (optional `--feature`), `pend-selected` (reports promoted `<item-id>\t<assignee>` rows on stdout), `list <state>`, `add`, `feature-test-status`, `is-feature-test <name>` (read-only predicate; exit 0 when `<name>` is the cycle's pinned feature-test entry, exit 1 otherwise). Enforces the state machine and assignee invariants. |
+| `folder-id.sh` | Manage `id.md` markers and `reference.md`. Subcommands: `ensure`, `get`, `resolve <id>`, `list`, `init-reference`, `link-feature`, `feature-lineage-check`, `derive-feature-test-name`. |
+| `blueprints.sh` | Manage `blueprints/`. Subcommands: `ensure-current`, `rotate`, `resume-partial`, `preserve-inspector-sections`, `check-current [--require-primer]`, `branch-status`, `deferred-tests-path`. Rotation is resumable (`.partial.tmp → .partial → vN`). |
+| `deferred-tests.sh` | Manage `<ft-name>/test/deferred-tests.md`, the carried-forward manual-test scenarios. Subcommands: `path`, `ensure`, `count`, `list`, `upsert` (idempotent by the `<originating-feature>/<originating-scenario>` composite key; preserves an existing `Merged as:`), `set-merged-as`, `remove`, `unresolved <ft> <results-path>` (Gate 1's read; prints one TSV row per deferred entry with no `pass`/`fail`/`skip` verdict in the feature-test entry's results — empty output means nothing blocks), `offer-defer <feature>` (read-only predicate; exit 0 when `defer` should be offered for that feature, exit 1 otherwise). |
 | `review.sh` | Manage `inspector-review.md` / `review-context.md`. Subcommands: `init`, `add`, `set-status`, `iterate`, `list-open`, `list-open-summaries`, `sync-refs`, `canonicalize`, `strip-freeform`, plus the manual-test seeding helpers (`find-by-seed-id`, `find-by-seed-id-family`, `upsert-manual-test-failure`). IDs are `IR-NNN`, monotonically incremented. |
-| `commits.sh` | Query `base-commit..HEAD`. Subcommands: `list`, `yaml`, `populate-requirements`, `changed-files`, `changed-files-only`, `change-summary-fresh`, `diagrams-fresh`. |
+| `commits.sh` | Query `base-commit..HEAD`. Subcommands: `list`, `yaml`, `populate-requirements`, `changed-files`, `changed-files-only`, `change-summary-fresh`, `diagrams-fresh`, `feature-test-range <ft-feature>` (resolves and verifies the union commit range across the cycle's `IMPLEMENTED` features), `populate-feature-test <ft-feature>` (writes the union range's commits into the entry's `change-summary.md`, the `requirements.md`-shaped home used by stage 8's substitution, §7.3). |
 | `ingest.sh` | Convert non-text journal files to sibling `.md` (docling for documents, stub for images / short PDFs). |
 | `doctor.sh` | Dependency detection. JSON or human output; `--preflight` mode runs `git rev-parse --verify HEAD`. |
 | `bundle.sh` | Engine for `/mi-export-bundle`. Subcommand: `export`. |
@@ -2128,7 +2319,8 @@ invoke `/clear` programmatically).
 - **Primer** — a compact derived snapshot (`primer.md`, `review-context.md`) that bootstraps
   a long-running stage.
 - **`progress.sh advance-to`** — atomic skip-transition with a stage-pair whitelist
-  (`3→5`, `5→7`, `6→7`); `--set field=value` arguments land in the same atomic write.
+  (`2→5`, `3→5`, `5→7`, `6→7`); `--set field=value` arguments land in the same atomic
+  write.
 - **Quest** — the cycle-wide working state under `quest/<active-slug>/`, plus the permanent
   archive of past cycles, plus the `quest/active.md` pointer.
 - **re-spec / re-plan / re-implement / fix** — the four scope tiers for a finding, in

@@ -130,9 +130,135 @@ Order matters — Rows A/B (auto-fire) must be evaluated **after** the manual-ac
 | `[x] TODO` lines exist in `todo-list.md` (selections not yet promoted) | **Pre-flight Step 2A** — promote + propose order |
 | no `[x] TODO` lines, `queue_count > 0`, `queue-rationale.md` missing | **Pre-flight Step 2B** — confirm proposed order + auto-fire `/mi-apply-impact` |
 | no `[x] TODO` lines, `queue_count > 0`, `queue-rationale.md` present, top-level `status: draft` (Item 7 multi-batch) | **Pre-flight Step 2B** (extended) — confirm/update the latest batch, refresh top-level `features:`/`batch:`, flip `status` to `confirmed`, auto-fire `/mi-apply-impact` |
-| **Row A — between features:** active is null AND `queue_count > 0` AND `queue-rationale.md.status` (or absent → confirmed) is `confirmed` AND `(queue-rationale.md.features − progress.completed, preserving order)` equals `progress.queue` exactly | Auto-fire `/mi-apply-impact` |
+| **Row A — between features:** active is null AND `queue_count > 0` AND `queue-rationale.md.status` (or absent → confirmed) is `confirmed` AND `(queue-rationale.md.features − progress.completed, preserving order)` equals `progress.queue` exactly | Resolve `queue[0]`. If `todo.sh is-feature-test "$next"` exits 0, bind `ft_feature="$next"` and run the **Feature-test entry sequence** below — it defers `progress.sh activate` until after the range check passes. Otherwise auto-fire `/mi-apply-impact` (unchanged). |
 | **Row B — post-finish housekeeping recovery:** active is null AND queue empty AND no `[x] TODO` AND no `[ ] TODO` AND `progress.completed` non-empty AND `blueprints/history/v[N]/reason.md.kind == "completion"` for `completed[-1]` AND `quest/active.md.status == "active"` | Auto-fire `/mi-complete-workflow` (short-circuits to its Branch I — Step 7 housekeeping only) |
 | `queue_count == 0` and no `[x] TODO` lines (catch-all) | Delegate to `/mi-resume-workflow` |
+
+**Feature-test entry sequence** (shared by Row A and the `2 | any` recovery branch).
+Runs when `$ft_feature` is (or is about to become) the cycle's feature-test entry. It
+replaces stages 2 and 3 entirely: no blueprint is generated, approved, or planned.
+
+**This sequence never calls `blueprints.sh ensure-current`.** That single omission is what
+separates it from an ordinary activation, and it is why the branch cannot delegate to
+`/mi-apply-impact` — see `docs/superpowers/specs/2026-08-14-feature-test-workflow-design.md`
+§1.2.
+
+**Precondition: the caller binds `ft_feature` before entering this sequence** — nothing
+inside the sequence itself resolves it:
+
+- **Row A:**
+
+  ```bash
+  next="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh queue-remaining | sed '/^$/d' | head -1)"
+  if $CLAUDE_PLUGIN_ROOT/scripts/todo.sh is-feature-test "$next"; then
+    ft_feature="$next"
+    # → run the Feature-test entry sequence below. Do NOT call
+    #   progress.sh activate here — step 2 below does that, and only after
+    #   step 1 has confirmed the range resolves.
+  else
+    # Ordinary feature: falls through to today's path, byte-identical.
+    /mi-apply-impact
+  fi
+  ```
+
+- **The `2 | any` recovery branch:** `ft_feature="$active_feature"` — the feature is
+  already active (that is why it is parked at `current-stage=2` from a *previous*
+  invocation), so step 2 below is a no-op for this caller.
+
+```bash
+# 1. Resolve and verify the union range BEFORE any mutation from this sequence.
+#    Exit 3/4/5 are refusals; commits.sh prints its own diagnostic to stderr,
+#    which surfaces directly here — nothing redirects it away. pipefail is
+#    set in THIS block because head's default exit status would otherwise
+#    mask a failing feature-test-range call (the shipped precedent at
+#    commits.sh populate-feature-test only gets away with the bare
+#    `| head -1` because set -euo pipefail is already active for that whole
+#    file; this prose block needs its own).
+set -o pipefail
+if ! range_line="$($CLAUDE_PLUGIN_ROOT/scripts/commits.sh feature-test-range "$ft_feature" | head -1)"; then
+  exit 1
+fi
+union_base="$(printf '%s' "$range_line" | cut -f1)"
+```
+
+If step 1 exits 1, relay the diagnostic printed above (exit 3/4/5's own message —
+unreachable finished feature, no contributor, or diverged bases) to the inspector and
+stop. Nothing has been written by this sequence yet at this point.
+
+2. **Activate — Row A only.** On the recovery branch `$ft_feature` is already active;
+   skip this step there. On Row A, only *now* — after step 1 has already confirmed the
+   range resolves — call:
+
+   ```bash
+   $CLAUDE_PLUGIN_ROOT/scripts/progress.sh activate >/dev/null
+   ```
+
+   Deferring `activate` to this point, instead of calling it before step 1, is what
+   makes a step-1 refusal on the Row A path genuinely leave `progress.md` untouched.
+   `progress.sh activate` itself stays **byte-identical** — it keeps writing
+   `current-stage=2` for every feature without exception; only *when* Row A calls it
+   changes.
+
+3. **Folder marker. NO `ensure-current`** — this folder has no `blueprints/`.
+
+   `folder-id.sh ensure` takes a **folder path**, not a feature name — `_fid_ensure`
+   opens with `[[ -d "$folder" ]] || mi_die "folder not found: $folder"`. Passing a bare
+   name dies.
+
+   ```bash
+   data_root="$($CLAUDE_PLUGIN_ROOT/scripts/data-root.sh)"
+   $CLAUDE_PLUGIN_ROOT/scripts/folder-id.sh ensure "$data_root/workflow-stream/$ft_feature"
+   ```
+
+   Idempotent: `ensure` returns the existing id when `id.md` is already present, which is
+   the normal case once stage 1.5 has created the folder (§ 3.4.1).
+
+4. **Pin the union base** so the shipped freshness caches (`commits.sh
+   change-summary-fresh` / `diagrams-fresh`) work unchanged — both key on
+   `.active.base-commit` and HEAD.
+
+   ```bash
+   $CLAUDE_PLUGIN_ROOT/scripts/progress.sh set "base-commit=$union_base"
+   ```
+
+5. **Run the complete-feature diagram pass** — invoke `/mi-generate-implementation-diagrams`,
+   which auto-detects the feature-test path (see that command's Step 1.4).
+
+6. **Initialize the findings skeleton** (idempotent — `review.sh init` refuses to overwrite):
+
+   ```bash
+   data_root="$($CLAUDE_PLUGIN_ROOT/scripts/data-root.sh)"
+   ov_file="$data_root/workflow-stream/$ft_feature/implementation/inspector-review.md"
+   [[ -f "$ov_file" ]] || $CLAUDE_PLUGIN_ROOT/scripts/review.sh init "$ft_feature"
+   ```
+
+7. **Atomic advance into the review step:**
+
+   ```bash
+   $CLAUDE_PLUGIN_ROOT/scripts/progress.sh advance-to 2 5 \
+     --set sub-flow=none \
+     --set implementation-completed=true
+   ```
+
+   `implementation-completed=true` is **load-bearing, not cosmetic**. `/mi-resume-workflow`'s
+   Step 4 invariant asserts that any feature at stage ≥ 5 has it set; without it, every
+   `/mi-resume-workflow` on a feature-test entry would report "State corruption detected" and
+   recommend `/mi-abort-workflow`. It is also true on its face: the implementation is
+   complete — that is the premise of running a combined test at all.
+
+8. **Hand off at stage 5** with the manual-test prompt, exactly as the stage-3 Resume
+   Handler's Step 7 does. Answering `y` auto-fires `/mi-manual-test-plan --from-resume`,
+   which takes its own feature-test derivation path.
+
+**Not resumable.** An interruption during step 1 on the Row A path leaves nothing
+written at all — `progress.sh activate` has not run yet. An interruption at or after
+step 2 leaves the entry at stage 2 and the whole pass — steps 1 through 7 — re-runs
+from scratch on the next `/mi-continue`. Acceptable: the pass is idempotent and derives
+entirely from committed state.
+
+For any feature that is not the cycle's feature-test entry, `is-feature-test` exits 1 and
+control falls through to today's auto-fire unchanged on Row A, or to the Approve Handler
+unchanged on the `2 | any` row below. Ordinary features are unaffected.
 
 **Active cases (`active_feature != "null"`):**
 
@@ -143,13 +269,21 @@ sub_flow="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get sub-flow)"
 
 | Current stage | Sub-flow         | Handler                                                       |
 | ------------- | ---------------- | ------------------------------------------------------------- |
-| 2             | (any)            | **Approve Handler** — auto-fire `/mi-plan-implementation`     |
+| 2             | (any)            | `todo.sh is-feature-test "$active_feature"` → **Feature-test entry sequence** (recovery re-entry). Otherwise → **Approve Handler** |
 | 3             | (any)            | Post-chain resume (see Resume Handler below)                  |
 | **5**         | **`manual-testing`** | **Manual-Test-Resume Handler** (manual-test paused or in progress — re-enters `/mi-manual-test-run`) |
 | 5             | (any)            | Inspector-review received (see Inspector Handler below)         |
 | 6             | reviewing        | Post-review-session resume (see Review-Resume Handler below)  |
 | 7             | (any)            | Stage-7 finalize — auto-fire `/mi-complete-workflow` (Item 4 of v11 plan; idempotent via Branch II in mi-complete-workflow when re-entered after a partial finalize) |
 | any other     | —                | Delegate to `/mi-resume-workflow` for state diagnosis         |
+
+**Why the stage-2 row needs the branch too.** Two states park a feature-test entry at
+`current-stage=2`: `/mi-abort-workflow` with no flag (`progress.sh reset` sets stage 2),
+and a session break between activation and `advance-to 2 5`. Both re-enter here, and both
+want the same idempotent sequence. Bind `ft_feature="$active_feature"` before invoking
+it — see the sequence's precondition above; step 2 there (`progress.sh activate`) is a
+no-op for this caller since the feature is already active. Ordinary features still reach
+the Approve Handler on exactly today's condition.
 
 The `5 | manual-testing` row covers paused or in-progress manual-test runs — the Manual-Test-Resume Handler re-enters `/mi-manual-test-run` to continue from the persisted `current-scenario`. It must come **before** the `5 | (any)` row in the table; tables evaluate top-down and a misordered append would shadow the manual-testing row, misrouting paused manual tests to the Inspector Handler and treating them as normal findings review.
 
@@ -168,21 +302,129 @@ Reached when the inspector has just finished marking items (`[x] TODO` lines exi
 1. **Promote the marked items.**
    ```bash
    $CLAUDE_PLUGIN_ROOT/scripts/progress.sh queue-remaining >/dev/null  # confirms progress.md exists
-   $CLAUDE_PLUGIN_ROOT/scripts/todo.sh pend-selected
+   promoted="$($CLAUDE_PLUGIN_ROOT/scripts/todo.sh pend-selected)"
    ```
    `pend-selected` rejects any `[x] TODO` line missing an `(assignee)` tag — relay the offenders to the inspector, ask for assignee names, and stop. The inspector fixes the file and re-types `/mi-continue`.
+
+   Its **stdout** carries one `<item-id>\t<assignee>` row per promoted item, in document order; `$promoted` holds them for item 1.5 below.
+
+1.5. **Evaluate the feature-test entry (multi-feature cycles only).**
+
+   ```bash
+   ft_row="$($CLAUDE_PLUGIN_ROOT/scripts/todo.sh feature-test-status)"
+   ft_status="$(printf '%s' "$ft_row" | cut -f1)"
+   ft_name="$(printf '%s' "$ft_row" | cut -f2)"
+   ft_item_id="$(printf '%s' "$ft_row" | cut -f3)"
+   ft_blocking="$(printf '%s' "$ft_row" | cut -f4)"
+   ft_fallback_assignee="$(printf '%s' "$ft_row" | cut -f5)"
+   printf 'feature-test: status=%s name=%s item=%s blocking=%s fallback=%s\n' \
+     "$ft_status" "$ft_name" "$ft_item_id" "$ft_blocking" "$ft_fallback_assignee"
+   ```
+
+   This block **prints** what it read — the values themselves do not survive into later Bash blocks (each Bash tool call is a fresh subshell; see Step 1a), so the printed line is what the agent branches on here, and later items (3.5, 4, 5) re-derive their own copies rather than trusting an export from this fence.
+
+   Branch on `$ft_status`:
+
+   - **`none`** — no feature-test entry in this cycle (single-feature, or a cycle predating the field). Do nothing.
+   - **`blocked`** — ordinary `[ ]` items remain. Do nothing, and say nothing about the entry; the hand-off text already explained it.
+   - **`ready`** — every ordinary item is now selected or cancelled. Inherit the assignee from the **last** row of `$promoted` (that is, the last one in document order on the pass that completed the selection); when `$promoted` is empty — a re-run after an interrupted session — fall back to `$ft_fallback_assignee`. If both are empty (only reachable by hand-editing, since `pend-selected` and `todo.sh add` both enforce the tag), **ask the inspector for a name** rather than promoting untagged: an untagged `[x]` line would fail the assignee invariant every later `pend-selected` re-checks.
+
+     ```bash
+     $CLAUDE_PLUGIN_ROOT/scripts/todo.sh set-state "$ft_item_id" PENDING --assignee "$inherited_assignee"
+     ```
+
+   - **`premature`** — the inspector marked the entry by hand while ordinary items remain, and `pend-selected` promoted it early. Revert it (their `(assignee)` tag is preserved, leaving `- [ ] (emin) TODO — …`) and explain:
+
+     ```bash
+     $CLAUDE_PLUGIN_ROOT/scripts/todo.sh set-state "$ft_item_id" TODO
+     ```
+
+     > "`<ft_name>` is auto-managed — I've unmarked it. It selects itself once every ordinary item is selected or cancelled, and it's pinned last in the queue."
+
+   - **`selected`** — already promoted on an earlier pass. Do nothing here; item 3.5 still checks whether it needs queueing.
+
 2. **Group PENDING items by feature.** Read `todo-list.md` and collect the set of feature section headings (`## <feature>`) that contain `[x] PENDING` lines.
 3. **Detect the queue source state.**
    ```bash
    queue_count="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh queue-remaining 2>/dev/null | sed '/^$/d' | wc -l | tr -d ' ')"
    ```
-   - **If `queue_count > 0`:** the queue was seeded by `/mi-run` (initial cycle). It already lists every feature found in the journal, in some default order. Skip to step 5.
+   - **If `queue_count > 0`:** the queue was seeded by `/mi-run` (initial cycle). It already lists every feature found in the journal, in some default order — no repopulation needed. Proceed to item 3.5, then item 4 and step 5.
    - **If `queue_count == 0`:** mid-cycle re-entry (Finding 6 — the cycle's first batch already completed and the inspector is marking more items now). The queue must be repopulated from the freshly-PENDING feature names:
      ```bash
      $CLAUDE_PLUGIN_ROOT/scripts/progress.sh enqueue <feat1> [<feat2> ...]
      ```
      where `<featN>` is the de-duplicated set of feature headings that hold PENDING items in `todo-list.md`. `enqueue` refuses duplicates against `queue ∪ completed`, so a feature already finished in this cycle would error out — surface that to the inspector (they probably wrote a TODO under the wrong heading).
+
+     Pass **only ordinary feature names** here, **excluding `$ft_name`** — the feature-test entry is appended separately by item 3.5 so it lands last in both the initial and the mid-cycle branch.
+
+3.5. **Append the feature-test entry to the queue.** Runs after item 3 regardless of which branch fired — both the initial-cycle branch (`queue_count > 0`) and the mid-cycle branch (`queue_count == 0`) fall through to this item. Within that, it actually enqueues when `$ft_status` is `ready` or `selected` and the name is not already present in either the queue or `completed`. This is its own fence, so it re-derives `$ft_status`/`$ft_name` itself rather than trusting item 1.5's — each Bash tool call is a fresh subshell (Step 1a); relying on the earlier fence's export is exactly what makes this step fail silently:
+
+   ```bash
+   quest_dir="$($CLAUDE_PLUGIN_ROOT/scripts/quest.sh dir)"
+   ft_row="$($CLAUDE_PLUGIN_ROOT/scripts/todo.sh feature-test-status)"
+   ft_status="$(printf '%s' "$ft_row" | cut -f1)"
+   ft_name="$(printf '%s' "$ft_row" | cut -f2)"
+
+   if [[ -n "$ft_name" && "$ft_status" != "none" && "$ft_status" != "blocked" && "$ft_status" != "premature" ]]; then
+     queued_now="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh queue-remaining 2>/dev/null || true)"
+     completed_now="$($CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get "$quest_dir/progress.md" 'completed[]' 2>/dev/null || true)"
+     ft_already=0
+     if printf '%s\n' "$queued_now" | grep -qx "$ft_name"; then
+       ft_already=1
+     fi
+     if printf '%s\n' "$completed_now" | grep -qx "$ft_name"; then
+       ft_already=1
+     fi
+     if [[ "$ft_already" -eq 0 ]]; then
+       $CLAUDE_PLUGIN_ROOT/scripts/progress.sh enqueue "$ft_name"
+     fi
+
+     # Create the feature-test folder now (DTI-002) — see prose below. This
+     # sits inside the enclosing ft_status guard above (the same one that
+     # wraps the enqueue call), not inside the narrower ft_already guard the
+     # enqueue call itself uses — so it re-runs on a mid-cycle re-entry even
+     # when ft_already=1 skipped the enqueue, while a single-feature cycle
+     # ($ft_status=none, $ft_name empty) or a still-blocked entry never
+     # touches workflow-stream/ at all. Idempotent either way.
+     data_root="$($CLAUDE_PLUGIN_ROOT/scripts/data-root.sh)"
+     ft_dir="$data_root/workflow-stream/$ft_name"
+     mkdir -p "$ft_dir/implementation" "$ft_dir/test"
+     $CLAUDE_PLUGIN_ROOT/scripts/folder-id.sh ensure "$ft_dir" >/dev/null
+     $CLAUDE_PLUGIN_ROOT/scripts/folder-id.sh link-feature "$ft_name"
+     $CLAUDE_PLUGIN_ROOT/scripts/deferred-tests.sh ensure "$ft_name" >/dev/null
+   fi
+   ```
+
+   The guard matters: `enqueue` **errors** on a duplicate rather than no-opping, so a `/mi-continue` re-run after a session break would abort here without it. Checking `completed` alongside `queue-remaining` matters too — `enqueue` itself refuses against `queue ∪ completed`, not just `queue`. On a mid-cycle re-entry *after* the feature-test entry itself already finished its whole workflow, `$ft_status` reads `selected` (the checkbox is still `[x]` in `todo-list.md`) but the name now sits in `progress.completed`, not in `queue` — a queue-only guard would pass and then `enqueue` would abort stage 1.5 with no recovery short of hand-editing `progress.md`. A feature-test entry already in `completed` is deliberately not re-queued. Splitting this from the promotion in item 1.5 is what guarantees last position in both branches — the initial cycle skips item 3's `enqueue` entirely, while the mid-cycle branch enqueues ordinary features first.
+
+   **Create the feature-test folder now (DTI-002).** The entry is confirmed and queued, so
+   its folder comes into existence here — not at `/mi-run` name derivation, and not lazily
+   on the first deferral. Deferrals happen during ordinary features, which by construction
+   run before this entry is ever activated, so `deferred-tests.md` must be writable long
+   before Row A fires. The creation lines above live inside the enclosing `ft_status` guard
+   (the same one that wraps the `enqueue` call), not inside the narrower `ft_already` guard
+   the `enqueue` call itself uses — so creation re-runs on a mid-cycle re-entry even when
+   `ft_already=1` skipped the enqueue, while that placement still keeps a single-feature
+   cycle or a still-`blocked` entry from ever touching `workflow-stream/`.
+
+   Every step is idempotent: `mkdir -p` no-ops, `ensure` returns the existing id, and
+   `deferred-tests.sh ensure` returns the existing path without re-rendering — so a
+   re-entrant Step 2A can never truncate parked entries.
+
+   **No `blueprints/`.** That omission is the whole point of the abbreviated shape
+   (§ 3.4.1) and creating the folder early does not change it.
+
+   **The `link-feature` call is load-bearing, not housekeeping.** Its only other caller is
+   `blueprints.sh ensure-current`, which § 3.4.1 forbids against a feature-test folder — so
+   without this line the folder is never linked into the cycle's `reference.md`. On a later
+   cycle `feature-lineage-check` then reports `unknown: … no quest cycle references it` and
+   exits 4, `derive-feature-test-name` reads any non-zero as "candidate taken", and the
+   entry silently renames itself to `<name>-2`. Early creation makes the folder always
+   present, which turns that latent rename into a certain one unless this call is here.
+
 4. **Derive cross-feature ordering signals — journal-first, code-aware as fallback.** Replaces the prior unconditional codebase scan (which violated the "intake stages don't read code" invariant — see `docs/context optimization/recommendations.md` § "Issue 1"). Skip the whole step when there's only one feature in the queue.
+
+   **Exclude `$ft_name` from every part of this step** — from the journal-only proposal, from the ambiguity heuristic, and from the feature list passed to the `dependency-mapper` sub-agent. The feature-test entry has no code to scan and its position is fixed by the pin, so including it would spend sub-agent reads searching for a feature that does not exist yet.
 
    For ≥ 2 features, follow this three-step flow:
 
@@ -193,12 +435,18 @@ Reached when the inspector has just finished marking items (`[x] TODO` lines exi
 
    This step writes nothing on its own — the proposed order is held in chat to be presented in step 5 below.
 
-   **Step 4b — Heuristic short-circuit (Phase 4.2).** Decide whether step 4a is enough or whether a code-aware scan is justified:
+   **Step 4b — Heuristic short-circuit (Phase 4.2).** Decide whether step 4a is enough or whether a code-aware scan is justified. This fence re-derives `ft_name` from frontmatter rather than trusting item 1.5's export (fresh subshell — see Step 1a):
 
    ```bash
    data_root="$($CLAUDE_PLUGIN_ROOT/scripts/data-root.sh)"
-   summary_file="$($CLAUDE_PLUGIN_ROOT/scripts/quest.sh dir)/summary.md"
+   quest_dir="$($CLAUDE_PLUGIN_ROOT/scripts/quest.sh dir)"
+   summary_file="$quest_dir/summary.md"
+   ft_name="$($CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get "$quest_dir/todo-list.md" feature-test 2>/dev/null || echo '')"
+   [[ "$ft_name" == "null" ]] && ft_name=""
    features_in_queue="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh queue-remaining | sed '/^$/d')"
+   if [[ -n "$ft_name" ]]; then
+     features_in_queue="$(printf '%s\n' "$features_in_queue" | grep -vx "$ft_name" || true)"
+   fi
 
    ambiguous=0
    # Signal 1: any feature name appears inside another feature's section body
@@ -302,6 +550,27 @@ PYEOF
    Receive the sub-agent return summary. Use the proposed order in step 5. The cache key fields (`scan-mode: code-aware`, `summary-md-hash`, `head-when-scanned`) will be written into `queue-rationale.md` by Step 2B when the inspector confirms the order — main is responsible for passing these to Step 2B's frontmatter init/update.
 5. **Propose the prioritized order.** Print the order as a numbered list and the dependency reasoning underneath. End the message with:
    > "Reply `/mi-continue` to accept this order, or paste a different order (one feature per line) and then `/mi-continue` to confirm."
+
+   When the feature-test entry is **in the queue** — not merely present in frontmatter — append `$ft_name` **last** to the proposal, then assert the pin before printing. Gate on queue membership, not frontmatter presence: item 3.5 only enqueues on `ready`/`selected`, so on a `blocked` partial selection (a common case — the inspector marks some but not all items) `ft_name` is populated in frontmatter but absent from the queue. Appending it to the proposal anyway would poison it with a name `check-feature-test-pin` happily accepts (it IS last in the *proposed* list) but that `progress.sh reorder` later rejects as "not in existing queue" — *after* Step 2B has already written `queue-rationale.md` with it in `features:`, breaking the Row A invariant (`queue-rationale.features − completed == queue`). This fence re-derives `ft_name` itself rather than trusting item 1.5's or item 3.5's export (fresh subshell — see Step 1a):
+
+   ```bash
+   quest_dir="$($CLAUDE_PLUGIN_ROOT/scripts/quest.sh dir)"
+   ft_name="$($CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get "$quest_dir/todo-list.md" feature-test 2>/dev/null || echo '')"
+   [[ "$ft_name" == "null" ]] && ft_name=""
+   ft_queued=0
+   if [[ -n "$ft_name" ]]; then
+     q="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh queue-remaining 2>/dev/null || true)"
+     if printf '%s\n' "$q" | grep -qx "$ft_name"; then
+       ft_queued=1
+     fi
+   fi
+   if [[ "$ft_queued" -eq 1 ]]; then
+     $CLAUDE_PLUGIN_ROOT/scripts/progress.sh check-feature-test-pin "$ft_name" "${proposed_order[@]}"
+   fi
+   ```
+
+   Show it in the numbered list with a one-line note that it is pinned and cannot be moved — only when `ft_queued=1`. When it's `0` (still `blocked`), the entry isn't part of this proposal at all; say nothing about it here, same as item 1.5's `blocked` branch.
+
 6. **Mid-cycle re-entry only — append a draft batch to `queue-rationale.md` (Item 7 of the v11 plan).** When this Step 2A run is the mid-cycle re-entry path (queue was empty + we just re-populated via `enqueue`), `queue-rationale.md` already exists from the prior cycle's batches and its top-level `status` is `confirmed`. Append a new `## Batch <N+1> — <today>` body with the proposed order in `### Order` (and `### Dependencies`/`### Notes` if applicable). Refresh top-level frontmatter atomically with the body write: `batch: N+1`, `status: draft`, `features: <previous confirmed cumulative + proposed order for new batch>`. This makes the next `/mi-continue` route to the draft-confirmation row in the dispatcher (Item 5) → Step 2B (extended) for confirmation.
 
    ```bash
@@ -315,6 +584,11 @@ PYEOF
      #   $CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh set "$qr_file" features '[<cumulative>]'
    fi
    ```
+
+   When the batch introduced the feature-test entry, record the pin under `### Notes`:
+
+   > `<ft_name>` is pinned last — it exercises the assembled result of every ordinary feature in this cycle, so it cannot run before them. This is a structural constraint, not a priority judgement; an order placing it earlier is refused at stage 1.5.
+
 7. **Stop.** Do NOT auto-fire Step 2B from here — the draft batch needs the inspector's explicit confirmation. The dispatcher routes the next `/mi-continue` to Step 2B (extended) automatically because top-level `status` is now `draft`.
 
    For the **initial cycle** (queue was already seeded by `/mi-run`, no prior batches exist): skip the file write here and let Step 2B's case (a) write the file from scratch when the inspector confirms. (This preserves the current behavior for fresh cycles.)
@@ -339,6 +613,23 @@ fi
 
 1. **Resolve the confirmed order.** If the inspector typed a custom order in the previous turn, parse it. Otherwise, use the proposal from Step 2A (which the millwright still has in conversation context — if the session was compacted, re-derive it by re-grouping PENDING items + re-running dependency analysis). For the draft case (b), the proposal lives in the latest batch's `### Order` body and in top-level `features:` (the suffix corresponding to the draft batch).
 2. **Validate the order.** It must be a permutation of the current `progress.md` queue. If the inspector's custom order is malformed (extras, missing entries, duplicates), surface the error and ask them to retype.
+
+   **Pin validation.** When the feature-test entry is **in the queue** — not merely present in frontmatter — the confirmed order must keep it last. Gate on queue membership, not frontmatter presence: the same partial-selection gap as item 5 above applies here — `ft_name` can be populated in frontmatter while the entry is still `blocked` and was never enqueued:
+
+   ```bash
+   ft_name="$($CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get "$quest_dir/todo-list.md" feature-test 2>/dev/null || echo '')"
+   if [[ -n "$ft_name" && "$ft_name" != "null" ]]; then
+     q="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh queue-remaining 2>/dev/null || true)"
+     if printf '%s\n' "$q" | grep -qx "$ft_name"; then
+       $CLAUDE_PLUGIN_ROOT/scripts/progress.sh check-feature-test-pin "$ft_name" "${confirmed_order[@]}"
+     fi
+   fi
+   ```
+
+   On exit 3, relay the message and ask the inspector to retype the order — the same shape as the malformed-order path above. The check reads no files, so it is equally valid against a proposed order and a persisted one.
+
+   Read `ft_name` from frontmatter as shown — **never re-derive it here.** The name was frozen at stage 1 from the stage-1 feature order; a confirmed order that puts a different feature first does not change it, and re-deriving would rename a feature folder mid-cycle and strand its artifacts.
+
 3. **Write the cycle's `queue-rationale.md`.** Two sub-paths:
 
    **(a) Missing — write a fresh file** (current behavior):
@@ -375,6 +666,8 @@ fi
    - Flip top-level `status:` from `draft` to `confirmed`.
    - **Cache fields:** if Step 2A's item 4 ran the code-aware sub-agent for the latest batch, refresh `scan-mode`, `summary-md-hash`, `head-when-scanned` per case (a) above. If the sub-agent didn't run (cache hit during step 4c, or journal-only path), leave the fields as they were on the prior batch's confirmation.
    - **Load-bearing invariant:** after Step 2B returns, `queue-rationale.md.features - progress.completed` must equal `progress.queue` in order, or Row A will not fire between features. Verify this before the auto-fire below.
+
+     When the cycle carries a feature-test entry, `queue-rationale.features` ends with it — which is exactly what keeps **Row A** satisfied, since the confirmed order (and therefore `progress.queue`) ends with it too. This is the invariant that breaks first if anyone moves the item-3.5 `enqueue` out of Step 2A into Step 2B: the name would be missing from the queue when `features:` is written, Row A would mismatch, and the workflow would stall between features.
 
 4. **Reorder the queue.**
    ```bash
@@ -1194,6 +1487,47 @@ If `open_ids` is empty, **prompt the inspector to confirm before completing the 
 - **On `n`** — stop. Do **not** advance the stage. State stays at `current-stage=5`, so the next `/mi-continue` re-enters this handler (idempotent: if findings were added, it routes to Step 3b instead; if still empty, it re-prompts).
 - **On `y`** — proceed with the atomic advance below.
 
+##### Deferred-scenario completion gate (DTI-007, Gate 1)
+
+Runs on **both** shipped entries into finalization — the Inspector Handler's
+no-open-findings `advance-to 5 7` here, and the Review-Resume Handler's `advance-to 6 7`
+below. It is deliberately **not inside generic `advance-to`**: putting it there would alter
+behaviour for cycles that carry no feature-test entry at all, whereas placing it on both
+handler paths guarantees neither branch bypasses it while leaving `advance-to`'s contract
+untouched.
+
+The existing open-findings block is **not replaced** — this is a second, independent
+`AND`-condition beside it.
+
+```bash
+if $CLAUDE_PLUGIN_ROOT/scripts/todo.sh is-feature-test "$active_feature" >/dev/null 2>&1; then
+  results_path="$($CLAUDE_PLUGIN_ROOT/scripts/blueprints.sh manual-test-results-path "$active_feature")"
+  unresolved="$($CLAUDE_PLUGIN_ROOT/scripts/deferred-tests.sh unresolved "$active_feature" "$results_path")"
+else
+  unresolved=""
+fi
+# Print — per Step 2A item 1.5, a variable's value does not survive into a
+# later Bash block, so the printed line (empty or not) is what gets branched
+# on below. Without this, both the blocking and the clear case emit nothing,
+# and an empty transcript reads as "proceed" — a silent fail-open on this
+# feature's only blocking gate.
+printf '%s\n' "$unresolved"
+```
+
+If `unresolved` is non-empty, **stop** — do not advance. Print one line per row:
+
+> Cannot finalize `<active_feature>` — N deferred scenario(s) have no verdict:
+>   `<feature>/<scenario>` → `<merged-as or "(not merged)">`  (`<title>`)
+>
+> Run `/mi-manual-test-run` to complete them, or drop an obsolete entry with
+> `deferred-tests.sh remove <ft> <feature> <scenario>`.
+
+If `unresolved` is empty, proceed to the `advance-to` unchanged. **A cycle with zero
+deferred entries takes this path always**, so its behaviour is byte-identical to today.
+
+`pass`, `fail`, and `skip` all resolve an entry; the gate catches *absent* verdicts, not
+abandoned ones.
+
 ```bash
 $CLAUDE_PLUGIN_ROOT/scripts/progress.sh advance-to 5 7 \
   --set sub-flow=none \
@@ -1316,6 +1650,9 @@ On `abort` (only valid for the `missing` branch), invoke `/mi-abort-workflow` an
 ### Review-Resume Step 2.6 — Atomic finalize (advance-to 6 → 7)
 
 After the refresh prompt has been answered (or skipped), finalize the review-resume sequence in one atomic write. This collapses the old "set sub-flow=none + set inspector-review-completed=true + advance 6" trio into a single transition (Item 4 of the v11 plan), so a session break here cannot strand the workflow at stage 6 with sub-flow=none and the marker only half-set.
+
+**Run the deferred-scenario completion gate first** (the Inspector Handler's block above,
+verbatim — same predicate, same refusal). Only advance when it reports nothing unresolved.
 
 ```bash
 $CLAUDE_PLUGIN_ROOT/scripts/progress.sh advance-to 6 7 \

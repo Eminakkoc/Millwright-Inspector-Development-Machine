@@ -69,6 +69,11 @@
 #                                            # exit 1 if it exists but is stale (cache miss — regenerate);
 #                                            # exit 2 if the file is missing (no cache — generate fresh).
 #                                            # No output; the caller branches on the exit code.
+#   commits.sh feature-test-range <ft-feature>
+#       Union commit range across every finished ordinary feature. Read-only.
+#       exit 3 unreachable | 4 nothing contributed | 5 diverged bases.
+#   commits.sh populate-feature-test <ft-feature>
+#       Stage-8 commits list into the entry's change-summary frontmatter.
 #
 # Manual regression checks (run from a throwaway repo with `progress.sh init`
 # + `progress.sh activate` + `progress.sh set base-commit=<sha>` already done;
@@ -86,9 +91,13 @@
 #   # change-summary frontmatter should validate when the SHA happens to be
 #   # all-numeric (regression for the YAML int-coercion bug):
 #   frontmatter.sh init change-summary /tmp/x.md \
-#     REQUIREMENTS_ID=11111111-1111-4111-8111-111111111111 \
+#     "REQUIREMENTS_FIELD=!RAW!requirements-id: 11111111-1111-4111-8111-111111111111" \
 #     FEATURE=alpha BASE_COMMIT=abcdef1 HEAD=1234567
 #   frontmatter.sh validate /tmp/x.md change-summary
+#   # (REQUIREMENTS_ID= alone now fails with "unsubstituted ... {{REQUIREMENTS_FIELD}}" —
+#   # the template moved to a shared REQUIREMENTS_FIELD + !RAW! placeholder so it can
+#   # also carry the plural requirements-ids for a feature-test entry; see
+#   # commands/mi-generate-implementation-diagrams.md Step 2.2.)
 
 set -euo pipefail
 source "$(dirname "$0")/internal/common.sh"
@@ -334,8 +343,150 @@ PYEOF
     exit 0
     ;;
 
+  feature-test-range)
+    # Union commit range for a feature-test entry: the earliest base-commit
+    # across every finished ordinary feature, through HEAD. Read-only.
+    #
+    # stdout line 1:  <union_base>\t<head>
+    # then:           contributor\t<feat>\t<base>\t<head>
+    #                 omitted\t<feat>
+    # exit 3 = a finished feature's head is unreachable from HEAD
+    # exit 4 = nothing contributed commits
+    # exit 5 = bases diverged; no single earliest exists
+    feature="${1:?feature required}"
+    python3 - "$(mi_data_root)" "$(mi_progress_file)" "$feature" <<'PYEOF'
+import os, re, sys, subprocess, yaml
+
+data_root, progress_path, ft_feature = sys.argv[1], sys.argv[2], sys.argv[3]
+
+def frontmatter(path):
+    try:
+        with open(path) as f:
+            text = f.read()
+    except OSError:
+        return None
+    m = re.match(r'^---\n(.*?)\n---\n', text, re.DOTALL)
+    return (yaml.safe_load(m.group(1)) or {}) if m else None
+
+prog = frontmatter(progress_path) or {}
+completed = [c for c in (prog.get('completed') or []) if c != ft_feature]
+
+def latest_change_summary(feat):
+    """Newest finalized history version carrying an archived change-summary."""
+    hist = os.path.join(data_root, 'workflow-stream', feat, 'blueprints', 'history')
+    if not os.path.isdir(hist):
+        return None
+    versions = []
+    for entry in os.listdir(hist):
+        m = re.fullmatch(r'v(\d+)', entry)
+        if m:
+            versions.append((int(m.group(1)), entry))
+    for _, entry in sorted(versions, reverse=True):
+        path = os.path.join(hist, entry, 'implementation', 'change-summary.md')
+        if os.path.isfile(path):
+            return path
+    return None
+
+def is_ancestor(a, b):
+    return subprocess.call(
+        ['git', 'merge-base', '--is-ancestor', a, b],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) == 0
+
+head = subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip()
+
+contributors, omitted, unreachable = [], [], []
+for feat in completed:
+    cs = latest_change_summary(feat)
+    if cs is None:
+        omitted.append(feat)
+        continue
+    data = frontmatter(cs) or {}
+    base, feat_head = data.get('base-commit'), data.get('head')
+    if not base or not feat_head:
+        omitted.append(feat)
+        continue
+    if not is_ancestor(feat_head, head):
+        unreachable.append(feat)
+        continue
+    contributors.append((feat, base, feat_head))
+
+if unreachable:
+    sys.stderr.write(
+        "error: feature-test-range: these finished features are not reachable "
+        "from HEAD: " + ", ".join(unreachable) + "\n"
+        "       The combined test cannot draw a picture that omits them. Merge "
+        "or rebase so every feature's work is visible from one checkout, then "
+        "re-run.\n")
+    sys.exit(3)
+
+if not contributors:
+    sys.stderr.write(
+        "error: feature-test-range: no finished feature contributed commits "
+        "(all omitted: " + ", ".join(omitted) + "). There is no assembled "
+        "implementation to test.\n")
+    sys.exit(4)
+
+bases = [b for _, b, _ in contributors]
+earliest = None
+for candidate in bases:
+    if all(candidate == other or is_ancestor(candidate, other) for other in bases):
+        earliest = candidate
+        break
+
+if earliest is None:
+    sys.stderr.write(
+        "error: feature-test-range: the finished features' base commits are "
+        "diverged; no single earliest base exists. A contiguous <base>..HEAD "
+        "range is the contract every downstream consumer is written against. "
+        "Merge the lines together, then re-run.\n")
+    sys.exit(5)
+
+print(f"{earliest}\t{head}")
+for feat, base, feat_head in contributors:
+    print(f"contributor\t{feat}\t{base}\t{feat_head}")
+for feat in omitted:
+    print(f"omitted\t{feat}")
+PYEOF
+    ;;
+
+  populate-feature-test)
+    # Stage-8 commits list for a feature-test entry, which has no
+    # requirements.md to carry it. Deliberately separate from
+    # populate-requirements: that path runs for every ordinary completion and
+    # must not grow feature-test branching.
+    feature="${1:?feature required}"
+    summary_file="$(mi_impl_dir "$feature")/change-summary.md"
+    [[ -f "$summary_file" ]] || mi_die "populate-feature-test: $summary_file not found (run the diagram pass first)"
+    range_line="$("${MI_PLUGIN_ROOT}/scripts/commits.sh" feature-test-range "$feature" | head -1)" || exit $?
+    union_base="$(printf '%s' "$range_line" | cut -f1)"
+    union_head="$(printf '%s' "$range_line" | cut -f2)"
+    python3 - "$summary_file" "${union_base}..${union_head}" <<'PYEOF'
+import sys, subprocess, re, yaml
+path, rng = sys.argv[1], sys.argv[2]
+log = subprocess.check_output(['git', 'log', '--pretty=format:%H\t%s', rng], text=True)
+commits = []
+for line in log.splitlines():
+    if not line.strip():
+        continue
+    sha, msg = line.split('\t', 1)
+    commits.append({'sha': sha, 'msg': msg})
+with open(path) as f:
+    content = f.read()
+m = re.match(r'^---\n(.*?)\n---\n(.*)$', content, re.DOTALL)
+fm = yaml.safe_load(m.group(1)) or {}
+fm['commits'] = commits
+with open(path, 'w') as f:
+    f.write('---\n')
+    f.write(yaml.safe_dump(fm, default_flow_style=False, sort_keys=False))
+    f.write('---\n')
+    f.write(m.group(2))
+print(f'mi: populated {len(commits)} commits into {path}', file=sys.stderr)
+PYEOF
+    "${MI_PLUGIN_ROOT}/scripts/frontmatter.sh" validate "$summary_file" change-summary >/dev/null
+    ;;
+
   *)
-    echo "usage: commits.sh {list|yaml|populate-requirements|changed-files|changed-files-only|change-summary-fresh|diagrams-fresh} ..." >&2
+    echo "usage: commits.sh {list|yaml|populate-requirements|changed-files|changed-files-only|change-summary-fresh|diagrams-fresh|feature-test-range} ..." >&2
     exit 2
     ;;
 esac

@@ -20,13 +20,18 @@
 #
 # Usage:
 #   todo.sh set-state <item-id> <TODO|PENDING|IMPLEMENTING|IMPLEMENTED|CANCELED>
+#                                 [--assignee <name>]
+#                                 # --assignee sets the (assignee) tag; omitted, the
+#                                 # existing tag is preserved verbatim (unchanged behaviour).
 #   todo.sh bulk-transition <from-state> <to-state> [--feature <kebab-name>]
 #                                 # with --feature: only items under `## <matching-header>` transition.
 #                                 # without it: operates on every item in the file (backward-compatible).
 #                                 # header matching is case-insensitive and kebab-normalized,
 #                                 # so `## Marketing site` matches `--feature marketing-site`.
 #   todo.sh pend-selected         # transform inspector-marked [xX] TODO items to [x] PENDING
-#                                 # (fails if any selected item lacks an assignee)
+#                                 # (fails if any selected item lacks an assignee).
+#                                 # stdout: one `<item-id>\t<assignee>` row per promoted
+#                                 # item, in document order.
 #   todo.sh list <state> [--feature <kebab-name>]
 #                                 # list item ids currently in <state>; with --feature,
 #                                 # only items under the matching ## <header> section.
@@ -36,6 +41,14 @@
 #                                 # PENDING is refused (only stage-1.5 pend-selected writes PENDING);
 #                                 # IMPLEMENTED is refused (only mi-complete-workflow writes IMPLEMENTED).
 #                                 # Fails if item-id already exists in the file.
+#   todo.sh feature-test-status   # read-only predicate. Prints one TSV row:
+#                                 #   <status>\t<ft-name>\t<ft-item-id>\t<blocking-count>\t<fallback-assignee>
+#                                 # status ∈ none|blocked|ready|premature|selected.
+#                                 # "unselected" means checkbox `[ ]`; every [x] state
+#                                 # (including CANCELED) resolves an item.
+#   todo.sh is-feature-test <name>  # read-only predicate. Exit 0 when <name> is
+#                                   # this cycle's declared feature-test entry,
+#                                   # exit 1 otherwise. Silent on both streams.
 
 set -euo pipefail
 source "$(dirname "$0")/internal/common.sh"
@@ -50,11 +63,22 @@ case "$cmd" in
   set-state)
     item_id="${1:?item-id required}"
     new_state="${2:?new-state required}"
+    shift 2
+    assignee_override=""
+    while [[ $# -gt 0 ]]; do
+      case "$1" in
+        --assignee)   assignee_override="${2:?--assignee requires a value}"; shift 2 ;;
+        --assignee=*) assignee_override="${1#*=}"; shift ;;
+        *)            mi_die "set-state: unknown argument: $1" ;;
+      esac
+    done
     file="$(todo_file)"
     [[ -f "$file" ]] || mi_die "todo-list.md not found"
-    python3 - "$file" "$item_id" "$new_state" <<'PYEOF'
+    python3 - "$file" "$item_id" "$new_state" "$assignee_override" <<'PYEOF'
 import sys, re
-path, item_id, new_state = sys.argv[1], sys.argv[2], sys.argv[3]
+path, item_id, new_state, assignee_override = (
+    sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
+)
 checkbox = '[ ]' if new_state == 'TODO' else '[x]'
 with open(path) as f:
     lines = f.readlines()
@@ -66,7 +90,7 @@ updated = 0
 for i, line in enumerate(lines):
     m = pattern.match(line.rstrip('\n'))
     if m:
-        assignee = m.group(2)
+        assignee = assignee_override or m.group(2)
         assignee_tag = f'({assignee}) ' if assignee else ''
         lines[i] = f'{m.group(1)}{checkbox} {assignee_tag}{new_state} — {item_id}{m.group(4)}\n'
         updated += 1
@@ -174,13 +198,17 @@ if missing:
     for item in missing:
         print(f'  - {item}', file=sys.stderr)
     sys.exit(2)
-# Second pass: rewrite with (assignee) preserved.
+# Second pass: rewrite with (assignee) preserved, recording promoted items.
+promoted = []
 def _sub(m):
-    prefix, assignee = m.group(1), m.group(2)
-    return f'{prefix}[x] ({assignee}) PENDING — {m.group(3)}'
+    prefix, assignee, rest = m.group(1), m.group(2), m.group(3)
+    promoted.append((rest.split(':', 1)[0].strip(), assignee))
+    return f'{prefix}[x] ({assignee}) PENDING — {rest}'
 new_content, count = pattern.subn(_sub, content)
 with open(path, 'w') as f:
     f.write(new_content)
+for item_id, assignee in promoted:
+    print(f'{item_id}\t{assignee}')
 print(f'mi: transitioned {count} inspector-selected items from TODO to PENDING', file=sys.stderr)
 PYEOF
     ;;
@@ -311,8 +339,112 @@ print(f'mi: added {item_id} as [{state}] under ## {target_section}', file=sys.st
 PYEOF
     ;;
 
+  feature-test-status)
+    file="$(todo_file)"
+    [[ -f "$file" ]] || mi_die "todo-list.md not found"
+    python3 - "$file" <<'PYEOF'
+import sys, re, yaml
+
+path = sys.argv[1]
+with open(path) as f:
+    content = f.read()
+
+m = re.match(r'^---\n(.*?)\n---\n(.*)$', content, re.DOTALL)
+fm = (yaml.safe_load(m.group(1)) or {}) if m else {}
+body = m.group(2) if m else content
+ft_name = fm.get('feature-test')
+
+def kebab(s):
+    s = s.strip().lower()
+    s = re.sub(r'[\s_]+', '-', s)
+    s = re.sub(r'[^a-z0-9-]', '', s)
+    s = re.sub(r'-+', '-', s).strip('-')
+    return s
+
+def emit_none():
+    print('none\t\t\t0\t')
+    sys.exit(0)
+
+if not ft_name:
+    emit_none()
+
+target = kebab(ft_name)
+item_pat = re.compile(
+    r'^\s*-\s+\[([ xX])\]\s+(?:\(([^)]+)\)\s+)?'
+    r'(?:TODO|PENDING|IMPLEMENTING|IMPLEMENTED|CANCELED)\s+—\s+([A-Z0-9-]+)'
+)
+
+section = None
+ft_item_id = ''
+ft_checked = False
+blocking = 0
+fallback_assignee = ''
+
+for line in body.split('\n'):
+    if line.startswith('## '):
+        section = kebab(line[3:])
+        continue
+    mm = item_pat.match(line)
+    if not mm:
+        continue
+    checked = mm.group(1) in ('x', 'X')
+    assignee = mm.group(2) or ''
+    item_id = mm.group(3)
+    if section == target:
+        ft_item_id = item_id
+        ft_checked = checked
+    elif not checked:
+        blocking += 1
+    elif assignee:
+        # Only overwrite the fallback with a non-empty value — a checked
+        # ordinary item can have an empty tag (e.g. `set-state <id> CANCELED`
+        # with no --assignee preserves an unassigned line), and letting that
+        # clobber a good fallback from an earlier line forces the inspector
+        # to re-supply a name that was already available.
+        fallback_assignee = assignee
+
+if not ft_item_id:
+    # Field present but no matching section/item — a hand-edited file. Warn and
+    # report `none` so callers no-op rather than stalling the cycle.
+    sys.stderr.write(
+        f"warning: feature-test '{ft_name}' is declared in frontmatter but no "
+        f"matching section with an item was found; reporting status=none\n"
+    )
+    emit_none()
+
+if ft_checked:
+    status = 'premature' if blocking else 'selected'
+else:
+    status = 'blocked' if blocking else 'ready'
+
+print(f'{status}\t{ft_name}\t{ft_item_id}\t{blocking}\t{fallback_assignee}')
+PYEOF
+    ;;
+
+  is-feature-test)
+    # Read-only identity predicate: does <name> match this cycle's declared
+    # feature-test entry? Exit 0 = yes, 1 = no. Never dies — callers use it
+    # directly in `if`, so a missing cycle or file is "no", not an error.
+    name="${1:?feature name required}"
+    file="$(todo_file 2>/dev/null || true)"
+    [[ -n "$file" && -f "$file" ]] || exit 1
+    python3 - "$file" "$name" <<'PYEOF'
+import sys, re, yaml
+path, name = sys.argv[1], sys.argv[2]
+try:
+    with open(path) as f:
+        content = f.read()
+except OSError:
+    sys.exit(1)
+m = re.match(r'^---\n(.*?)\n---\n', content, re.DOTALL)
+fm = (yaml.safe_load(m.group(1)) or {}) if m else {}
+ft = fm.get('feature-test')
+sys.exit(0 if ft and ft == name else 1)
+PYEOF
+    ;;
+
   *)
-    echo "usage: todo.sh {set-state|bulk-transition|pend-selected|list|add} ..." >&2
+    echo "usage: todo.sh {set-state|bulk-transition|pend-selected|list|add|feature-test-status|is-feature-test} ..." >&2
     exit 2
     ;;
 esac

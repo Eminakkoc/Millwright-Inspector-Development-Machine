@@ -14,8 +14,11 @@ type: object
 additionalProperties: false
 required:
   - id
-  - requirements-id
   - feature
+
+oneOf:
+  - required: [requirements-id]
+  - required: [requirements-ids]
 
 properties:
   id:
@@ -25,6 +28,19 @@ properties:
     type: string
     pattern: "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"
     description: UUID of the requirements.md this review-context summarizes. Re-pointed by /mi-update-blueprint via review.sh sync-refs if blueprint rotates.
+  requirements-ids:
+    type: array
+    minItems: 1
+    items:
+      type: string
+      pattern: "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"
+    description: >
+      Ordered UUIDs of every finished ordinary feature's archived
+      requirements.md, for a feature-test entry — which has no blueprint of
+      its own and is framed against all of them rather than one. Mutually
+      exclusive with `requirements-id`; ordinary features keep the singular.
+      Never re-pointed by review.sh sync-refs — a feature-test entry has no
+      blueprints/current/ to rotate.
   feature:
     type: string
     pattern: "^[a-z0-9][a-z0-9-]*$"

@@ -143,6 +143,33 @@ fi
 
 **Branch III — normal forward path.** Falls through to Step 1 below. Before Step 4's completion rotate, the normal path runs `blueprints.sh check-current --require-primer "$active_feature"` and requires `0` (completion rotation must never archive a current/ tree that is missing the stage-3 primer; see Item 9 of the v11 progress-gap plan).
 
+**Mode detection.** Every downstream step needs to know whether `$active_feature` is this cycle's declared feature-test entry, so resolve it once here:
+
+```bash
+if $CLAUDE_PLUGIN_ROOT/scripts/todo.sh is-feature-test "$active_feature"; then
+  ft_mode=1
+else
+  ft_mode=0
+fi
+```
+
+**Feature-test entries take a substituted Branch III.** Of the four blueprint-dependent steps, two are kept from a different source and two are skipped:
+
+| Step | Ordinary | Feature-test (`ft_mode=1`) |
+| --- | --- | --- |
+| 2 — IMPLEMENTING → IMPLEMENTED | runs | runs (its own item) |
+| 3 — commits list | `commits.sh populate-requirements` → `requirements.md` | `commits.sh populate-feature-test` → the entry's `change-summary.md` |
+| 3.5 — lessons distillation | evidence keyed by requirements id | evidence = the entry's `inspector-review.md` + `test/manual-test-results.md` |
+| 4 — `check-current --require-primer` preflight | must return 0 | **skipped** — nothing to assert without a blueprint, and it would only block closure |
+| 4 — `blueprints.sh rotate` | runs | **skipped** |
+| 5 — `implementation/` archive move | runs | **skipped** — permanent in place (`FTW-002`) |
+| 6 — `progress.sh finish` | runs | runs |
+| 7 — housekeeping | runs | runs |
+
+Lessons distillation is deliberately **kept**: the whole-feature test is the only point in the cycle that observes the features working together, which makes it the highest-value lesson source in the run. Its `source_prefix` uses the entry's `change-summary.md` `id` in place of a requirements id, preserving the re-append fence.
+
+**Step 0 needs no change.** `current/requirements.md` is always absent for this folder and there is no history, so `latest_reason_kind` returns empty, Branch II does not match, and control reaches Branch III correctly.
+
 ### Step 1 — Resolve inputs
 
 (Skipped when `branch_route` is `0a`, `I`, or `II`.)
@@ -177,7 +204,13 @@ The `--feature` filter scopes the transition to items under the active feature's
 
 ```bash
 if [[ "${branch_route:-III}" == "III" || "${branch_route:-}" == "0a" || "${branch_route:-}" == "II" ]]; then
-  $CLAUDE_PLUGIN_ROOT/scripts/commits.sh populate-requirements "$active_feature"
+  if [[ "${ft_mode:-0}" == "1" ]]; then
+    # Feature-test entries have no requirements.md; the union commit range
+    # lands in the entry's own change-summary.md instead (Task 5).
+    $CLAUDE_PLUGIN_ROOT/scripts/commits.sh populate-feature-test "$active_feature"
+  else
+    $CLAUDE_PLUGIN_ROOT/scripts/commits.sh populate-requirements "$active_feature"
+  fi
 fi
 ```
 
@@ -192,8 +225,24 @@ Main does NOT read the evidence artifacts (stage-8 main-read budget) — the rea
 ```bash
 if [[ "${branch_route:-III}" == "III" ]]; then
   lessons_path="$($CLAUDE_PLUGIN_ROOT/scripts/lessons.sh path)"
-  req_path="$data_root/workflow-stream/$active_feature/blueprints/current/requirements.md"
-  req_id="$($CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get "$req_path" id 2>/dev/null || echo "")"
+
+  if [[ "${ft_mode:-0}" == "1" ]]; then
+    # Feature-test entries have no requirements.md to key evidence off; the
+    # entry's own change-summary.md id substitutes (Step 3 above already
+    # populated it), preserving the same re-append-fence shape.
+    req_path="$data_root/workflow-stream/$active_feature/implementation/change-summary.md"
+    req_id="$($CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get "$req_path" id 2>/dev/null || echo "")"
+    # frontmatter.sh get exits 0 and prints the literal "null" for an absent
+    # field — never test presence by exit code, test the value. A terminal
+    # bare `&&` here would make the whole if/then return 1 on the common
+    # (non-null) path, so this is `if ...; then ...; fi`, not `[[ ]] && ...`.
+    if [[ "$req_id" == "null" ]]; then
+      req_id=""
+    fi
+  else
+    req_path="$data_root/workflow-stream/$active_feature/blueprints/current/requirements.md"
+    req_id="$($CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get "$req_path" id 2>/dev/null || echo "")"
+  fi
   source_prefix="workflow:$active_feature/$req_id"
 
   if [[ -z "$req_id" ]]; then
@@ -205,36 +254,73 @@ if [[ "${branch_route:-III}" == "III" ]]; then
   else
     impl_dir="$data_root/workflow-stream/$active_feature/implementation"
 
-    # Spawn the lessons-distiller sub-agent. The prompt below substitutes the
-    # placeholders with the concrete values from this caller context.
-    #
-    # Sub-agent: agents/lessons-distiller.md (subagent_type:
-    # millwright-inspector-development-machine:lessons-distiller).
-    #
-    # Spawn prompt template:
-    #
-    #   You are invoked from /mi-complete-workflow's Step 3.5. The workflow for
-    #   feature "<active_feature>" just completed. Distill at most 5
-    #   generalizable lessons from the cycle's evidence artifacts and append
-    #   them to <lessons_path> via <plugin>/scripts/lessons.sh append. Every
-    #   --source you write MUST begin with "<source_prefix>" verbatim. Zero
-    #   lessons is a valid outcome. Follow agents/lessons-distiller.md exactly.
-    #
-    #   Inputs:
-    #   - active_feature: <active_feature>
-    #   - source_prefix: <source_prefix>
-    #   - lessons_path: <lessons_path>
-    #   - plugin scripts dir: $CLAUDE_PLUGIN_ROOT/scripts
-    #   - inspector_review_path: <impl_dir>/inspector-review.md
-    #   - review_history_path: <data_root>/workflow-stream/<active_feature>/blueprints/current/review-history.md
-    #   - manual_test_results_path: <data_root>/workflow-stream/<active_feature>/test/manual-test-results.md
-    #   - decisions_path: <data_root>/workflow-stream/<active_feature>/decisions.md
-    #   - change_summary_path: <impl_dir>/change-summary.md
-    #   - grounding_report_path: <impl_dir>/grounding-report.md
-    #   (Missing evidence files are normal — tolerate silently.)
-    #
-    #   Return per the sub-agent's return contract.
-    :
+    if [[ "${ft_mode:-0}" == "1" ]]; then
+      # Feature-test entries substitute a narrower evidence set (contract
+      # table above): only the entry's own inspector-review.md and
+      # test/manual-test-results.md. review_history_path, decisions_path,
+      # change_summary_path, and grounding_report_path are simply out of
+      # scope for this substitution (FTW-007) — not because any of them are
+      # inapplicable to a feature-test entry (Step 7.1 writes decisions.md
+      # for this entry too). The whole-feature test is the only point in the
+      # cycle that observes the previously separate features working together,
+      # which makes these two files the highest-value lesson source in the run.
+      #
+      # Sub-agent: agents/lessons-distiller.md (subagent_type:
+      # millwright-inspector-development-machine:lessons-distiller).
+      #
+      # Spawn prompt template (ft_mode=1 — same sub-agent, substituted inputs):
+      #
+      #   You are invoked from /mi-complete-workflow's Step 3.5. The
+      #   feature-test entry "<active_feature>" just completed. Distill at
+      #   most 5 generalizable lessons from its own evidence artifacts and
+      #   append them to <lessons_path> via <plugin>/scripts/lessons.sh
+      #   append. Every --source you write MUST begin with "<source_prefix>"
+      #   verbatim. Zero lessons is a valid outcome. Follow
+      #   agents/lessons-distiller.md exactly.
+      #
+      #   Inputs:
+      #   - active_feature: <active_feature>
+      #   - source_prefix: <source_prefix>
+      #   - lessons_path: <lessons_path>
+      #   - plugin scripts dir: $CLAUDE_PLUGIN_ROOT/scripts
+      #   - inspector_review_path: <impl_dir>/inspector-review.md
+      #   - manual_test_results_path: <data_root>/workflow-stream/<active_feature>/test/manual-test-results.md
+      #   (Missing evidence files are normal — tolerate silently.)
+      #
+      #   Return per the sub-agent's return contract.
+      :
+    else
+      # Spawn the lessons-distiller sub-agent. The prompt below substitutes the
+      # placeholders with the concrete values from this caller context.
+      #
+      # Sub-agent: agents/lessons-distiller.md (subagent_type:
+      # millwright-inspector-development-machine:lessons-distiller).
+      #
+      # Spawn prompt template:
+      #
+      #   You are invoked from /mi-complete-workflow's Step 3.5. The workflow for
+      #   feature "<active_feature>" just completed. Distill at most 5
+      #   generalizable lessons from the cycle's evidence artifacts and append
+      #   them to <lessons_path> via <plugin>/scripts/lessons.sh append. Every
+      #   --source you write MUST begin with "<source_prefix>" verbatim. Zero
+      #   lessons is a valid outcome. Follow agents/lessons-distiller.md exactly.
+      #
+      #   Inputs:
+      #   - active_feature: <active_feature>
+      #   - source_prefix: <source_prefix>
+      #   - lessons_path: <lessons_path>
+      #   - plugin scripts dir: $CLAUDE_PLUGIN_ROOT/scripts
+      #   - inspector_review_path: <impl_dir>/inspector-review.md
+      #   - review_history_path: <data_root>/workflow-stream/<active_feature>/blueprints/current/review-history.md
+      #   - manual_test_results_path: <data_root>/workflow-stream/<active_feature>/test/manual-test-results.md
+      #   - decisions_path: <data_root>/workflow-stream/<active_feature>/decisions.md
+      #   - change_summary_path: <impl_dir>/change-summary.md
+      #   - grounding_report_path: <impl_dir>/grounding-report.md
+      #   (Missing evidence files are normal — tolerate silently.)
+      #
+      #   Return per the sub-agent's return contract.
+      :
+    fi
   fi
 fi
 ```
@@ -247,63 +333,105 @@ fi
 
 ```bash
 if [[ "${branch_route:-III}" == "III" ]]; then
-  # Preflight (Item 9 + Item 6): completion rotate must NEVER archive a current/
-  # tree that is missing the stage-3 primer. Refuse with a diagnostic if so.
-  if "$CLAUDE_PLUGIN_ROOT/scripts/blueprints.sh" check-current --require-primer "$active_feature"; then
-    cc_status=0
+  if [[ "${ft_mode:-0}" == "1" ]]; then
+    # Feature-test entries skip the check-current --require-primer preflight
+    # and blueprints.sh rotate entirely: there is no blueprints/current/ for
+    # this folder to check or rotate (FTW-002 — no rotation is possible or
+    # needed), and running the preflight would only block closure with
+    # nothing to assert.
+    echo "Feature-test entry: rotation skipped (no blueprint to rotate)."
   else
-    cc_status=$?
+    # Preflight (Item 9 + Item 6): completion rotate must NEVER archive a current/
+    # tree that is missing the stage-3 primer. Refuse with a diagnostic if so.
+    if "$CLAUDE_PLUGIN_ROOT/scripts/blueprints.sh" check-current --require-primer "$active_feature"; then
+      cc_status=0
+    else
+      cc_status=$?
+    fi
+    if [[ "$cc_status" != "0" ]]; then
+      echo "error: blueprints/current is incomplete (check-current --require-primer returned $cc_status). Completion rotation refused — repair current/ (regenerate primer.md, ensure all artifacts validate) before re-running /mi-complete-workflow." >&2
+      exit 1
+    fi
+    version="$($CLAUDE_PLUGIN_ROOT/scripts/blueprints.sh rotate "$active_feature" \
+      --reason-kind completion \
+      --reason-summary "completed at stage 8 for $active_feature")"
+    echo "Blueprints archived into history/v${version}"
   fi
-  if [[ "$cc_status" != "0" ]]; then
-    echo "error: blueprints/current is incomplete (check-current --require-primer returned $cc_status). Completion rotation refused — repair current/ (regenerate primer.md, ensure all artifacts validate) before re-running /mi-complete-workflow." >&2
-    exit 1
-  fi
-  version="$($CLAUDE_PLUGIN_ROOT/scripts/blueprints.sh rotate "$active_feature" \
-    --reason-kind completion \
-    --reason-summary "completed at stage 8 for $active_feature")"
-  echo "Blueprints archived into history/v${version}"
 fi
 ```
+
+**Deferred-scenario reporting (DTI-007, Gate 2 — report-only).** Read the `deferred`
+counter from the feature's `test/manual-test-results.md` when the file exists:
+
+```bash
+results_path="$($CLAUDE_PLUGIN_ROOT/scripts/blueprints.sh manual-test-results-path "$active_feature")"
+deferred_n=0
+if [[ -f "$results_path" ]]; then
+  deferred_n="$($CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get "$results_path" deferred 2>/dev/null || echo 0)"
+  if [[ -z "$deferred_n" || "$deferred_n" == "null" ]]; then
+    deferred_n=0
+  fi
+fi
+```
+
+`frontmatter.sh get` exits 0 and prints the literal string `null` for an absent field, so
+the value is tested rather than the exit code — a results file rendered before the counter
+existed reads as 0.
+
+When `deferred_n > 0`, say so in the completion summary — "completed; N scenario(s)
+deferred to the whole-feature test" — instead of describing the feature as fully tested.
+**This never blocks completion** and never affects the `IMPLEMENTED` promotion; the
+blocking gate lives on the feature-test entry (`/mi-continue`, Gate 1).
 
 ### Step 5 — Archive implementation/ into the rotated history version
 
 (Skipped on Branch I. Idempotent for Branch 0a re-entry — `mv -n` refuses to overwrite, so artifacts already moved on a prior partial run stay put.)
 
-Stage 4 rotated `blueprints/current/` into `blueprints/history/v${version}/`. The just-finished implementation artifacts (`inspector-review.md`, `review-context.md`, `change-summary.md`, `grounding-report.md`, and `diagrams/`) are part of the same audit record, so move them into a sibling `implementation/` subfolder under the new history version. This preserves every finding (including any `status: open` ones the inspector chose to defer), the stage-2 grounding report, and the diagrams of `base-commit..HEAD` for posterity. The live `implementation/` folder is then empty and the next feature's stage-2 launcher re-creates children there.
+**For an ordinary completion (`ft_mode=0`):** Stage 4 rotated `blueprints/current/` into `blueprints/history/v${version}/`. The just-finished implementation artifacts (`inspector-review.md`, `review-context.md`, `change-summary.md`, `grounding-report.md`, and `diagrams/`) are part of the same audit record, so move them into a sibling `implementation/` subfolder under the new history version. This preserves every finding (including any `status: open` ones the inspector chose to defer), the stage-2 grounding report, and the diagrams of `base-commit..HEAD` for posterity. The live `implementation/` folder is then empty and the next feature's stage-2 launcher re-creates children there.
+
+**For a feature-test entry (`ft_mode=1`):** none of this runs. There is no `history/v${version}/` — Step 4 skipped rotation — so there is no archive directory to move artifacts into. `implementation/` and `test/` both stay exactly where they are; do not go looking for an archived copy under `blueprints/history/` for this folder.
 
 **Manual-test artifacts are NOT archived here.** Per `docs/manual-testing-folder/plan.md`, `workflow-stream/<feature>/test/` is **feature-permanent** — it survives stage 8 alongside `decisions.md` so the next cycle on the same feature can reuse the prior plan and inherit its `seed-family-id` for cross-cycle seed idempotency. The `test/` folder is intentionally absent from the archive loop below.
 
 ```bash
 if [[ "${branch_route:-III}" == "III" || "${branch_route:-}" == "0a" || "${branch_route:-}" == "II" ]]; then
-  impl_dir="$data_root/workflow-stream/$active_feature/implementation"
-  archive_dir="$data_root/workflow-stream/$active_feature/blueprints/history/v${version}/implementation"
-  mkdir -p "$archive_dir"
+  if [[ "${ft_mode:-0}" == "1" ]]; then
+    # Feature-test entries skip the archive move entirely: there is no
+    # rotated history/v${version}/ to move into (Step 4 skipped rotation),
+    # and both children (implementation/, test/) are permanent in place for
+    # this folder (FTW-002) — nothing to archive, nothing to leave behind.
+    echo "Feature-test entry: implementation/ archive skipped (permanent in place)."
+  else
+    impl_dir="$data_root/workflow-stream/$active_feature/implementation"
+    archive_dir="$data_root/workflow-stream/$active_feature/blueprints/history/v${version}/implementation"
+    mkdir -p "$archive_dir"
 
-  # Move each artifact if it exists. Using `mv -n` keeps it idempotent if the
-  # command is re-invoked after a partial run; mv would otherwise refuse to
-  # overwrite an existing target.
-  #
-  # Lazy archival validation (Phase 5.5 of the context-optimization plan):
-  # `mv` is a filesystem operation, not an Edit/Write — the PostToolUse hook
-  # does NOT fire frontmatter validation on moved files. Archived files are
-  # treated as immutable and frozen post-rotation, so re-validation would be
-  # noise. The live counterparts were validated when written; if a post-write
-  # tampering happened before rotation, that's a different problem from
-  # archival. Do not add explicit `frontmatter.sh validate` calls here.
-  #
-  # Manual-test artifacts (manual-test-plan.md, manual-test-results.md,
-  # manual-test-plan.history/, manual-test-results.history/) live under
-  # the sibling `test/` folder, which is feature-permanent and NOT
-  # archived here. See docs/manual-testing-folder/plan.md.
-  for artifact in inspector-review.md review-context.md change-summary.md grounding-report.md blueprint-lessons.md; do
-    [[ -e "$impl_dir/$artifact" ]] && mv -n "$impl_dir/$artifact" "$archive_dir/$artifact"
-  done
-  [[ -d "$impl_dir/diagrams" ]] && mv -n "$impl_dir/diagrams" "$archive_dir/diagrams"
-  # Leave the implementation/ folder itself in place (empty) — next workflow re-creates children.
+    # Move each artifact if it exists. Using `mv -n` keeps it idempotent if the
+    # command is re-invoked after a partial run; mv would otherwise refuse to
+    # overwrite an existing target.
+    #
+    # Lazy archival validation (Phase 5.5 of the context-optimization plan):
+    # `mv` is a filesystem operation, not an Edit/Write — the PostToolUse hook
+    # does NOT fire frontmatter validation on moved files. Archived files are
+    # treated as immutable and frozen post-rotation, so re-validation would be
+    # noise. The live counterparts were validated when written; if a post-write
+    # tampering happened before rotation, that's a different problem from
+    # archival. Do not add explicit `frontmatter.sh validate` calls here.
+    #
+    # Manual-test artifacts (manual-test-plan.md, manual-test-results.md,
+    # manual-test-plan.history/, manual-test-results.history/) live under
+    # the sibling `test/` folder, which is feature-permanent and NOT
+    # archived here. See docs/manual-testing-folder/plan.md.
+    for artifact in inspector-review.md review-context.md change-summary.md grounding-report.md blueprint-lessons.md; do
+      [[ -e "$impl_dir/$artifact" ]] && mv -n "$impl_dir/$artifact" "$archive_dir/$artifact"
+    done
+    [[ -d "$impl_dir/diagrams" ]] && mv -n "$impl_dir/diagrams" "$archive_dir/diagrams"
+    # Leave the implementation/ folder itself in place (empty) — next workflow re-creates children.
+  fi
 fi
 ```
 
-The historical snapshot is then complete: `blueprints/history/v${version}/` carries the rotated `requirements.md`, `config.md`, `diagrams/`, `primer.md`, `reason.md`, the v1.5 `review-history.md` (rotated along with the blueprint by the wildcard `blueprints.sh rotate` move at Step 4), AND `implementation/` (review file, review-context, change-summary, grounding-report, blueprint-lessons, implementation diagrams). PMs querying past cycles can read the full audit trail from this single folder per feature-version — including every codex finding ever raised on that blueprint version via `review-history.md`. The feature's manual-test history lives separately under `workflow-stream/<feature>/test/` and persists across cycles.
+For an ordinary completion, the historical snapshot is then complete: `blueprints/history/v${version}/` carries the rotated `requirements.md`, `config.md`, `diagrams/`, `primer.md`, `reason.md`, the v1.5 `review-history.md` (rotated along with the blueprint by the wildcard `blueprints.sh rotate` move at Step 4), AND `implementation/` (review file, review-context, change-summary, grounding-report, blueprint-lessons, implementation diagrams). PMs querying past cycles can read the full audit trail from this single folder per feature-version — including every codex finding ever raised on that blueprint version via `review-history.md`. The feature's manual-test history lives separately under `workflow-stream/<feature>/test/` and persists across cycles. **For a feature-test entry, there is no history snapshot to speak of** — its `implementation/` and `test/` stay live and permanent under `workflow-stream/<feature>/` rather than being folded into a `blueprints/history/v[N]/` version.
 
 ### Step 6 — Finish the active feature
 
@@ -361,6 +489,11 @@ todo_count="$($CLAUDE_PLUGIN_ROOT/scripts/todo.sh list TODO 2>/dev/null | sed '/
   > "Workflow for `$active_feature` complete. Queue empty and no TODO items remain. Cycle `$finished_slug` is now archived (subfolder preserved under `quest/$finished_slug/` for future reference). Run `/mi-run <folders>` for a new cycle."
 
   Stop here; nothing else to do.
+
+  **The closure itself is the shipped one, unmodified.** No second completion path is
+  introduced: the feature-test entry reaches the same `todo_count == 0` → `quest.sh end`
+  branch every final feature reaches. Because the entry is pinned last, its completion is
+  what empties the queue, so the cycle closes in one pass.
 
 If `remaining` is non-empty, the first line is the next feature:
 

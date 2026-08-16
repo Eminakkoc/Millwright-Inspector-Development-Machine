@@ -549,6 +549,11 @@ PYEOF
     echo "$(mi_test_dir "$feature")/manual-test-results.md"
     ;;
 
+  deferred-tests-path)
+    feature="${1:?feature required}"
+    echo "$(mi_test_dir "$feature")/deferred-tests.md"
+    ;;
+
   manual-test-plan-rotate)
     # Move the current manual-test-plan.md (and manual-test-results.md, if present)
     # into manual-test-plan.history/<UTC-timestamp>/. Called by /mi-manual-test-plan
@@ -606,7 +611,7 @@ PYEOF
     ;;
 
   *)
-    echo "usage: blueprints.sh {ensure-current|rotate|resume-partial|preserve-inspector-sections|check-current|branch-status|manual-test-plan-path|manual-test-results-path|manual-test-plan-rotate|manual-test-results-rotate-only} ..." >&2
+    echo "usage: blueprints.sh {ensure-current|rotate|resume-partial|preserve-inspector-sections|check-current|branch-status|manual-test-plan-path|manual-test-results-path|deferred-tests-path|manual-test-plan-rotate|manual-test-results-rotate-only} ..." >&2
     exit 2
     ;;
 esac

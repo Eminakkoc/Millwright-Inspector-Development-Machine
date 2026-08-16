@@ -1,0 +1,1071 @@
+#!/usr/bin/env bash
+# run.sh — tests for the deferred-test-items feature (DTI-001..008).
+#
+# Each test prints PASS/FAIL; the suite exits 1 if any test failed.
+# Tests are additive: later tasks append blocks under their own task headings.
+set -uo pipefail
+REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+
+pass=0
+fail=0
+fail_names=()
+
+ok()   { printf "\xe2\x9c\x93 %s\n" "$1"; pass=$((pass + 1)); }
+ng()   { printf "\xe2\x9c\x97 %s\n   %s\n" "$1" "$2" >&2; fail=$((fail + 1)); fail_names+=("$1"); }
+
+SANDBOXES=()
+cleanup() {
+  local s
+  for s in ${SANDBOXES[@]+"${SANDBOXES[@]}"}; do
+    [[ -n "$s" && -d "$s" ]] && rm -rf "$s"
+  done
+}
+trap cleanup EXIT
+
+# make_sandbox — data root with one active quest cycle. Prints its path.
+make_sandbox() {
+  local sandbox slug
+  sandbox="$(mktemp -d)"
+  slug="2026-08-15-demo"
+  mkdir -p "$sandbox/quest/$slug"
+  cat > "$sandbox/quest/active.md" <<EOF
+---
+slug: $slug
+started: "2026-08-15"
+journal-folders: [demo]
+status: active
+---
+
+# Active quest pointer
+EOF
+  SANDBOXES+=("$sandbox")
+  printf '%s' "$sandbox"
+}
+
+DT="$REPO_ROOT/scripts/deferred-tests.sh"
+BP="$REPO_ROOT/scripts/blueprints.sh"
+FM="$REPO_ROOT/scripts/frontmatter.sh"
+
+# ---- Task 1: artifact registration ----------------------------------------
+
+t="blueprints.sh deferred-tests-path resolves under test/"
+sandbox="$(make_sandbox)"
+got="$(MI_DATA_ROOT="$sandbox" "$BP" deferred-tests-path payments-feature-test 2>&1)"
+want="$sandbox/workflow-stream/payments-feature-test/test/deferred-tests.md"
+if [[ "$got" == "$want" ]]; then
+  ok "$t"
+else
+  ng "$t" "want $want, got $got"
+fi
+
+t="blueprints.sh usage string lists deferred-tests-path"
+usage_output="$("$BP" bogus-subcommand 2>&1)"
+if [[ "$usage_output" == *deferred-tests-path* ]]; then
+  ok "$t"
+else
+  ng "$t" "usage string does not mention deferred-tests-path"
+fi
+
+t="frontmatter.sh init deferred-tests renders and validates"
+sandbox="$(make_sandbox)"
+dest="$sandbox/workflow-stream/payments-feature-test/test/deferred-tests.md"
+if MI_DATA_ROOT="$sandbox" "$FM" init deferred-tests "$dest" \
+     "FEATURE_TEST=payments-feature-test" \
+     "QUEST_SLUG=2026-08-15-demo" \
+     "CREATED_AT=2026-08-15T09:04:00Z" >/dev/null 2>&1; then
+  ok "$t"
+else
+  ng "$t" "init failed (init self-validates, so this covers validate too)"
+fi
+
+t="rendered deferred-tests.md leaves no unsubstituted placeholders"
+if [[ -f "$dest" ]] && ! grep -q '{{' "$dest"; then
+  ok "$t"
+else
+  ng "$t" "file missing or contains a literal {{TOKEN}}"
+fi
+
+t="rendered deferred-tests.md has the Deferred scenarios heading"
+if [[ -f "$dest" ]] && grep -q '^## Deferred scenarios$' "$dest"; then
+  ok "$t"
+else
+  ng "$t" "## Deferred scenarios heading absent"
+fi
+
+t="schema rejects an unknown frontmatter key"
+sandbox="$(make_sandbox)"
+bad="$sandbox/bad.md"
+mkdir -p "$(dirname "$bad")"
+cat > "$bad" <<'EOF'
+---
+id: 11111111-1111-4111-8111-111111111111
+feature-test: payments-feature-test
+quest-slug: 2026-08-15-demo
+created-at: "2026-08-15T09:04:00Z"
+bogus: nope
+---
+
+# x
+EOF
+if "$FM" validate "$bad" deferred-tests >/dev/null 2>&1; then
+  ng "$t" "validate accepted an unknown key (additionalProperties must be false)"
+else
+  ok "$t"
+fi
+
+# ---- Task 2: the helper ----------------------------------------------------
+
+# seed_dt <sandbox> — render an empty deferred-tests.md. Prints its path.
+seed_dt() {
+  local sandbox dest
+  sandbox="$1"
+  dest="$sandbox/workflow-stream/payments-feature-test/test/deferred-tests.md"
+  MI_DATA_ROOT="$sandbox" "$FM" init deferred-tests "$dest" \
+    "FEATURE_TEST=payments-feature-test" \
+    "QUEST_SLUG=2026-08-15-demo" \
+    "CREATED_AT=2026-08-15T09:04:00Z" >/dev/null 2>&1
+  printf '%s' "$dest"
+}
+
+# add_entry <sandbox> <feature> <scenario> <title>
+add_entry() {
+  MI_DATA_ROOT="$1" "$DT" upsert payments-feature-test \
+    --feature "$2" --scenario "$3" --title "$4" \
+    --reason "depends on a later feature" \
+    --action "1. Do the thing" \
+    --expected "- The thing happened" \
+    --deferred-at "2026-08-15T10:22:11Z" >/dev/null 2>&1
+}
+
+t="count returns 0 when the file is absent"
+sandbox="$(make_sandbox)"
+got="$(MI_DATA_ROOT="$sandbox" "$DT" count payments-feature-test 2>&1)"
+if [[ "$got" == "0" ]]; then ok "$t"; else ng "$t" "want 0, got '$got'"; fi
+
+t="count returns 0 for a freshly rendered (empty) file"
+# Regression pin: the template's entry-shape comment contains a worked example
+# with a `###` line. An unscoped parser counts it as a real entry, and a phantom
+# deferral would block the feature-test entry's completion forever.
+sandbox="$(make_sandbox)"; seed_dt "$sandbox" >/dev/null
+got="$(MI_DATA_ROOT="$sandbox" "$DT" count payments-feature-test 2>&1)"
+if [[ "$got" == "0" ]]; then
+  ok "$t"
+else
+  ng "$t" "want 0 for an empty artifact, got '$got' — the template's example is being parsed as an entry"
+fi
+
+t="list emits nothing for a freshly rendered (empty) file"
+n="$(MI_DATA_ROOT="$sandbox" "$DT" list payments-feature-test 2>/dev/null | sed '/^$/d' | wc -l | tr -d ' ')"
+if [[ "$n" == "0" ]]; then
+  ok "$t"
+else
+  ng "$t" "want 0 rows for an empty artifact, got $n"
+fi
+
+t="the template's example heading is not at column 0"
+if grep -qE '^### payments/B\.2' "$REPO_ROOT/templates/deferred-tests.md.tmpl"; then
+  ng "$t" "the entry-shape example is at column 0 — indent it two spaces (belt-and-braces for the scoped parser)"
+else
+  ok "$t"
+fi
+
+t="the template's entry-shape comment sits above the Deferred scenarios heading"
+cmt="$(grep -n 'ENTRY SHAPE' "$REPO_ROOT/templates/deferred-tests.md.tmpl" | head -1 | cut -d: -f1)"
+hdg="$(grep -n '^## Deferred scenarios$' "$REPO_ROOT/templates/deferred-tests.md.tmpl" | head -1 | cut -d: -f1)"
+if [[ -n "$cmt" && -n "$hdg" && "$cmt" -lt "$hdg" ]]; then
+  ok "$t"
+else
+  ng "$t" "the comment must precede the heading (comment line=$cmt, heading line=$hdg)"
+fi
+
+t="upsert auto-creates the file when absent"
+sandbox="$(make_sandbox)"
+add_entry "$sandbox" payments B.2 "refund shows in the audit trail"
+if [[ -f "$sandbox/workflow-stream/payments-feature-test/test/deferred-tests.md" ]]; then
+  ok "$t"
+else
+  ng "$t" "upsert did not create the artifact"
+fi
+
+t="upsert twice on the same key produces one entry"
+sandbox="$(make_sandbox)"; seed_dt "$sandbox" >/dev/null
+add_entry "$sandbox" payments B.2 "first title"
+add_entry "$sandbox" payments B.2 "second title"
+got="$(MI_DATA_ROOT="$sandbox" "$DT" count payments-feature-test 2>&1)"
+if [[ "$got" == "1" ]]; then ok "$t"; else ng "$t" "want 1 entry, got '$got'"; fi
+
+t="upsert replaces the block rather than appending"
+if MI_DATA_ROOT="$sandbox" "$DT" list payments-feature-test 2>/dev/null | grep -q 'second title' \
+   && ! MI_DATA_ROOT="$sandbox" "$DT" list payments-feature-test 2>/dev/null | grep -q 'first title'; then
+  ok "$t"
+else
+  ng "$t" "the replaced title is missing or the old one survived"
+fi
+
+t="upsert on two different keys produces two entries"
+sandbox="$(make_sandbox)"; seed_dt "$sandbox" >/dev/null
+add_entry "$sandbox" payments B.2 "refund audit"
+add_entry "$sandbox" checkout A.4 "cart survives expiry"
+got="$(MI_DATA_ROOT="$sandbox" "$DT" count payments-feature-test 2>&1)"
+if [[ "$got" == "2" ]]; then ok "$t"; else ng "$t" "want 2, got '$got'"; fi
+
+t="list emits TSV feature/scenario/merged-as/title"
+row="$(MI_DATA_ROOT="$sandbox" "$DT" list payments-feature-test 2>/dev/null | head -1)"
+f1="$(printf '%s' "$row" | cut -f1)"
+f2="$(printf '%s' "$row" | cut -f2)"
+f4="$(printf '%s' "$row" | cut -f4)"
+if [[ "$f1" == "payments" && "$f2" == "B.2" && "$f4" == "refund audit" ]]; then
+  ok "$t"
+else
+  ng "$t" "unexpected row: $(printf '%s' "$row" | tr '\t' '|')"
+fi
+
+t="merged-as is empty before the merge"
+f3="$(printf '%s' "$row" | cut -f3)"
+if [[ -z "$f3" ]]; then ok "$t"; else ng "$t" "want empty, got '$f3'"; fi
+
+t="set-merged-as writes the back-reference"
+MI_DATA_ROOT="$sandbox" "$DT" set-merged-as payments-feature-test payments B.2 C.1 >/dev/null 2>&1
+f3="$(MI_DATA_ROOT="$sandbox" "$DT" list payments-feature-test 2>/dev/null | grep '^payments' | cut -f3)"
+if [[ "$f3" == "C.1" ]]; then ok "$t"; else ng "$t" "want C.1, got '$f3'"; fi
+
+t="re-deferring preserves an existing Merged as"
+add_entry "$sandbox" payments B.2 "refund audit revised"
+f3="$(MI_DATA_ROOT="$sandbox" "$DT" list payments-feature-test 2>/dev/null | grep '^payments' | cut -f3)"
+if [[ "$f3" == "C.1" ]]; then
+  ok "$t"
+else
+  ng "$t" "re-defer wiped the merge back-reference (want C.1, got '$f3')"
+fi
+
+t="remove drops exactly one entry"
+MI_DATA_ROOT="$sandbox" "$DT" remove payments-feature-test payments B.2 >/dev/null 2>&1
+got="$(MI_DATA_ROOT="$sandbox" "$DT" count payments-feature-test 2>&1)"
+if [[ "$got" == "1" ]]; then ok "$t"; else ng "$t" "want 1 remaining, got '$got'"; fi
+
+t="remove on a missing entry exits non-zero"
+if MI_DATA_ROOT="$sandbox" "$DT" remove payments-feature-test payments B.2 >/dev/null 2>&1; then
+  ng "$t" "remove succeeded on an absent entry"
+else
+  ok "$t"
+fi
+
+t="upsert refuses without --action (Important 3)"
+guard_sandbox="$(make_sandbox)"
+if MI_DATA_ROOT="$guard_sandbox" "$DT" upsert payments-feature-test \
+     --feature payments --scenario B.2 --title "refund audit" \
+     --reason "later feature" --expected "- The refund appears" >/dev/null 2>&1; then
+  ng "$t" "upsert succeeded with no --action — an entry with no steps merges silently"
+else
+  ok "$t"
+fi
+
+t="upsert refuses without --expected (Important 3)"
+guard_sandbox="$(make_sandbox)"
+if MI_DATA_ROOT="$guard_sandbox" "$DT" upsert payments-feature-test \
+     --feature payments --scenario B.2 --title "refund audit" \
+     --reason "later feature" --action "1. Issue a refund" >/dev/null 2>&1; then
+  ng "$t" "upsert succeeded with no --expected — an entry with no expectations merges silently"
+else
+  ok "$t"
+fi
+
+t="upsert output validates against the schema"
+if "$FM" validate \
+     "$sandbox/workflow-stream/payments-feature-test/test/deferred-tests.md" \
+     deferred-tests >/dev/null 2>&1; then
+  ok "$t"
+else
+  ng "$t" "the file no longer validates after mutation"
+fi
+
+t="multi-line action round-trips through the block scalar"
+sandbox="$(make_sandbox)"; seed_dt "$sandbox" >/dev/null
+MI_DATA_ROOT="$sandbox" "$DT" upsert payments-feature-test \
+  --feature payments --scenario B.2 --title "multi" \
+  --reason "later feature" \
+  --action "1. First step
+2. Second step" \
+  --expected "- One
+- Two" \
+  --deferred-at "2026-08-15T10:22:11Z" >/dev/null 2>&1
+dest="$sandbox/workflow-stream/payments-feature-test/test/deferred-tests.md"
+if grep -q '^    2. Second step$' "$dest"; then
+  ok "$t"
+else
+  ng "$t" "multi-line action was not indented into the block scalar"
+fi
+
+# ---- Task 3: Row A ensure-argument repair ----------------------------------
+
+MI_CONTINUE="$REPO_ROOT/commands/mi-continue.md"
+
+t="folder-id.sh ensure is invoked with a folder path, not a bare feature name"
+if grep -qE 'folder-id\.sh" ensure "\$data_root/workflow-stream/\$ft_feature"|folder-id\.sh ensure "\$data_root/workflow-stream/\$ft_feature"' "$MI_CONTINUE"; then
+  ok "$t"
+else
+  ng "$t" "mi-continue.md still passes a bare feature name to folder-id.sh ensure"
+fi
+
+t="no bare 'folder-id.sh ensure \"\$ft_feature\"' call survives"
+if grep -qE 'folder-id\.sh ensure "\$ft_feature"' "$MI_CONTINUE"; then
+  ng "$t" "the defective bare-name call is still present"
+else
+  ok "$t"
+fi
+
+t="folder-id.sh ensure dies on a bare feature name (the behaviour being guarded)"
+sandbox="$(make_sandbox)"
+if MI_DATA_ROOT="$sandbox" "$REPO_ROOT/scripts/folder-id.sh" ensure payments-feature-test >/dev/null 2>&1; then
+  ng "$t" "ensure unexpectedly accepted a bare name — re-check the repair's premise"
+else
+  ok "$t"
+fi
+
+# ---- Task 4: stage-1.5 early creation --------------------------------------
+
+# Behavioural: the creation sequence itself, run against a sandbox exactly as
+# the recipe specifies it.
+create_ft_folder() {
+  local sandbox ft dir
+  sandbox="$1"; ft="$2"
+  dir="$sandbox/workflow-stream/$ft"
+  mkdir -p "$dir/implementation" "$dir/test"
+  MI_DATA_ROOT="$sandbox" "$REPO_ROOT/scripts/folder-id.sh" ensure "$dir" >/dev/null 2>&1
+  MI_DATA_ROOT="$sandbox" "$DT" ensure "$ft" >/dev/null 2>&1
+}
+
+t="creation produces implementation/ and test/ and no blueprints/"
+sandbox="$(make_sandbox)"
+create_ft_folder "$sandbox" payments-feature-test
+d="$sandbox/workflow-stream/payments-feature-test"
+if [[ -d "$d/implementation" && -d "$d/test" && ! -d "$d/blueprints" ]]; then
+  ok "$t"
+else
+  ng "$t" "wrong shape: implementation=$([[ -d $d/implementation ]] && echo y || echo n) test=$([[ -d $d/test ]] && echo y || echo n) blueprints=$([[ -d $d/blueprints ]] && echo y || echo n)"
+fi
+
+t="creation mints id.md"
+if [[ -f "$d/id.md" ]]; then ok "$t"; else ng "$t" "id.md was not minted"; fi
+
+t="creation renders deferred-tests.md"
+if [[ -f "$d/test/deferred-tests.md" ]]; then ok "$t"; else ng "$t" "deferred-tests.md absent"; fi
+
+t="re-running creation does not truncate a populated deferred-tests.md"
+add_entry "$sandbox" payments B.2 "refund audit"
+before="$(MI_DATA_ROOT="$sandbox" "$DT" count payments-feature-test)"
+create_ft_folder "$sandbox" payments-feature-test
+after="$(MI_DATA_ROOT="$sandbox" "$DT" count payments-feature-test)"
+if [[ "$before" == "1" && "$after" == "1" ]]; then
+  ok "$t"
+else
+  ng "$t" "entry count changed across a re-run: $before -> $after"
+fi
+
+t="aborting an ordinary feature leaves deferred-tests.md intact"
+mkdir -p "$sandbox/workflow-stream/payments/implementation"
+echo "review notes" > "$sandbox/workflow-stream/payments/implementation/inspector-review.md"
+rm -rf "$sandbox/workflow-stream/payments/implementation"
+after="$(MI_DATA_ROOT="$sandbox" "$DT" count payments-feature-test)"
+if [[ "$after" == "1" ]]; then
+  ok "$t"
+else
+  ng "$t" "an ordinary feature's implementation/ removal disturbed the entry count"
+fi
+
+# Prose: the recipe must carry the creation block and the link-feature call.
+t="mi-continue.md Step 2A creates the feature-test folder at stage 1.5"
+if grep -q 'deferred-tests.sh" ensure\|deferred-tests.sh ensure' "$MI_CONTINUE"; then
+  ok "$t"
+else
+  ng "$t" "no stage-1.5 deferred-tests ensure call in mi-continue.md"
+fi
+
+t="mi-continue.md stage-1.5 creation calls link-feature"
+if grep -q 'folder-id.sh link-feature' "$MI_CONTINUE"; then
+  ok "$t"
+else
+  ng "$t" "link-feature is never called — derive-feature-test-name will rename the entry on a later cycle"
+fi
+
+t="project doc 3.4.1 documents deferred-tests.md under test/"
+if grep -q 'deferred-tests.md' "$REPO_ROOT/docs/millwright-inspector-project.md"; then
+  ok "$t"
+else
+  ng "$t" "3.4.1 folder tree does not list deferred-tests.md"
+fi
+
+# ---- Task 5: the deferred counter ------------------------------------------
+
+MTR_SCHEMA="$REPO_ROOT/schemas/manual-test-results.schema.yaml"
+MTR_TMPL="$REPO_ROOT/templates/manual-test-results.md.tmpl"
+MI_MTR="$REPO_ROOT/commands/mi-manual-test-run.md"
+
+t="results schema declares a deferred counter"
+if grep -qE '^  deferred:' "$MTR_SCHEMA"; then
+  ok "$t"
+else
+  ng "$t" "no 'deferred:' property in manual-test-results.schema.yaml"
+fi
+
+t="deferred is optional (absent from required:)"
+if awk '/^required:/{f=1;next} /^[a-z]/{f=0} f' "$MTR_SCHEMA" | grep -q 'deferred'; then
+  ng "$t" "deferred was added to required: — this invalidates every already-rendered results file"
+else
+  ok "$t"
+fi
+
+t="deferred declares default 0"
+if awk '/^  deferred:/{f=1;next} /^  [a-z]/{f=0} f' "$MTR_SCHEMA" | grep -q 'default: 0'; then
+  ok "$t"
+else
+  ng "$t" "deferred has no 'default: 0'"
+fi
+
+t="a results file WITHOUT deferred still validates"
+sandbox="$(make_sandbox)"
+old="$sandbox/old-results.md"
+cat > "$old" <<'EOF'
+---
+id: 22222222-2222-4222-8222-222222222222
+feature: payments
+plan-id: 33333333-3333-4333-8333-333333333333
+seed-family-id: 44444444-4444-4444-8444-444444444444
+generated-in-activation: 55555555-5555-4555-8555-555555555555
+state: in-progress
+current-scenario: null
+total: 3
+passed: 0
+failed: 0
+skipped: 0
+started-at: "2026-08-15T09:00:00Z"
+finished-at: null
+---
+
+# old
+EOF
+if "$FM" validate "$old" manual-test-results >/dev/null 2>&1; then
+  ok "$t"
+else
+  ng "$t" "back-compat broken: a pre-existing results file no longer validates"
+fi
+
+t="a results file WITH deferred validates"
+new="$sandbox/new-results.md"
+sed 's/^skipped: 0$/skipped: 0\ndeferred: 1/' "$old" > "$new"
+if "$FM" validate "$new" manual-test-results >/dev/null 2>&1; then
+  ok "$t"
+else
+  ng "$t" "schema rejects the new deferred key"
+fi
+
+t="results template carries deferred: 0"
+if grep -q '^deferred: 0$' "$MTR_TMPL"; then
+  ok "$t"
+else
+  ng "$t" "manual-test-results.md.tmpl does not render deferred: 0"
+fi
+
+t="the counter identity is stated in the runner"
+if grep -q 'passed + failed + skipped + deferred == total' "$MI_MTR"; then
+  ok "$t"
+else
+  ng "$t" "the four-term counter identity is not written down in mi-manual-test-run.md"
+fi
+
+t="all three recompute sites mention deferred"
+n="$(grep -c 'deferred' "$MI_MTR")"
+if [[ "$n" -ge 6 ]]; then
+  ok "$t"
+else
+  ng "$t" "expected >=6 'deferred' mentions across recompute sites and roll-ups, found $n"
+fi
+
+# ---- Task 6: the defer disposition -----------------------------------------
+
+MI_MTP="$REPO_ROOT/commands/mi-manual-test-plan.md"
+MTP_TMPL="$REPO_ROOT/templates/manual-test-plan.md.tmpl"
+
+# seed_todo_ft <sandbox> <ft-name|""> — todo-list.md with or without a feature-test entry.
+#
+# Controller ruling (verified against the real todo.sh): feature-test-status
+# reports `none` unless BOTH the `feature-test:` frontmatter key AND a
+# matching `## <ft-name>` section containing an item are present. So when a
+# feature-test name is passed, this fixture also emits that section — an item
+# line shaped `- [x] (assignee) STATE — ID: text` with an em dash, which is
+# what todo.sh's parser requires to resolve the entry as checked.
+seed_todo_ft() {
+  local sandbox ftname ftline
+  sandbox="$1"; ftname="$2"
+  if [[ -n "$ftname" ]]; then ftline="feature-test: $ftname"; else ftline=""; fi
+  cat > "$sandbox/quest/2026-08-15-demo/todo-list.md" <<EOF
+---
+id: 66666666-6666-4666-8666-666666666666
+related-features: [payments, audit-log]
+description: Seed cycle.
+$ftline
+---
+
+# Todo list
+
+## payments
+
+- [x] (emin) IMPLEMENTED — PAY-001: ship payments.
+
+## audit-log
+
+- [x] (emin) IMPLEMENTED — AUD-001: ship audit log.
+EOF
+  if [[ -n "$ftname" ]]; then
+    cat >> "$sandbox/quest/2026-08-15-demo/todo-list.md" <<EOF
+
+## $ftname
+
+- [x] (emin) TODO — FT-001: test the whole feature implementation.
+EOF
+  fi
+}
+
+t="offer-defer is true for an ordinary feature in a multi-feature cycle"
+sandbox="$(make_sandbox)"; seed_todo_ft "$sandbox" payments-feature-test
+if MI_DATA_ROOT="$sandbox" "$DT" offer-defer payments >/dev/null 2>&1; then
+  ok "$t"
+else
+  ng "$t" "offer-defer refused for an ordinary feature"
+fi
+
+t="offer-defer is false in a single-feature cycle (DTI-008)"
+sandbox="$(make_sandbox)"; seed_todo_ft "$sandbox" ""
+if MI_DATA_ROOT="$sandbox" "$DT" offer-defer payments >/dev/null 2>&1; then
+  ng "$t" "offer-defer allowed a defer with no feature-test destination"
+else
+  ok "$t"
+fi
+
+t="offer-defer is false for the feature-test entry's own run"
+sandbox="$(make_sandbox)"; seed_todo_ft "$sandbox" payments-feature-test
+if MI_DATA_ROOT="$sandbox" "$DT" offer-defer payments-feature-test >/dev/null 2>&1; then
+  ng "$t" "offer-defer allowed a defer during the terminal entry's own run"
+else
+  ok "$t"
+fi
+
+t="the runner computes offer_defer via the script predicate, not a carried flag"
+if grep -q 'deferred-tests.sh offer-defer\|deferred-tests.sh" offer-defer' "$MI_MTR"; then
+  ok "$t"
+else
+  ng "$t" "mi-manual-test-run.md does not call the offer-defer predicate"
+fi
+
+t="all three inspector-facing prompt sites offer defer"
+n="$(grep -c '`defer <reason>`' "$MI_MTR")"
+if [[ "$n" -ge 3 ]]; then
+  ok "$t"
+else
+  ng "$t" "expected >=3 '\`defer <reason>\`' prompt mentions, found $n"
+fi
+
+t="autonomous mode explicitly never defers"
+if grep -qi 'autonomous.*never.*defer\|no `defer` verdict in autonomous' "$MI_MTR"; then
+  ok "$t"
+else
+  ng "$t" "mi-manual-test-run.md does not state that autonomous mode never defers"
+fi
+
+t="the runner states defer never falls into the fail or skip branch"
+if grep -q 'never falls into the `fail` or `skip`' "$MI_MTR"; then
+  ok "$t"
+else
+  ng "$t" "the fail/skip parsing guard is not stated"
+fi
+
+t="the runner states a deferred scenario seeds no IR"
+if grep -q 'never spawns an `IR-NNN`\|never spawns an IR-NNN' "$MI_MTR"; then
+  ok "$t"
+else
+  ng "$t" "the no-auto-seed guarantee is not stated"
+fi
+
+t="the plan template gates the defer vocabulary on the predicate"
+if grep -q 'defer' "$MTP_TMPL"; then
+  ok "$t"
+else
+  ng "$t" "manual-test-plan.md.tmpl never mentions defer"
+fi
+
+t="the plan generator prose gates the defer vocabulary"
+if grep -q 'offer-defer' "$MI_MTP"; then
+  ok "$t"
+else
+  ng "$t" "mi-manual-test-plan.md does not gate the vocabulary on offer-defer"
+fi
+
+# ---- Task 7: merge and attribution -----------------------------------------
+
+t="the merge anchor's exact text is still pinned in the plan generator"
+if grep -q '<!-- deferred-merge-point -->' "$MI_MTP"; then
+  ok "$t"
+else
+  ng "$t" "the deferred-merge-point anchor text was changed or removed"
+fi
+
+t="the anchor is documented as the last line of section 3"
+if grep -q 'End `## 3. Test scenarios` with exactly this line' "$MI_MTP"; then
+  ok "$t"
+else
+  ng "$t" "the anchor's position contract is no longer stated"
+fi
+
+t="the plan generator lists deferred-tests as a derivation input"
+if grep -q 'deferred-tests' "$MI_MTP"; then
+  ok "$t"
+else
+  ng "$t" "mi-manual-test-plan.md never mentions deferred-tests"
+fi
+
+t="the merge inserts above the anchor, not below"
+if grep -q 'immediately above' "$MI_MTP"; then
+  ok "$t"
+else
+  ng "$t" "insertion position relative to the anchor is not stated"
+fi
+
+t="the merge writes the Merged as back-reference"
+if grep -q 'set-merged-as' "$MI_MTP"; then
+  ok "$t"
+else
+  ng "$t" "the plan generator never calls set-merged-as"
+fi
+
+t="an empty deferred-tests produces an unchanged render (stated contract)"
+if grep -q 'zero deferred entries\|empty `deferred-tests.md`' "$MI_MTP"; then
+  ok "$t"
+else
+  ng "$t" "the zero-deferral no-op contract is not stated"
+fi
+
+t="attribution marker format is pinned in the plan generator"
+if grep -q '\[deferred from ' "$MI_MTP"; then
+  ok "$t"
+else
+  ng "$t" "the [deferred from <feature>] marker is not specified"
+fi
+
+t="the results side emits the attribution line"
+if grep -q '\[deferred from ' "$MI_MTR"; then
+  ok "$t"
+else
+  ng "$t" "mi-manual-test-run.md Step 3.4 does not emit the attribution line"
+fi
+
+t="the parser is documented to tolerate a non-bullet line before the bullets"
+if grep -q 'non-bullet line' "$MI_MTR"; then
+  ok "$t"
+else
+  ng "$t" "the parser-tolerance contract for the attribution line is not stated"
+fi
+
+t="the id grammar is explicitly unchanged"
+if grep -q 'id grammar\|scenario-id grammar' "$MI_MTP"; then
+  ok "$t"
+else
+  ng "$t" "the byte-identical id-grammar guarantee is not restated at the merge"
+fi
+
+# Behavioural: list -> set-merged-as round-trip is what the merge performs.
+t="merge round-trip populates Merged as for every entry"
+sandbox="$(make_sandbox)"; seed_dt "$sandbox" >/dev/null
+add_entry "$sandbox" payments B.2 "refund audit"
+add_entry "$sandbox" checkout A.4 "cart survives expiry"
+i=0
+while IFS=$'\t' read -r f s m ttl; do
+  [[ -z "$f" ]] && continue
+  i=$((i + 1))
+  MI_DATA_ROOT="$sandbox" "$DT" set-merged-as payments-feature-test "$f" "$s" "C.$i" >/dev/null 2>&1
+done < <(MI_DATA_ROOT="$sandbox" "$DT" list payments-feature-test 2>/dev/null)
+blanks="$(MI_DATA_ROOT="$sandbox" "$DT" list payments-feature-test 2>/dev/null | cut -f3 | grep -c '^$' || true)"
+if [[ "$i" == "2" && "$blanks" == "0" ]]; then
+  ok "$t"
+else
+  ng "$t" "processed $i entries, $blanks still have a blank Merged as"
+fi
+
+# ---- Task 8: Gate 1 (blocking) ---------------------------------------------
+
+# mk_results <path> <scenario-id:verdict> ... — minimal results file.
+mk_results() {
+  local path="$1"; shift
+  cat > "$path" <<'EOF'
+---
+id: 22222222-2222-4222-8222-222222222222
+feature: payments-feature-test
+plan-id: 33333333-3333-4333-8333-333333333333
+seed-family-id: 44444444-4444-4444-8444-444444444444
+generated-in-activation: 55555555-5555-4555-8555-555555555555
+state: complete
+current-scenario: null
+total: 2
+passed: 1
+failed: 0
+skipped: 0
+deferred: 0
+started-at: "2026-08-15T09:00:00Z"
+finished-at: "2026-08-15T10:00:00Z"
+---
+
+# Manual test results
+
+## Per-scenario verdicts
+EOF
+  local pair id verdict
+  for pair in "$@"; do
+    id="${pair%%:*}"; verdict="${pair##*:}"
+    cat >> "$path" <<EOF
+
+### $id — $verdict
+
+- **Verdict:** $verdict
+- **Observation:** n/a
+- **Recorded at:** "2026-08-15T09:30:00Z"
+- **Seeded:** false
+- **Cited as IR-NNN:**
+EOF
+  done
+}
+
+setup_gate_case() {
+  # $1 sandbox, $2 merged-as for payments/B.2, $3.. verdict pairs
+  local sandbox merged
+  sandbox="$1"; merged="$2"; shift 2
+  seed_dt "$sandbox" >/dev/null
+  add_entry "$sandbox" payments B.2 "refund audit"
+  if [[ -n "$merged" ]]; then
+    MI_DATA_ROOT="$sandbox" "$DT" set-merged-as payments-feature-test payments B.2 "$merged" >/dev/null 2>&1
+  fi
+  mk_results "$sandbox/results.md" "$@"
+}
+
+t="gate: an entry whose merged scenario has no verdict is unresolved"
+sandbox="$(make_sandbox)"; setup_gate_case "$sandbox" C.1 "A.1:pass"
+n="$(MI_DATA_ROOT="$sandbox" "$DT" unresolved payments-feature-test "$sandbox/results.md" 2>/dev/null | sed '/^$/d' | wc -l | tr -d ' ')"
+if [[ "$n" == "1" ]]; then ok "$t"; else ng "$t" "want 1 unresolved, got $n"; fi
+
+t="gate: a pass verdict resolves the entry"
+sandbox="$(make_sandbox)"; setup_gate_case "$sandbox" C.1 "C.1:pass"
+n="$(MI_DATA_ROOT="$sandbox" "$DT" unresolved payments-feature-test "$sandbox/results.md" 2>/dev/null | sed '/^$/d' | wc -l | tr -d ' ')"
+if [[ "$n" == "0" ]]; then ok "$t"; else ng "$t" "want 0 unresolved, got $n"; fi
+
+t="gate: a fail verdict resolves the entry"
+sandbox="$(make_sandbox)"; setup_gate_case "$sandbox" C.1 "C.1:fail"
+n="$(MI_DATA_ROOT="$sandbox" "$DT" unresolved payments-feature-test "$sandbox/results.md" 2>/dev/null | sed '/^$/d' | wc -l | tr -d ' ')"
+if [[ "$n" == "0" ]]; then ok "$t"; else ng "$t" "want 0 unresolved, got $n"; fi
+
+t="gate: a skip verdict resolves the entry"
+sandbox="$(make_sandbox)"; setup_gate_case "$sandbox" C.1 "C.1:skip"
+n="$(MI_DATA_ROOT="$sandbox" "$DT" unresolved payments-feature-test "$sandbox/results.md" 2>/dev/null | sed '/^$/d' | wc -l | tr -d ' ')"
+if [[ "$n" == "0" ]]; then ok "$t"; else ng "$t" "skip must resolve — want 0 unresolved, got $n"; fi
+
+t="gate: a blank Merged as is unresolved (fails closed)"
+sandbox="$(make_sandbox)"; setup_gate_case "$sandbox" "" "C.1:pass"
+n="$(MI_DATA_ROOT="$sandbox" "$DT" unresolved payments-feature-test "$sandbox/results.md" 2>/dev/null | sed '/^$/d' | wc -l | tr -d ' ')"
+if [[ "$n" == "1" ]]; then ok "$t"; else ng "$t" "a blank Merged as must fail closed — got $n"; fi
+
+t="gate: zero deferred entries means nothing blocks"
+sandbox="$(make_sandbox)"; seed_dt "$sandbox" >/dev/null
+mk_results "$sandbox/results.md" "A.1:pass"
+n="$(MI_DATA_ROOT="$sandbox" "$DT" unresolved payments-feature-test "$sandbox/results.md" 2>/dev/null | sed '/^$/d' | wc -l | tr -d ' ')"
+if [[ "$n" == "0" ]]; then ok "$t"; else ng "$t" "want 0, got $n"; fi
+
+t="gate: bullet Verdict wins when heading and bullet disagree (Important 6)"
+sandbox="$(make_sandbox)"
+seed_dt "$sandbox" >/dev/null
+add_entry "$sandbox" payments B.2 "refund audit"
+MI_DATA_ROOT="$sandbox" "$DT" set-merged-as payments-feature-test payments B.2 C.1 >/dev/null 2>&1
+res="$sandbox/mismatch.md"
+cat > "$res" <<'EOF'
+---
+id: 22222222-2222-4222-8222-222222222222
+feature: payments-feature-test
+plan-id: 33333333-3333-4333-8333-333333333333
+seed-family-id: 44444444-4444-4444-8444-444444444444
+generated-in-activation: 55555555-5555-4555-8555-555555555555
+state: complete
+current-scenario: null
+total: 1
+passed: 1
+failed: 0
+skipped: 0
+deferred: 0
+started-at: "2026-08-15T09:00:00Z"
+finished-at: "2026-08-15T10:00:00Z"
+---
+
+# Manual test results
+
+## Per-scenario verdicts
+
+### C.1 — not-a-real-verdict
+
+- **Verdict:** pass
+- **Observation:** n/a
+- **Recorded at:** "2026-08-15T09:30:00Z"
+- **Seeded:** false
+- **Cited as IR-NNN:**
+EOF
+n="$(MI_DATA_ROOT="$sandbox" "$DT" unresolved payments-feature-test "$res" | sed '/^$/d' | wc -l | tr -d ' ')"
+if [[ "$n" == "0" ]]; then
+  ok "$t"
+else
+  ng "$t" "the heading word ('not-a-real-verdict') was used instead of the bullet ('pass') — want 0 unresolved, got $n"
+fi
+
+t="gate: an absent results file leaves every entry unresolved"
+sandbox="$(make_sandbox)"; setup_gate_case "$sandbox" C.1 "C.1:pass"
+n="$(MI_DATA_ROOT="$sandbox" "$DT" unresolved payments-feature-test "$sandbox/nope.md" 2>/dev/null | sed '/^$/d' | wc -l | tr -d ' ')"
+if [[ "$n" == "1" ]]; then ok "$t"; else ng "$t" "want 1 unresolved for a missing results file, got $n"; fi
+
+t="mi-continue gates the Inspector Handler's advance-to 5 7"
+if grep -q 'deferred-tests.sh unresolved\|deferred-tests.sh" unresolved' "$MI_CONTINUE"; then
+  ok "$t"
+else
+  ng "$t" "mi-continue.md never calls the unresolved gate"
+fi
+
+t="mi-continue states the gate is not inside generic advance-to"
+if grep -q 'not inside generic `advance-to`\|Not inside generic' "$MI_CONTINUE"; then
+  ok "$t"
+else
+  ng "$t" "the gate-placement rationale is not stated"
+fi
+
+t="mi-continue states the existing open-findings block is not replaced"
+if grep -q 'not replaced' "$MI_CONTINUE"; then
+  ok "$t"
+else
+  ng "$t" "the additive-AND contract with the findings block is not stated"
+fi
+
+# ---- Task 9: Gate 2 (report-only) ------------------------------------------
+
+MI_CW="$REPO_ROOT/commands/mi-complete-workflow.md"
+
+t="the hand-off message reports deferred scenarios"
+if grep -q 'deferred to the whole-feature test' "$MI_MTR"; then
+  ok "$t"
+else
+  ng "$t" "mi-manual-test-run.md 4.8 does not report deferred scenarios"
+fi
+
+t="the ordinary-feature stage-8 preflight reads the deferred counter"
+if grep -q 'deferred' "$MI_CW"; then
+  ok "$t"
+else
+  ng "$t" "mi-complete-workflow.md never mentions the deferred counter"
+fi
+
+t="Gate 2 is explicitly report-only and never blocks"
+if grep -qi 'never block' "$MI_CW"; then
+  ok "$t"
+else
+  ng "$t" "the never-blocks contract is not stated in mi-complete-workflow.md"
+fi
+
+t="the runner states the ordinary feature is not fully tested while carrying deferrals"
+if grep -q 'not.*fully tested\|never described as fully tested' "$MI_MTR"; then
+  ok "$t"
+else
+  ng "$t" "the fully-tested wording rule is not stated"
+fi
+
+# ---- Task 10: end-to-end ---------------------------------------------------
+
+t="e2e: defer -> merge -> verdict clears the gate"
+sandbox="$(make_sandbox)"
+seed_todo_ft "$sandbox" payments-feature-test
+create_ft_folder "$sandbox" payments-feature-test
+
+# 1. Two ordinary features each defer one scenario.
+MI_DATA_ROOT="$sandbox" "$DT" upsert payments-feature-test \
+  --feature payments --scenario B.2 --title "refund shows in the audit trail" \
+  --reason "audit-log ships later" \
+  --action "1. Issue a refund on order #1001" \
+  --expected "- The refund appears in the audit trail" \
+  --deferred-at "2026-08-15T10:00:00Z" >/dev/null 2>&1
+MI_DATA_ROOT="$sandbox" "$DT" upsert payments-feature-test \
+  --feature checkout --scenario A.4 --title "cart survives a session expiry" \
+  --reason "session feature ships later" \
+  --action "1. Expire the session" \
+  --expected "- The cart is intact" \
+  --deferred-at "2026-08-15T10:05:00Z" >/dev/null 2>&1
+
+# 2. The whole-feature plan generation assigns ids (list -> set-merged-as).
+i=0
+while IFS=$'\t' read -r f s m ttl; do
+  [[ -z "$f" ]] && continue
+  i=$((i + 1))
+  MI_DATA_ROOT="$sandbox" "$DT" set-merged-as payments-feature-test "$f" "$s" "C.$i" >/dev/null 2>&1
+done < <(MI_DATA_ROOT="$sandbox" "$DT" list payments-feature-test 2>/dev/null)
+
+# 3. Before the run, both are unresolved.
+res="$sandbox/workflow-stream/payments-feature-test/test/manual-test-results.md"
+mk_results "$res" "A.1:pass"
+before="$(MI_DATA_ROOT="$sandbox" "$DT" unresolved payments-feature-test "$res" | sed '/^$/d' | wc -l | tr -d ' ')"
+
+# 4. The whole-feature run gives both a verdict (one pass, one skip).
+mk_results "$res" "A.1:pass" "C.1:pass" "C.2:skip"
+after="$(MI_DATA_ROOT="$sandbox" "$DT" unresolved payments-feature-test "$res" | sed '/^$/d' | wc -l | tr -d ' ')"
+
+if [[ "$before" == "2" && "$after" == "0" ]]; then
+  ok "$t"
+else
+  ng "$t" "unresolved before=$before (want 2), after=$after (want 0)"
+fi
+
+t="e2e: the artifact still validates after the full round-trip"
+if "$FM" validate \
+     "$sandbox/workflow-stream/payments-feature-test/test/deferred-tests.md" \
+     deferred-tests >/dev/null 2>&1; then
+  ok "$t"
+else
+  ng "$t" "deferred-tests.md no longer validates after the e2e round-trip"
+fi
+
+t="e2e: inspector-added INS blocks never resolve a deferred entry"
+sandbox="$(make_sandbox)"
+seed_dt "$sandbox" >/dev/null
+add_entry "$sandbox" payments B.2 "refund audit"
+MI_DATA_ROOT="$sandbox" "$DT" set-merged-as payments-feature-test payments B.2 C.1 >/dev/null 2>&1
+res="$sandbox/results.md"
+mk_results "$res" "A.1:pass"
+cat >> "$res" <<'EOF'
+
+## Inspector-added checks
+
+### C.1 — pass
+
+- **Verdict:** pass
+- **Observation:** an ad-hoc check that happens to share the id
+- **Recorded at:** "2026-08-15T09:45:00Z"
+EOF
+n="$(MI_DATA_ROOT="$sandbox" "$DT" unresolved payments-feature-test "$res" | sed '/^$/d' | wc -l | tr -d ' ')"
+if [[ "$n" == "1" ]]; then
+  ok "$t"
+else
+  ng "$t" "an INS block outside '## Per-scenario verdicts' wrongly resolved the entry"
+fi
+
+# ---- Fix wave (2026-08-15 final review): Important 5's three spec-mandated
+# tests. Each is a regression pin for behaviour already verified correct —
+# not a bug hunt — so all three are expected to pass on first run.
+# -----------------------------------------------------------------------------
+
+t="regression: derive-feature-test-name is stable across cycles once link-feature runs at creation (Important 5.1)"
+sandbox="$(mktemp -d)"; SANDBOXES+=("$sandbox")
+mkdir -p "$sandbox/journal/demo"
+slug1="2026-08-14-cycle1"
+mkdir -p "$sandbox/quest/$slug1"
+cat > "$sandbox/quest/active.md" <<EOF
+---
+slug: $slug1
+started: "2026-08-14"
+journal-folders: [demo]
+status: active
+---
+
+# Active quest pointer
+EOF
+MI_DATA_ROOT="$sandbox" "$REPO_ROOT/scripts/folder-id.sh" init-reference demo >/dev/null 2>&1
+
+# Cycle 1 creates the feature-test folder exactly as mi-continue.md's
+# stage-1.5 sequence does: mkdir, folder-id.sh ensure, folder-id.sh
+# link-feature — the last of which is the fix this test pins.
+ft_dir="$sandbox/workflow-stream/payments-feature-test"
+mkdir -p "$ft_dir/implementation" "$ft_dir/test"
+MI_DATA_ROOT="$sandbox" "$REPO_ROOT/scripts/folder-id.sh" ensure "$ft_dir" >/dev/null 2>&1
+MI_DATA_ROOT="$sandbox" "$REPO_ROOT/scripts/folder-id.sh" link-feature payments-feature-test >/dev/null 2>&1
+
+# Cycle 2 — a later cycle sourced from the SAME journal folder (genuine
+# continuation, not a collision).
+slug2="2026-08-15-cycle2"
+mkdir -p "$sandbox/quest/$slug2"
+cat > "$sandbox/quest/active.md" <<EOF
+---
+slug: $slug2
+started: "2026-08-15"
+journal-folders: [demo]
+status: active
+---
+
+# Active quest pointer
+EOF
+MI_DATA_ROOT="$sandbox" "$REPO_ROOT/scripts/folder-id.sh" init-reference demo >/dev/null 2>&1
+
+got="$(MI_DATA_ROOT="$sandbox" "$REPO_ROOT/scripts/folder-id.sh" derive-feature-test-name payments checkout 2>/dev/null)"
+if [[ "$got" == "payments-feature-test" ]]; then
+  ok "$t"
+else
+  ng "$t" "want payments-feature-test, got '$got' — without link-feature, feature-lineage-check can't prove lineage and derive-feature-test-name silently renames the entry to '-2'"
+fi
+
+t="regression: guided prompt strings are byte-identical to pre-feature text when offer_defer=0 (Important 5.2)"
+s1='Reply `pass`, `fail <what you saw>`, `skip <why>`, or `pause` after each one.'
+s2='Reply `pass`, `fail <what you saw>`, `skip <why>`, or `pause`.'
+if grep -qF -- "$s1" "$MI_MTR" && grep -qF -- "$s2" "$MI_MTR"; then
+  ok "$t"
+else
+  ng "$t" "the offer_defer=0 base-case prompt text is missing or was altered — the guided env-up announcement and/or the 3.2c reply line leak the offer_defer=1 clause unconditionally"
+fi
+
+t="regression: the verdict-block parser tolerates the [deferred from <feature>] attribution line (Important 5.3)"
+sandbox="$(make_sandbox)"
+seed_dt "$sandbox" >/dev/null
+add_entry "$sandbox" payments B.2 "refund audit"
+MI_DATA_ROOT="$sandbox" "$DT" set-merged-as payments-feature-test payments B.2 C.1 >/dev/null 2>&1
+res="$sandbox/attributed.md"
+cat > "$res" <<'EOF'
+---
+id: 22222222-2222-4222-8222-222222222222
+feature: payments-feature-test
+plan-id: 33333333-3333-4333-8333-333333333333
+seed-family-id: 44444444-4444-4444-8444-444444444444
+generated-in-activation: 55555555-5555-4555-8555-555555555555
+state: complete
+current-scenario: null
+total: 1
+passed: 1
+failed: 0
+skipped: 0
+deferred: 0
+started-at: "2026-08-15T09:00:00Z"
+finished-at: "2026-08-15T10:00:00Z"
+---
+
+# Manual test results
+
+## Per-scenario verdicts
+
+### C.1 — pass
+
+[deferred from payments]
+
+- **Verdict:** pass
+- **Observation:** n/a
+- **Recorded at:** "2026-08-15T09:30:00Z"
+- **Seeded:** false
+- **Cited as IR-NNN:**
+EOF
+n="$(MI_DATA_ROOT="$sandbox" "$DT" unresolved payments-feature-test "$res" | sed '/^$/d' | wc -l | tr -d ' ')"
+if [[ "$n" == "0" ]]; then
+  ok "$t"
+else
+  ng "$t" "the attribution line broke the verdict-block parser — want 0 unresolved, got $n"
+fi
+
+# ---- Summary --------------------------------------------------------------
+
+printf "\n%d passed, %d failed\n" "$pass" "$fail"
+if (( fail > 0 )); then
+  printf "Failed: %s\n" "${fail_names[*]}" >&2
+  exit 1
+fi
+exit 0

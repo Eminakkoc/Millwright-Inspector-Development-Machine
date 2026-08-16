@@ -37,6 +37,29 @@ Three entry conditions, evaluated in order (Item 2 of the v11 plan):
 2. **`active.current-stage == 2`** — re-entering the same feature mid-stage-2 (e.g., a session break interrupted blueprint generation; the inspector re-runs `/mi-apply-impact` for the same feature). Skip activation and proceed to Step 2 with the existing `active.feature`. Surface `check-current` status so the inspector knows whether `current/` is already complete (`0` → short-circuit), partial (`2` → surface what's missing; offer `--force`), or empty (`1` → regenerate from scratch).
 3. **`active.current-stage > 2`** — a different feature is mid-flight. Refuse: the inspector must run `/mi-abort-workflow` to clear it before re-running `/mi-apply-impact`.
 
+**Feature-test guard (runs first — before activation, before `ensure-current`).**
+A feature-test entry has no blueprint stage and its folder deliberately carries no
+`blueprints/` (`FTW-002`). On the forward path `/mi-continue`'s Row A never fires this
+command for such an entry; this guard closes the manual-invocation hole, where
+`blueprints.sh ensure-current` would otherwise create the folder the design forbids.
+
+```bash
+# Guard the queue-head on a fresh run, and the active feature on a re-entry.
+guard_candidate="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get-active 2>/dev/null || echo 'null')"
+if [[ "$guard_candidate" == "null" || -z "$guard_candidate" ]]; then
+  guard_candidate="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh queue-remaining 2>/dev/null | sed '/^$/d' | head -1)"
+fi
+if [[ -n "$guard_candidate" ]] && $CLAUDE_PLUGIN_ROOT/scripts/todo.sh is-feature-test "$guard_candidate"; then
+  echo "error: '$guard_candidate' is this cycle's feature-test entry. It has no blueprint stage, and this command would create the blueprints/ folder its design forbids." >&2
+  echo "       Type /mi-continue instead — the dispatcher routes it into the abbreviated pipeline (diagrams → test plan → run → review → resolution)." >&2
+  exit 1
+fi
+```
+
+No activation, no `ensure-current`, no state mutation — the guard refuses with
+`progress.md` byte-identical. For every ordinary feature `is-feature-test` exits 1 and the
+command proceeds exactly as today.
+
 ```bash
 active_feature_pre="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get-active 2>/dev/null || echo 'null')"
 

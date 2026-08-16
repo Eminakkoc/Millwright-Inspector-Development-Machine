@@ -55,6 +55,16 @@
 #             Callers must treat this as a collision (conservative default).
 #       Prints a one-line diagnostic either way. Called by /mi-run's Step-3
 #       feature-name uniqueness gate and /mi-apply-impact's activation backstop.
+#
+#   folder-id.sh derive-feature-test-name <feature1> <feature2> [...]
+#       Derive the name of a cycle's "feature test" entry from its final
+#       ordered ordinary feature list: "<feature1>-feature-test", retried
+#       with an ordinal ("-2", "-3", ...) when the candidate collides with
+#       another ordinary feature name or fails feature-lineage-check. Prints
+#       the derived name on stdout; emits a rename note on stderr when an
+#       ordinal was needed. Requires at least two ordinary feature names — a
+#       single-feature cycle emits no feature-test entry (FTQ-007). Called by
+#       /mi-run.
 
 set -euo pipefail
 source "$(dirname "$0")/internal/common.sh"
@@ -270,8 +280,44 @@ sys.exit(3)
 PYEOF
     ;;
 
+  derive-feature-test-name)
+    # Derive the cycle's feature-test entry name from its final ordered
+    # ordinary feature list. Second-pass uniqueness gate: the candidate must
+    # differ from every ordinary name AND pass feature-lineage-check, with an
+    # ordinal retry on either failure.
+    if [[ $# -lt 2 ]]; then
+      mi_die "derive-feature-test-name: at least two ordinary feature names required (a single-feature cycle emits no feature-test entry — FTQ-007)"
+    fi
+    base="${1}-feature-test"
+    candidate="$base"
+    ordinal=1
+    while :; do
+      taken=0
+      for f in "$@"; do
+        if [[ "$f" == "$candidate" ]]; then
+          taken=1
+          break
+        fi
+      done
+      if [[ "$taken" -eq 0 ]]; then
+        if "$0" feature-lineage-check "$candidate" >/dev/null 2>&1; then
+          break
+        fi
+      fi
+      ordinal=$((ordinal + 1))
+      if [[ "$ordinal" -gt 99 ]]; then
+        mi_die "derive-feature-test-name: exhausted ordinals 2..99 for base '$base'"
+      fi
+      candidate="${base}-${ordinal}"
+    done
+    if [[ "$candidate" != "$base" ]]; then
+      echo "note: feature-test name '$base' was taken; using '$candidate'" >&2
+    fi
+    echo "$candidate"
+    ;;
+
   *)
-    echo "usage: folder-id.sh {ensure|get|resolve|list|init-reference|link-feature|feature-lineage-check} ..." >&2
+    echo "usage: folder-id.sh {ensure|get|resolve|list|init-reference|link-feature|feature-lineage-check|derive-feature-test-name} ..." >&2
     exit 2
     ;;
 esac

@@ -365,6 +365,44 @@ fi
 
 The final (possibly renamed) names are the ones written everywhere downstream — `todo-list.md` `related-features`, `summary.md` `features:` + `## Feature:` headings, and the `progress.md` queue — so a rename can never desync the cycle files. If the inspector actually wants to CONTINUE a completed feature in its old folder (reusing its manual-test plan and decisions), the supported path is re-selecting that feature's original journal folder for this cycle, which makes the check pass by lineage. Record any renames — Step 6's hand-off message must surface them.
 
+**Feature-test entry (multi-feature cycles only).** When `count(ordinary features) >= 2` — evaluated **after** the uniqueness gate above has settled every rename, so the derived name is built from final names — this cycle also carries a terminal whole-feature test entry. Derive its name:
+
+```bash
+ft_name="$($CLAUDE_PLUGIN_ROOT/scripts/folder-id.sh derive-feature-test-name "${final_features[@]}")"
+```
+
+`derive-feature-test-name` appends `-feature-test` to the first feature in the final ordered list and runs the same second-pass uniqueness gate ordinary names get (differ from every ordinary name; pass `feature-lineage-check`), appending `-2`, `-3`, … until both pass. It prints a rename note on stderr when an ordinal was needed — Step 6 must surface it. A single-feature cycle never calls it: `count == 1` emits no feature-test section, no `## Feature:` section, no queue entry, and no folder, producing a byte-identical `todo-list.md` to today.
+
+Pass `ft_name` **last** in `FEATURES`, then record it in frontmatter after `init`:
+
+```bash
+$CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh init todo-list \
+  "$quest_dir/todo-list.md" \
+  "FEATURES=payments,audit-log,payments-feature-test" \
+  "DESCRIPTION=Add Stripe webhooks and a tamper-evident audit trail."
+$CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh set \
+  "$quest_dir/todo-list.md" feature-test "$ft_name"
+```
+
+The field is set post-`init` rather than templated so a single-feature cycle's file is untouched — an unsubstituted `{{FEATURE_TEST}}` would leave either a literal token or an empty value, and both fail the schema pattern.
+
+**The name is frozen once written.** It derives from the **stage-1** ordered feature list and is then fixed in `todo-list.md`, `summary.md`, and the feature folder name. A stage-1.5 reorder that changes which feature comes first must **not** re-derive it — re-deriving would rename a feature folder mid-cycle and strand its artifacts. Downstream readers take the name from the `feature-test:` frontmatter field, never by re-computing it.
+
+Emit the ordinary sections first and the feature-test section **last**, holding exactly one item:
+
+```markdown
+## payments-feature-test
+
+Covers the assembled result of every feature above. Auto-selected by the millwright once
+every ordinary item is either selected or cancelled — leave this item unmarked. To drop an
+ordinary item you do not want this cycle, cancel it (`todo.sh set-state <id> CANCELED`)
+rather than leaving it unmarked.
+
+- [ ] TODO — FT-001: test the whole feature implementation
+```
+
+The item carries **no assignee** — stage 1.5 inherits one from whoever completes the selection. Its id is `FT-001`; when an ordinary feature in this cycle already uses the `FT` prefix, fall back on the prefix — `FT2-001`, `FT3-001`, … — keeping the `-001` numbering ordinary ids use.
+
 The block below is a **template** — substitute concrete values before running. `FEATURES` must be comma-separated kebab-case feature names matching what you found in the journal; `DESCRIPTION` is a one-line overall scope. Sample invocation:
 
 ```bash
@@ -405,6 +443,15 @@ Then append the summary body. **The body is feature-indexed** — downstream sta
 
 The `features:` frontmatter array and the body's `## Feature: <name>` headings must agree. The schema validator enforces the frontmatter; downstream stages cross-check by heading name.
 
+**Feature-test section (multi-feature cycles only).** When Step 3 emitted a feature-test entry, pass the same `ft_name` last in `FEATURES` and mirror the field:
+
+```bash
+$CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh set \
+  "$quest_dir/summary.md" feature-test "$ft_name"
+```
+
+Add `## Feature: <ft_name>` as the **last** `## Feature:` section (before `## Sources`). It describes **what** the whole-feature test must cover — synthesized from `## Cross-cutting constraints` plus the union of the ordinary features' acceptance hints. Do **not** enumerate test scenarios: stage 1 has journal content rather than an implementation, so scenarios written here would be guesses that the feature-test workflow later contradicts when it derives a real plan from shipped code, leaving two disagreeing definitions with the stale one in the file the inspector reads first. Add one matching `## In plain terms` bullet.
+
 ### Step 5 — Scaffold the cycle's `progress.md`
 
 ```bash
@@ -412,6 +459,8 @@ $CLAUDE_PLUGIN_ROOT/scripts/progress.sh init "$todo_list_id" <feature1> [<featur
 ```
 
 `progress.sh init` resolves the destination path through the active-quest pointer, so the file lands at `$quest_dir/progress.md` automatically. The new file has the queue populated, `completed: []`, and `active: null`. The feature list here is the distinct feature names surfaced in the todo list — the inspector confirms the priority order in the next step (that's stage 1.5 / item 3 of the workflow). For now, pass them in an order that seems sensible from the journal context; dependencies are resolved later.
+
+Pass **only the ordinary features** here. The feature-test name is deliberately withheld from `progress.sh init`: selection is unknown at stage 1, so the entry is appended later by `progress.sh enqueue` at the stage-1.5 moment its auto-select condition fires.
 
 ### Step 6 — Hand off to the inspector
 
@@ -422,6 +471,12 @@ Tell the inspector (substitute `$quest_dir` and `$slug` literals into the messag
 When the Step-3 uniqueness gate renamed any feature, append one line per rename to the hand-off message:
 
 > "Note: feature `<semantic-name>` was named **`<final-name>`** — `workflow-stream/<semantic-name>/` already belongs to a previously completed workflow built from different journal folder(s) (`<lineage from feature-lineage-check>`), so reusing the name would mix artifacts."
+
+When the cycle carries a feature-test entry, append this to the hand-off message:
+
+> "This cycle has more than one feature, so `todo-list.md` also carries a terminal **`<ft_name>`** section with a single item: *test the whole feature implementation*. **Leave that item unmarked** — I select it automatically once every ordinary item is either selected or cancelled, and it is pinned last in the queue. If there's an ordinary item you don't want this cycle, cancel it (`todo.sh set-state <id> CANCELED`) rather than leaving it unmarked, otherwise the whole-feature test never becomes selectable."
+
+When `derive-feature-test-name` printed a rename note, append one more line in the same shape as the per-feature rename notes above.
 
 Then **stop and wait** for the inspector to type `/mi-continue`. The Pre-flight Handler in `commands/mi-continue.md` carries out the rest of stage 1.5:
 

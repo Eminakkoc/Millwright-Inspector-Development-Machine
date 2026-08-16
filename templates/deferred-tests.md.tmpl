@@ -1,0 +1,62 @@
+---
+id: {{UUID}}
+feature-test: {{FEATURE_TEST}}
+quest-slug: {{QUEST_SLUG}}
+created-at: {{CREATED_AT}}
+---
+
+# Deferred test items — {{FEATURE_TEST}}
+
+Manual-test scenarios carried forward from this cycle's ordinary features to the
+whole-feature test. An entry lands here when the inspector answers `defer` during an
+ordinary feature's `/mi-manual-test-run`, because the behaviour under test depends on a
+feature later in the queue.
+
+`/mi-manual-test-plan`'s feature-test render path merges every entry below into
+`## 3. Test scenarios`, immediately above the `<!-- deferred-merge-point -->` anchor, and
+writes the assigned scenario id back into that entry's `Merged as:` field.
+
+<!--
+ENTRY SHAPE — one block per entry, all of them under `## Deferred scenarios` below.
+
+The heading is the entry's identity: `<originating-feature>` and `<originating-scenario>`
+joined by `/`. That composite key is what makes the upsert idempotent and what the merge
+matches on. There is no separate numbering to renumber when an entry is removed.
+
+  ### payments/B.2 — refund shows in the audit trail
+
+  - **Originating feature:** payments
+  - **Originating scenario:** B.2
+  - **Action:** |
+      1. Sign in as an admin and open order #1001
+      2. Issue a full refund
+  - **Expected:** |
+      - The refund appears in the audit trail within 5s
+      - The entry names the acting admin
+  - **Reason:** the audit-log feature ships later in this cycle
+  - **Deferred at:** "2026-08-15T10:22:11Z"
+  - **Merged as:** A.7
+
+`Action`, `Expected`, and `Reason` are copied out of the originating plan at defer time,
+never referenced — an entry must be runnable weeks later by someone who never opens the
+originating workflow.
+
+`Merged as:` is blank until the whole-feature plan is generated. It is the machine-checkable
+link the completion gate reads: an entry whose `Merged as:` id has no verdict block in the
+feature-test entry's manual-test-results.md blocks completion.
+
+TWO LAYOUT RULES, both load-bearing for the parser in scripts/deferred-tests.sh:
+
+  1. This comment sits ABOVE `## Deferred scenarios`, never inside it. Every parser scopes
+     itself to that section, so anything above the heading is invisible to them.
+  2. The example above is indented two spaces so its `###` is not at column 0. Belt and
+     braces: even if this block were moved into the section, the example would still not
+     be counted as a real entry.
+
+Undo either one and a freshly-rendered file reports one phantom entry, which would block
+the feature-test entry's completion forever.
+-->
+
+## Deferred scenarios
+
+(populated by `/mi-manual-test-run` when the inspector answers `defer`)

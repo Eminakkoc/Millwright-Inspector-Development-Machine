@@ -24,7 +24,45 @@ dest_dir="$data_root/workflow-stream/$active_feature/implementation/diagrams"
 mkdir -p "$dest_dir"
 ```
 
+### Step 1.4 — Invocation mode (ordinary vs. feature-test)
+
+```bash
+if $CLAUDE_PLUGIN_ROOT/scripts/todo.sh is-feature-test "$active_feature"; then
+  ft_mode=1
+  # feature-test-range refuses (exit 3/4/5) when a rebase leaves a finished
+  # feature's head unreachable, no feature contributed commits, or bases
+  # diverged. `| head -1` would otherwise swallow that exit status (head's
+  # own exit code wins the pipe unless pipefail is set) — same shape
+  # mi-continue.md's Feature-test entry sequence Step 1 already uses for
+  # this exact call.
+  set -o pipefail
+  if ! range_line="$($CLAUDE_PLUGIN_ROOT/scripts/commits.sh feature-test-range "$active_feature" | head -1)"; then
+    exit 1
+  fi
+  union_base="$(printf '%s' "$range_line" | cut -f1)"
+else
+  ft_mode=0
+fi
+```
+
+Auto-detected rather than flag-driven so it cannot be forgotten by a caller. **An ordinary
+feature never matches**, so the single-feature path below — including its freshness
+short-circuit and its affected-subjects derivation — is unreachable from the feature-test
+code and its behaviour is unchanged.
+
+If the range refuses, `commits.sh`'s own diagnostic (exit 3/4/5's stderr message —
+unreachable finished feature, no contributor, or diverged bases) is not redirected anywhere
+in this block, so it reaches the inspector directly; stop here rather than continuing with an
+empty `union_base`.
+
+When `ft_mode=1`, `base-commit` was already pinned to `union_base` by the caller
+(`/mi-continue`'s feature-test sequence), so Step 1.5's `diagrams-fresh` and Step 2.1's
+`change-summary-fresh` both work **unchanged** — they key on `.active.base-commit` and HEAD.
+
 ### Step 1.5 — Diagram-set freshness check (skip regeneration when fresh)
+
+**Ordinary invocations are unchanged.** When `ft_mode=0` every branch below behaves exactly
+as it did before the feature-test path existed, including the `fresh` short-circuit.
 
 Before doing any diagram work, check whether the existing set is already current. The `diagrams-fresh` subcommand returns one of `fresh | stale | skipped | missing` (see `scripts/commits.sh diagrams-fresh` for the contract):
 
@@ -56,8 +94,59 @@ Diagram generation reads from a cached analysis artifact instead of re-running t
 #### Step 2.1 — Resolve sub-agent inputs (main)
 
 ```bash
-requirements_file="$data_root/workflow-stream/$active_feature/blueprints/current/requirements.md"
-requirements_id="$($CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get "$requirements_file" id)"
+if [[ "${ft_mode:-0}" == "1" ]]; then
+  # A feature-test entry has no requirements.md — it is framed against every
+  # finished feature's. Resolve id + archived-path pairs in queue order.
+  # requirements_paths (plural) feeds Phase 3's seam-classification gate
+  # below — there is no single <requirements_path> for this folder.
+  #
+  # feature-test-range refuses (exit 3/4/5) on the same conditions Step 1.4
+  # already covers. No pipe here (a plain command substitution), so its exit
+  # status reaches `if !` directly — no pipefail needed for this call.
+  # $ft_range_out is reused by Step 2.2 below rather than calling this a
+  # third time.
+  if ! ft_range_out="$($CLAUDE_PLUGIN_ROOT/scripts/commits.sh feature-test-range "$active_feature")"; then
+    exit 1
+  fi
+  req_pairs=()
+  while IFS=$'\t' read -r row_kind row_feat _row_base _row_head; do
+    [[ "$row_kind" == "contributor" ]] || continue
+    hist="$data_root/workflow-stream/$row_feat/blueprints/history"
+    # Portable newest-version resolution (macOS/BSD sed has no `\+` in BRE
+    # mode, so this loops instead of a one-line sed capture — same pattern
+    # scripts/review.sh's `init` branch already uses for a feature-test
+    # entry).
+    latest_v=0
+    for d in "$hist"/v[0-9]*; do
+      [[ -d "$d" ]] || continue
+      v="${d##*/v}"
+      [[ "$v" =~ ^[0-9]+$ ]] || continue
+      (( v > latest_v )) && latest_v="$v"
+    done
+    if [[ "$latest_v" -eq 0 ]]; then
+      echo "error: no archived requirements.md found for contributor $row_feat" >&2
+      exit 1
+    fi
+    req_file="$hist/v$latest_v/requirements.md"
+    if [[ ! -f "$req_file" ]]; then
+      echo "error: $req_file not found for contributor $row_feat" >&2
+      exit 1
+    fi
+    req_id="$($CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get "$req_file" id)"
+    req_pairs+=("$req_id"$'\t'"$req_file")
+  done <<< "$ft_range_out"
+  if [[ ${#req_pairs[@]} -eq 0 ]]; then
+    echo "error: feature-test-range reported no contributors for $active_feature" >&2
+    exit 1
+  fi
+  requirements_ids="$(printf '%s\n' "${req_pairs[@]}" | cut -f1)"
+  requirements_paths="$(printf '%s\n' "${req_pairs[@]}" | cut -f2)"
+  requirements_file=""   # no single requirements.md for a feature-test entry; see requirements_paths
+else
+  requirements_file="$data_root/workflow-stream/$active_feature/blueprints/current/requirements.md"
+  requirements_id="$($CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get "$requirements_file" id)"
+  requirements_paths=""
+fi
 base_commit_sha="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get base-commit)"
 head_sha="$(git rev-parse HEAD)"
 diagram_rendering="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get diagram-rendering 2>/dev/null || echo 'never')"
@@ -77,12 +166,51 @@ When `summary_state=stale-or-missing`, pre-create the file with valid frontmatte
 
 ```bash
 if [[ "$summary_state" == "stale-or-missing" ]]; then
+  if [[ "${ft_mode:-0}" == "1" ]]; then
+    # Feature-test entry: plural requirements-ids (a YAML list), one per
+    # finished contributor, in the order collected in Step 2.1. Same
+    # REQUIREMENTS_FIELD + `!RAW!` shape review.sh init already established
+    # for inspector-review.md's oneOf field.
+    req_ids=()
+    while IFS= read -r rid; do
+      if [[ -n "$rid" ]]; then
+        req_ids+=("$rid")
+      fi
+    done <<< "$requirements_ids"
+    # Empty-array expansion of "${req_ids[*]}" aborts with unbound variable
+    # under `set -u` (confirmed on bash 3.2.57) — guard before the join,
+    # same defense-in-depth review.sh's own final-list check uses.
+    if [[ ${#req_ids[@]} -eq 0 ]]; then
+      echo "error: no requirements-ids resolved for $active_feature" >&2
+      exit 1
+    fi
+    ids_csv="$(IFS=,; echo "${req_ids[*]}")"
+    requirements_field="!RAW!requirements-ids: [$ids_csv]"
+  else
+    requirements_field="!RAW!requirements-id: $requirements_id"
+  fi
   $CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh init change-summary \
     "$summary_file" \
-    "REQUIREMENTS_ID=$requirements_id" \
+    "REQUIREMENTS_FIELD=$requirements_field" \
     "FEATURE=$active_feature" \
     "BASE_COMMIT=$base_commit_sha" \
     "HEAD=$head_sha"
+  if [[ "${ft_mode:-0}" == "1" ]]; then
+    # A zero-commit finished feature contributes nothing to the union range
+    # and would otherwise vanish silently. Record it under the freshly
+    # initialized body's `## Omitted from analysis` (the template's final
+    # section, so a plain append lands there). Reuses $ft_range_out captured
+    # by Step 2.1 above — no third feature-test-range call, so nothing here
+    # needs its own refusal guard.
+    omitted_features="$(printf '%s\n' "$ft_range_out" | awk -F'\t' '$1=="omitted" {print $2}')"
+    if [[ -n "$omitted_features" ]]; then
+      while IFS= read -r feat; do
+        if [[ -n "$feat" ]]; then
+          printf -- '- %s — zero-commit finished feature; omitted from the union range.\n' "$feat" >> "$summary_file"
+        fi
+      done <<< "$omitted_features"
+    fi
+  fi
 fi
 ```
 
@@ -109,7 +237,35 @@ You are a fresh sub-agent invoked from `mi-generate-implementation-diagrams` (St
 - diagrams_dir: <dest_dir>                # implementation/diagrams/ destination
 - blueprint_diagrams_dir: <blueprint_diagrams_dir>  # source for seeding
 - diagram_rendering: <diagram_rendering>  # "never" (>99% path) or "on-request"
-- requirements_path: <requirements_file>
+- requirements_path: <requirements_file>  # ordinary feature only — empty for a feature-test entry
+- requirements_paths: <requirements_paths>  # feature-test entry only (newline list) — empty for an ordinary feature
+- feature_test: <feature_test_flag>       # "true" when ft_mode=1 (derived from $ft_mode), else "false"
+
+**When this is a feature-test invocation** (`ft_mode=1`, passed as `feature_test: true`):
+
+- **Range.** `<union_base>..HEAD` spans every finished ordinary feature, not one feature's
+  own work.
+- **Seeding (Phase 2).** There is no `blueprints/current/diagrams` for this folder — it has
+  no blueprint by design. Skip the `<blueprint_diagrams_dir>` recipe in Phase 2 below
+  entirely; do not stat or create that path for this folder. Seed instead from each
+  **ordinary** feature's archived stage-2 set at
+  `workflow-stream/<feat>/blueprints/history/v[N]/diagrams/*.puml` (newest finalized
+  `v[N]`). A subject with no commits in the union range stays seeded and is tagged
+  `seeded-only` against the feature it came from.
+- **Budget (Phase 3).** 1 combined `use-case-<ft-feature>.puml`, **up to 5**
+  `sequence-<flow>.puml`, **up to 2** structural. Larger than an ordinary feature's
+  1 / 2–3 / ≤1 because the subject is larger.
+- **Seam classification (Phase 3).** `<requirements_path>` is empty for this invocation —
+  there is no single requirements.md to read Goals items from. Read every path listed in
+  `<requirements_paths>` instead (one per contributing feature) and treat the optional
+  structural-diagram gate as satisfied if **any** of them declares seam `backend` or
+  `mixed`. This is the substitute Phase 3's own instruction below points back to.
+- **Sequences must cross feature boundaries.** A sequence that re-draws one feature's own
+  internal flow is rejected — that diagram already exists in that feature's history, and
+  redrawing it adds pages without adding information. Draw the seams: where one feature's
+  output becomes another's input, shared state, and handoffs.
+- **Attribution.** In `## Changed files`, label each area with the feature that contributed
+  it, so the framing can name the seams.
 
 **Your task — three phases:**
 
@@ -128,7 +284,7 @@ You are a fresh sub-agent invoked from `mi-generate-implementation-diagrams` (St
   - `## Changed files` — group the TSV rows by area (top-level dir, layer, or feature concern). Format: `<status> <path> (+adds/-dels): <one-line purpose>`. Skip the per-file purpose for trivial files. Do NOT paste full diffs.
   - `## Detected entrypoints` — public surface introduced or modified: HTTP routes, RPC handlers, CLI commands, scheduled jobs, queue consumers, new exports. One bullet per entrypoint with `<path>:<symbol>`. Skip the section if no public surface changed.
   - `## Suspected flows` — end-to-end flows the change enables (validated against the diagram pass in Phase 3). Each entry: `<flow name>: <one-line trace>`.
-  - `## Omitted from analysis` — every changed file you intentionally skipped per the bounded-context policy below, listed by path so reviewers can spot blind spots.
+  - `## Omitted from analysis` — every changed file you intentionally skipped per the bounded-context policy below, listed by path so reviewers can spot blind spots. **Feature-test invocation:** when `summary_state=stale-or-missing`, main has already appended one bullet per zero-commit contributor to this section before you were spawned — APPEND your own file-level omissions after them; do not delete or overwrite what is already there.
 
   Bounded context policy (apply throughout Phase 1):
 
@@ -165,7 +321,7 @@ Re-render the affected subjects only. Overwrite their seeded `.puml` files in `<
 
 - `use-case-<feature>.puml` — mandatory, exactly one. Implemented capabilities with framed actors that pre-existed.
 - `sequence-<flow>.puml` — one per significant implemented flow, targeting 2–3 total per feature. Render 1 only when the implementation genuinely has a single significant flow; never render more than 3 (if more than 3 candidates exist, pick the most diff-worthy; surface a decomposition signal under `Findings / risks` if the count keeps creeping up).
-- One optional structural diagram — `class-<domain>.puml` OR `component-<subject>.puml`, never both. Read the seam classification from `<requirements_path>` Goals items (carried forward from Step A's codebase-grounding pass). The optional slot fires only when seam is `backend`/`mixed` AND:
+- One optional structural diagram — `class-<domain>.puml` OR `component-<subject>.puml`, never both. Read the seam classification from `<requirements_path>` Goals items (carried forward from Step A's codebase-grounding pass) — for a feature-test invocation (`feature_test: true`), `<requirements_path>` is empty; use `<requirements_paths>` and the "any contributor" rule from the feature-test block above instead. The optional slot fires only when seam is `backend`/`mixed` AND:
   - Class when the implementation introduced 3+ new domain classes/modules with non-trivial relationships (inheritance, composition with shared lifecycle, bidirectional association, or branching dependency graph).
   - Component when the implementation introduced 3+ new components/modules with non-trivial dependencies (fan-out, fan-in, cross-bucket dependency, or multiple inbound callers) but isn't class-heavy enough for a class diagram.
   - Linear chains do not qualify (e.g., `controller → service → repo`). Skip the slot.
@@ -244,7 +400,7 @@ When at least one subject is `seeded-only`, prepend the body with a short conven
 
 > *Some subjects below are tagged `seeded-only` — their `.puml` files are verbatim copies of the stage-2 blueprint diagrams. Those subjects had no implementation commits in `base-commit..HEAD`, so the stage-2 design intent is the most accurate available representation. Their legend wording (e.g., "Planned" or "to be implemented") follows stage-2 conventions; interpret them as "design preserved without implementation changes in this cycle." `re-rendered` subjects use the standard stage-4 wording against the `base-commit` baseline.*
 
-If the implementation added a flow that wasn't in `requirements.md`, or omitted one that was, call it out under a `## Notable deviations from requirements` subsection — that's a heads-up for the inspector review at stage 5. The sub-agent will have surfaced these under `Findings / risks` in its return summary; promote the relevant ones into the README here.
+If the implementation added a flow that wasn't in the framed requirements — `requirements.md` for an ordinary feature, or any contributor's archived `requirements.md` for a feature-test entry — or omitted one that was, call it out under a `## Notable deviations from requirements` subsection — that's a heads-up for the inspector review at stage 5. The sub-agent will have surfaced these under `Findings / risks` in its return summary; promote the relevant ones into the README here.
 
 ### Step 4 — Report
 
