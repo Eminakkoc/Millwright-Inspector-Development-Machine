@@ -1,5 +1,44 @@
 # Changelog
 
+## 1.7.1 — Feature-test entries are named after the cycle, not its first feature
+
+`derive-feature-test-name` built the terminal entry's name from the **first ordinary
+feature** in the queue — so a cycle covering `payments`, `audit-log`, `checkout` produced
+`payments-feature-test`. That name said nothing about the cycle it belonged to, and it
+moved whenever stage-1.5 reordering changed which feature sorted first.
+
+The base is now the cycle's **journal folder(s)** — the semantic part of the quest slug,
+which is what the folder holding `todo-list.md` is itself named after — kebab-normalized
+and joined with `-`:
+
+| Journal folders | Entry name |
+| --- | --- |
+| `whole-feature-test-workflow` | `whole-feature-test-workflow-feature-test` |
+| `pricing-meeting`, `auth-rfc` | `pricing-meeting-auth-rfc-feature-test` |
+| `Pricing Meeting`, `auth_RFC v2` | `pricing-meeting-auth-rfc-v2-feature-test` |
+
+The quest **slug** is deliberately not used verbatim. It is
+`YYYY-MM-DD-<kebab-joined-with-+>` plus an optional 3-hex collision suffix; its `+` join is
+rejected by the `^[a-z0-9][a-z0-9-]*$` feature-name pattern that 13 schemas enforce, so a
+multi-journal cycle would have produced a name failing validation in `todo-list.md`,
+`summary.md`, and `progress.md`, and a `workflow-stream/` folder containing `+`. The date
+prefix and collision suffix carry no meaning in a feature name either. Only the journal
+folder names survive, sanitized.
+
+- New `mi_quest_feature_test_base` in `scripts/internal/common.sh`, placed beside
+  `mi_quest_compute_slug` so the two `kebab()` implementations stay visibly paired.
+- A cycle whose `journal-folders` is empty or unusable now **fails loudly** at derivation
+  instead of emitting a bare `-feature-test` that would fail schema validation later.
+- The uniqueness gate is unchanged: ordinary feature names are still passed in, the
+  candidate must still differ from every one of them and pass `feature-lineage-check`, and
+  ordinal retry (`-2`, `-3`, …) still applies with its rename note on stderr.
+- Because the base no longer depends on feature order, a stage-1.5 reorder can no longer
+  change it — previously a live hazard, since re-deriving would rename a feature folder
+  mid-cycle and strand its artifacts.
+
+No migration: the name is read from the `feature-test:` frontmatter field by every
+downstream consumer and never re-derived, so cycles already carrying an entry keep theirs.
+
 ## 1.7.0 — The whole-feature test: a terminal cycle entry that validates the seams
 
 Testing each feature in isolation misses the places features meet. A multi-feature cycle

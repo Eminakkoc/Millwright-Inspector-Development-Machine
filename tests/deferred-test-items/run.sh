@@ -979,10 +979,12 @@ MI_DATA_ROOT="$sandbox" "$REPO_ROOT/scripts/folder-id.sh" init-reference demo >/
 # Cycle 1 creates the feature-test folder exactly as mi-continue.md's
 # stage-1.5 sequence does: mkdir, folder-id.sh ensure, folder-id.sh
 # link-feature — the last of which is the fix this test pins.
-ft_dir="$sandbox/workflow-stream/payments-feature-test"
+# The folder is named after the JOURNAL folder ('demo'), which is what
+# derive-feature-test-name builds its base from.
+ft_dir="$sandbox/workflow-stream/demo-feature-test"
 mkdir -p "$ft_dir/implementation" "$ft_dir/test"
 MI_DATA_ROOT="$sandbox" "$REPO_ROOT/scripts/folder-id.sh" ensure "$ft_dir" >/dev/null 2>&1
-MI_DATA_ROOT="$sandbox" "$REPO_ROOT/scripts/folder-id.sh" link-feature payments-feature-test >/dev/null 2>&1
+MI_DATA_ROOT="$sandbox" "$REPO_ROOT/scripts/folder-id.sh" link-feature demo-feature-test >/dev/null 2>&1
 
 # Cycle 2 — a later cycle sourced from the SAME journal folder (genuine
 # continuation, not a collision).
@@ -1001,10 +1003,10 @@ EOF
 MI_DATA_ROOT="$sandbox" "$REPO_ROOT/scripts/folder-id.sh" init-reference demo >/dev/null 2>&1
 
 got="$(MI_DATA_ROOT="$sandbox" "$REPO_ROOT/scripts/folder-id.sh" derive-feature-test-name payments checkout 2>/dev/null)"
-if [[ "$got" == "payments-feature-test" ]]; then
+if [[ "$got" == "demo-feature-test" ]]; then
   ok "$t"
 else
-  ng "$t" "want payments-feature-test, got '$got' — without link-feature, feature-lineage-check can't prove lineage and derive-feature-test-name silently renames the entry to '-2'"
+  ng "$t" "want demo-feature-test, got '$got' — without link-feature, feature-lineage-check can't prove lineage and derive-feature-test-name silently renames the entry to '-2'"
 fi
 
 t="regression: guided prompt strings are byte-identical to pre-feature text when offer_defer=0 (Important 5.2)"

@@ -371,14 +371,14 @@ The final (possibly renamed) names are the ones written everywhere downstream �
 ft_name="$($CLAUDE_PLUGIN_ROOT/scripts/folder-id.sh derive-feature-test-name "${final_features[@]}")"
 ```
 
-`derive-feature-test-name` appends `-feature-test` to the first feature in the final ordered list and runs the same second-pass uniqueness gate ordinary names get (differ from every ordinary name; pass `feature-lineage-check`), appending `-2`, `-3`, … until both pass. It prints a rename note on stderr when an ordinal was needed — Step 6 must surface it. A single-feature cycle never calls it: `count == 1` emits no feature-test section, no `## Feature:` section, no queue entry, and no folder, producing a byte-identical `todo-list.md` to today.
+`derive-feature-test-name` builds the base from **the cycle's journal folder(s)** — the same names the quest folder holding `todo-list.md` is itself named after — kebab-normalized and joined with `-`, then appends `-feature-test`. Journal folder `whole-feature-test-workflow` gives `whole-feature-test-workflow-feature-test`; a two-folder cycle gives `pricing-meeting-auth-rfc-feature-test`. It does **not** use the first ordinary feature: that name said nothing about the cycle and changed whenever the queue was reordered. The ordinary names are still passed in, because they are the uniqueness gate — the candidate runs the same second-pass check ordinary names get (differ from every ordinary name; pass `feature-lineage-check`), appending `-2`, `-3`, … until both pass. It prints a rename note on stderr when an ordinal was needed — Step 6 must surface it. A single-feature cycle never calls it: `count == 1` emits no feature-test section, no `## Feature:` section, no queue entry, and no folder, producing a byte-identical `todo-list.md` to today.
 
 Pass `ft_name` **last** in `FEATURES`, then record it in frontmatter after `init`:
 
 ```bash
 $CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh init todo-list \
   "$quest_dir/todo-list.md" \
-  "FEATURES=payments,audit-log,payments-feature-test" \
+  "FEATURES=payments,audit-log,pricing-meeting-feature-test" \
   "DESCRIPTION=Add Stripe webhooks and a tamper-evident audit trail."
 $CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh set \
   "$quest_dir/todo-list.md" feature-test "$ft_name"
@@ -386,7 +386,7 @@ $CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh set \
 
 The field is set post-`init` rather than templated so a single-feature cycle's file is untouched — an unsubstituted `{{FEATURE_TEST}}` would leave either a literal token or an empty value, and both fail the schema pattern.
 
-**The name is frozen once written.** It derives from the **stage-1** ordered feature list and is then fixed in `todo-list.md`, `summary.md`, and the feature folder name. A stage-1.5 reorder that changes which feature comes first must **not** re-derive it — re-deriving would rename a feature folder mid-cycle and strand its artifacts. Downstream readers take the name from the `feature-test:` frontmatter field, never by re-computing it.
+**The name is frozen once written.** It derives from the **stage-1** journal folder set and is then fixed in `todo-list.md`, `summary.md`, and the feature folder name. Nothing downstream may re-derive it — re-deriving would rename a feature folder mid-cycle and strand its artifacts. (Sourcing the base from the journal folders rather than the feature list also makes a stage-1.5 reorder incapable of changing it, which was a live hazard while the base came from whichever feature happened to sort first.) Downstream readers take the name from the `feature-test:` frontmatter field, never by re-computing it.
 
 Emit the ordinary sections first and the feature-test section **last**, holding exactly one item:
 

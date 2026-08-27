@@ -362,8 +362,11 @@ to Pre-flight Step 2B. Older cycle subfolders are never deleted, moved, or overw
 the dated slug doubles as a chronological index.
 
 **Feature-test section.** A cycle distilling to two or more features also carries a
-terminal `## <first-feature>-feature-test` section holding exactly one item (`FT-001: test
-the whole feature implementation`). It is named in the file's optional `feature-test:`
+terminal `## <journal-folders>-feature-test` section holding exactly one item (`FT-001: test
+the whole feature implementation`). `<journal-folders>` is the cycle's journal folder name(s)
+— kebab-normalized and joined with `-`, the semantic part of the quest slug the cycle's own
+folder is named after — **not** the first ordinary feature, which carried no information
+about the cycle and moved whenever the queue was reordered. It is named in the file's optional `feature-test:`
 frontmatter field, emitted last, and **auto-selected by the millwright** at stage 1.5
 rather than marked by the inspector. A single-feature cycle emits none of this — that
 feature's own workflow already tests it end to end.
@@ -477,11 +480,11 @@ Four regions:
 #### 3.4.1 The feature-test folder — an abbreviated shape
 
 The terminal feature-test queue entry (`feature-test-queue-entry`) gets its own folder at
-`workflow-stream/<first-feature>-feature-test/`, laid out narrower than the ordinary
+`workflow-stream/<journal-folders>-feature-test/`, laid out narrower than the ordinary
 four-region shape above:
 
 ```
-workflow-stream/<first-feature>-feature-test/
+workflow-stream/<journal-folders>-feature-test/
 ├── id.md                     # folder-identity marker, same as every feature folder
 ├── implementation/
 │   ├── inspector-review.md   # findings file (IR-NNN blocks)

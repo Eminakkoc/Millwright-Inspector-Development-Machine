@@ -113,6 +113,44 @@ mi_progress_file() { mi_quest_active_file progress; }
 # Format: YYYY-MM-DD-<kebab1>+<kebab2>+...  with a 3-char hash suffix on
 # collision (when quest/<slug>/ already exists). Each input folder is
 # kebab-normalized via the same rules as scripts/todo.sh.
+# Derive the feature-test entry's base name from the ACTIVE cycle's journal
+# folders: each folder kebab-normalized, joined with '-'.
+#
+# This is deliberately NOT the quest slug. The slug is
+# `YYYY-MM-DD-<kebab-joined-with-+>` plus an optional 3-hex collision suffix;
+# its '+' join is rejected by the `^[a-z0-9][a-z0-9-]*$` feature-name pattern
+# that 13 schemas enforce, and its date prefix carries no meaning in a feature
+# name. What survives here is the slug's semantic part only — the journal
+# folder(s) the cycle was built from — which is what the quest folder is named
+# after. Keep the kebab() below in sync with mi_quest_compute_slug's.
+mi_quest_feature_test_base() {
+  local pointer
+  pointer="$(mi_quest_active_pointer)"
+  [[ -f "$pointer" ]] || mi_die "mi_quest_feature_test_base: no active quest pointer at $pointer"
+  python3 - "$pointer" <<'PYEOF'
+import re, sys, yaml
+with open(sys.argv[1]) as f:
+    content = f.read()
+m = re.match(r'^---\n(.*?)\n---\n', content, re.DOTALL)
+fm = (yaml.safe_load(m.group(1)) or {}) if m else {}
+folders = fm.get('journal-folders') or []
+
+def kebab(s):
+    s = str(s).strip().lower()
+    s = re.sub(r'[\s_]+', '-', s)
+    s = re.sub(r'[^a-z0-9-]', '', s)
+    s = re.sub(r'-+', '-', s).strip('-')
+    return s
+
+parts = [kebab(f) for f in folders if kebab(f)]
+if not parts:
+    sys.stderr.write('error: active quest declares no usable journal-folders; '
+                     'cannot derive a feature-test base name\n')
+    sys.exit(1)
+print('-'.join(parts))
+PYEOF
+}
+
 mi_quest_compute_slug() {
   [[ $# -gt 0 ]] || mi_die "mi_quest_compute_slug: at least one journal folder required"
   python3 - "$(mi_quest_dir)" "$@" <<'PYEOF'

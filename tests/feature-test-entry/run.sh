@@ -85,31 +85,43 @@ fi
 
 # ---- Task 2: derive-feature-test-name -------------------------------------
 
-t="derive: base case appends -feature-test to the first feature"
+t="derive: base name comes from the cycle's journal folder, not the first feature"
 sandbox="$(make_quest)"
 out="$(MI_DATA_ROOT="$sandbox" "$REPO_ROOT/scripts/folder-id.sh" \
        derive-feature-test-name payments audit-log 2>/dev/null || true)"
-if [[ "$out" == "payments-feature-test" ]]; then
+if [[ "$out" == "demo-feature-test" ]]; then
   ok "$t"
 else
-  ng "$t" "expected 'payments-feature-test', got '$out'"
+  ng "$t" "expected 'demo-feature-test' (journal folder is 'demo'), got '$out'"
+fi
+
+t="derive: the name is independent of ordinary-feature order"
+sandbox="$(make_quest)"
+a="$(MI_DATA_ROOT="$sandbox" "$REPO_ROOT/scripts/folder-id.sh" \
+     derive-feature-test-name payments audit-log 2>/dev/null || true)"
+b="$(MI_DATA_ROOT="$sandbox" "$REPO_ROOT/scripts/folder-id.sh" \
+     derive-feature-test-name audit-log payments 2>/dev/null || true)"
+if [[ -n "$a" && "$a" == "$b" ]]; then
+  ok "$t"
+else
+  ng "$t" "reordering the features changed the name: '$a' vs '$b'"
 fi
 
 t="derive: collision with an ordinary feature name appends an ordinal"
 sandbox="$(make_quest)"
 out="$(MI_DATA_ROOT="$sandbox" "$REPO_ROOT/scripts/folder-id.sh" \
-       derive-feature-test-name payments payments-feature-test 2>/dev/null || true)"
-if [[ "$out" == "payments-feature-test-2" ]]; then
+       derive-feature-test-name payments demo-feature-test 2>/dev/null || true)"
+if [[ "$out" == "demo-feature-test-2" ]]; then
   ok "$t"
 else
-  ng "$t" "expected 'payments-feature-test-2', got '$out'"
+  ng "$t" "expected 'demo-feature-test-2', got '$out'"
 fi
 
 t="derive: an ordinal retry emits a rename note on stderr"
 sandbox="$(make_quest)"
 err="$(MI_DATA_ROOT="$sandbox" "$REPO_ROOT/scripts/folder-id.sh" \
-       derive-feature-test-name payments payments-feature-test 2>&1 >/dev/null || true)"
-if [[ "$err" == *"payments-feature-test-2"* ]]; then
+       derive-feature-test-name payments demo-feature-test 2>&1 >/dev/null || true)"
+if [[ "$err" == *"demo-feature-test-2"* ]]; then
   ok "$t"
 else
   ng "$t" "stderr did not mention the replacement name: '$err'"
@@ -125,6 +137,70 @@ else
   ng "$t" "expected empty stderr, got '$err'"
 fi
 
+# make_quest_j <journal-folders-yaml-inner> — like make_quest but with custom
+# journal folders, e.g. make_quest_j "pricing-meeting, auth-rfc".
+make_quest_j() {
+  local sandbox slug
+  sandbox="$(mktemp -d)"
+  slug="2026-08-14-demo"
+  mkdir -p "$sandbox/quest/$slug"
+  cat > "$sandbox/quest/active.md" <<EOF
+---
+slug: $slug
+started: "2026-08-14"
+journal-folders: [$1]
+status: active
+---
+
+# Active quest pointer
+EOF
+  SANDBOXES+=("$sandbox")
+  printf '%s' "$sandbox"
+}
+
+t="derive: multi-folder cycles join with '-' and stay schema-legal"
+sandbox="$(make_quest_j "pricing-meeting, auth-rfc")"
+out="$(MI_DATA_ROOT="$sandbox" "$REPO_ROOT/scripts/folder-id.sh" \
+       derive-feature-test-name payments audit-log 2>/dev/null || true)"
+if [[ "$out" == "pricing-meeting-auth-rfc-feature-test" ]]; then
+  ok "$t"
+else
+  ng "$t" "expected 'pricing-meeting-auth-rfc-feature-test', got '$out'"
+fi
+
+t="derive: the derived name matches the feature-name pattern schemas enforce"
+# Regression pin: the quest slug joins journal folders with '+', which
+# ^[a-z0-9][a-z0-9-]*$ rejects. Deriving from the slug verbatim would produce a
+# name that fails validation in 13 schemas and a workflow-stream folder
+# containing '+'.
+sandbox="$(make_quest_j "pricing-meeting, auth-rfc")"
+out="$(MI_DATA_ROOT="$sandbox" "$REPO_ROOT/scripts/folder-id.sh" \
+       derive-feature-test-name payments audit-log 2>/dev/null || true)"
+if [[ "$out" =~ ^[a-z0-9][a-z0-9-]*$ ]]; then
+  ok "$t"
+else
+  ng "$t" "derived name is not schema-legal: '$out'"
+fi
+
+t="derive: folder names are kebab-sanitized (spaces, underscores, case)"
+sandbox="$(make_quest_j "'Pricing Meeting', 'auth_RFC v2'")"
+out="$(MI_DATA_ROOT="$sandbox" "$REPO_ROOT/scripts/folder-id.sh" \
+       derive-feature-test-name payments audit-log 2>/dev/null || true)"
+if [[ "$out" == "pricing-meeting-auth-rfc-v2-feature-test" ]]; then
+  ok "$t"
+else
+  ng "$t" "expected 'pricing-meeting-auth-rfc-v2-feature-test', got '$out'"
+fi
+
+t="derive: no usable journal folders fails loudly instead of naming badly"
+sandbox="$(make_quest_j "")"
+if MI_DATA_ROOT="$sandbox" "$REPO_ROOT/scripts/folder-id.sh" \
+   derive-feature-test-name payments audit-log >/dev/null 2>&1; then
+  ng "$t" "accepted an empty journal-folders list — would emit '-feature-test'"
+else
+  ok "$t"
+fi
+
 t="derive: refuses fewer than two ordinary features (FTQ-007 guard)"
 sandbox="$(make_quest)"
 if MI_DATA_ROOT="$sandbox" "$REPO_ROOT/scripts/folder-id.sh" \
@@ -136,8 +212,8 @@ fi
 
 t="derive: lineage collision with an existing feature folder appends an ordinal"
 sandbox="$(make_quest)"
-mkdir -p "$sandbox/workflow-stream/payments-feature-test"
-cat > "$sandbox/workflow-stream/payments-feature-test/id.md" <<'EOF'
+mkdir -p "$sandbox/workflow-stream/demo-feature-test"
+cat > "$sandbox/workflow-stream/demo-feature-test/id.md" <<'EOF'
 ---
 id: 55555555-5555-4555-8555-555555555555
 kind: feature
@@ -147,10 +223,10 @@ kind: feature
 EOF
 out="$(MI_DATA_ROOT="$sandbox" "$REPO_ROOT/scripts/folder-id.sh" \
        derive-feature-test-name payments audit-log 2>/dev/null || true)"
-if [[ "$out" == "payments-feature-test-2" ]]; then
+if [[ "$out" == "demo-feature-test-2" ]]; then
   ok "$t"
 else
-  ng "$t" "expected 'payments-feature-test-2' after lineage collision, got '$out'"
+  ng "$t" "expected 'demo-feature-test-2' after lineage collision, got '$out'"
 fi
 
 # ---- Task 3: set-state --assignee -----------------------------------------

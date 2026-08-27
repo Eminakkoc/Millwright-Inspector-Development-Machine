@@ -281,14 +281,22 @@ PYEOF
     ;;
 
   derive-feature-test-name)
-    # Derive the cycle's feature-test entry name from its final ordered
-    # ordinary feature list. Second-pass uniqueness gate: the candidate must
-    # differ from every ordinary name AND pass feature-lineage-check, with an
-    # ordinal retry on either failure.
+    # Derive the cycle's feature-test entry name from the ACTIVE cycle's
+    # journal folder(s) — the semantic part of the quest slug, kebab-normalized
+    # and joined with '-' (see mi_quest_feature_test_base). NOT from the first
+    # ordinary feature: that name carried no information about the cycle and
+    # changed whenever the queue was reordered.
+    #
+    # The ordinary feature names are still required as positional args — they
+    # are the uniqueness gate. Second-pass gate: the candidate must differ from
+    # every ordinary name AND pass feature-lineage-check, with an ordinal retry
+    # on either failure.
     if [[ $# -lt 2 ]]; then
       mi_die "derive-feature-test-name: at least two ordinary feature names required (a single-feature cycle emits no feature-test entry — FTQ-007)"
     fi
-    base="${1}-feature-test"
+    ft_base="$(mi_quest_feature_test_base)" || \
+      mi_die "derive-feature-test-name: cannot derive a base name from the active cycle's journal folders"
+    base="${ft_base}-feature-test"
     candidate="$base"
     ordinal=1
     while :; do
