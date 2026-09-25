@@ -43,6 +43,29 @@ properties:
       pattern: "^[a-z0-9][a-z0-9-]*$"
     description: Features whose workflows have reached stage 8.
 
+  auto-mode:
+    type: boolean
+    description: >
+      Cycle-wide auto mode (1.9.0). When true, the millwright answers most
+      stage 1.5–8 prompts itself (see docs/superpowers/specs/2026-09-25-auto-mode-design.md).
+      Optional — missing means off. Top-level on purpose: `progress.sh activate`
+      rebuilds `active`, so a per-feature flag would stop applying after the
+      first feature. Written by `progress.sh init --auto` and `progress.sh set-top`
+      (via `auto.sh switch`); read via `progress.sh get-top auto-mode`.
+
+  completed-branches:
+    type: array
+    items:
+      type: string
+      minLength: 1
+    uniqueItems: true
+    description: >
+      Feature branches of features that reached stage 8, in completion order.
+      Appended by `progress.sh finish` from `active.branch`. Read by stage 2
+      (`docs/blueprint-regeneration.md` Step B) to skip pre-filling
+      `## GIT BRANCH` from a previous feature's branch, and by stage 8's
+      stacked-branch note. Optional — missing means empty.
+
   active:
     description: >
       Currently running feature and its runtime state. Null between workflows
@@ -357,6 +380,19 @@ properties:
               once per transition by construction). /mi-abort-workflow drops
               this field as part of its reset, so the next stage-3 entry on
               the same feature re-fires the gate.
+          chain-finished:
+            type: boolean
+            description: >
+              Set true by the end-of-chain rules (templates/auto-mode-chain-rules.md)
+              when the implementation chain finished cleanly. Resume Step 2.5 treats
+              it as the `completed` answer. Optional — missing means false; never
+              written by activate/reset, so it clears at each activation.
+          review-stop-shown:
+            type: boolean
+            description: >
+              Set true when the auto-mode stage-5 review stop line has been
+              printed for this feature, so it fires exactly once. Optional —
+              missing means false; cleared by activate/reset by construction.
           worktree-path:
             type: string
             minLength: 1

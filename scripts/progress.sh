@@ -8,7 +8,7 @@
 # active block to null; activate pops queue[0] into a fresh active block.
 #
 # Usage:
-#   progress.sh init <todo-list-id> <feature1> [<feature2> ...]  # stage 1: scaffold
+#   progress.sh init [--auto] <todo-list-id> <feature1> [<feature2> ...]  # stage 1: scaffold
 #   progress.sh activate                     # stage 2: pop queue[0] into active
 #   progress.sh finish                       # stage 8: active -> completed, active=null
 #   progress.sh requeue                      # abort --drop-feature=requeue: active -> end of queue, active=null
@@ -26,6 +26,15 @@
 #
 #   progress.sh get-active                   # prints active.feature or "null"
 #   progress.sh queue-remaining              # prints queue entries, one per line
+#
+#   progress.sh get-top <field>              # reads a TOP-LEVEL field (e.g. auto-mode,
+#                                            # 'completed-branches[]'); works when active is null;
+#                                            # prints "null" when absent.
+#   progress.sh set-top <field>=<value> ...  # writes TOP-LEVEL field(s) atomically; works when
+#                                            # active is null. Refuses active|queue|completed|id|
+#                                            # todo-list-id. Same pipeline as `set`: worktree guard
+#                                            # (no-op when active is null) → temp file → schema
+#                                            # validate → atomic rename.
 #
 #   progress.sh get <field>                  # reads active.<field>; errors if active is null
 #   progress.sh set <field>=<value> ...      # writes active.<field>(s) atomically; errors if
@@ -108,6 +117,8 @@ cmd="${1:-}"; shift || true
 
 case "$cmd" in
   init)
+    init_auto=0
+    if [[ "${1:-}" == "--auto" ]]; then init_auto=1; shift; fi
     todo_list_id="${1:?todo-list-id required}"; shift
     [[ $# -gt 0 ]] || mi_die "at least one feature required"
     dest="$(progress_file)"
@@ -115,14 +126,16 @@ case "$cmd" in
     "${MI_PLUGIN_ROOT}/scripts/frontmatter.sh" init progress "$dest" \
       "TODO_LIST_ID=$todo_list_id"
     # Populate queue from args.
-    python3 - "$dest" "$@" <<'PYEOF'
+    python3 - "$dest" "$init_auto" "$@" <<'PYEOF'
 import sys, re, yaml
-path, *features = sys.argv[1:]
+path, init_auto, *features = sys.argv[1:]
 with open(path) as f:
     content = f.read()
 m = re.match(r'^---\n(.*?)\n---\n(.*)$', content, re.DOTALL)
 fm = yaml.safe_load(m.group(1)) or {}
 fm['queue'] = list(features)
+if init_auto == '1':
+    fm['auto-mode'] = True
 with open(path, 'w') as f:
     f.write('---\n')
     f.write(yaml.safe_dump(fm, default_flow_style=False, sort_keys=False))
@@ -169,7 +182,7 @@ fm['active'] = {
     'planning-mode': 'none',
     'review-mode': 'none',
     'review-mode-suggestion': 'none',
-    'diagram-prompt': 'prompt',
+    'diagram-prompt': 'auto' if fm.get('auto-mode') is True else 'prompt',
     'diagram-rendering': 'never',
     'implementation-diagrams-skipped': False,
     'implementation-completed': False,
@@ -233,6 +246,12 @@ m = re.match(r'^---\n(.*?)\n---\n(.*)$', content, re.DOTALL)
 fm = yaml.safe_load(m.group(1)) or {}
 active = fm['active']
 fm.setdefault('completed', []).append(active['feature'])
+branch = active.get('branch')
+if branch:
+    cb = fm.get('completed-branches') or []
+    if branch not in cb:
+        cb.append(branch)
+    fm['completed-branches'] = cb
 fm['active'] = None
 # Apply any --set field=value pairs to top-level fields. active.* writes are
 # meaningless here (active is being set to None).
@@ -311,7 +330,7 @@ fm['active'] = {
     'planning-mode': 'none',
     'review-mode': 'none',
     'review-mode-suggestion': 'none',
-    'diagram-prompt': 'prompt',
+    'diagram-prompt': 'auto' if fm.get('auto-mode') is True else 'prompt',
     'diagram-rendering': 'never',
     'implementation-diagrams-skipped': False,
     'implementation-completed': False,
@@ -465,6 +484,65 @@ PYEOF
     dest="$(progress_file)"
     require_file "$dest"
     mi_fm_get "$dest" '.queue[]'
+    ;;
+
+  get-top)
+    field="${1:?field required}"
+    dest="$(progress_file)"
+    require_file "$dest"
+    mi_fm_get "$dest" ".${field}"
+    ;;
+
+  set-top)
+    [[ $# -gt 0 ]] || mi_die "at least one field=value required"
+    dest="$(progress_file)"
+    require_file "$dest"
+    mi_assert_worktree_match
+    tmp="$(mktemp "$(dirname "$dest")/progress.md.XXXXXX")"
+    trap 'rm -f "$tmp"' EXIT
+    if ! python3 - "$dest" "$tmp" "$@" <<'PYEOF'; then
+import sys, re, yaml
+path, tmp = sys.argv[1], sys.argv[2]
+kvs = sys.argv[3:]
+PROTECTED = {'active', 'queue', 'completed', 'id', 'todo-list-id'}
+with open(path) as f:
+    content = f.read()
+m = re.match(r'^---\n(.*?)\n---\n(.*)$', content, re.DOTALL)
+if not m:
+    sys.stderr.write(f"error: progress.sh set-top: {path} has no frontmatter block\n")
+    sys.exit(1)
+fm = yaml.safe_load(m.group(1)) or {}
+seen = set()
+for kv in kvs:
+    if '=' not in kv:
+        sys.stderr.write(f"error: progress.sh set-top: invalid field=value: {kv!r}\n")
+        sys.exit(1)
+    field, value = kv.split('=', 1)
+    if field in PROTECTED or field.startswith('active.'):
+        sys.stderr.write(f"error: progress.sh set-top: {field} is managed by other subcommands and cannot be set here\n")
+        sys.exit(1)
+    if field in seen:
+        sys.stderr.write(f"error: progress.sh set-top: duplicate field {field!r} in args\n")
+        sys.exit(1)
+    seen.add(field)
+    try:
+        parsed = yaml.safe_load(value)
+    except yaml.YAMLError:
+        parsed = value
+    fm[field] = parsed
+with open(tmp, 'w') as f:
+    f.write('---\n')
+    f.write(yaml.safe_dump(fm, default_flow_style=False, sort_keys=False))
+    f.write('---\n')
+    f.write(m.group(2))
+PYEOF
+      exit 1
+    fi
+    if ! "${MI_PLUGIN_ROOT}/scripts/frontmatter.sh" validate "$tmp" progress >/dev/null; then
+      mi_die "progress.sh set-top: candidate state failed schema validation; original file unchanged"
+    fi
+    mv "$tmp" "$dest"
+    trap - EXIT
     ;;
 
   get)
@@ -808,7 +886,7 @@ PYEOF
     ;;
 
   *)
-    echo "usage: progress.sh {init|activate|finish|requeue|reset|reorder|enqueue|get-active|queue-remaining|get|set|advance|advance-to|check-worktree|check-feature-test-pin} ..." >&2
+    echo "usage: progress.sh {init|activate|finish|requeue|reset|reorder|enqueue|get-active|queue-remaining|get-top|set-top|get|set|advance|advance-to|check-worktree|check-feature-test-pin} ..." >&2
     exit 2
     ;;
 esac
