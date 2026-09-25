@@ -71,7 +71,7 @@ Existing `get` / `set` stay byte-identical.
 | `answer "<prompt>" "<answer>" [--cmd <cmd>]` | Prints `auto: <prompt> → <answer>`; appends `ledger.sh append "<stage\|->" "<cmd\|->" "auto-answer" small main "<prompt> → <answer>"`. Stage is `active.current-stage`, `-` when `active` is null. A ledger failure only warns. | 0 |
 | `switch on\|off` | `set-top auto-mode=true\|false`; ledger row `"<stage\|->" "/mi-auto" "auto-mode-switch" small main "auto-mode → on\|off"`; if a feature is active, `progress.sh set diagram-prompt=auto\|prompt`. Refuses without an active quest cycle. | 0 / 1 |
 | `create-branch <slug> <config.md>` | `git status --porcelain --untracked-files=no -- . ":(exclude)<data-root>"` must be empty, else prints `auto: uncommitted changes — commit or stash, then /mi-continue` and exits 3. Picks `feat/<slug>`, then `feat/<slug>-2`, `-3`, … while the local branch exists. `git switch -c <name>` from current HEAD. Rewrites `## GIT BRANCH` in `config.md` to the single bare line (HTML comment kept). Prints `auto: created branch <name> from <base>` and a ledger row. | 0 / 3 / 1 |
-| `approve-guard <feature>` | Walks `inspector-review.md`. Passes only when every non-open finding has scope `fix` or `re-implement` **and** status `fixed`, and no finding is still `open`. Otherwise prints `auto: review needs your look — IR-003 (re-spec), IR-004 (wontfix), …` naming each offending finding with its scope or status. | 0 pass / 1 stop |
+| `approve-guard <feature>` | Walks `inspector-review.md`. Passes only when every non-open finding has scope `fix` or `re-implement` **and** status `fixed`, no finding is still `open`, and `deferred-questions.sh list-open` is empty. Otherwise prints `auto: review needs your look — IR-003 (re-spec), IR-004 (wontfix), DQ-001 (open question), …` naming each offending finding with its scope or status, then each open deferred question. | 0 pass / 1 stop |
 
 ### 2.4 Commands
 
@@ -124,7 +124,7 @@ Rules:
   `list-needs-finding` becomes a finding via `review.sh add <feature> major <scope>
   "<question>"` (scope `fix`, or `re-implement` when the answer describes restructuring),
   and the IR id is written back with `set-follow-up`. Idempotent via `follow-up`.
-- **Stage 5:** still-open entries are listed at the review stop and count as open issues
+- **Stage 5–6:** still-open entries are listed at the review stop, count as open issues, and make `approve-guard` stop
   (they block the R9 path-1 auto-complete).
 
 ## 3. Auto-answer sites

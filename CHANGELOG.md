@@ -32,7 +32,8 @@ while the gates that need a human keep stopping.
   `implementation/deferred-questions.md` record a question and the assumption taken
   instead of stopping the chain; answered entries marked `needs-finding` become
   `major` findings at Resume Step 6, while entries still left open are listed at the
-  stage-5 review stop and block the no-findings auto-complete.
+  stage-5 review stop and block auto-completion (the no-findings path and the stage-6
+  approve guard).
 - **Stacked feature branches.** Zero-candidate branch creation now builds `feat/<slug>`
   (or `-2`, `-3`, …) straight from HEAD; at stage 8, a `stacked: <branch> is based on
   <previous> (unmerged)` note prints when the previous `completed-branches` entry is an
@@ -47,8 +48,8 @@ while the gates that need a human keep stopping.
   open deferred questions.
 - **Guarded auto-approve.** `/mi-review` runs in `direct` mode under auto mode; the
   approve prompt only auto-answers when `auto.sh approve-guard` confirms every finding
-  is `fix`/`re-implement` and `fixed` — otherwise it prints which findings need a
-  human look and falls back to the normal prompt.
+  is `fix`/`re-implement` and `fixed` and no deferred question is still open — otherwise
+  it prints which findings and questions need a human look and falls back to the normal prompt.
 - **Clear-gate pauses.** The three `/clear` gates (`stage-2-to-3`, `stage-5-to-6`,
   `stage-8-to-2`) still stop and hand over in auto mode, just with a one-line
   `auto: clear gate <gate> — type /clear, then /mi-continue`.

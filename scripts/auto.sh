@@ -21,7 +21,8 @@
 #                                                 # line, prints the created-branch line, and
 #                                                 # logs an auto-answer ledger row.
 #   auto.sh approve-guard <feature>               # exit 0 when every ### IR-NNN block is
-#                                                 # scope fix/re-implement + status fixed;
+#                                                 # scope fix/re-implement + status fixed and
+#                                                 # no deferred question is still open;
 #                                                 # else exit 1 and list the offenders needing
 #                                                 # your look (or "inspector-review.md missing").
 
@@ -157,9 +158,13 @@ PYEOF
       echo "auto: review needs your look — inspector-review.md missing"
       exit 1
     fi
-    python3 - "$rf" <<'PYEOF'
+    # Open deferred questions also need the inspector: the stage-6 approve
+    # must never close a feature while one is still unanswered.
+    open_dq="$("${MI_PLUGIN_ROOT}/scripts/deferred-questions.sh" list-open "$feature" | cut -f1)"
+    python3 - "$rf" "$open_dq" <<'PYEOF'
 import re, sys
 content = open(sys.argv[1]).read()
+open_dq = [d for d in sys.argv[2].split('\n') if d]
 bad = []
 for m in re.finditer(r'(?ms)^### (IR-\d{3}) —.*?(?=^### |^## |\Z)', content):
     block = m.group(0)
@@ -176,6 +181,7 @@ for m in re.finditer(r'(?ms)^### (IR-\d{3}) —.*?(?=^### |^## |\Z)', content):
         bad.append(f"{m.group(1)} ({sc})")
     elif st != 'fixed':
         bad.append(f"{m.group(1)} (unreadable)")
+bad += [f"{d} (open question)" for d in open_dq]
 if bad:
     print("auto: review needs your look — " + ", ".join(bad))
     sys.exit(1)

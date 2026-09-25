@@ -672,6 +672,30 @@ assert_contains "spec row 15 names the concrete reopen/seed answer" $SPEC \
 assert_contains "spec row 20 requires a passing approve-guard" $SPEC \
   'Answer `y` only when `approve-guard` passes; otherwise print its line and show the prompt'
 
+# ---- Follow-up: approve-guard stops on open deferred questions -----------------
+
+t="approve-guard stops and names open deferred questions even when every finding is fixed"
+sb="$(make_sandbox)"
+review_file "$sb" "IR-001|fix|fixed"
+run_in "$sb" "$DQ" add alpha "Which TTL?" "60s" >/dev/null 2>&1
+run_in "$sb" "$DQ" add alpha "Retry count?" "3" >/dev/null 2>&1
+run_in "$sb" "$DQ" answer alpha DQ-002 "3 is fine" >/dev/null 2>&1
+out="$(run_in "$sb" "$A" approve-guard alpha 2>/dev/null)"; rc=$?
+want="auto: review needs your look — DQ-001 (open question)"
+[[ $rc -eq 1 && "$out" == "$want" ]] && ok "$t" || ng "$t" "rc=$rc out=$out"
+
+t="approve-guard lists findings before open deferred questions in one line"
+review_file "$sb" "IR-001|fix|fixed" "IR-002|re-spec|fixed"
+out="$(run_in "$sb" "$A" approve-guard alpha 2>/dev/null)"; rc=$?
+want="auto: review needs your look — IR-002 (re-spec), DQ-001 (open question)"
+[[ $rc -eq 1 && "$out" == "$want" ]] && ok "$t" || ng "$t" "rc=$rc out=$out"
+
+t="approve-guard passes once every deferred question is answered"
+run_in "$sb" "$DQ" answer alpha DQ-001 "60s" >/dev/null 2>&1
+review_file "$sb" "IR-001|fix|fixed"
+out="$(run_in "$sb" "$A" approve-guard alpha 2>/dev/null)"; rc=$?
+[[ $rc -eq 0 && -z "$out" ]] && ok "$t" || ng "$t" "rc=$rc out=$out"
+
 # ---- end of tests --------------------------------------------------------------
 echo
 echo "auto-mode: $pass passed, $fail failed"
