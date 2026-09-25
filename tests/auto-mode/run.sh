@@ -376,6 +376,16 @@ else
   ng "$t" "file=$f"
 fi
 
+t="validate-on-write hook checks deferred-questions.md (valid passes, broken frontmatter blocks)"
+hook_in="$(printf '{"tool_input":{"file_path":"%s"}}' "$f")"
+if (cd "$sb" && printf '%s' "$hook_in" | CLAUDE_PLUGIN_ROOT="$REPO_ROOT" "$REPO_ROOT/hooks/validate-on-write.sh" >/dev/null 2>&1); then
+  sed -i.bak -E 's/^id: .*/id: not-a-uuid/' "$f"
+  hook_out="$(cd "$sb" && printf '%s' "$hook_in" | CLAUDE_PLUGIN_ROOT="$REPO_ROOT" "$REPO_ROOT/hooks/validate-on-write.sh" 2>/dev/null)"
+  [[ "$hook_out" == *'"decision": "block"'*deferred-questions* ]] && ok "$t" || ng "$t" "broken file not blocked: $hook_out"
+else
+  ng "$t" "valid file rejected"
+fi
+
 t="deferred-questions add/list-open/answer/list-needs-finding/set-follow-up round-trip"
 id1="$(run_in "$sb" "$DQ" add alpha "Which cache TTL?" "assumed 60s" 2>/dev/null)"
 id2="$(run_in "$sb" "$DQ" add alpha $'Multi\nline?' "assumed no" 2>/dev/null)"
