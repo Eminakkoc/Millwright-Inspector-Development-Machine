@@ -43,8 +43,9 @@ while the gates that need a human keep stopping.
   reusing the last one — this fix applies in every mode.
 - **Stage-5 review stop.** Fires once per feature — at the manual-test hand-off, or at
   the Inspector Handler's entry when no test run reached it — and always halts with
-  `auto: review stop — check commits <base>..HEAD, diagrams and test results; add
-  findings to inspector-review.md or leave it empty, then /mi-continue`, listing any
+  `auto: review stop for <feature> — check commits <base>..HEAD, diagrams and test
+  results; add findings to inspector-review.md or leave it empty, then /mi-continue
+  (No findings → it approves and completes.)`, listing any
   open deferred questions.
 - **Guarded auto-approve.** `/mi-review` runs in `direct` mode under auto mode; the
   approve prompt only auto-answers when `auto.sh approve-guard` confirms every finding

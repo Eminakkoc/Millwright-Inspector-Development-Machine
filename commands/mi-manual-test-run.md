@@ -638,7 +638,7 @@ record YOUR verdicts. Reply y or n.
 
 ##### 4.8 Hand-off message
 
-**Auto mode.** If `$CLAUDE_PLUGIN_ROOT/scripts/auto.sh is-on` succeeds, do not print the hand-off below. Instead run `"$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" set review-stop-shown=true`, list any rows of `"$CLAUDE_PLUGIN_ROOT/scripts/deferred-questions.sh" list-open "$active_feature"` as "Open deferred questions:", then print `auto: review stop — check commits <base>..HEAD, diagrams and test results; add findings to inspector-review.md or leave it empty, then /mi-continue` (with `<base>` replaced by the short base commit) and stop. This stop never auto-continues. Otherwise continue below unchanged.
+**Auto mode.** If `$CLAUDE_PLUGIN_ROOT/scripts/auto.sh is-on` succeeds, do not print the hand-off below. Instead run `"$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" set review-stop-shown=true`, list any rows of `"$CLAUDE_PLUGIN_ROOT/scripts/deferred-questions.sh" list-open "$active_feature"` as "Open deferred questions:", then print `auto: review stop for <feature> — check commits <base>..HEAD, diagrams and test results; add findings to inspector-review.md or leave it empty, then /mi-continue (No findings → it approves and completes.)` (with `<feature>` replaced by `$active_feature` and `<base>` by the short base commit) and stop. This stop never auto-continues. Otherwise continue below unchanged.
 
 ```
 Manual test done. Review inspector-review.md (auto-seeded failures appear at the bottom as canonical

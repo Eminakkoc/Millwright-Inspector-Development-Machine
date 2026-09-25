@@ -165,7 +165,7 @@ in the plan (I8).
 
 In auto mode the review stop prints exactly once per feature:
 
-`auto: review stop — check commits <base>..HEAD, diagrams and test results; add findings to inspector-review.md or leave it empty, then /mi-continue`
+`auto: review stop for <feature> — check commits <base>..HEAD, diagrams and test results; add findings to inspector-review.md or leave it empty, then /mi-continue (No findings → it approves and completes.)`
 
 It fires at `mi-manual-test-run` 4.8 (replacing the hand-off), or — when no test run reached
 4.8 — at the Inspector Handler's entry when `review-stop-shown` is false. Either site sets

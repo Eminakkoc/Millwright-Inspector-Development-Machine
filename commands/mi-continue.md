@@ -1414,8 +1414,8 @@ if "$CLAUDE_PLUGIN_ROOT/scripts/auto.sh" is-on \
     printf '%s\n' "$open_dq"
   fi
   base_short="$(git rev-parse --short "$("$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" get base-commit)")"
-  echo "auto: review stop — check commits <base>..HEAD, diagrams and test results; add findings to inspector-review.md or leave it empty, then /mi-continue" \
-    | sed "s/<base>/$base_short/"
+  echo "auto: review stop for <feature> — check commits <base>..HEAD, diagrams and test results; add findings to inspector-review.md or leave it empty, then /mi-continue (No findings → it approves and completes.)" \
+    | sed "s|<base>|$base_short|; s|<feature>|$active_feature|"
   exit 0
 fi
 ```

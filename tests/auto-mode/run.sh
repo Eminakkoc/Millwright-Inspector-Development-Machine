@@ -508,11 +508,11 @@ assert_prompt_kept mt-guided-rerun commands/mi-manual-test-run.md
 assert_auto_before mt-guided-rerun commands/mi-manual-test-run.md '"guided re-run" "n"'
 assert_prompt_kept mt-handoff commands/mi-manual-test-run.md
 assert_auto_before mt-handoff commands/mi-manual-test-run.md \
-  'auto: review stop — check commits <base>..HEAD, diagrams and test results; add findings to inspector-review.md or leave it empty, then /mi-continue' \
+  'auto: review stop for <feature> — check commits <base>..HEAD, diagrams and test results; add findings to inspector-review.md or leave it empty, then /mi-continue (No findings → it approves and completes.)' \
   'review-stop-shown=true'
 assert_contains "Inspector Handler fires the review stop once" $MC 'progress.sh" get review-stop-shown'
 assert_contains "Inspector Handler review stop line" $MC \
-  'auto: review stop — check commits <base>..HEAD, diagrams and test results; add findings to inspector-review.md or leave it empty, then /mi-continue'
+  'auto: review stop for <feature> — check commits <base>..HEAD, diagrams and test results; add findings to inspector-review.md or leave it empty, then /mi-continue (No findings → it approves and completes.)'
 assert_prompt_kept inspector-3a $MC
 assert_auto_before inspector-3a $MC 'deferred-questions.sh" list-open' '"no findings, complete" "y"'
 
