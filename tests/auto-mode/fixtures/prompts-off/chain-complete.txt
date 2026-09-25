@@ -1,0 +1,14 @@
+   > "Stage 4 — chain-completion check.
+   >
+   > Plan file(s) written during this chain run:
+   >
+   >   1. `<path>` — done: N, remaining: M
+   >   2. `<path>` — done: P, remaining: Q  *(only if multiple candidates)*
+   >
+   > Commits since base-commit: K (latest: `<sha> <subject>`)
+   >
+   > Did the brainstorming chain finish cleanly, or was the session interrupted mid-chain?
+   >
+   >   - `completed` — advance to inspector review (3 → 4). Use this when the chain ran through `finishing-a-development-branch` and exited normally; remaining `- [ ]` checkboxes are stale (the chain doesn't always tick the very last step).
+   >   - `abandoned <N>` — re-launch the brainstorming chain with plan #N (the number from the list above) as the resume target. I'll point the chain at the existing plan + spec + commit history so it picks up from the next un-done step. Stage stays at 3 until the chain finishes; you'll type `/mi-continue` again afterward and this same handler will route to `completed`.
+   >   - `abandoned` — same as above; valid only when there's exactly one plan candidate (the `<N>` is implied)."

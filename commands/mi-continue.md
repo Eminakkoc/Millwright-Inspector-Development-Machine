@@ -1056,9 +1056,14 @@ Atomic batched write — these flags are idempotent on retry:
 # may have already chosen). Otherwise reuse the persisted value.
 mode_persisted="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get execution-mode 2>/dev/null || echo 'none')"
 if [[ "$mode_persisted" == "none" ]]; then
-  # Prompt the inspector (subagent-driven|inline). The exact prompt text lives
-  # in Resume Step 3 below for narrative continuity.
-  mode="$mode_from_inspector"  # placeholder; the LLM following this recipe asks the inspector.
+  if "$CLAUDE_PLUGIN_ROOT/scripts/auto.sh" is-on; then
+    mode="subagent-driven"
+    "$CLAUDE_PLUGIN_ROOT/scripts/auto.sh" answer "execution mode" "subagent-driven" --cmd /mi-continue
+  else
+    # Prompt the inspector (subagent-driven|inline). The exact prompt text lives
+    # in Resume Step 3 below for narrative continuity.
+    mode="$mode_from_inspector"  # placeholder; the LLM following this recipe asks the inspector.
+  fi
 else
   mode="$mode_persisted"
 fi
@@ -1102,6 +1107,8 @@ A session that was closed mid-chain looks identical to a clean exit at this poin
    ```
 
 4. **Prompt the inspector.** Render the candidates as a numbered list with their checkbox counts and ask:
+
+   **Auto mode.** If `$CLAUDE_PLUGIN_ROOT/scripts/auto.sh is-on` succeeds **and** `progress.sh get chain-finished` prints `true`, run `$CLAUDE_PLUGIN_ROOT/scripts/auto.sh answer "chain completion" "completed" --cmd /mi-continue` and continue as if the inspector had replied `completed` — do not show the prompt below. When `chain-finished` is not `true`, show the prompt below even in auto mode: the chain did not confirm a clean finish, so auto mode does not guess. Otherwise show the prompt below unchanged.
 
    > "Stage 4 — chain-completion check.
    >
@@ -1192,6 +1199,8 @@ Brainstorming may have surfaced new requirements, dropped some, or shifted scope
 
 When `drift_prompt_required==1`, prompt the inspector:
 
+**Auto mode.** If `$CLAUDE_PLUGIN_ROOT/scripts/auto.sh is-on` succeeds, run `$CLAUDE_PLUGIN_ROOT/scripts/auto.sh answer "drift check" "auto" --cmd /mi-continue` and continue as if the inspector had replied `auto` — do not show the prompt below. Otherwise show the prompt below unchanged.
+
 > "Stage-4 drift check: did anything in the requirements change during brainstorming? Reply:
 >
 >   - `<short reason>` — I'll run `/mi-update-blueprint --reason-kind=spec-update <reason>` to rotate `blueprints/current/` into history and regenerate `requirements.md` / `config.md` / `diagrams/` from the **implementation** (codebase + `base-commit..HEAD` diff) plus the just-rotated history version. The previous blueprint's `todo-item-ids`, `## Planned`, `## Non-goals`, `## GIT BRANCH`, and `## Inspector Additions` are preserved verbatim. The active quest cycle's `todo-list.md` and `summary.md` (under `quest/<slug>/`) and `journal/` are NOT consulted.
@@ -1251,6 +1260,20 @@ ov_file="$data_root/workflow-stream/$active_feature/implementation/inspector-rev
 [[ -f "$ov_file" ]] || $CLAUDE_PLUGIN_ROOT/scripts/review.sh init "$active_feature"
 ```
 
+Then convert deferred questions that need a finding (idempotent — converted entries carry a `follow-up` id and are skipped). Choose scope `re-implement` instead of `fix` only when the recorded answer describes restructuring existing code; the default below is `fix`.
+
+```bash
+# Deferred questions → findings (runs in every mode; no-op without the file).
+"$CLAUDE_PLUGIN_ROOT/scripts/deferred-questions.sh" list-needs-finding "$active_feature" \
+  | while IFS=$'\t' read -r dq question answer; do
+      [[ -z "$dq" ]] && continue
+      ir="$(printf 'Deferred question %s: %s\nInspector answer: %s\n' "$dq" "$question" "$answer" \
+            | "$CLAUDE_PLUGIN_ROOT/scripts/review.sh" add "$active_feature" major fix \
+                "$dq: $question" --source deferred-question)"
+      "$CLAUDE_PLUGIN_ROOT/scripts/deferred-questions.sh" set-follow-up "$active_feature" "$dq" "$ir"
+    done
+```
+
 ### Resume Step 7 — Final atomic advance-to (3 → 5, sub-flow=none)
 
 The Resume Handler eliminates stage 4 as a persisted state. The atomic `advance-to 3 5 --set sub-flow=none` collapses the old "advance 3 then advance 4" pair into a single transition, so a session break inside the handler can never strand the workflow at stage 4 with sub-flow=resuming.
@@ -1267,6 +1290,8 @@ skipped="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get implementation-diagrams-s
 
 **When `skipped=false` (the normal case):**
 
+**Auto mode.** If `$CLAUDE_PLUGIN_ROOT/scripts/auto.sh is-on` succeeds, run `$CLAUDE_PLUGIN_ROOT/scripts/auto.sh answer "manual test plan" "y" --cmd /mi-continue` and continue as if the inspector had replied `y` — do not show the prompt below. Otherwise show the prompt below unchanged.
+
 > "Stage 5 — ready for your review. Look at: commits `$base_commit..HEAD` and diagrams under `implementation/diagrams` (existing-system context is shaded grey; new functionality is highlighted).
 >
 > *Note on seeded-only diagrams:* if `implementation/diagrams/README.md` flags any subject as `seeded-only`, that `.puml` is a verbatim copy of the stage-2 blueprint diagram — those subjects had no implementation commits in `base-commit..HEAD`. Treat them as 'design intent preserved' rather than implementation drift; the legend wording (e.g., 'Planned') reflects the stage-2 baseline.
@@ -1279,6 +1304,8 @@ skipped="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get implementation-diagrams-s
 > Reply `y` or `n`."
 
 **When `skipped=true` (inspector answered `n` to stage-4 diagram prompt):**
+
+**Auto mode.** If `$CLAUDE_PLUGIN_ROOT/scripts/auto.sh is-on` succeeds, run `$CLAUDE_PLUGIN_ROOT/scripts/auto.sh answer "manual test plan" "y" --cmd /mi-continue` and continue as if the inspector had replied `y` — do not show the prompt below. Otherwise show the prompt below unchanged.
 
 > "Stage 5 — ready for your review. Look at: commits `$base_commit..HEAD` and the **stage-2 blueprint diagrams** under `blueprints/current/diagrams` (implementation diagrams were skipped at stage 4 — the blueprint diagrams remain authoritative for this cycle).
 >

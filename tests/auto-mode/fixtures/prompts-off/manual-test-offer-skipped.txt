@@ -1,0 +1,8 @@
+> "Stage 5 — ready for your review. Look at: commits `$base_commit..HEAD` and the **stage-2 blueprint diagrams** under `blueprints/current/diagrams` (implementation diagrams were skipped at stage 4 — the blueprint diagrams remain authoritative for this cycle).
+>
+> Before reviewing the implementation, would you like a manual test plan generated for this feature? (`y`/`n`)
+>
+>   - `y` — generate `manual-test-plan.md` and offer to run it (guided walkthrough or fully hands-off). Failures can auto-seed as findings.
+>   - `n` — skip manual testing; go directly to findings authoring (write into `implementation/inspector-review.md`, or leave empty to approve). To generate implementation diagrams now, run `/mi-draw-diagrams` first.
+>
+> Reply `y` or `n`."

@@ -444,6 +444,45 @@ fi
 assert_contains "/mi-implement counts as design approval" commands/mi-implement.md 'counts as design approval'
 assert_contains "/mi-implement: plan without inspector review" commands/mi-implement.md 'without waiting for an inspector review'
 
+# ---- Task 8: Resume Handler ------------------------------------------------------
+MC=commands/mi-continue.md
+assert_prompt_kept chain-complete $MC
+assert_auto_before chain-complete $MC 'chain-finished' '"chain completion" "completed"'
+assert_prompt_kept drift $MC
+assert_auto_before drift $MC '"drift check" "auto"'
+assert_prompt_kept manual-test-offer $MC
+assert_auto_before manual-test-offer $MC '"manual test plan" "y"'
+assert_prompt_kept manual-test-offer-skipped $MC
+assert_auto_before manual-test-offer-skipped $MC '"manual test plan" "y"'
+assert_contains "Resume Step 2 records subagent-driven in auto mode" $MC \
+  'auto.sh" answer "execution mode" "subagent-driven" --cmd /mi-continue'
+assert_contains "Resume Step 6 converts needs-finding deferred questions" $MC \
+  'deferred-questions.sh" list-needs-finding'
+
+t="Resume Step 6 DQ conversion snippet is idempotent (behaviour)"
+sb="$(make_sandbox)"
+run_in "$sb" "$DQ" add alpha "TTL?" "60s" >/dev/null 2>&1
+run_in "$sb" "$DQ" answer alpha DQ-001 "300s" --needs-finding >/dev/null 2>&1
+rf="$sb/millwright-inspector/workflow-stream/alpha/implementation/inspector-review.md"
+printf -- '---\nfeature: alpha\n---\n\n## Implementation Review\n\n' > "$rf"
+snippet="$(python3 - "$REPO_ROOT/$MC" <<'PYEOF'
+import re, sys
+s = open(sys.argv[1]).read()
+m = re.search(r'```bash\n(# Deferred questions → findings.*?)```', s, re.S)
+print(m.group(1) if m else '')
+PYEOF
+)"
+if [[ -z "$snippet" ]]; then
+  ng "$t" "snippet starting '# Deferred questions → findings' not found"
+else
+  for _ in 1 2; do
+    run_in "$sb" env CLAUDE_PLUGIN_ROOT="$REPO_ROOT" active_feature=alpha bash -c "$snippet" >/dev/null 2>&1
+  done
+  n="$(grep -c '^### IR-' "$rf")"
+  fu="$(grep -E '^- follow-up:' "$sb/millwright-inspector/workflow-stream/alpha/implementation/deferred-questions.md")"
+  [[ "$n" == "1" && "$fu" == "- follow-up: IR-001" ]] && ok "$t" || ng "$t" "n=$n fu=$fu"
+fi
+
 # ---- end of tests --------------------------------------------------------------
 echo
 echo "auto-mode: $pass passed, $fail failed"
