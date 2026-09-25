@@ -207,6 +207,18 @@ run_in "$sb" "$A" answer "planning mode" "brainstorming" --cmd /mi-plan-implemen
 grep -qF '| 2 | /mi-plan-implementation | auto-answer | small | main | planning mode → brainstorming |' "$ledger" \
   && ok "$t" || ng "$t" "row missing"
 
+t="auto.sh answer warns (rc 0) when ledger.sh skips the append"
+sb="$(make_sandbox --auto)"
+ledger="$sb/millwright-inspector/quest/2026-09-25-demo/context-ledger.md"
+mkdir -p "$ledger"
+err="$(run_in "$sb" "$A" answer "queue order" "accept" --cmd /mi-continue 2>&1 >/dev/null)"; rc=$?
+if [[ "$rc" == 0 && "$err" == *"could not append ledger row"* ]]; then ok "$t"; else ng "$t" "rc=$rc err=$err"; fi
+
+t="auto.sh answer prints no warning when the ledger row is written"
+sb="$(make_sandbox --auto)"
+err="$(run_in "$sb" "$A" answer "queue order" "accept" --cmd /mi-continue 2>&1 >/dev/null)"
+if [[ "$err" != *"could not append"* ]]; then ok "$t"; else ng "$t" "err=$err"; fi
+
 t="auto.sh switch refuses without a quest cycle"
 if (cd "$empty" && MI_DATA_ROOT="$empty/none" "$A" switch on >/dev/null 2>&1); then ng "$t" "exit 0"; else ok "$t"; fi
 

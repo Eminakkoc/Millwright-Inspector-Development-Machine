@@ -54,8 +54,13 @@ current_stage() {
 
 ledger_row() {
   # ledger_row <command> <files> <artifact>
-  "$LEDGER" append "$(current_stage)" "$1" "$2" small main "$3" >/dev/null 2>&1 \
-    || mi_info "warning: could not append ledger row ($2: $3)"
+  # ledger.sh exits 0 on its "skipping append" path, so the exit code alone
+  # cannot tell a dropped row from a written one — check its stderr too.
+  local err
+  if ! err="$("$LEDGER" append "$(current_stage)" "$1" "$2" small main "$3" 2>&1 >/dev/null)" \
+     || [[ "$err" == *"skipping append"* ]]; then
+    mi_info "warning: could not append ledger row ($2: $3)"
+  fi
 }
 
 cmd="${1:-}"; shift || true
