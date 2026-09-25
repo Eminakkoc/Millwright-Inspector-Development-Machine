@@ -587,6 +587,28 @@ PYEOF
 )"
 [[ "$check" == "yes" ]] && ok "$t" || ng "$t" "check=$check"
 
+t="stacked note still prints on a Branch I resume (pair recovered from archived primer)"
+fence="$(python3 - "$REPO_ROOT/commands/mi-complete-workflow.md" <<'PYEOF'
+import re, sys
+s = open(sys.argv[1]).read()
+for fence in re.findall(r'```bash\n(.*?)```', s, re.S):
+    if '# Stacked-branch note' in fence:
+        print(fence); break
+PYEOF
+)"
+sb="$(make_sandbox)"
+(cd "$sb" && git switch -qc feat/alpha && echo a > a && git add a && git commit -qm a \
+   && git switch -qc feat/beta && echo b > b && git add b && git commit -qm b)
+base_b="$(cd "$sb" && git rev-parse feat/alpha)"
+run_in "$sb" "$P" set-top 'completed-branches=["feat/alpha","feat/beta"]' >/dev/null 2>&1
+dr="$sb/millwright-inspector"
+mkdir -p "$dr/workflow-stream/beta/blueprints/history/v1"
+printf -- '---\nid: x\n---\n\n## Active scope\n\n- branch: feat/beta\n- base-commit: %s\n' "$base_b" \
+  > "$dr/workflow-stream/beta/blueprints/history/v1/primer.md"
+out="$(run_in "$sb" env CLAUDE_PLUGIN_ROOT="$REPO_ROOT" data_root="$dr" active_feature=beta branch_route=I \
+       bash -c "latest_finalized_version() { echo 1; }; $fence" 2>/dev/null)"
+[[ "$out" == "stacked: feat/beta is based on feat/alpha (unmerged)" ]] && ok "$t" || ng "$t" "out=[$out]"
+
 # ---- Task 12: never-auto audit --------------------------------------------------------
 t="never-auto rules match the audited list"
 cur="$(cd "$REPO_ROOT" && grep -rniE 'never auto|do not auto|Do NOT auto-fire|Wait for the' commands docs \

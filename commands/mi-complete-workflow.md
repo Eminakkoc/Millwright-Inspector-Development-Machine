@@ -435,7 +435,7 @@ For an ordinary completion, the historical snapshot is then complete: `blueprint
 
 ### Step 6 — Finish the active feature
 
-(Skipped on Branch I — `progress.sh finish` already ran in the prior invocation that left active=null. Re-running it would error: require_active rejects null active.)
+(`progress.sh finish` is skipped on Branch I — it already ran in the prior invocation that left active=null. Re-running it would error: require_active rejects null active. Branch I instead recovers `finished_branch` / `finished_base` from the archived `primer.md` (or `implementation/review-context.md`) so the stacked-branch note below still runs.)
 
 Archive the active feature into `completed` and set `active` to null. Under the two-step activation model, `/mi-apply-impact` will activate the next feature from the queue when it's invoked next.
 
@@ -444,6 +444,18 @@ if [[ "${branch_route:-III}" == "III" || "${branch_route:-}" == "0a" || "${branc
   finished_branch="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get branch)"
   finished_base="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get base-commit)"
   $CLAUDE_PLUGIN_ROOT/scripts/progress.sh finish >/dev/null
+elif [[ "${branch_route:-}" == "I" ]]; then
+  # finish already ran, so active is gone — recover the pair from the archived
+  # primer (its `## Active scope` bullets), falling back to the archived
+  # review-context, so the stacked-branch note still fires after a resume.
+  v="$(latest_finalized_version "$active_feature")"
+  arch="$data_root/workflow-stream/$active_feature/blueprints/history/v${v}"
+  for src in "$arch/primer.md" "$arch/implementation/review-context.md"; do
+    [[ -f "$src" ]] || continue
+    finished_branch="$(sed -n 's/^- branch: *//p' "$src" | head -1)"
+    finished_base="$(sed -n 's/^- base-commit: *//p' "$src" | head -1)"
+    [[ -n "$finished_branch" && -n "$finished_base" ]] && break
+  done
 fi
 remaining="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh queue-remaining 2>/dev/null || echo '')"
 
