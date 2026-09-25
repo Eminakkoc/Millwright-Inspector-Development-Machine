@@ -236,10 +236,12 @@ PYEOF
     require_file "$dest"
     require_active "$dest"
     mi_assert_worktree_match
-    python3 - "$dest" "${set_args[@]:-}" <<'PYEOF'
+    python3 - "$dest" "${MI_PLUGIN_ROOT}/scripts/internal" "${set_args[@]:-}" <<'PYEOF'
 import sys, re, yaml
 path = sys.argv[1]
-extra_sets = sys.argv[2:]
+sys.path.insert(0, sys.argv[2])
+from progress_top import apply_top_sets
+extra_sets = sys.argv[3:]
 with open(path) as f:
     content = f.read()
 m = re.match(r'^---\n(.*?)\n---\n(.*)$', content, re.DOTALL)
@@ -253,24 +255,9 @@ if branch:
         cb.append(branch)
     fm['completed-branches'] = cb
 fm['active'] = None
-# Apply any --set field=value pairs to top-level fields. active.* writes are
-# meaningless here (active is being set to None).
-for kv in extra_sets:
-    if not kv:
-        continue
-    if '=' not in kv:
-        sys.stderr.write(f"finish: --set value missing '=': {kv}\n")
-        sys.exit(2)
-    field, value = kv.split('=', 1)
-    if field.startswith('active.') or field == 'active':
-        sys.stderr.write(f"finish: cannot set active.* fields during finalize (active is being cleared): {field}\n")
-        sys.exit(2)
-    # Try YAML-parsing the value so booleans/numbers/lists land as the right type.
-    try:
-        parsed = yaml.safe_load(value)
-    except yaml.YAMLError:
-        parsed = value
-    fm[field] = parsed
+# Apply any --set field=value pairs to top-level fields — same rules as
+# set-top (shared helper): active.* and protected fields are refused.
+apply_top_sets(fm, [kv for kv in extra_sets if kv], 'finish --set')
 with open(path, 'w') as f:
     f.write('---\n')
     f.write(yaml.safe_dump(fm, default_flow_style=False, sort_keys=False))
@@ -500,11 +487,12 @@ PYEOF
     mi_assert_worktree_match
     tmp="$(mktemp "$(dirname "$dest")/progress.md.XXXXXX")"
     trap 'rm -f "$tmp"' EXIT
-    if ! python3 - "$dest" "$tmp" "$@" <<'PYEOF'; then
+    if ! python3 - "$dest" "$tmp" "${MI_PLUGIN_ROOT}/scripts/internal" "$@" <<'PYEOF'; then
 import sys, re, yaml
 path, tmp = sys.argv[1], sys.argv[2]
-kvs = sys.argv[3:]
-PROTECTED = {'active', 'queue', 'completed', 'id', 'todo-list-id'}
+sys.path.insert(0, sys.argv[3])
+from progress_top import apply_top_sets
+kvs = sys.argv[4:]
 with open(path) as f:
     content = f.read()
 m = re.match(r'^---\n(.*?)\n---\n(.*)$', content, re.DOTALL)
@@ -512,24 +500,7 @@ if not m:
     sys.stderr.write(f"error: progress.sh set-top: {path} has no frontmatter block\n")
     sys.exit(1)
 fm = yaml.safe_load(m.group(1)) or {}
-seen = set()
-for kv in kvs:
-    if '=' not in kv:
-        sys.stderr.write(f"error: progress.sh set-top: invalid field=value: {kv!r}\n")
-        sys.exit(1)
-    field, value = kv.split('=', 1)
-    if field in PROTECTED or field.startswith('active.'):
-        sys.stderr.write(f"error: progress.sh set-top: {field} is managed by other subcommands and cannot be set here\n")
-        sys.exit(1)
-    if field in seen:
-        sys.stderr.write(f"error: progress.sh set-top: duplicate field {field!r} in args\n")
-        sys.exit(1)
-    seen.add(field)
-    try:
-        parsed = yaml.safe_load(value)
-    except yaml.YAMLError:
-        parsed = value
-    fm[field] = parsed
+apply_top_sets(fm, kvs, 'set-top')
 with open(tmp, 'w') as f:
     f.write('---\n')
     f.write(yaml.safe_dump(fm, default_flow_style=False, sort_keys=False))

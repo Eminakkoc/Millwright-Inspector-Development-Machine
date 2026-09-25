@@ -483,7 +483,7 @@ Relay the line when it prints. Merge stacked branches in queue order, or merge t
 $CLAUDE_PLUGIN_ROOT/scripts/progress.sh finish --set last-completion=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 ```
 
-The `--set` writes target top-level fields only; setting `active.*` is rejected because `active` is being cleared. Do NOT introduce `advance-to 7 -1` as a finalize mechanism — `advance-to` only permits the whitelisted `3→5 | 5→7 | 6→7` transitions; stage-7 finalization stays on `progress.sh finish`.
+The `--set` writes target top-level fields only and go through the same helper as `progress.sh set-top` (`scripts/internal/progress_top.py`): `active.*` is rejected because `active` is being cleared, and the protected fields `queue`, `completed`, `id` and `todo-list-id` are refused. Do NOT introduce `advance-to 7 -1` as a finalize mechanism — `advance-to` only permits the whitelisted `3→5 | 5→7 | 6→7` transitions; stage-7 finalization stays on `progress.sh finish`.
 
 ### Step 7 — Report and auto-continue
 

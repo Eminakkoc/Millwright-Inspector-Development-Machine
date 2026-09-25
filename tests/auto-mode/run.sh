@@ -128,6 +128,29 @@ for f in active queue completed id todo-list-id; do
   fi
 done
 
+for f in queue completed id todo-list-id active.branch; do
+  t="finish --set refuses protected field $f (shared set-top rules)"
+  sb="$(make_sandbox)"
+  run_in "$sb" "$P" activate >/dev/null 2>&1
+  pf="$sb/millwright-inspector/quest/2026-09-25-demo/progress.md"
+  before="$(cat "$pf")"
+  if run_in "$sb" "$P" finish --set "$f=x" >/dev/null 2>&1; then
+    ng "$t" "exit 0"
+  elif [[ "$(cat "$pf")" != "$before" ]]; then
+    ng "$t" "file changed"
+  else
+    ok "$t"
+  fi
+done
+
+t="finish --set writes a typed top-level field; bare finish still works"
+sb="$(make_sandbox)"
+run_in "$sb" "$P" activate >/dev/null 2>&1
+run_in "$sb" "$P" finish --set auto-mode=true >/dev/null 2>&1
+a="$(run_in "$sb" "$P" get-top auto-mode 2>/dev/null)"
+run_in "$sb" "$P" activate >/dev/null 2>&1
+if [[ "$a" == "true" ]] && run_in "$sb" "$P" finish >/dev/null 2>&1; then ok "$t"; else ng "$t" "auto-mode=$a"; fi
+
 t="schema rejects non-boolean auto-mode (set-top leaves file untouched)"
 sb="$(make_sandbox)"
 pf="$sb/millwright-inspector/quest/2026-09-25-demo/progress.md"
