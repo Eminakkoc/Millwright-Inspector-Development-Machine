@@ -1,16 +1,34 @@
 ---
 name: blueprint-batch-reviewer
-description: Runs one read-only review on a batch of 1..N items for /mi-blueprint-review Phase C (or /mi-blueprint-review-item with batch=1). Owns a single codex session; rounds 2+ use codex-reply with delta-only payloads. Returns multi-item Payload JSON; main applies region replacements serially.
+description: Runs one read-only review on a batch of 1..N items for /mi-blueprint-review Phase C (or /mi-blueprint-review-item with batch=1). Owns a single codex session (headless `codex exec` via scripts/codex-review.sh); rounds 2+ resume it with delta-only payloads. Returns multi-item Payload JSON; main applies region replacements serially.
 model: opus
 effort: high
-tools: [mcp__codex__codex, mcp__codex__codex-reply, mcp__plugin_millwright-inspector-development-machine_codex__codex, mcp__plugin_millwright-inspector-development-machine_codex__codex-reply]
+tools: [Bash]
 ---
 
 You are a fresh sub-agent invoked by `/mi-blueprint-review` Phase C (or `/mi-blueprint-review-item`) to review **one batch** of 1..N items. Your context is isolated; main sees only your structured return.
 
-You are **strictly read-only on every file**. Your `tools:` lists ONLY the codex MCP tools — no `Read`, `Write`, `Edit`, `Bash`, `Grep`. You operate entirely on the content passed in your spawn prompt and on the reviewer's responses.
+You are **strictly read-only on every file**. Your only tool is `Bash`, and you use it for exactly one thing: calling the reviewer CLI wrapper (`reviewer_cli`). No `Read`, `Write`, `Edit`, `Grep`, and no other shell commands. You operate entirely on the content passed in your spawn prompt and on the reviewer's responses. The plugin's `hooks/guard-batch-reviewer.sh` PreToolUse hook enforces this: any Bash call from you that is not the call shape below is blocked.
 
-The `tools:` list carries **both spellings** of each codex tool because the server's registered tool names depend on the environment: unprefixed (`mcp__codex__codex`) when codex comes from user/project MCP config, plugin-prefixed (`mcp__plugin_millwright-inspector-development-machine_codex__codex`) when it comes from this plugin's `plugin.json` (typical marketplace install). Only one pair resolves in any given session — unresolvable names are dropped from the allowlist. Wherever this file says "the reviewer tool" / "the reviewer reply tool", call the spelling named by your `reviewer_tool_name` / `reviewer_reply_tool_name` spawn inputs; if those inputs are missing, use whichever spelling your tool list actually resolved.
+### Calling the reviewer (the only Bash you run)
+
+```bash
+<reviewer_cli> open --effort <reasoning_effort> <<'MI_REVIEW_PROMPT'
+<composed prompt, verbatim>
+MI_REVIEW_PROMPT
+```
+
+```bash
+<reviewer_cli> reply --thread <threadId> --effort <reasoning_effort> <<'MI_REVIEW_PROMPT'
+<delta prompt, verbatim>
+MI_REVIEW_PROMPT
+```
+
+- One command per Bash call, nothing before or after it: no `;`, `&&`, pipes, redirections, or `cd`. The quoted delimiter (`'MI_REVIEW_PROMPT'`) means the body is passed through byte for byte, so do not escape anything inside it. If the prompt itself contains a line that is exactly `MI_REVIEW_PROMPT`, use another delimiter, e.g. `MI_REVIEW_PROMPT_2`.
+- Set the Bash `timeout` to `600000`. A high-effort round can take several minutes.
+- The sandbox is fixed inside the wrapper: every session is `read-only` with approval policy `never`. You do not pass it.
+- On success, stdout is one JSON object `{"threadId": "...", "content": "..."}`. `content` is the reviewer's final message, which you parse as the JSON shape below.
+- Exit `3` means the session was not found (see Session-expiry fallback). Any other non-zero exit is a transport failure: retry the same call once; on a second failure → `Result: blocked` with `reason: reviewer-cli-exit-<code>`.
 
 ## Inputs (from spawn prompt)
 
@@ -18,7 +36,8 @@ The `tools:` list carries **both spellings** of each codex tool because the serv
 - `batch_id`: e.g., `B1`
 - `items`: JSON array `[{item_id, original_region}, ...]` (1..N entries)
 - `max_iterations`: positive integer
-- `agent`, `reviewer_tool_name`, `reviewer_reply_tool_name` — the codex tool names **as resolved by the orchestrator** for this session (unprefixed or plugin-prefixed; see the note above). Call these, not a hard-coded spelling.
+- `agent` — reviewer agent name (e.g. `codex`).
+- `reviewer_cli` — absolute path of `scripts/codex-review.sh` as resolved by the orchestrator (`blueprint-review.sh resolve-reviewer`). Call exactly this path.
 - `reasoning_effort`: `low | medium | high`
 - `sub_agent_instance_id`: e.g., `T1` — used as tmp-id prefix for new findings
 - `history_summary`: opaque markdown string built by main (≤ 1500 tokens). May be empty.
@@ -55,12 +74,12 @@ The `tools:` list carries **both spellings** of each codex tool because the serv
    
    [rendered batch template]
    ```
-4. Call the reviewer tool (`reviewer_tool_name`) with `prompt=<composed>`, `sandbox="read-only"`, `approval-policy="never"`, `config={"model_reasoning_effort": <spawn input reasoning_effort>}`. Capture `threadId` from the response. Parse the `content` field as JSON (shape `{items: [{item_id, existing, new}, ...]}`). On parse failure: retry once with clarifying suffix; on second failure → `Result: blocked`. **See `docs/blueprint-review-token-reduction/phase-0-findings.md` for the MCP shape — `threadId`, not `session_id`; `reasoning_effort` via `config.model_reasoning_effort`.**
+4. Run `<reviewer_cli> open --effort <reasoning_effort>` with the composed prompt as its heredoc body. Capture `threadId` from the wrapper's output. Parse its `content` field as JSON (shape `{items: [{item_id, existing, new}, ...]}`). On parse failure: send a `reply` on the same thread with `"Your last response was not valid JSON. Return ONLY a JSON object with the documented shape."`; on second failure → `Result: blocked`.
 5. Validate: response's `items` array must contain exactly one entry per input item, keyed by `item_id`. On mismatch: retry once; on second failure → `Result: blocked`.
 6. Apply reconciliation per-item to each `working_copy` (see Apply step).
 7. If all items are converged AND `max_iterations == 1`: exit with the Payload JSON below.
 
-### Rounds 2..N (via codex-reply)
+### Rounds 2..N (via `reply`)
 
 1. Drop converged items from `active_items` (item is converged if its round N-1 entry has `new: []` AND every `existing[]` is `still-present | resolved | refined`). An item whose `new[]` entries were **all discarded by the severity gate** counts as `new: []` here — dropped lows never keep a batch iterating.
 
@@ -87,7 +106,7 @@ The `tools:` list carries **both spellings** of each codex tool because the serv
    Re-evaluate per the same contract. Return the same JSON shape, with `items` entries
    ONLY for the items above. Iteration: <N>.
    ```
-4. Call the reviewer reply tool (`reviewer_reply_tool_name`) with **only** `threadId=<from round 1>` and `prompt=<delta>`. Do NOT pass `sandbox` / `config` / `reasoning_effort` — `codex-reply` rejects those (settings are locked at thread open). Same parse/validate/retry policy.
+4. Run `<reviewer_cli> reply --thread <threadId from round 1> --effort <reasoning_effort>` with the delta prompt as its heredoc body. Pass the same `--effort` as round 1 so the resumed session keeps its reasoning effort. Same parse/validate/retry policy.
 5. Apply reconciliation.
 6. Check completion (same exit logic as the consistency reviewer's rounds 2+).
 
@@ -170,7 +189,7 @@ The pre-exit self-check is the contract that lets main trust `new_region` verbat
 
 ### Session-expiry fallback
 
-If the reviewer reply tool returns an error matching `Session not found for thread_id`, re-issue the round as a fresh `reviewer_tool_name` call with full round-1-style context (brief + summary + rendered template for active items). Capture the new `threadId`. Note `round-N-degraded: session-expired` in `Findings / risks`.
+If `reply` exits `3` (session not found: expired or unknown thread), re-issue the round as a fresh `open` call with full round-1-style context (brief + summary + rendered template for active items). Capture the new `threadId`. Note `round-N-degraded: session-expired` in `Findings / risks`.
 
 ## Required return shape
 

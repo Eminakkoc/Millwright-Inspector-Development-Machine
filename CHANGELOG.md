@@ -1,5 +1,49 @@
 # Changelog
 
+## 1.8.0 — Blueprint review runs codex headless via `codex exec`
+
+codex-cli **0.154.0** (2026-09-09, [openai/codex#42993](https://github.com/openai/codex/pull/42993))
+removed the deprecated `codex mcp-server` entry point. The plugin registered that server
+in `plugin.json`. On any current codex install it failed to connect (`CONNECTION_CLOSED`),
+the `mcp__…codex__codex[-reply]` tools disappeared, and every `/mi-blueprint-review*` run,
+including the stage-2 auto-fire, had no reviewer to call.
+
+The reviewer now runs through the non-interactive CLI, behind a new wrapper that keeps the
+contract the MCP tools had:
+
+- **New `scripts/codex-review.sh`.** `open --effort R` starts a session
+  (`codex exec --json`), and `reply --thread ID --effort R` continues it
+  (`codex exec resume`). Both read the prompt on stdin and print
+  `{"threadId", "content"}`, the same two fields the sub-agents already parsed. Every
+  session is pinned to `sandbox_mode="read-only"` and `approval_policy="never"`. Exit `3`
+  means the session was not found (codex's `no rollout found for thread id`), and the
+  existing session-expiry fallback re-opens on it. `--effort` is passed on every `reply`
+  because a resumed `exec` session does not lock settings the way `codex-reply` did.
+  `check` verifies the CLI.
+- **`plugin.json` no longer declares the `codex` MCP server.**
+- **`blueprint-review.sh resolve-tool` → `resolve-reviewer`.** It prints the wrapper's
+  absolute path after `check` passes. The orchestrator hands it to both reviewer
+  sub-agents as the single spawn input `reviewer_cli`, replacing `reviewer_tool_name` /
+  `reviewer_reply_tool_name`. The unprefixed-vs-plugin-prefixed tool-name resolution is
+  gone because there are no tool names left to resolve.
+- **`blueprint-batch-reviewer` keeps its read-only guarantee.** Its `tools:` is now
+  `[Bash]` alone. A plugin agent cannot carry `hooks` frontmatter, and a
+  `Bash(...)` specifier in `tools:` drops the whole tool. So the new plugin-level
+  **PreToolUse hook `hooks/guard-batch-reviewer.sh`** identifies the agent by the hook
+  input's `agent_type` and admits only
+  `<plugin>/scripts/codex-review.sh open|reply … <<'DELIM'` (a quoted heredoc, with the
+  delimiter as the last line). Anything else from that agent exits 2. Every other caller
+  passes through untouched.
+- **`blueprint-consistency-reviewer`** drops the four codex MCP tools and calls the same
+  wrapper through its existing `Bash`.
+- **`/mi-doctor`** checks `codex exec resume --help` instead of `codex mcp-server --help`.
+  The codex-reply version note is removed.
+- **Lint.** The batch-reviewer invariant now requires `tools: [Bash]` plus the registered
+  guard hook. A new check fails on any live reference to the codex MCP tools or
+  `codex mcp-server`.
+
+No change to prompts, findings format, phases, or `review-history.md`.
+
 ## 1.7.1 — Feature-test entries are named after the cycle, not its first feature
 
 `derive-feature-test-name` built the terminal entry's name from the **first ordinary

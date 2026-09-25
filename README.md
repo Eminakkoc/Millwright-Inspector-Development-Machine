@@ -50,6 +50,7 @@ On first run, the plugin creates a `millwright-inspector/` folder at your projec
 - **Claude Code** ≥ 2.1.110 (required for plugin dependency resolution).
 - **`yq`** on your PATH — used by scripts to read/write YAML frontmatter. Install via `brew install yq` or equivalent.
 - **`plantuml-mcp-server`** on your PATH — used to render diagrams. The plugin auto-configures it as an MCP server on enable, but you must install the binary yourself (e.g., `npm install -g plantuml-mcp-server`).
+- **`codex`** CLI (optional) — the blueprint reviewer. The plugin runs it headless through `codex exec` (`scripts/codex-review.sh`); install it and run `codex login` once. No MCP server is needed: codex-cli 0.154.0 removed `codex mcp-server`, and since v1.8.0 the plugin no longer registers one. Without codex, the stage-2 auto-review is skipped and the rest of the workflow is unaffected.
 - **`ajv-cli`** (optional) — used for deep JSON Schema validation of workflow files. Falls back to `yq`-based structural checks if absent. Install via `npm install -g ajv-cli`.
 - **Superpowers plugin** (or local skill equivalents) — provides the `brainstorming`, `writing-plans`, `executing-plans`, `subagent-driven-development`, and `finishing-a-development-branch` skills that stage 3 hands control to. **Deliberately NOT declared as a Claude Code plugin dependency** — Claude Code's `dependencies` field is a hard load-time gate, and declaring it would prevent `millwright-inspector-development-machine` from loading before `/mi-init` could guide the install. `/mi-init` detects missing superpowers skills and prints the `/plugin marketplace add` + `/plugin install` commands for you to run (these cannot be auto-run from Bash). You can also satisfy the skills by dropping local `SKILL.md` files under `.claude/skills/<name>/` for each of the five skills.
 
@@ -175,7 +176,7 @@ See `docs/millwright-inspector-project.md` for the full stage-by-stage reference
 
 **Blueprint review (v1.5.0+ token-reduction refit):**
 
-- `/mi-blueprint-review-consistency <agent> <file> [--auto-iter N] [--reasoning-effort R]` — run a single whole-file consistency review. One codex session per loop; rounds 2+ via `mcp__codex__codex-reply` (delta-only payloads).
+- `/mi-blueprint-review-consistency <agent> <file> [--auto-iter N] [--reasoning-effort R]` — run a single whole-file consistency review. One codex session per loop; rounds 2+ resume it via `codex exec resume` (delta-only payloads).
 - `/mi-blueprint-review-item <agent> <file>:<item-id> [--auto-iter N] [--reasoning-effort R]` — review a single item (or stateless content) as a `batch_size=1` run through the v1.5 orchestrator.
 - `/mi-blueprint-review <agent> <file> [--auto-iter N] [--batch-size N] [--scope X] [--reasoning-effort R] [--concurrency N]` — v1.5 orchestrator: preflight + summary build (sibling `review-history.md`) → enumerate → per-batch review (parallel waves, session-continuation) → single consistency pass → persist to `review-history.md` → report. Auto-fires at stage 2 against `requirements.md`. Cuts token cost ~95% vs v1.2.x.
 

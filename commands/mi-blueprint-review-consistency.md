@@ -1,5 +1,5 @@
 ---
-description: Run a single whole-file consistency review (v1.5) — thin wrapper around Phase A + D + F + G of /mi-blueprint-review. One codex session per loop; rounds 2+ via codex-reply. See docs/blueprint-review-token-reduction/plan.md.
+description: Run a single whole-file consistency review (v1.5) — thin wrapper around Phase A + D + F + G of /mi-blueprint-review. One codex session per loop (headless `codex exec`); rounds 2+ resume it. See docs/blueprint-review-token-reduction/plan.md.
 ---
 
 # /mi-blueprint-review-consistency
@@ -18,7 +18,7 @@ Defaults: `--auto-iter 5`, `--reasoning-effort medium`. No `--batch-size`, no `-
 
 ## Preconditions
 
-- Reviewer's MCP server reachable (`/mi-doctor`).
+- The `codex` CLI installed and logged in, with the `exec` subcommand (`/mi-doctor`).
 - File exists and is writable.
 
 ## Execution
@@ -47,13 +47,9 @@ done
 [[ "$reasoning_effort" =~ ^(low|medium|high)$ ]] || { echo "error: --reasoning-effort must be low|medium|high" >&2; exit 64; }
 [[ -f "$file" && -w "$file" ]] || { echo "error: file not found or not writable: $file" >&2; exit 1; }
 
-reviewer_tool="$($CLAUDE_PLUGIN_ROOT/scripts/blueprint-review.sh resolve-tool "$agent")" || exit 1
-reviewer_reply_tool="mcp__${agent}__${agent}-reply"
-# resolve-tool prints the unprefixed candidate. Apply /mi-blueprint-review
-# Step 1's tool-name resolution: if the unprefixed pair is absent from the
-# session's tool inventory but the plugin-prefixed pair exists
-# (mcp__plugin_millwright-inspector-development-machine_codex__codex[-reply]),
-# reassign both variables to the prefixed spellings; if neither exists, refuse.
+reviewer_cli="$($CLAUDE_PLUGIN_ROOT/scripts/blueprint-review.sh resolve-reviewer "$agent")" || exit 1
+# Absolute path of scripts/codex-review.sh (headless `codex exec`); see
+# /mi-blueprint-review Step 1 "Reviewer transport".
 ```
 
 ### Step 2 — Run Phase A (preflight + summary build)
@@ -68,8 +64,7 @@ Spawn `blueprint-consistency-reviewer` with the spawn-input bundle:
 file_path = $file
 max_iterations = $auto_iter
 agent = $agent
-reviewer_tool_name = $reviewer_tool
-reviewer_reply_tool_name = $reviewer_reply_tool
+reviewer_cli = $reviewer_cli
 reasoning_effort = $reasoning_effort
 lessons_block = (from A.2)
 history_summary = history_summary_consistency (from A.4)

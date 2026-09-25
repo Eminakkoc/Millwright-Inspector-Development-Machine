@@ -1,5 +1,5 @@
 ---
-description: Orchestrate a token-reduced blueprint review (v1.5) — Phase A (preflight + summary build) → B (enumerate) → C (per-batch parallel review) → D (single consistency pass) → E (scope-expansion gate) → F (persist to review-history.md) → G (report). Every phase is recorded in a deterministic phase ledger; Phase G renders it as a table and FAILS if any mandatory phase was skipped. Uses the codex MCP tools — round-1 tool + -reply for rounds 2+; names resolved at Step 1 (unprefixed or plugin-prefixed depending on how the server is registered). See docs/blueprint-review-token-reduction/plan.md.
+description: Orchestrate a token-reduced blueprint review (v1.5) — Phase A (preflight + summary build) → B (enumerate) → C (per-batch parallel review) → D (single consistency pass) → E (scope-expansion gate) → F (persist to review-history.md) → G (report). Every phase is recorded in a deterministic phase ledger; Phase G renders it as a table and FAILS if any mandatory phase was skipped. Runs codex headless via `codex exec` (scripts/codex-review.sh) — `open` for round 1, `reply` to resume the session for rounds 2+; wrapper path resolved at Step 1. See docs/blueprint-review-token-reduction/plan.md.
 ---
 
 # /mi-blueprint-review
@@ -31,8 +31,7 @@ description: Orchestrate a token-reduced blueprint review (v1.5) — Phase A (pr
 
 ## Preconditions
 
-- Reviewer's MCP server reachable (`/mi-doctor`).
-- The codex reply tool available under either spelling — `mcp__codex__codex-reply` (user/project-registered server) or `mcp__plugin_millwright-inspector-development-machine_codex__codex-reply` (plugin-registered server; see Step 1's tool-name resolution). Session behavior verified at Phase 0 (`docs/blueprint-review-token-reduction/phase-0-findings.md`). If unavailable, sub-agents fall back to stateless mode automatically.
+- The `codex` CLI installed and logged in, with the `exec` subcommand (`/mi-doctor`). Step 1's `resolve-reviewer` verifies this and refuses otherwise.
 - File exists and is writable.
 
 ## Phase progression contract (READ BEFORE EXECUTING)
@@ -127,8 +126,7 @@ done
 [[ -f "$file" && -w "$file" ]] || { echo "error: file not found or not writable: $file" >&2; exit 1; }
 [[ -z "$reference_file" || -r "$reference_file" ]] || { echo "error: --reference-file path not readable: $reference_file" >&2; exit 64; }
 
-reviewer_tool="$($CLAUDE_PLUGIN_ROOT/scripts/blueprint-review.sh resolve-tool "$agent")" || exit 1
-reviewer_reply_tool="mcp__${agent}__${agent}-reply"   # v1.5 convention; matches Phase 0 finding
+reviewer_cli="$($CLAUDE_PLUGIN_ROOT/scripts/blueprint-review.sh resolve-reviewer "$agent")" || exit 1
 MAX_ITEMS_PER_REVIEW="$max_items"
 
 # Initialize the phase ledger for this run. Every phase marks itself; Phase G
@@ -138,7 +136,7 @@ MAX_ITEMS_PER_REVIEW="$max_items"
 "$CLAUDE_PLUGIN_ROOT/scripts/blueprint-review.sh" ledger init "$file"
 ```
 
-**Tool-name resolution (environment-dependent — do this before any codex call).** `resolve-tool` prints the unprefixed candidate (`mcp__codex__codex`), which is correct when the codex MCP server is registered at user/project level. When the server comes from this plugin's `plugin.json` (typical marketplace install), the session exposes the tools **plugin-prefixed** instead: `mcp__plugin_millwright-inspector-development-machine_codex__codex` / `mcp__plugin_millwright-inspector-development-machine_codex__codex-reply`. Check your actual tool inventory (ToolSearch for `codex` if not loaded): if the unprefixed pair is absent and the prefixed pair exists, reassign `reviewer_tool` / `reviewer_reply_tool` to the prefixed spellings. If **neither** spelling exists, refuse: `error: codex MCP tools not reachable under either name (mcp__codex__codex or mcp__plugin_millwright-inspector-development-machine_codex__codex) — run /mi-doctor.` The resolved values flow into every direct call below and into every sub-agent spawn input (`reviewer_tool_name` / `reviewer_reply_tool_name`) — the sub-agents call whatever names they are handed, so resolving here fixes the whole run.
+**Reviewer transport (v1.8.0).** `resolve-reviewer` prints the absolute path of `scripts/codex-review.sh` after checking that `codex exec` is usable; if it fails, relay its error and stop (`run /mi-doctor`). codex-cli 0.154.0 removed `codex mcp-server`, so the reviewer is no longer an MCP tool. Every codex call — Phase B's here, and every sub-agent round — goes through this wrapper: `open --effort <R>` starts a read-only session and `reply --thread <id> --effort <R>` resumes it. The prompt goes on stdin and the output is `{"threadId", "content"}`. `$reviewer_cli` flows into every sub-agent spawn input as `reviewer_cli`.
 
 ### Step 2 — Phase A: preflight + summary build **(MANDATORY)**
 
@@ -229,7 +227,7 @@ Record entry: `blueprint-review.sh ledger mark "$file" B running`.
 
 Render `templates/blueprint-reviewer-prompt-enumerate.md.tmpl` (unchanged from v1.2.x) — substitute `{{SCOPE_INSTRUCTION}}` and `{{SCOPE_EMPTY_HINT}}` according to whether `--scope` was passed (same logic as v1.2.x orchestrator).
 
-Call the resolved reviewer tool (`$reviewer_tool`) directly from main (one-shot; no sub-agent) with `sandbox="read-only"`, `approval-policy="never"`, `config={"model_reasoning_effort": "$reasoning_effort"}`. Discard the returned `threadId` — enumeration is single-call.
+Call the reviewer directly from main (one-shot; no sub-agent): `"$reviewer_cli" open --effort "$reasoning_effort" <<'MI_REVIEW_PROMPT'` with the rendered template as the heredoc body, Bash `timeout: 600000`. Take the `content` field of the output and discard `threadId` — enumeration is single-call.
 
 Parse the fenced ```json ... ``` array; pass to `scripts/blueprint-review.sh enumerate <file> <items.json>` for deterministic descriptor computation.
 
@@ -280,8 +278,7 @@ for wave_start in range(0, len(batches), concurrency):
             "items": batch,                       # [{item_id, original_region}, ...]
             "max_iterations": auto_iter,
             "agent": agent,
-            "reviewer_tool_name": reviewer_tool,
-            "reviewer_reply_tool_name": reviewer_reply_tool,
+            "reviewer_cli": reviewer_cli,
             "reasoning_effort": reasoning_effort,
             "sub_agent_instance_id": f"T{wave_start + b_idx + 1}",
             "history_summary": history_summary_batch,
@@ -336,8 +333,7 @@ Spawn one `blueprint-consistency-reviewer` sub-agent. Parameters:
 file_path = $file
 max_iterations = $auto_iter
 agent = $agent
-reviewer_tool_name = $reviewer_tool
-reviewer_reply_tool_name = $reviewer_reply_tool
+reviewer_cli = $reviewer_cli
 reasoning_effort = $reasoning_effort
 lessons_block = (from A.2)
 history_summary = history_summary_consistency (from A.4)
@@ -502,7 +498,7 @@ The ledger file itself lives under `$TMPDIR` keyed by the reviewed file's path; 
 - **Shipped-code regression is in scope.** Both reviewer passes check every item against already-shipped behavior — see the "Shipped-code regression check" section in `templates/blueprint-reviewer-prompt-batch.md.tmpl` (per item) and `…-consistency.md.tmpl` (file-wide). The evidence comes from the item's own `**Shipped-code impact:**` bullet and the grounding report injected via `--reference-file`.
 - This command does NOT mutate `progress.md` or any quest file. It is workflow-neutral when invoked manually. Stage-2 auto-invocation is wired in `commands/mi-apply-impact.md` (see Step B.5).
 - All file writes happen in main (Step 4 write-back loop, Step 5 sub-agent direct writes, Step 6 persist). Sub-agents read but never write the spec file (batch reviewer is structurally read-only; consistency reviewer is serial-safe).
-- Session-expiry behavior: if `codex-reply` errors with `Session not found for thread_id`, the affected sub-agent re-issues that round as a fresh `reviewer_tool_name` call (full prompt cost for one round; subsequent rounds continue on the new session).
+- Session-expiry behavior: if `codex-review.sh reply` exits `3` (session not found), the affected sub-agent re-issues that round as a fresh `open` call (full prompt cost for one round; subsequent rounds continue on the new session).
 
 ## See also
 

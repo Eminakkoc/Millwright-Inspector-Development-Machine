@@ -66,17 +66,34 @@ report "no stale 'mo:' prefix / sync-marker" "$m"
 m=$(git grep -nE '(^|[^A-Za-z])Mo-[a-z]' -- "${EXCLUDES[@]}" || true)
 report "no stale 'Mo-' prose tokens" "$m"
 
-# --- blueprint-batch-reviewer read-only invariant (v1.4) ---------------------
-# The agent must list ONLY codex MCP tools (mcp__codex__codex, mcp__codex__codex-reply)
-# in its tools: frontmatter. Adding Read/Write/Edit/Bash/Grep would break the
-# read-only isolation guarantee.
+# --- blueprint-batch-reviewer read-only invariant (v1.4; v1.8.0 transport) --
+# The agent's tools: frontmatter must be exactly [Bash] — Bash only to reach
+# codex through scripts/codex-review.sh. Adding Read/Write/Edit/Grep would break
+# the read-only isolation guarantee, and hooks/hooks.json must register the
+# PreToolUse guard that scopes that Bash to the wrapper.
 bbr="agents/blueprint-batch-reviewer.md"
 bbr_tools=$(git show "HEAD:$bbr" | awk '/^tools:/{print; exit}')
 bad=""
-for tok in Read Write Edit Bash Grep; do
-  echo "$bbr_tools" | grep -qF "$tok" && bad="${bad}${tok} "
-done
-report "blueprint-batch-reviewer tools: contains no filesystem tools (Read/Write/Edit/Bash/Grep)" "$bad"
+[[ "$(echo "$bbr_tools" | tr -d '[:space:]')" == "tools:[Bash]" ]] || bad="tools line is '$bbr_tools', expected 'tools: [Bash]'"
+report "blueprint-batch-reviewer tools: is exactly [Bash] (no filesystem tools)" "$bad"
+
+bad=""
+git show HEAD:hooks/hooks.json | python3 -c '
+import json, sys
+hooks = json.load(sys.stdin)["hooks"].get("PreToolUse", [])
+ok = any(h.get("matcher") == "Bash" and any("guard-batch-reviewer.sh" in c.get("command", "") for c in h.get("hooks", [])) for h in hooks)
+sys.exit(0 if ok else 1)
+' || bad="hooks/hooks.json has no PreToolUse(Bash) guard-batch-reviewer.sh entry"
+report "batch-reviewer Bash guard hook is registered" "$bad"
+
+# --- no stale codex MCP transport (v1.8.0) ----------------------------------
+# codex-cli 0.154.0 removed the codex MCP server entry point; the live plugin
+# surface must not call the MCP tools or register the server (an `"mcp-server"`
+# server arg). Prose explaining the removal is fine. History/design docs and the
+# CHANGELOG are exempt — they record what earlier versions did.
+m=$(git grep -nE 'mcp__(plugin_millwright-inspector-development-machine_)?codex__|"mcp-server"' -- \
+      .claude-plugin agents commands scripts hooks templates README.md || true)
+report "no stale codex MCP transport references" "$m"
 
 # --- delegation contract note (v1.6.12) -------------------------------------
 # Every command that spawns a sub-agent must carry the "Delegation contract"
