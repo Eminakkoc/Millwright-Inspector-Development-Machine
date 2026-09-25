@@ -441,6 +441,8 @@ Archive the active feature into `completed` and set `active` to null. Under the 
 
 ```bash
 if [[ "${branch_route:-III}" == "III" || "${branch_route:-}" == "0a" || "${branch_route:-}" == "II" ]]; then
+  finished_branch="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get branch)"
+  finished_base="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get base-commit)"
   $CLAUDE_PLUGIN_ROOT/scripts/progress.sh finish >/dev/null
 fi
 remaining="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh queue-remaining 2>/dev/null || echo '')"
@@ -454,6 +456,24 @@ $CLAUDE_PLUGIN_ROOT/scripts/progress.sh finish --set last-completion=$(date -u +
 ```
 
 The `--set` writes target top-level fields only; setting `active.*` is rejected because `active` is being cleared. Do NOT introduce `advance-to 7 -1` as a finalize mechanism — `advance-to` only permits the whitelisted `3→5 | 5→7 | 6→7` transitions; stage-7 finalization stays on `progress.sh finish`.
+
+```bash
+# Stacked-branch note (all modes): warn when this feature's branch was cut on
+# top of the previous feature's still-unmerged branch.
+prev="$("$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" get-top 'completed-branches[]' 2>/dev/null \
+        | grep -vxF -- "$finished_branch" | tail -1 || true)"
+if [[ -n "$prev" && -n "$finished_base" && "$finished_base" != "null" ]] \
+   && git show-ref --verify --quiet "refs/heads/$prev" \
+   && git merge-base --is-ancestor "$prev" "$finished_base" 2>/dev/null; then
+  trunk=""
+  for t in main master; do git show-ref --verify --quiet "refs/heads/$t" && { trunk="$t"; break; }; done
+  if [[ -z "$trunk" ]] || ! git merge-base --is-ancestor "$prev" "$trunk" 2>/dev/null; then
+    echo "stacked: $finished_branch is based on $prev (unmerged)"
+  fi
+fi
+```
+
+Relay the line when it prints. Merge stacked branches in queue order, or merge the last branch to bring in the whole stack.
 
 ### Step 7 — Report and auto-continue
 
@@ -518,6 +538,8 @@ $CLAUDE_PLUGIN_ROOT/scripts/ledger.sh append \
 ```
 
 Then print the recommendation block to the inspector and **halt** — do NOT auto-fire `/mi-apply-impact`:
+
+**Auto mode.** If `$CLAUDE_PLUGIN_ROOT/scripts/auto.sh is-on` succeeds, print `auto: clear gate stage-8-to-2 — type /clear, then /mi-continue` instead of the recommendation below, and stop (the `decisions.md` write-check above has already run). Otherwise continue below unchanged.
 
 > "Workflow for `$active_feature` complete. Queue continues with `$next`.
 >

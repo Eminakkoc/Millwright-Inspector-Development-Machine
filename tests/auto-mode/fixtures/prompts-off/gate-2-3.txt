@@ -1,0 +1,10 @@
+> "Blueprint for `$active_feature` approved. **Recommended:** type `/clear`, then `/mi-continue` to enter stage 3 with a fresh main context.
+>
+> What gets carried across the clear:
+> - `progress.md` (workflow state)
+> - `blueprints/current/{requirements,config}.md` (the blueprint you just approved)
+> - `decisions.md` (any verbal decisions captured above — folded into `primer.md` when stage 3 starts)
+>
+> What gets discarded by the clear: the back-and-forth conversation that led to this point. The blueprint is the canonical record; the chat history is not.
+>
+> Skip the clear (just type `/mi-continue` without clearing) if you have unsaved verbal context you specifically want to carry forward."

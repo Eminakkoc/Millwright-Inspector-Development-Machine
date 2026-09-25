@@ -91,6 +91,8 @@ $CLAUDE_PLUGIN_ROOT/scripts/ledger.sh append \
 
 Then print the recommendation block to the inspector and **halt** — do NOT proceed to Step 2 in this branch (state stays at `current-stage=5`, `sub-flow` untouched):
 
+**Auto mode.** If `$CLAUDE_PLUGIN_ROOT/scripts/auto.sh is-on` succeeds, print `auto: clear gate stage-5-to-6 — type /clear, then /mi-continue` instead of the recommendation below, and stop (the `decisions.md` write-check above has already run). Otherwise continue below unchanged.
+
 > "Open findings for `$active_feature` are recorded; the stage-6 review session is next. **Recommended:** type `/clear`, then `/mi-continue` to enter the review session with a fresh main context.
 >
 > What gets carried across the clear:

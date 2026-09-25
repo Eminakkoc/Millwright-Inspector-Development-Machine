@@ -762,6 +762,8 @@ $CLAUDE_PLUGIN_ROOT/scripts/ledger.sh append \
 
 Then print the recommendation block to the inspector and **halt** — do NOT auto-fire `/mi-plan-implementation` in this branch:
 
+**Auto mode.** If `$CLAUDE_PLUGIN_ROOT/scripts/auto.sh is-on` succeeds, print `auto: clear gate stage-2-to-3 — type /clear, then /mi-continue` instead of the recommendation below, and stop (the `decisions.md` write-check above has already run). Otherwise continue below unchanged.
+
 > "Blueprint for `$active_feature` approved. **Recommended:** type `/clear`, then `/mi-continue` to enter stage 3 with a fresh main context.
 >
 > What gets carried across the clear:

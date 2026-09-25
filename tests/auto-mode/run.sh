@@ -525,6 +525,40 @@ assert_auto_before rr-skipped $MC '"generate skipped diagrams" "y"'
 assert_contains "Inspector Step 3b rule loosened" $MC \
   'Do not auto-fire `/mi-complete-workflow` — unless auto mode is on and `auto.sh approve-guard` passes'
 
+# ---- Task 11: clear gates + stacked note ----------------------------------------------
+assert_prompt_kept gate-2-3 $MC
+assert_auto_before gate-2-3 $MC 'auto: clear gate stage-2-to-3 — type /clear, then /mi-continue'
+assert_prompt_kept gate-5-6 $MR
+assert_auto_before gate-5-6 $MR 'auto: clear gate stage-5-to-6 — type /clear, then /mi-continue'
+assert_prompt_kept gate-8-2 commands/mi-complete-workflow.md
+assert_auto_before gate-8-2 commands/mi-complete-workflow.md 'auto: clear gate stage-8-to-2 — type /clear, then /mi-continue'
+
+t="stacked-branch note prints only for an unmerged previous branch under this base"
+snippet="$(python3 - "$REPO_ROOT/commands/mi-complete-workflow.md" <<'PYEOF'
+import re, sys
+s = open(sys.argv[1]).read()
+m = re.search(r'```bash\n(# Stacked-branch note.*?)```', s, re.S)
+print(m.group(1) if m else '')
+PYEOF
+)"
+if [[ -z "$snippet" ]]; then
+  ng "$t" "snippet '# Stacked-branch note' not found"
+else
+  sb="$(make_sandbox)"
+  (cd "$sb" && git switch -qc feat/alpha && echo a > a && git add a && git commit -qm a \
+     && git switch -qc feat/beta && echo b > b && git add b && git commit -qm b)
+  base_b="$(cd "$sb" && git rev-parse feat/alpha)"
+  run_in "$sb" "$P" set-top 'completed-branches=["feat/alpha","feat/beta"]' >/dev/null 2>&1
+  out1="$(run_in "$sb" env CLAUDE_PLUGIN_ROOT="$REPO_ROOT" finished_branch=feat/beta finished_base="$base_b" bash -c "$snippet" 2>/dev/null)"
+  (cd "$sb" && git switch -q main && git merge -q --ff-only feat/alpha)
+  out2="$(run_in "$sb" env CLAUDE_PLUGIN_ROOT="$REPO_ROOT" finished_branch=feat/beta finished_base="$base_b" bash -c "$snippet" 2>/dev/null)"
+  if [[ "$out1" == "stacked: feat/beta is based on feat/alpha (unmerged)" && -z "$out2" ]]; then
+    ok "$t"
+  else
+    ng "$t" "out1=[$out1] out2=[$out2]"
+  fi
+fi
+
 # ---- end of tests --------------------------------------------------------------
 echo
 echo "auto-mode: $pass passed, $fail failed"

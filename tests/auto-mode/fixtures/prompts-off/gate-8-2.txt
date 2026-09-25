@@ -1,0 +1,8 @@
+> "Workflow for `$active_feature` complete. Queue continues with `$next`.
+>
+> **Recommended:** type `/clear`, then `/mi-continue` to start `$next` with a fresh main context. Nothing from `$active_feature` is needed for `$next`:
+> - `$active_feature`'s blueprint history is preserved at `workflow-stream/$active_feature/blueprints/history/v[N+1]/`.
+> - `$active_feature`'s decisions log persists at `workflow-stream/$active_feature/decisions.md` (feature-scoped, never archived).
+> - `$next`'s `workflow-stream/$next/` will be created fresh by `mi-apply-impact` after the clear.
+>
+> Skip the clear (just type `/mi-continue` without clearing) if you want to carry verbal context across — rare; the feature boundary is usually the cleanest moment to clear in the entire cycle."
