@@ -554,6 +554,8 @@ fi
 printf 'offer_defer=%s\n' "$offer_defer"
 ```
 
+**Auto mode.** If `$CLAUDE_PLUGIN_ROOT/scripts/auto.sh is-on` succeeds, run `$CLAUDE_PLUGIN_ROOT/scripts/auto.sh answer "run manual test" "y-autonomous" --cmd /mi-manual-test-plan` and continue as if the inspector had replied `y-autonomous` — do not show the prompt below. Otherwise show the prompt below unchanged.
+
 Prompt: `"Plan available at workflow-stream/<feature>/test/manual-test-plan.md. Perform the manual test now? Reply y, y-autonomous, or n.
 
   y             — guided run. I bring the whole local environment up for you (the plan's

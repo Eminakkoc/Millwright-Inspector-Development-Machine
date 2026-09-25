@@ -1,0 +1,10 @@
+Autonomous run finished: <passed>/<total> passed, <failed> failed, <skipped> skipped, <deferred> deferred.
+Want to walk through the same plan yourself now? I'll bring the environment back up
+(or reuse what's already running), explain each test case in plain language, and
+record YOUR verdicts. Reply y or n.
+
+  y  — guided re-run. The autonomous verdicts are rotated into
+       test/manual-test-results.history/<timestamp>/ and kept; this run starts a
+       fresh results file against the same plan. Failures you record upsert into the
+       same seeded IR family, so nothing is double-seeded.
+  n  — done. Review inspector-review.md and type /mi-continue.

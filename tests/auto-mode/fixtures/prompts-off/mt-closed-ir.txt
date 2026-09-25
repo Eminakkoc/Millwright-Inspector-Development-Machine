@@ -1,0 +1,4 @@
+  IR-<NNN> is fixed/wontfix; the manual test failed it again. Pick:
+    a) reopen the IR with the new observation       → re-call helper with --reopen
+    b) record this as a new finding (separate IR)   → re-call helper with --new-finding
+    c) skip (ignore — the IR stays as-is)            → no second call; Seeded: false

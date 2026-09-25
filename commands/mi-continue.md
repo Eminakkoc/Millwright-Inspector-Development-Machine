@@ -1398,6 +1398,24 @@ fi
 
 The existing canonicalization pass at Step 1.5 below remains allowed to mutate `inspector-review.md` for **inspector-authored free-form review text** — that is a separate legacy behavior and not a manual-test write path. Idempotency for seeded blocks is enforced durably by the `- seed-id:` field on each auto-seeded IR-NNN block (`/mi-manual-test-run`'s single-owner discipline; see `docs/manual-testing/plan.md` § 2.2 "Auto-seed ownership recap").
 
+### Inspector Step 0.5 — Auto-mode review stop
+
+Runs only when auto mode is on. Guarantees the stage-5 human review stop fires exactly once per feature, including when no manual-test run reached its 4.8 hand-off.
+
+```bash
+if "$CLAUDE_PLUGIN_ROOT/scripts/auto.sh" is-on \
+   && [[ "$("$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" get review-stop-shown 2>/dev/null)" != "true" ]]; then
+  "$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" set review-stop-shown=true
+  "$CLAUDE_PLUGIN_ROOT/scripts/deferred-questions.sh" list-open "$active_feature"
+  base_short="$(git rev-parse --short "$("$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" get base-commit)")"
+  echo "auto: review stop — check commits <base>..HEAD, diagrams and test results; add findings to inspector-review.md or leave it empty, then /mi-continue" \
+    | sed "s/<base>/$base_short/"
+  exit 0
+fi
+```
+
+When the block prints and exits, **stop** — list any open deferred questions it printed under "Open deferred questions:". The inspector's next `/mi-continue` re-enters this handler with `review-stop-shown=true` and proceeds to Step 1.
+
 ### Inspector Step 1 — Verify inspector-review.md exists
 
 ```bash
@@ -1506,6 +1524,8 @@ open_ids="$($CLAUDE_PLUGIN_ROOT/scripts/review.sh list-open "$active_feature")"
 ### Inspector Step 3a — No findings
 
 If `open_ids` is empty, **prompt the inspector to confirm before completing the stage**. This guard exists because the no-findings path auto-fires `/mi-complete-workflow` immediately — once it runs, the workflow archives blueprints and advances the queue, which is non-trivial to undo. The confirmation gives the inspector one explicit beat to add findings instead.
+
+**Auto mode.** If `$CLAUDE_PLUGIN_ROOT/scripts/auto.sh is-on` succeeds and `"$CLAUDE_PLUGIN_ROOT/scripts/deferred-questions.sh" list-open "$active_feature"` prints nothing, run `$CLAUDE_PLUGIN_ROOT/scripts/auto.sh answer "no findings, complete" "y" --cmd /mi-continue` and continue as if the inspector had replied `y` — do not show the prompt below; the DTI Gate 1 check still runs before the advance. If deferred questions are still open, show the prompt below (they count as open issues). Otherwise show the prompt below unchanged.
 
 > "`inspector-review.md` has no open findings. Confirming will complete the inspector-review stage and auto-fire `/mi-complete-workflow`. Continue?
 >

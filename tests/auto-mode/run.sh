@@ -483,6 +483,27 @@ else
   [[ "$n" == "1" && "$fu" == "- follow-up: IR-001" ]] && ok "$t" || ng "$t" "n=$n fu=$fu"
 fi
 
+# ---- Task 9: manual tests + review stop -------------------------------------------
+assert_prompt_kept mt-run-offer commands/mi-manual-test-plan.md
+assert_auto_before mt-run-offer commands/mi-manual-test-plan.md '"run manual test" "y-autonomous"'
+assert_prompt_kept mt-seed commands/mi-manual-test-run.md
+assert_auto_before mt-seed commands/mi-manual-test-run.md '"auto-seed failures" "y"'
+assert_prompt_kept mt-closed-ir commands/mi-manual-test-run.md
+assert_auto_before mt-closed-ir commands/mi-manual-test-run.md 'default'
+assert_prompt_kept mt-orphan commands/mi-manual-test-run.md
+assert_auto_before mt-orphan commands/mi-manual-test-run.md 'default'
+assert_prompt_kept mt-guided-rerun commands/mi-manual-test-run.md
+assert_auto_before mt-guided-rerun commands/mi-manual-test-run.md '"guided re-run" "n"'
+assert_prompt_kept mt-handoff commands/mi-manual-test-run.md
+assert_auto_before mt-handoff commands/mi-manual-test-run.md \
+  'auto: review stop — check commits <base>..HEAD, diagrams and test results; add findings to inspector-review.md or leave it empty, then /mi-continue' \
+  'review-stop-shown=true'
+assert_contains "Inspector Handler fires the review stop once" $MC 'progress.sh" get review-stop-shown'
+assert_contains "Inspector Handler review stop line" $MC \
+  'auto: review stop — check commits <base>..HEAD, diagrams and test results; add findings to inspector-review.md or leave it empty, then /mi-continue'
+assert_prompt_kept inspector-3a $MC
+assert_auto_before inspector-3a $MC 'deferred-questions.sh" list-open' '"no findings, complete" "y"'
+
 # ---- end of tests --------------------------------------------------------------
 echo
 echo "auto-mode: $pass passed, $fail failed"

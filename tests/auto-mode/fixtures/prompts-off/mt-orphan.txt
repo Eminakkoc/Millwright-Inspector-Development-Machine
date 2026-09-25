@@ -1,0 +1,5 @@
+  scenario <id>: base IR missing but regression family exists; latest family IR is <IR-NNN> (status=<status>)
+  Pick:
+    a) seed into the existing regression family
+    b) skip this scenario
+    c) explicitly restore the missing base IR

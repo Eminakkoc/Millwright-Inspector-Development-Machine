@@ -1,0 +1,6 @@
+> "`inspector-review.md` has no open findings. Confirming will complete the inspector-review stage and auto-fire `/mi-complete-workflow`. Continue?
+>
+>   - `y` — finalize the inspector-review stage and proceed.
+>   - `n` — stop here. Add findings to `inspector-review.md`, then re-run `/mi-continue` when ready.
+>
+> (y/n)"
