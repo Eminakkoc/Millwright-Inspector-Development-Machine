@@ -127,6 +127,53 @@ while IFS= read -r f; do
 done < <(git grep -l 'subagent_type' -- 'commands/*.md' || true)
 report "no delegating command missing from the DELEGATING_COMMANDS list" "$untracked"
 
+# Nested delegation (v1.8.1): a command that auto-fires another mi-* command
+# (a `/mi-*` line inside a fenced block) must name that command's sub-agents in
+# its own Delegation contract note. Otherwise the outer note's "never spawn a
+# sub-agent this command does not name" reads as forbidding them, and the run
+# stops before the inner command's delegation step. See §8.15 "Nested commands".
+nested_delegation_gaps() {
+python3 - <<'PYEOF'
+import os, re, glob
+agents = {os.path.basename(p)[:-3] for p in glob.glob("agents/*.md")}
+
+def contract(path):
+    try:
+        for line in open(path):
+            if line.startswith("**Delegation contract.**"):
+                return line
+    except OSError:
+        pass
+    return ""
+
+def named(line):
+    part = line.split("Sub-agents:", 1)[1] if "Sub-agents:" in line else ""
+    return {a for a in re.findall(r"`([a-z0-9-]+)`", part) if a in agents}
+
+out = []
+for path in sorted(glob.glob("commands/*.md")):
+    fenced, fired = False, set()
+    for line in open(path):
+        if line.lstrip().startswith("```"):
+            fenced = not fenced
+        elif fenced:
+            mm = re.match(r"\s*/(mi-[a-z-]+)(\s|$)", line)
+            if mm:
+                fired.add(mm.group(1))
+    own = contract(path)
+    if not own:
+        continue  # no contract: its /mi-* lines are next-step hints for the inspector (mi-init)
+    me = os.path.basename(path)[:-3]
+    for cmd in sorted(fired - {me}):
+        missing = sorted(named(contract(f"commands/{cmd}.md")) - set(re.findall(r"`([a-z0-9-]+)`", own)))
+        if missing:
+            out.append(f"{path}: auto-fires /{cmd} but its contract does not name {', '.join(missing)}")
+print("\n".join(out))
+PYEOF
+}
+m="$(nested_delegation_gaps)"
+report "auto-firing commands name the auto-fired command's sub-agents" "$m"
+
 # The note points at §8.15 — it must exist.
 m=""
 grep -qF '### 8.15 Delegation is part of the command contract' \

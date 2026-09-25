@@ -1789,7 +1789,12 @@ proceed normally.
 `hooks/guard-batch-reviewer.sh`. It exits 0 for every caller except the
 `blueprint-batch-reviewer` sub-agent (identified by the hook input's `agent_type`). For
 that agent it admits only `<plugin>/scripts/codex-review.sh open|reply …` with a
-quoted-heredoc prompt as the whole command, and blocks anything else with exit 2. Plugin
+quoted-heredoc prompt as the whole command, and blocks anything else with exit 2.
+`<plugin>` is the hook's own plugin root or any other install of this plugin (a
+directory whose `.claude-plugin/plugin.json` names it). The hook always loads from the
+installed plugin, while the orchestrator may resolve the root to a source checkout
+(§8.14 step 2) and pass that checkout's wrapper. v1.8.0 accepted only the hook's own
+root, which blocked every Phase C batch run from the source repo (v1.8.1). Plugin
 agents cannot carry their own `hooks` frontmatter, and a `tools: [Bash(...)]` specifier
 removes the whole tool rather than scoping it. A plugin-level hook is therefore the only
 way to keep that agent read-only now that it needs Bash to reach codex (§7.9).
@@ -2182,6 +2187,24 @@ The boundary is exact, and it is what keeps the default's intent intact:
 - **Not sanctioned** — any other delegation. A sub-agent the command does not name,
   spawned to parallelize something main could do itself, or fan-out invented because a
   step "looks big". That is exactly what the default forbids, and it still forbids it.
+
+**Nested commands (v1.8.1).** Some commands auto-fire another `mi-*` command inline —
+`/mi-apply-impact` Step B.5 runs `/mi-blueprint-review`, which spawns
+`blueprint-batch-reviewer` (Phase C) and `blueprint-consistency-reviewer` (Phase D). The
+inner command runs under the outer command's contract, and a literal reading of the
+outer note ("never spawn a sub-agent this command does not name") forbids the inner
+command's sub-agents. Field report: a stage-2 run built the Phase C batch inputs, then
+ended its turn with a status line and only spawned the reviewers once the inspector
+asked whether they were running. The rule:
+
+- A sub-agent named by an `mi-*` command that the running command auto-fires is
+  sanctioned, exactly as if the running command named it. Every note's "do not spawn"
+  clause says so.
+- The auto-firing command also names those sub-agents in its own note, with the step
+  that reaches them, so the permission is visible where the agent reads it.
+  `tests/lint/run.sh` enforces this for every `/mi-*` line inside a fenced block.
+- An auto-fired command runs to completion in the same turn. Ending the turn between
+  preparing a delegation's inputs and dispatching it is not a sanctioned pause.
 
 Every delegating command carries a self-sufficient **Delegation contract** note under its
 H1 naming its own sub-agents, so an agent can act on it without reading this section. A

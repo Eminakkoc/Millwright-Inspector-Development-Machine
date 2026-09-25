@@ -1,5 +1,45 @@
 # Changelog
 
+## 1.8.1 — Blueprint review Phase C runs without stalling
+
+Two faults in the stage-2 auto-review, found on the first run after 1.8.0.
+
+**The batch-reviewer guard blocked every call from a source checkout.** The
+`hooks/guard-batch-reviewer.sh` hook loads from the *installed* plugin and only allowed
+`<its own root>/scripts/codex-review.sh`. When the session runs inside the plugin's source
+repo, the orchestrator resolves the plugin root to that checkout (§8.14 step 2), so
+`resolve-reviewer` handed the batch reviewers the checkout's wrapper, and the hook
+rejected every Phase C call with `is not this plugin's codex-review.sh`.
+
+- The guard now also accepts `codex-review.sh` from any install of this plugin: an
+  absolute path `<root>/scripts/codex-review.sh` whose `<root>/.claude-plugin/plugin.json`
+  names `millwright-inspector-development-machine`. The command-shape rules are
+  unchanged. The reviewer still cannot create files, so it cannot fabricate such a root.
+  Relative paths are now rejected outright.
+- Tests: a hook loaded from one install accepts another install's wrapper, and a
+  wrapper under another plugin's root, under a root with no manifest, or on a relative
+  path is still blocked. Restoring the 1.8.0 hook fails the first of these.
+
+**The run stopped before spawning the Phase C batch reviewers.** `/mi-apply-impact` Step
+B.5 runs `/mi-blueprint-review` inline, under `/mi-apply-impact`'s delegation contract.
+That contract named only `lessons-filter`, `codebase-grounder` and `blueprint-diagrammer`,
+and said "never spawn a sub-agent this command does not name". So the run built the
+batch inputs, ended its turn with a status line, and spawned the reviewers only after
+the inspector asked whether they were running.
+
+- `/mi-apply-impact`'s contract now names `blueprint-batch-reviewer` and
+  `blueprint-consistency-reviewer` (through Step B.5). `/mi-continue`'s names every
+  sub-agent reached through the commands it auto-fires (`/mi-apply-impact`,
+  `/mi-blueprint-review`, `/mi-review`).
+- The "do not spawn" clause in all 11 contract notes now reads "…that neither this
+  command nor an `mi-*` command it auto-fires names…".
+- `/mi-blueprint-review`'s contract says auto-firing counts as invoking it. Phase C and
+  Step B.5 say to build and dispatch each wave in the same turn. Phase E's prompt is the
+  review's only pause for inspector input.
+- §8.15 gains a "Nested commands" rule. A new lint check fails when a command with a
+  contract auto-fires a `/mi-*` command (a `/mi-*` line in a fenced block) without
+  naming that command's sub-agents.
+
 ## 1.8.0 — Blueprint review runs codex headless via `codex exec`
 
 codex-cli **0.154.0** (2026-09-09, [openai/codex#42993](https://github.com/openai/codex/pull/42993))
