@@ -54,6 +54,17 @@ while the gates that need a human keep stopping.
 - **Clear-gate pauses.** The three `/clear` gates (`stage-2-to-3`, `stage-5-to-6`,
   `stage-8-to-2`) still stop and hand over in auto mode, just with a one-line
   `auto: clear gate <gate> — type /clear, then /mi-continue`.
+- **Audit trail never drops silently.** When `ledger.sh` skips an append (exit 0 on
+  its "still missing after init" path), `auto.sh` now prints
+  `mi: warning: could not append ledger row …` instead of losing the row unseen.
+- **Stacked note survives a resume.** A stage-8 run resumed through Branch I recovers
+  the finished branch and base from the archived `primer.md` (or `review-context.md`),
+  so the `stacked:` note still prints after an interruption.
+- **Validation.** `implementation/deferred-questions.md` is now schema-checked by the
+  validate-on-write hook, like every other workflow artifact.
+- **One top-level writer.** `progress.sh set-top` and `finish --set` share
+  `scripts/internal/progress_top.py`; `finish --set` therefore now refuses the
+  protected fields `queue`, `completed`, `id` and `todo-list-id` as well as `active.*`.
 - **Tests.** New `tests/auto-mode/run.sh` — behaviour, off-mode byte-for-byte
   fixtures, on-mode auto-paragraph placement, chain-rules single-sourcing, and a
   never-auto audit that greps `commands/` and `docs/` for manual-only language and
