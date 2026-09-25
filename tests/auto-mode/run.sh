@@ -401,6 +401,20 @@ else
 fi
 rm -f "$outfile" "$expectfile"
 
+# ---- Task 6: stage 1.5–2 sites -------------------------------------------------
+assert_prompt_kept queue-order commands/mi-continue.md
+assert_auto_before queue-order commands/mi-continue.md '"queue order" "accept"'
+assert_prompt_kept draw-skipped commands/mi-draw-diagrams.md
+assert_auto_before draw-skipped commands/mi-draw-diagrams.md '"generate skipped diagrams" "y"'
+assert_contains "item 7 Stop gains the auto-mode exception" commands/mi-continue.md \
+  'Do NOT auto-fire Step 2B from here — unless auto mode is on (`auto.sh is-on`), in which case record `auto.sh answer "queue order" "accept"` and continue straight into Step 2B'
+assert_contains "mi-run parses --auto" commands/mi-run.md '--auto'
+assert_contains "mi-run passes --auto to progress.sh init" commands/mi-run.md 'progress.sh" init --auto'
+assert_contains "mi-apply-impact logs the blueprint-diagrams auto answer" commands/mi-apply-impact.md \
+  'auto.sh" answer "blueprint diagrams" "auto" --cmd /mi-apply-impact'
+assert_contains "Step B skips pre-fill for completed branches" docs/blueprint-regeneration.md \
+  "completed-branches[]"
+
 # ---- end of tests --------------------------------------------------------------
 echo
 echo "auto-mode: $pass passed, $fail failed"

@@ -549,6 +549,9 @@ PYEOF
 
    Receive the sub-agent return summary. Use the proposed order in step 5. The cache key fields (`scan-mode: code-aware`, `summary-md-hash`, `head-when-scanned`) will be written into `queue-rationale.md` by Step 2B when the inspector confirms the order — main is responsible for passing these to Step 2B's frontmatter init/update.
 5. **Propose the prioritized order.** Print the order as a numbered list and the dependency reasoning underneath. End the message with:
+
+   **Auto mode.** If `$CLAUDE_PLUGIN_ROOT/scripts/auto.sh is-on` succeeds, run `$CLAUDE_PLUGIN_ROOT/scripts/auto.sh answer "queue order" "accept" --cmd /mi-continue` and continue as if the inspector had replied `accept` — do not show the prompt below. Otherwise show the prompt below unchanged.
+
    > "Reply `/mi-continue` to accept this order, or paste a different order (one feature per line) and then `/mi-continue` to confirm."
 
    When the feature-test entry is **in the queue** — not merely present in frontmatter — append `$ft_name` **last** to the proposal, then assert the pin before printing. Gate on queue membership, not frontmatter presence: item 3.5 only enqueues on `ready`/`selected`, so on a `blocked` partial selection (a common case — the inspector marks some but not all items) `ft_name` is populated in frontmatter but absent from the queue. Appending it to the proposal anyway would poison it with a name `check-feature-test-pin` happily accepts (it IS last in the *proposed* list) but that `progress.sh reorder` later rejects as "not in existing queue" — *after* Step 2B has already written `queue-rationale.md` with it in `features:`, breaking the Row A invariant (`queue-rationale.features − completed == queue`). This fence re-derives `ft_name` itself rather than trusting item 1.5's or item 3.5's export (fresh subshell — see Step 1a):
@@ -589,7 +592,7 @@ PYEOF
 
    > `<ft_name>` is pinned last — it exercises the assembled result of every ordinary feature in this cycle, so it cannot run before them. This is a structural constraint, not a priority judgement; an order placing it earlier is refused at stage 1.5.
 
-7. **Stop.** Do NOT auto-fire Step 2B from here — the draft batch needs the inspector's explicit confirmation. The dispatcher routes the next `/mi-continue` to Step 2B (extended) automatically because top-level `status` is now `draft`.
+7. **Stop.** Do NOT auto-fire Step 2B from here — unless auto mode is on (`auto.sh is-on`), in which case record `auto.sh answer "queue order" "accept"` and continue straight into Step 2B (the draft batch is then confirmed by auto mode). Otherwise the draft batch needs the inspector's explicit confirmation. The dispatcher routes the next `/mi-continue` to Step 2B (extended) automatically because top-level `status` is now `draft`.
 
    For the **initial cycle** (queue was already seeded by `/mi-run`, no prior batches exist): skip the file write here and let Step 2B's case (a) write the file from scratch when the inspector confirms. (This preserves the current behavior for fresh cycles.)
 

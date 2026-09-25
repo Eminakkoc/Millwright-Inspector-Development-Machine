@@ -330,9 +330,15 @@ Then, using Edit, replace the auto-section placeholder with the real skill/rule 
 
 ```bash
 head_branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")"
+completed_branches="$("$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" get-top 'completed-branches[]' 2>/dev/null || true)"
+if [[ -n "$head_branch" ]] && printf '%s\n' "$completed_branches" | grep -qxF -- "$head_branch"; then
+  head_branch=""   # a previous feature's branch — never pre-fill it (all modes)
+fi
 ```
 
 If `head_branch` is non-empty and is NOT `main`, `master`, or `HEAD` (detached) — AND the inspector hasn't already filled the `## GIT BRANCH` section (e.g., from a prior run) — write `head_branch` as the bare line under the heading, above the commented placeholder. This is a convenience default; the inspector can edit it before advancing to stage 3.
+
+The pre-fill is skipped when HEAD is a branch a previous feature of this cycle finished on (`completed-branches`), so a queued feature never inherits the previous feature's branch; stage 3 then asks (or, in auto mode, creates a stacked branch).
 
 If HEAD is `main`/`master`/detached, leave the section unfilled — `/mi-plan-implementation` will prompt the inspector at stage 3.
 

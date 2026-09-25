@@ -55,6 +55,8 @@ skipped="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get implementation-diagrams-s
 
   **Recovery prompt** (Phase 3.4):
 
+  **Auto mode.** If `$CLAUDE_PLUGIN_ROOT/scripts/auto.sh is-on` succeeds, run `$CLAUDE_PLUGIN_ROOT/scripts/auto.sh answer "generate skipped diagrams" "y" --cmd /mi-draw-diagrams` and continue as if the inspector had replied `y` — do not show the prompt below. Otherwise show the prompt below unchanged.
+
   > "Stage-4 diagrams were skipped earlier this cycle. Generate them now? Reply:
   >   - `y` — delegate to a fresh sub-agent now (~30s); covers the full `base-commit..HEAD` range and clears the skip marker so stage 8 archives the diagrams.
   >   - `n` — keep the skip; stage-2 blueprint diagrams remain authoritative for this cycle."

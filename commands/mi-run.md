@@ -1,6 +1,6 @@
 ---
 description: Generate three quest cycle files (todo-list.md, summary.md, progress.md) inside a fresh per-cycle subfolder under quest/, from a selected list of journal folders. Stage 1 of the mi-workflow. The fourth cycle file, queue-rationale.md, is written later by /mi-continue at stage 1.5.
-argument-hint: "<journal-folder> [<journal-folder>...] [--archive-active]"
+argument-hint: "<journal-folder> [<journal-folder>...] [--archive-active] [--auto]"
 ---
 
 # mi-run
@@ -62,6 +62,8 @@ Tokenize `$ARGUMENTS`. Pull `--archive-active` out as a flag if present; every o
 error: no journal folders specified. Usage:
   /mi-run <folder1> [<folder2> ...] [--archive-active]
 ```
+
+`--auto` — create the cycle with auto mode on. A bare `auto` token is also read as the flag, **only** when `journal/auto/` does not exist; if it exists, `auto` stays a journal folder name. Neither form counts as a journal folder.
 
 ### Step 1.5 — Active-quest pre-check
 
@@ -456,6 +458,12 @@ Add `## Feature: <ft_name>` as the **last** `## Feature:` section (before `## So
 
 ```bash
 $CLAUDE_PLUGIN_ROOT/scripts/progress.sh init "$todo_list_id" <feature1> [<feature2> ...]
+```
+
+When the `--auto` flag (or bare `auto` token) was given in Step 1, pass `--auto` first instead:
+
+```bash
+"$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" init --auto "$todo_list_id" <feature1> [<feature2> ...]
 ```
 
 `progress.sh init` resolves the destination path through the active-quest pointer, so the file lands at `$quest_dir/progress.md` automatically. The new file has the queue populated, `completed: []`, and `active: null`. The feature list here is the distinct feature names surfaced in the todo list — the inspector confirms the priority order in the next step (that's stage 1.5 / item 3 of the workflow). For now, pass them in an order that seems sensible from the journal context; dependencies are resolved later.
