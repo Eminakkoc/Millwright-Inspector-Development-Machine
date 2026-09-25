@@ -175,6 +175,69 @@ run_in "$sb" "$P" finish >/dev/null 2>&1          # beta: branch null → skippe
 got="$(run_in "$sb" "$P" get-top 'completed-branches[]' 2>&1 | tr '\n' ',')"
 [[ "$got" == "feat/alpha," ]] && ok "$t" || ng "$t" "got: $got"
 
+# ---- Task 2: auto.sh is-on/answer/switch -----------------------------------------
+
+A="$REPO_ROOT/scripts/auto.sh"
+
+t="auto.sh is-on exits 1 with no quest cycle"
+empty="$(mktemp -d)"; SANDBOXES+=("$empty")
+if (cd "$empty" && MI_DATA_ROOT="$empty/none" "$A" is-on >/dev/null 2>&1); then ng "$t" "exit 0"; else ok "$t"; fi
+
+t="auto.sh is-on exits 1 when field missing, 0 when true"
+sb="$(make_sandbox)"
+if run_in "$sb" "$A" is-on >/dev/null 2>&1; then ng "$t" "missing → on"; else
+  run_in "$sb" "$P" set-top auto-mode=true >/dev/null 2>&1
+  if run_in "$sb" "$A" is-on >/dev/null 2>&1; then ok "$t"; else ng "$t" "true → off"; fi
+fi
+
+t="auto.sh answer prints the audit line and a ledger row with stage '-' between features"
+sb="$(make_sandbox --auto)"
+out="$(run_in "$sb" "$A" answer "queue order" "accept" --cmd /mi-continue 2>/dev/null)"
+ledger="$sb/millwright-inspector/quest/2026-09-25-demo/context-ledger.md"
+if [[ "$out" == "auto: queue order → accept" ]] \
+   && grep -qF '| - | /mi-continue | auto-answer | small | main | queue order → accept |' "$ledger"; then
+  ok "$t"
+else
+  ng "$t" "out=$out; ledger row missing"
+fi
+
+t="auto.sh answer uses active current-stage"
+run_in "$sb" "$P" activate >/dev/null 2>&1
+run_in "$sb" "$A" answer "planning mode" "brainstorming" --cmd /mi-plan-implementation >/dev/null 2>&1
+grep -qF '| 2 | /mi-plan-implementation | auto-answer | small | main | planning mode → brainstorming |' "$ledger" \
+  && ok "$t" || ng "$t" "row missing"
+
+t="auto.sh switch refuses without a quest cycle"
+if (cd "$empty" && MI_DATA_ROOT="$empty/none" "$A" switch on >/dev/null 2>&1); then ng "$t" "exit 0"; else ok "$t"; fi
+
+t="auto.sh switch on between features sets flag, prints ON line, logs switch row"
+sb="$(make_sandbox)"
+out="$(run_in "$sb" "$A" switch on 2>/dev/null)"
+ledger="$sb/millwright-inspector/quest/2026-09-25-demo/context-ledger.md"
+if [[ "$out" == "auto mode ON — remaining questions this cycle will be answered automatically" ]] \
+   && [[ "$(run_in "$sb" "$P" get-top auto-mode 2>/dev/null)" == "true" ]] \
+   && grep -qF '| - | /mi-auto | auto-mode-switch | small | main | auto-mode → on |' "$ledger"; then
+  ok "$t"
+else
+  ng "$t" "out=$out"
+fi
+
+t="auto.sh switch on/off toggles diagram-prompt on the active feature"
+sb="$(make_sandbox)"
+run_in "$sb" "$P" activate >/dev/null 2>&1
+run_in "$sb" "$A" switch on >/dev/null 2>&1
+a="$(run_in "$sb" "$P" get diagram-prompt 2>/dev/null)"
+run_in "$sb" "$A" switch off >/dev/null 2>&1
+b="$(run_in "$sb" "$P" get diagram-prompt 2>/dev/null)"
+[[ "$a|$b" == "auto|prompt" ]] && ok "$t" || ng "$t" "got $a|$b"
+
+t="auto.sh switch status prints current state"
+out="$(run_in "$sb" "$A" switch status 2>/dev/null)"
+[[ "$out" == "auto mode: off" ]] && ok "$t" || ng "$t" "got $out"
+
+t="/mi-auto command exists and wraps auto.sh switch"
+assert_contains "$t" commands/mi-auto.md 'auto.sh" switch'
+
 # ---- end of tests --------------------------------------------------------------
 echo
 echo "auto-mode: $pass passed, $fail failed"
