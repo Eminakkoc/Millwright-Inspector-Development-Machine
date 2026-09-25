@@ -1,0 +1,4 @@
+Manual test done. Review inspector-review.md (auto-seeded failures appear at the bottom as canonical
+### IR-NNN blocks — no canonicalization needed for those), add any subjective findings as free-form
+text, and type /mi-continue when done. The free-form findings will be canonicalized by the existing
+canonicalize pass on the next /mi-continue.

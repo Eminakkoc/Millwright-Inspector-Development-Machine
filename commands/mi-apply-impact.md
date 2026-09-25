@@ -148,6 +148,14 @@ else
 fi
 ```
 
+**Auto mode.** `progress.sh activate` already seeds `diagram-prompt=auto` when the cycle's `auto-mode` is on, so the stage-2 blueprint-diagram prompt is skipped. Record it:
+
+```bash
+if "$CLAUDE_PLUGIN_ROOT/scripts/auto.sh" is-on; then
+  "$CLAUDE_PLUGIN_ROOT/scripts/auto.sh" answer "blueprint diagrams" "auto" --cmd /mi-apply-impact
+fi
+```
+
 If the queue is empty AND `active` was null, `progress.sh activate` errors out — tell the inspector and stop. Branch is declared per-feature in `config.md`'s `## GIT BRANCH` section (written later in this command) and validated at stage 3; `/mi-plan-implementation` will persist it into `active.branch`.
 
 **On the lineage-backstop halt (`exit 78`):** relay both warning lines to the inspector and ask how to proceed:

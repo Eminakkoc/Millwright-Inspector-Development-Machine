@@ -1,0 +1,11 @@
+> "Open findings for `$active_feature` are recorded; the stage-6 review session is next. **Recommended:** type `/clear`, then `/mi-continue` to enter the review session with a fresh main context.
+>
+> What gets carried across the clear:
+> - `progress.md` (workflow state, including the `review-mode-suggestion`)
+> - `implementation/inspector-review.md` (your findings as canonical `IR-NNN` blocks)
+> - `test/manual-test-results.md` (manual-test outcomes, if a run happened)
+> - `decisions.md` (any verbal decisions captured above — folded into `review-context.md` when the session starts)
+>
+> What gets discarded by the clear: the manual-test-run transcript and the findings back-and-forth. The IR blocks and results file are the canonical record; the chat history is not.
+>
+> Skip the clear (just type `/mi-continue` without clearing) if you have unsaved verbal context you specifically want to carry forward."

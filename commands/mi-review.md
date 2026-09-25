@@ -12,7 +12,7 @@ description: Launch a brainstorming review session for the active feature. Reads
 
 **Main-read budget (stage 6).** Allowed in main: `review-context.md`, `inspector-review.md` (open IR-IDs only via `review.sh list-open-summaries` excerpt — Phase 6.5). Forbidden in main: source reads for findings — delegated to per-iteration sub-agent in brainstorming mode (Phase 1.3) unless `direct` mode is selected AND all findings are scope=`fix` (Phase 1.2 auto-routing). See `docs/millwright-inspector-project.md` § "Main-read budget gates by stage" for the canonical table.
 
-**`mi-review` does NOT advance past stage 6, and does NOT auto-fire `/mi-complete-workflow`.** After the loop exits via `approve`, the inspector types `/mi-continue` to resume mi-workflow; the post-review-session Review-Resume Handler in `/mi-continue` finalizes (advances 6 → 7 and auto-fires `/mi-complete-workflow`).
+**`mi-review` does NOT advance past stage 6, and does NOT auto-fire `/mi-complete-workflow`.** After the loop exits via `approve`, the inspector types `/mi-continue` to resume mi-workflow; the post-review-session Review-Resume Handler in `/mi-continue` finalizes (advances 6 → 7 and auto-fires `/mi-complete-workflow`). (Auto mode: unless auto mode is on and `auto.sh approve-guard` passes — in which case `mi-review` invokes `/mi-continue` itself — the inspector types it.)
 
 There is no AI-driven review pass. Findings are authored by the inspector (during stage 5, and any time during the review loop). `mi-review` is a hand-off mechanism, not a reviewer.
 
@@ -90,6 +90,8 @@ $CLAUDE_PLUGIN_ROOT/scripts/ledger.sh append \
 ```
 
 Then print the recommendation block to the inspector and **halt** — do NOT proceed to Step 2 in this branch (state stays at `current-stage=5`, `sub-flow` untouched):
+
+**Auto mode.** If `$CLAUDE_PLUGIN_ROOT/scripts/auto.sh is-on` succeeds, print `auto: clear gate stage-5-to-6 — type /clear, then /mi-continue` instead of the recommendation below, and stop (the `decisions.md` write-check above has already run). Otherwise continue below unchanged.
 
 > "Open findings for `$active_feature` are recorded; the stage-6 review session is next. **Recommended:** type `/clear`, then `/mi-continue` to enter the review session with a fresh main context.
 >
@@ -247,6 +249,8 @@ suggestion="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get review-mode-suggestion
 ```
 
 Branch the prompt's default and rationale on the suggestion:
+
+**Auto mode.** If `$CLAUDE_PLUGIN_ROOT/scripts/auto.sh is-on` succeeds, run `$CLAUDE_PLUGIN_ROOT/scripts/auto.sh answer "review mode" "direct" --cmd /mi-review` and continue as if the inspector had replied `direct` — do not show the prompt below. Otherwise show the prompt below unchanged.
 
 **If `suggestion == "direct"`** (all open findings have `scope: fix` — stage 5 detected this when canonicalizing):
 
@@ -440,6 +444,8 @@ The fresh sub-agent returns one structured summary message (per the contract abo
 
 After the sub-agent returns, surface its summary to the inspector in chat. Then prompt:
 
+**Auto mode.** If `$CLAUDE_PLUGIN_ROOT/scripts/auto.sh is-on` succeeds, run `"$CLAUDE_PLUGIN_ROOT/scripts/auto.sh" approve-guard "$active_feature"`. If it exits 0, run `$CLAUDE_PLUGIN_ROOT/scripts/auto.sh answer "review approve" "approve" --cmd /mi-review`, treat the reply as `approve`, and then invoke `/mi-continue` yourself instead of telling the inspector to type it. If it exits 1, print its line (it names the findings that need the inspector — re-spec, re-plan, wontfix, still open) and then show the prompt below unchanged. Otherwise show the prompt below unchanged.
+
 > "Iteration <N> complete. Resolved IR-IDs: `<list-from-summary>`. <Optional: surface 'Findings / risks' or 'Main should read' lines if non-empty.>
 >
 > Reply:
@@ -478,7 +484,7 @@ The millwright (this session) addresses each finding directly — no Skill is in
    - `implementation/review-context.md` — compact snapshot of active scope, goals, implemented surface, open-findings cheat sheet.
    - `implementation/inspector-review.md` — canonical findings (re-read on every `go again`).
 2. **Process open findings in descending impact order:** `re-spec` → `re-plan` → `re-implement` → `fix`. A higher-tier action supersedes lower-tier findings in the same pass; mark superseded findings `fixed` with `fix-note: "superseded by re-spec at iteration N"` (or re-plan, etc.).
-   - **Direct mode caveat:** if a finding's scope is `re-plan` or `re-spec`, it likely needs the chain's design / plan gates that direct mode skips. Surface that to the inspector and ask if they want to switch to `brainstorming` for the rest of the session — re-set `review-mode=brainstorming` and proceed to Step 3a. Only stay in direct mode for `fix` / simple `re-implement` findings.
+   - **Direct mode caveat:** if a finding's scope is `re-plan` or `re-spec`, it likely needs the chain's design / plan gates that direct mode skips. Surface that to the inspector and ask if they want to switch to `brainstorming` for the rest of the session — re-set `review-mode=brainstorming` and proceed to Step 3a. Only stay in direct mode for `fix` / simple `re-implement` findings. In auto mode, do not ask — print `auto: warning — <IR-NNN> is <scope>; direct mode may skip the design/plan gates it needs` for each such finding and stay in direct mode; the approve guard stops the flow later if the finding ends up re-spec/re-plan or wontfix.
 3. **For each finding addressed**, commit the change and call:
    ```bash
    $CLAUDE_PLUGIN_ROOT/scripts/review.sh set-status "$active_feature" <IR-NNN> fixed "<one-line fix-note>"
@@ -488,6 +494,9 @@ The millwright (this session) addresses each finding directly — no Skill is in
 5. **Loop pattern (same iteration boundaries as brainstorming mode, just no sub-agent dispatch):**
    1. Read `inspector-review.md`; list `open` findings.
    2. Address them per the rules above; commit; mark each resolved.
+
+   **Auto mode.** If `$CLAUDE_PLUGIN_ROOT/scripts/auto.sh is-on` succeeds, run `"$CLAUDE_PLUGIN_ROOT/scripts/auto.sh" approve-guard "$active_feature"`. If it exits 0, run `$CLAUDE_PLUGIN_ROOT/scripts/auto.sh answer "review approve" "approve" --cmd /mi-review`, treat the reply as `approve`, and then invoke `/mi-continue` yourself instead of telling the inspector to type it. If it exits 1, print its line (it names the findings that need the inspector — re-spec, re-plan, wontfix, still open) and then show the prompt below unchanged. Otherwise show the prompt below unchanged.
+
    3. Tell the inspector: *"All open findings addressed (resolved: \<ids\>). Either: (a) reply `approve` to end the review session — then type `/mi-continue` to resume mi-workflow and finalize; (b) add new findings to `inspector-review.md` (plain sentences are fine — I'll canonicalize them) and reply `go again` so I re-read; (c) reply `abort` to invoke `/mi-abort-workflow`."*
    4. On `approve`: tell the inspector *"Review session approved. Type `/mi-continue` to resume the mi-workflow and finalize."* Then stop. Do NOT call `progress.sh` for completion — that's mi-workflow's job, triggered by `/mi-continue`.
    5. On `go again`: re-canonicalize free-form additions (run `review.sh canonicalize` + classify any new spans + `review.sh add` per the recipe in `mi-continue.md` Inspector Step 1.5). Then re-run `mi-continue.md` Inspector Step 1.6 to update `review-mode-suggestion` based on the new scope mix. Then refresh `review-context.md` body via `review.sh sync-refs --refresh-body` (Phase 1.4). Then re-call `review.sh list-open` and go to step 1.
@@ -496,7 +505,7 @@ The millwright (this session) addresses each finding directly — no Skill is in
 
 ### Step 4 — Hand off
 
-After Step 3a (brainstorming) or Step 3b (direct), stop driving the mi-workflow. Both modes converge on the same terminal: the inspector types `approve` to end the session, then types `/mi-continue` to resume mi-workflow.
+After Step 3a (brainstorming) or Step 3b (direct), stop driving the mi-workflow. Both modes converge on the same terminal: the inspector types `approve` to end the session, then types `/mi-continue` to resume mi-workflow. In auto mode with a passing approve guard, `/mi-continue` was already invoked by Step 3a/3b; do not ask the inspector to type it.
 
 - **Brainstorming mode (Step 3a):** runs in the main session, but each iteration delegates to a fresh sub-agent (`subagent_type: millwright-inspector-development-machine:review-iteration-runner`) whose context evaporates on return. Main owns the iteration boundaries (`approve` / `go again` / `abort`); the sub-agent owns the per-iteration finding work. The inspector drives the loop to its terminal state by typing `approve`, then `/mi-continue` to resume mi-workflow.
 - **Direct mode (Step 3b):** runs entirely in the main session — no sub-agent dispatch. Best when every open finding is `fix` or simple `re-implement` and the chain ceremony would just be overhead. The inspector reviews fixes inline; when satisfied, types `approve` to end the loop, then `/mi-continue` to resume.

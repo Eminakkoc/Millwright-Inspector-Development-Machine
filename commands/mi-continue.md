@@ -549,6 +549,9 @@ PYEOF
 
    Receive the sub-agent return summary. Use the proposed order in step 5. The cache key fields (`scan-mode: code-aware`, `summary-md-hash`, `head-when-scanned`) will be written into `queue-rationale.md` by Step 2B when the inspector confirms the order — main is responsible for passing these to Step 2B's frontmatter init/update.
 5. **Propose the prioritized order.** Print the order as a numbered list and the dependency reasoning underneath. End the message with:
+
+   **Auto mode.** If `$CLAUDE_PLUGIN_ROOT/scripts/auto.sh is-on` succeeds, run `$CLAUDE_PLUGIN_ROOT/scripts/auto.sh answer "queue order" "accept" --cmd /mi-continue` and continue as if the inspector had replied `accept` — do not show the prompt below. Otherwise show the prompt below unchanged.
+
    > "Reply `/mi-continue` to accept this order, or paste a different order (one feature per line) and then `/mi-continue` to confirm."
 
    When the feature-test entry is **in the queue** — not merely present in frontmatter — append `$ft_name` **last** to the proposal, then assert the pin before printing. Gate on queue membership, not frontmatter presence: item 3.5 only enqueues on `ready`/`selected`, so on a `blocked` partial selection (a common case — the inspector marks some but not all items) `ft_name` is populated in frontmatter but absent from the queue. Appending it to the proposal anyway would poison it with a name `check-feature-test-pin` happily accepts (it IS last in the *proposed* list) but that `progress.sh reorder` later rejects as "not in existing queue" — *after* Step 2B has already written `queue-rationale.md` with it in `features:`, breaking the Row A invariant (`queue-rationale.features − completed == queue`). This fence re-derives `ft_name` itself rather than trusting item 1.5's or item 3.5's export (fresh subshell — see Step 1a):
@@ -589,7 +592,7 @@ PYEOF
 
    > `<ft_name>` is pinned last — it exercises the assembled result of every ordinary feature in this cycle, so it cannot run before them. This is a structural constraint, not a priority judgement; an order placing it earlier is refused at stage 1.5.
 
-7. **Stop.** Do NOT auto-fire Step 2B from here — the draft batch needs the inspector's explicit confirmation. The dispatcher routes the next `/mi-continue` to Step 2B (extended) automatically because top-level `status` is now `draft`.
+7. **Stop.** Do NOT auto-fire Step 2B from here — unless auto mode is on (`auto.sh is-on`), in which case continue straight into Step 2B without re-prompting (item 5 above already recorded `auto.sh answer "queue order" "accept"`). Otherwise the draft batch needs the inspector's explicit confirmation. The dispatcher routes the next `/mi-continue` to Step 2B (extended) automatically because top-level `status` is now `draft`.
 
    For the **initial cycle** (queue was already seeded by `/mi-run`, no prior batches exist): skip the file write here and let Step 2B's case (a) write the file from scratch when the inspector confirms. (This preserves the current behavior for fresh cycles.)
 
@@ -758,6 +761,8 @@ $CLAUDE_PLUGIN_ROOT/scripts/ledger.sh append \
 ```
 
 Then print the recommendation block to the inspector and **halt** — do NOT auto-fire `/mi-plan-implementation` in this branch:
+
+**Auto mode.** If `$CLAUDE_PLUGIN_ROOT/scripts/auto.sh is-on` succeeds, print `auto: clear gate stage-2-to-3 — type /clear, then /mi-continue` instead of the recommendation below, and stop (the `decisions.md` write-check above has already run). Otherwise continue below unchanged.
 
 > "Blueprint for `$active_feature` approved. **Recommended:** type `/clear`, then `/mi-continue` to enter stage 3 with a fresh main context.
 >
@@ -1053,9 +1058,14 @@ Atomic batched write — these flags are idempotent on retry:
 # may have already chosen). Otherwise reuse the persisted value.
 mode_persisted="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get execution-mode 2>/dev/null || echo 'none')"
 if [[ "$mode_persisted" == "none" ]]; then
-  # Prompt the inspector (subagent-driven|inline). The exact prompt text lives
-  # in Resume Step 3 below for narrative continuity.
-  mode="$mode_from_inspector"  # placeholder; the LLM following this recipe asks the inspector.
+  if "$CLAUDE_PLUGIN_ROOT/scripts/auto.sh" is-on; then
+    mode="subagent-driven"
+    "$CLAUDE_PLUGIN_ROOT/scripts/auto.sh" answer "execution mode" "subagent-driven" --cmd /mi-continue
+  else
+    # Prompt the inspector (subagent-driven|inline). The exact prompt text lives
+    # in Resume Step 3 below for narrative continuity.
+    mode="$mode_from_inspector"  # placeholder; the LLM following this recipe asks the inspector.
+  fi
 else
   mode="$mode_persisted"
 fi
@@ -1099,6 +1109,8 @@ A session that was closed mid-chain looks identical to a clean exit at this poin
    ```
 
 4. **Prompt the inspector.** Render the candidates as a numbered list with their checkbox counts and ask:
+
+   **Auto mode.** If `$CLAUDE_PLUGIN_ROOT/scripts/auto.sh is-on` succeeds **and** `progress.sh get chain-finished` prints `true`, run `$CLAUDE_PLUGIN_ROOT/scripts/auto.sh answer "chain completion" "completed" --cmd /mi-continue` and continue as if the inspector had replied `completed` — do not show the prompt below. When `chain-finished` is not `true`, show the prompt below even in auto mode: the chain did not confirm a clean finish, so auto mode does not guess. Otherwise show the prompt below unchanged.
 
    > "Stage 4 — chain-completion check.
    >
@@ -1189,6 +1201,8 @@ Brainstorming may have surfaced new requirements, dropped some, or shifted scope
 
 When `drift_prompt_required==1`, prompt the inspector:
 
+**Auto mode.** If `$CLAUDE_PLUGIN_ROOT/scripts/auto.sh is-on` succeeds, run `$CLAUDE_PLUGIN_ROOT/scripts/auto.sh answer "drift check" "auto" --cmd /mi-continue` and continue as if the inspector had replied `auto` — do not show the prompt below. Otherwise show the prompt below unchanged.
+
 > "Stage-4 drift check: did anything in the requirements change during brainstorming? Reply:
 >
 >   - `<short reason>` — I'll run `/mi-update-blueprint --reason-kind=spec-update <reason>` to rotate `blueprints/current/` into history and regenerate `requirements.md` / `config.md` / `diagrams/` from the **implementation** (codebase + `base-commit..HEAD` diff) plus the just-rotated history version. The previous blueprint's `todo-item-ids`, `## Planned`, `## Non-goals`, `## GIT BRANCH`, and `## Inspector Additions` are preserved verbatim. The active quest cycle's `todo-list.md` and `summary.md` (under `quest/<slug>/`) and `journal/` are NOT consulted.
@@ -1248,6 +1262,20 @@ ov_file="$data_root/workflow-stream/$active_feature/implementation/inspector-rev
 [[ -f "$ov_file" ]] || $CLAUDE_PLUGIN_ROOT/scripts/review.sh init "$active_feature"
 ```
 
+Then convert deferred questions that need a finding (idempotent — converted entries carry a `follow-up` id and are skipped). Choose scope `re-implement` instead of `fix` only when the recorded answer describes restructuring existing code; the default below is `fix`.
+
+```bash
+# Deferred questions → findings (runs in every mode; no-op without the file).
+"$CLAUDE_PLUGIN_ROOT/scripts/deferred-questions.sh" list-needs-finding "$active_feature" \
+  | while IFS=$'\t' read -r dq question answer; do
+      [[ -z "$dq" ]] && continue
+      ir="$(printf 'Deferred question %s: %s\nInspector answer: %s\n' "$dq" "$question" "$answer" \
+            | "$CLAUDE_PLUGIN_ROOT/scripts/review.sh" add "$active_feature" major fix \
+                "$dq: $question" --source deferred-question)"
+      "$CLAUDE_PLUGIN_ROOT/scripts/deferred-questions.sh" set-follow-up "$active_feature" "$dq" "$ir"
+    done
+```
+
 ### Resume Step 7 — Final atomic advance-to (3 → 5, sub-flow=none)
 
 The Resume Handler eliminates stage 4 as a persisted state. The atomic `advance-to 3 5 --set sub-flow=none` collapses the old "advance 3 then advance 4" pair into a single transition, so a session break inside the handler can never strand the workflow at stage 4 with sub-flow=resuming.
@@ -1264,6 +1292,8 @@ skipped="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get implementation-diagrams-s
 
 **When `skipped=false` (the normal case):**
 
+**Auto mode.** If `$CLAUDE_PLUGIN_ROOT/scripts/auto.sh is-on` succeeds, run `$CLAUDE_PLUGIN_ROOT/scripts/auto.sh answer "manual test plan" "y" --cmd /mi-continue` and continue as if the inspector had replied `y` — do not show the prompt below. Otherwise show the prompt below unchanged.
+
 > "Stage 5 — ready for your review. Look at: commits `$base_commit..HEAD` and diagrams under `implementation/diagrams` (existing-system context is shaded grey; new functionality is highlighted).
 >
 > *Note on seeded-only diagrams:* if `implementation/diagrams/README.md` flags any subject as `seeded-only`, that `.puml` is a verbatim copy of the stage-2 blueprint diagram — those subjects had no implementation commits in `base-commit..HEAD`. Treat them as 'design intent preserved' rather than implementation drift; the legend wording (e.g., 'Planned') reflects the stage-2 baseline.
@@ -1276,6 +1306,8 @@ skipped="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get implementation-diagrams-s
 > Reply `y` or `n`."
 
 **When `skipped=true` (inspector answered `n` to stage-4 diagram prompt):**
+
+**Auto mode.** If `$CLAUDE_PLUGIN_ROOT/scripts/auto.sh is-on` succeeds, run `$CLAUDE_PLUGIN_ROOT/scripts/auto.sh answer "manual test plan" "y" --cmd /mi-continue` and continue as if the inspector had replied `y` — do not show the prompt below. Otherwise show the prompt below unchanged.
 
 > "Stage 5 — ready for your review. Look at: commits `$base_commit..HEAD` and the **stage-2 blueprint diagrams** under `blueprints/current/diagrams` (implementation diagrams were skipped at stage 4 — the blueprint diagrams remain authoritative for this cycle).
 >
@@ -1367,6 +1399,28 @@ fi
 **The Inspector Handler must NOT mutate `inspector-review.md` because of manual-test results.** By the time this handler runs, `/mi-manual-test-run` has already either run the auto-seed loop (possibly leaving some failed scenarios unseeded if the inspector picked `skip` on per-IR prompts) or recorded `failure-policy=manual` and written nothing. Seeded failures are already-canonical `### IR-NNN` blocks. The handler must not auto-seed, reopen, reclassify, or rewrite seeded IR blocks based on `manual-test-results.md`.
 
 The existing canonicalization pass at Step 1.5 below remains allowed to mutate `inspector-review.md` for **inspector-authored free-form review text** — that is a separate legacy behavior and not a manual-test write path. Idempotency for seeded blocks is enforced durably by the `- seed-id:` field on each auto-seeded IR-NNN block (`/mi-manual-test-run`'s single-owner discipline; see `docs/manual-testing/plan.md` § 2.2 "Auto-seed ownership recap").
+
+### Inspector Step 0.5 — Auto-mode review stop
+
+Runs only when auto mode is on. Guarantees the stage-5 human review stop fires exactly once per feature, including when no manual-test run reached its 4.8 hand-off.
+
+```bash
+if "$CLAUDE_PLUGIN_ROOT/scripts/auto.sh" is-on \
+   && [[ "$("$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" get review-stop-shown 2>/dev/null)" != "true" ]]; then
+  "$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" set review-stop-shown=true
+  open_dq="$("$CLAUDE_PLUGIN_ROOT/scripts/deferred-questions.sh" list-open "$active_feature")"
+  if [[ -n "$open_dq" ]]; then
+    echo "Open deferred questions:"
+    printf '%s\n' "$open_dq"
+  fi
+  base_short="$(git rev-parse --short "$("$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" get base-commit)")"
+  echo "auto: review stop for <feature> — check commits <base>..HEAD, diagrams and test results; add findings to inspector-review.md or leave it empty, then /mi-continue (No findings → it approves and completes.)" \
+    | sed "s|<base>|$base_short|; s|<feature>|$active_feature|"
+  exit 0
+fi
+```
+
+When the block prints and exits, **stop** — list any open deferred questions it printed under "Open deferred questions:". The inspector's next `/mi-continue` re-enters this handler with `review-stop-shown=true` and proceeds to Step 1.
 
 ### Inspector Step 1 — Verify inspector-review.md exists
 
@@ -1477,6 +1531,8 @@ open_ids="$($CLAUDE_PLUGIN_ROOT/scripts/review.sh list-open "$active_feature")"
 
 If `open_ids` is empty, **prompt the inspector to confirm before completing the stage**. This guard exists because the no-findings path auto-fires `/mi-complete-workflow` immediately — once it runs, the workflow archives blueprints and advances the queue, which is non-trivial to undo. The confirmation gives the inspector one explicit beat to add findings instead.
 
+**Auto mode.** If `$CLAUDE_PLUGIN_ROOT/scripts/auto.sh is-on` succeeds and `"$CLAUDE_PLUGIN_ROOT/scripts/deferred-questions.sh" list-open "$active_feature"` prints nothing, run `$CLAUDE_PLUGIN_ROOT/scripts/auto.sh answer "no findings, complete" "y" --cmd /mi-continue` and continue as if the inspector had replied `y` — do not show the prompt below; the DTI Gate 1 check still runs before the advance. If deferred questions are still open, show the prompt below (they count as open issues). Otherwise show the prompt below unchanged.
+
 > "`inspector-review.md` has no open findings. Confirming will complete the inspector-review stage and auto-fire `/mi-complete-workflow`. Continue?
 >
 >   - `y` — finalize the inspector-review stage and proceed.
@@ -1551,7 +1607,7 @@ Hand the review off to a **brainstorming review session** by invoking `/mi-revie
 /mi-review
 ```
 
-After `/mi-review` returns, **stop**. Do not advance the stage. Do not auto-fire `/mi-complete-workflow`. The Review-Resume Handler will run when the inspector types `/mi-continue` again after the brainstorming review session exits.
+After `/mi-review` returns, **stop**. Do not advance the stage. Do not auto-fire `/mi-complete-workflow` — unless auto mode is on and `auto.sh approve-guard` passes, in which case `/mi-review` hands back through `/mi-continue` itself. The Review-Resume Handler will run when the inspector types `/mi-continue` again after the brainstorming review session exits.
 
 **If `/mi-review` halted at its `stage-5-to-6` clear-point gate** (first entry — it printed a `/clear` recommendation and did NOT launch the session), say nothing further: the gate's recommendation is the terminal message for this turn. State stays at `current-stage=5`, so the inspector's next `/mi-continue` re-enters this handler and auto-fires `/mi-review` again, which then proceeds past the gate.
 
@@ -1576,6 +1632,8 @@ remaining_open="$($CLAUDE_PLUGIN_ROOT/scripts/review.sh list-open "$active_featu
 ```
 
 If `remaining_open` is empty, **prompt the inspector to confirm before completing the stage**. This guard mirrors Inspector Step 3a: once finalize fires, `/mi-complete-workflow` archives blueprints and advances the queue, so the inspector gets one explicit beat to re-launch the review session or add new findings instead.
+
+**Auto mode.** If `$CLAUDE_PLUGIN_ROOT/scripts/auto.sh is-on` succeeds, run `"$CLAUDE_PLUGIN_ROOT/scripts/auto.sh" approve-guard "$active_feature"`. If it exits 0, run `$CLAUDE_PLUGIN_ROOT/scripts/auto.sh answer "all findings resolved, complete" "y" --cmd /mi-continue` and continue as if the inspector had replied `y` — do not show the prompt below. If it exits 1, print its line and show the prompt below unchanged. Otherwise (auto mode off) show the prompt below unchanged.
 
 > "All findings have been resolved (no open findings remain in `inspector-review.md`). Confirming will complete the inspector-review stage and auto-fire `/mi-complete-workflow`. Continue?
 >
@@ -1619,6 +1677,8 @@ Branch on `freshness`:
 - **`fresh`** (exit 0) — diagrams are already current. Skip the prompt entirely; fall through to Step 2.6.
 - **`stale`** (exit 0) — refresh prompt:
 
+  **Auto mode.** If `$CLAUDE_PLUGIN_ROOT/scripts/auto.sh is-on` succeeds, run `$CLAUDE_PLUGIN_ROOT/scripts/auto.sh answer "refresh diagrams" "y" --cmd /mi-continue` and continue as if the inspector had replied `y` — do not show the prompt below. Otherwise show the prompt below unchanged.
+
   > "The review session committed additional commits since the implementation diagrams were generated. Regenerate them?
   >
   >   - `y` — re-run `/mi-draw-diagrams` before finalizing (~30 seconds; useful so the final snapshot reflects the review-loop fixes before stage 8 archives the diagrams into `blueprints/history/v[N+1]/implementation/diagrams/`).
@@ -1627,6 +1687,8 @@ Branch on `freshness`:
   > (y/n)"
 
 - **`skipped`** (exit 0) — recovery prompt (stage 4 was skipped):
+
+  **Auto mode.** If `$CLAUDE_PLUGIN_ROOT/scripts/auto.sh is-on` succeeds, run `$CLAUDE_PLUGIN_ROOT/scripts/auto.sh answer "generate skipped diagrams" "y" --cmd /mi-continue` and continue as if the inspector had replied `y` — do not show the prompt below. Otherwise show the prompt below unchanged.
 
   > "Implementation diagrams were skipped at stage 4. The review session committed commits in `base-commit..HEAD` since then. Reply:
   >   - `y` — generate implementation diagrams now via `/mi-draw-diagrams` (~30s; covers the full `base-commit..HEAD` range and clears the skip marker so stage 8 archives them).

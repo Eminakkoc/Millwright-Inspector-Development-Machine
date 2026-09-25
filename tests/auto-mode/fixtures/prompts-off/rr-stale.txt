@@ -1,0 +1,6 @@
+  > "The review session committed additional commits since the implementation diagrams were generated. Regenerate them?
+  >
+  >   - `y` — re-run `/mi-draw-diagrams` before finalizing (~30 seconds; useful so the final snapshot reflects the review-loop fixes before stage 8 archives the diagrams into `blueprints/history/v[N+1]/implementation/diagrams/`).
+  >   - `n` — proceed directly to `/mi-complete-workflow`. The diagrams stay at the post-chain snapshot; they'll be archived as-is (not deleted) at stage 8.
+  >
+  > (y/n)"

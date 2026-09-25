@@ -1,0 +1,10 @@
+> "Stage 5 — ready for your review. Look at: commits `$base_commit..HEAD` and diagrams under `implementation/diagrams` (existing-system context is shaded grey; new functionality is highlighted).
+>
+> *Note on seeded-only diagrams:* if `implementation/diagrams/README.md` flags any subject as `seeded-only`, that `.puml` is a verbatim copy of the stage-2 blueprint diagram — those subjects had no implementation commits in `base-commit..HEAD`. Treat them as 'design intent preserved' rather than implementation drift; the legend wording (e.g., 'Planned') reflects the stage-2 baseline.
+>
+> Before reviewing the implementation, would you like a manual test plan generated for this feature? (`y`/`n`)
+>
+>   - `y` — I'll generate `workflow-stream/<active_feature>/test/manual-test-plan.md` based on the blueprint + implementation diff + a codebase scan. After generation I'll offer to run it — either as a guided walkthrough (I bring the environment up and walk you through each case) or fully hands-off. Failures can auto-seed as findings.
+>   - `n` — skip manual testing; go directly to findings authoring (write into `implementation/inspector-review.md`, or leave empty to approve).
+>
+> Reply `y` or `n`."

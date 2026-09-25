@@ -548,11 +548,15 @@ id: <uuid>
 todo-list-id: <uuid of the related todo-list.md>
 queue: [notifications, audit-log]   # features still to run, in priority order
 completed: [onboarding]             # features finalized via mi-complete-workflow
+auto-mode: false                    # top-level — cycle-wide auto-mode switch (§7.3 /mi-auto)
+completed-branches: []              # top-level — feature branches finished via mi-complete-workflow, in order
 active:                             # null between workflows; populated while a feature runs
   feature: payments
   branch: feat/payments/webhook     # null until stage 3
   current-stage: 5                  # 2..8; stage 4 is conceptual and never persisted (3→5 atomic)
   sub-flow: none                    # none | chain-in-progress | resuming | reviewing | manual-testing
+  chain-finished: false             # optional — set by the auto-mode end-of-chain rules before /mi-continue
+  review-stop-shown: false          # optional — true once the stage-5 auto-mode review stop has fired
   base-commit: a1b2c3d              # null until stage 3
   execution-mode: subagent-driven   # subagent-driven | inline | none
   planning-mode: brainstorming      # brainstorming | direct | none — set at stage 3
@@ -574,6 +578,17 @@ active:                             # null between workflows; populated while a 
   activation-id: <uuid>             # optional — minted at activate, re-minted at reset; manual-test rotation discriminator
 ---
 ```
+
+**Auto mode's two top-level fields.** `auto-mode` (default `false`) is the cycle-wide
+switch `/mi-auto on|off` flips and `/mi-run --auto` sets at cycle creation; `auto.sh
+is-on` is the single read every auto-answer branch checks before it answers a prompt in
+the millwright's place. `completed-branches` is the append-only, deduplicated list of
+`active.branch` values `progress.sh finish` records at stage 8, in every mode; it drives
+the stage-8 stacked-branch note and the stage-2 `## GIT BRANCH` pre-fill skip (§6.2,
+§7.3). Both are optional and default empty/off, so a pre-1.9.0 `progress.md` validates
+unchanged and reads as auto mode off. `get-top`/`set-top` (§8.5) read and write them
+without requiring `active` to be populated; the existing `get`/`set` subcommands and
+their fixtures are untouched.
 
 **Two-step activation lifecycle:**
 
@@ -1110,7 +1125,10 @@ writes to `~/.claude/`; `--project-shared` writes to the committed `.claude/sett
 (warned — the wrapper's baked-in path is machine-specific). The renderer (`scripts/info-bar.sh`)
 is pull-only — not a hook, not a writer; it reads stdin JSON, parses `quest/active.md` +
 `progress.md` once, prints one line (`mi-workflow · <feature> · Stage <N> · <stage-name>`),
-and exits 0. Outside an mi-workspace it prints nothing.
+and exits 0. Outside an mi-workspace it prints nothing. (v1.9.0) When the cycle's
+top-level `auto-mode` is `true`, the line gains an ` AUTO` suffix — read from the
+already-parsed frontmatter block, not by shelling out to `auto.sh`, to stay inside the
+≤ 100 ms hot-path budget.
 
 ### 7.2 Cycle-level command
 
@@ -1121,7 +1139,17 @@ arguments. Step 2: detect non-text files and run the per-file ingest decision fl
 compute the cycle slug, create `quest/<slug>/`, `quest.sh start`. Step 4: generate
 `todo-list.md`, `summary.md`, `progress.md` (queue populated, `active: null`), and
 `reference.md` (with `journal-refs`). Refuses if a cycle is already active unless
-`--archive-active` is passed. Branch selection is deferred to stage 2.
+`--archive-active` is passed. Branch selection is deferred to stage 2. `--auto` passes
+through to `progress.sh init --auto`, so the cycle starts with auto mode already on
+(§7.3, `/mi-auto`).
+
+**`/mi-auto [on|off]`** *(v1.9.0)* — inspector, any time during a cycle (works between
+features too). Thin wrapper over `auto.sh switch`. `on` turns on the cycle-wide
+auto-mode switch and prints `auto mode ON — remaining questions this cycle will be
+answered automatically`; if a prompt is already waiting, the inspector still answers
+that one — auto mode takes over from the next. `off` restores normal prompting. No
+argument prints the current state. See §3.5 for the underlying `auto-mode` field and
+the [README's Auto mode section](../README.md#auto-mode) for the full behavior.
 
 ### 7.3 Per-feature launcher commands
 
@@ -1137,6 +1165,15 @@ Handler. Pure launcher (§6.2): PENDING→IMPLEMENTING, capture `base-commit` +
 `history-baseline-version`, validate `## GIT BRANCH`, compose `primer.md`, ask for
 `planning-mode`, launch the chosen path. Sets `sub-flow=chain-in-progress` and advances
 2→3.
+
+**`/mi-implement`** *(v1.9.0, inspector-typed)* — hand-typed during the stage-3
+brainstorming chain's design Q&A. Typing it counts as design approval; the chain then
+writes the spec, writes the plan without waiting for an inspector review, implements
+with sub-agents, and follows `templates/auto-mode-chain-rules.md` (deferred questions
+instead of stopping, stay on the current branch, walk any open points one at a time at
+chain end, then `progress.sh set chain-finished=true` and `/mi-continue`). Works whether
+auto mode is on or off — the Step 4a primer references the same rules file when auto
+mode is on, so the two never drift.
 
 **`/mi-draw-diagrams [--target=implementation] [--force]`** *(auto or manual)* — auto-fired
 by the Resume Handler (Step 5) and the Review-Resume Handler (Step 2.5, on a `y` refresh).
@@ -1900,7 +1937,7 @@ refit for per-batch use in v1.5; rendered by the sub-agents at review-call time,
 
 ### 8.5 Scripts (`scripts/`)
 
-**20 scripts** plus `scripts/internal/` helpers:
+**24 scripts** plus `scripts/internal/` helpers:
 
 | Script | Role |
 | --- | --- |
@@ -1908,11 +1945,12 @@ refit for per-batch use in v1.5; rendered by the sub-agents at review-call time,
 | `frontmatter.sh` | Read / write / init / validate YAML frontmatter. Subcommands: `init`, `get`, `set`, `validate`. |
 | `data-root.sh` | Resolve the data root: `MI_DATA_ROOT` → `CLAUDE_PLUGIN_USER_CONFIG_data_root` → `${PWD}/millwright-inspector`. Every other script sources this. |
 | `quest.sh` | Manage the `quest/active.md` pointer and resolve the active cycle's directory. Subcommands: `slug`, `start`, `end`, `init-pointer`, `current`, `dir`, `has-active`, `status`, `list`, `feature-section`. |
-| `progress.sh` | Manage the active cycle's `progress.md`. Subcommands: `init`, `activate`, `finish`, `requeue`, `reset`, `reorder`, `enqueue`, `get-active`, `queue-remaining`, `get`, `set`, `advance`, `advance-to` (atomic skip-transition; stage-pair whitelist `2→5, 3→5, 5→7, 6→7` — `2→5` is the feature-test entry's abbreviated-pipeline skip, §6.4), `add-clear-recommendation`, `has-clear-recommendation`, `check-worktree`, `check-feature-test-pin <ft-name> <order...>` (stage-1.5 validation; exit 0 when the name is absent from the order or is its last element, exit 3 otherwise; reads no files; deliberately separate from `reorder`, whose permutation-only contract is **unchanged** — a guard inside `reorder` would alter behaviour for cycles that carry no feature-test entry at all). |
+| `progress.sh` | Manage the active cycle's `progress.md`. Subcommands: `init` (`--auto` seeds `auto-mode: true`), `activate` (also seeds `diagram-prompt=auto` when `auto-mode` is on — §3.5), `finish` (also appends `active.branch` to `completed-branches`, deduplicated), `requeue`, `reset`, `reorder`, `enqueue`, `get-active`, `queue-remaining`, `get`, `set`, `get-top <field>` / `set-top <field>=<value>...` (v1.9.0 — read/write top-level fields such as `auto-mode` and `completed-branches` independent of `active`; `set-top` refuses `active`/`queue`/`completed`/`id`/`todo-list-id` and shares its write pipeline with `set`), `advance`, `advance-to` (atomic skip-transition; stage-pair whitelist `2→5, 3→5, 5→7, 6→7` — `2→5` is the feature-test entry's abbreviated-pipeline skip, §6.4), `add-clear-recommendation`, `has-clear-recommendation`, `check-worktree`, `check-feature-test-pin <ft-name> <order...>` (stage-1.5 validation; exit 0 when the name is absent from the order or is its last element, exit 3 otherwise; reads no files; deliberately separate from `reorder`, whose permutation-only contract is **unchanged** — a guard inside `reorder` would alter behaviour for cycles that carry no feature-test entry at all). |
 | `todo.sh` | Manage `todo-list.md`. Subcommands: `set-state` (optional `--assignee`), `bulk-transition` (optional `--feature`), `pend-selected` (reports promoted `<item-id>\t<assignee>` rows on stdout), `list <state>`, `add`, `feature-test-status`, `is-feature-test <name>` (read-only predicate; exit 0 when `<name>` is the cycle's pinned feature-test entry, exit 1 otherwise). Enforces the state machine and assignee invariants. |
 | `folder-id.sh` | Manage `id.md` markers and `reference.md`. Subcommands: `ensure`, `get`, `resolve <id>`, `list`, `init-reference`, `link-feature`, `feature-lineage-check`, `derive-feature-test-name`. |
 | `blueprints.sh` | Manage `blueprints/`. Subcommands: `ensure-current`, `rotate`, `resume-partial`, `preserve-inspector-sections`, `check-current [--require-primer]`, `branch-status`, `deferred-tests-path`. Rotation is resumable (`.partial.tmp → .partial → vN`). |
 | `deferred-tests.sh` | Manage `<ft-name>/test/deferred-tests.md`, the carried-forward manual-test scenarios. Subcommands: `path`, `ensure`, `count`, `list`, `upsert` (idempotent by the `<originating-feature>/<originating-scenario>` composite key; preserves an existing `Merged as:`), `set-merged-as`, `remove`, `unresolved <ft> <results-path>` (Gate 1's read; prints one TSV row per deferred entry with no `pass`/`fail`/`skip` verdict in the feature-test entry's results — empty output means nothing blocks), `offer-defer <feature>` (read-only predicate; exit 0 when `defer` should be offered for that feature, exit 1 otherwise). |
+| `deferred-questions.sh` | (v1.9.0) Manage `implementation/deferred-questions.md` — blocking questions the auto-mode end-of-chain rules recorded instead of stopping. Subcommands: `init <feature>`, `add <feature> <question> <assumed>`, `answer <feature> <DQ-NNN> <answer> [--needs-finding]`, `list-open <feature>`, `list-needs-finding <feature>` (needs-finding true and no follow-up yet), `set-follow-up <feature> <DQ-NNN> <IR-NNN>`. Resume Step 6 turns each `list-needs-finding` row into an `inspector-review.md` finding via `review.sh add` and idempotently records the `IR-NNN` back with `set-follow-up`. |
 | `review.sh` | Manage `inspector-review.md` / `review-context.md`. Subcommands: `init`, `add`, `set-status`, `iterate`, `list-open`, `list-open-summaries`, `sync-refs`, `canonicalize`, `strip-freeform`, plus the manual-test seeding helpers (`find-by-seed-id`, `find-by-seed-id-family`, `upsert-manual-test-failure`). IDs are `IR-NNN`, monotonically incremented. |
 | `commits.sh` | Query `base-commit..HEAD`. Subcommands: `list`, `yaml`, `populate-requirements`, `changed-files`, `changed-files-only`, `change-summary-fresh`, `diagrams-fresh`, `feature-test-range <ft-feature>` (resolves and verifies the union commit range across the cycle's `IMPLEMENTED` features), `populate-feature-test <ft-feature>` (writes the union range's commits into the entry's `change-summary.md`, the `requirements.md`-shaped home used by stage 8's substitution, §7.3). |
 | `ingest.sh` | Convert non-text journal files to sibling `.md` (docling for documents, stub for images / short PDFs). |
@@ -1920,6 +1958,7 @@ refit for per-batch use in v1.5; rendered by the sub-agents at review-call time,
 | `bundle.sh` | Engine for `/mi-export-bundle`. Subcommand: `export`. |
 | `info-bar.sh` | Pull-only Claude Code `statusLine` renderer (not a hook). Reads stdin JSON, prints one line, exits 0; ≤ 100 ms hot-path target. |
 | `ledger.sh` | Manage `context-ledger.md`. Subcommands: `init`, `append`. Append failures warn but never block. |
+| `auto.sh` | (v1.9.0) Auto-mode helper — the one tested home for the on/off check, the auto-answer audit trail, the `/mi-auto` switch, stacked-branch creation, and the stage-6 approve guard. Subcommands: `is-on` (reads `progress.sh get-top auto-mode`; no cycle / missing / unreadable = off), `answer "<prompt>" "<answer>" [--cmd <cmd>]` (prints `auto: <prompt> → <answer>`; appends an `auto-answer` ledger row; a ledger failure only warns), `switch on\|off\|status` (`/mi-auto`'s backend; also sets `diagram-prompt` when a feature is active), `create-branch <slug> <config.md>` (refuses on a dirty tracked tree, excluding the data root, exit 3; else creates `feat/<slug>` or the next free `-2`, `-3`, … suffix, switches to it, and rewrites `config.md`'s `## GIT BRANCH` section), `approve-guard <feature>` (exit 0 only when every `inspector-review.md` finding is `scope: fix\|re-implement` and `status: fixed` and no deferred question is still open; else exit 1 and name the offending `IR-NNN`s and open `DQ-NNN`s). |
 | `pr-review.sh` | Drive `/mi-analyze-review`. Subcommands: `parse-url`, `new-session`, `fetch`, `canonicalize`, `count-marked`, `find-awaiting`, `list-actionable`, `normalize`, `set-status`, `post-reply`, `report-status`. |
 | `blueprint-review.sh` | Drive the three `/mi-blueprint-review*` commands (v1.2.0+; v1.5 refit; see §7.9). Subcommands: `resolve-reviewer` (v1.8.0; agent name → absolute path of its CLI wrapper, after checking the CLI works), `enumerate` (deterministic byte-offset computation from reviewer-supplied `{id, anchor_line, occurrence_index}`), `parse-findings` (extract `<!-- REVIEW-FINDING -->` blocks as JSON), `alloc-final-id` (lifetime-monotonic F-NNN allocator backed by `last-finding-id` frontmatter), `diff-drift` (heads-up diff against `summary.md` / `todo-list.md` after stage-2 review), `build-summary` (v1.5; deterministic ≤ 1500-token `review-history.md` summary for reviewer-session openers; truncation invariant protects every unresolved reportable severity — blocker/critical/high/medium — plus current-item-tied resolved findings, and drops oldest legacy low-severity unresolved first), `persist-findings` (v1.5; append new + flip earlier entries to resolved/dropped/deferred + recompute frontmatter counters), `size-stat` (v1.6.10; `<body-lines> <items> <bytes>` with frontmatter and REVIEW-FINDING blocks excluded, for the Phase A → G growth report), `ledger … meta` (v1.6.10; run-scoped key/value so the size baseline survives across fresh Bash subshells). |
 | `codex-review.sh` | (v1.8.0; see §7.9 "Reviewer transport") Headless codex transport for the reviewer sub-agents. `open --effort R` starts a read-only `codex exec` session; `reply --thread ID --effort R` resumes it; `check` verifies the CLI. Prompt on stdin; prints `{"threadId", "content"}`; exit 3 = session not found. |

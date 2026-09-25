@@ -88,6 +88,7 @@ EOF
     exit 2 ;;
   */implementation/review-context.md)    schema="review-context" ;;
   */implementation/change-summary.md)    schema="change-summary" ;;
+  */implementation/deferred-questions.md) schema="deferred-questions" ;;
   */implementation/diagrams/README.md)   schema="diagrams-readme-implementation" ;;
   */blueprints/history/v*/reason.md)     schema="reason" ;;
   */pr-reviews/*/report.md)              schema="pr-review-report" ;;

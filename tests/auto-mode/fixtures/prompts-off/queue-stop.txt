@@ -1,0 +1,1 @@
+7. **Stop.** Do NOT auto-fire Step 2B from here — the draft batch needs the inspector's explicit confirmation. The dispatcher routes the next `/mi-continue` to Step 2B (extended) automatically because top-level `status` is now `draft`.

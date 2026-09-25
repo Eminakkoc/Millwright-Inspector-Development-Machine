@@ -435,16 +435,46 @@ For an ordinary completion, the historical snapshot is then complete: `blueprint
 
 ### Step 6 — Finish the active feature
 
-(Skipped on Branch I — `progress.sh finish` already ran in the prior invocation that left active=null. Re-running it would error: require_active rejects null active.)
+(`progress.sh finish` is skipped on Branch I — it already ran in the prior invocation that left active=null. Re-running it would error: require_active rejects null active. Branch I instead recovers `finished_branch` / `finished_base` from the archived `primer.md` (or `implementation/review-context.md`) so the stacked-branch note below still runs.)
 
 Archive the active feature into `completed` and set `active` to null. Under the two-step activation model, `/mi-apply-impact` will activate the next feature from the queue when it's invoked next.
 
 ```bash
 if [[ "${branch_route:-III}" == "III" || "${branch_route:-}" == "0a" || "${branch_route:-}" == "II" ]]; then
+  finished_branch="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get branch)"
+  finished_base="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get base-commit)"
   $CLAUDE_PLUGIN_ROOT/scripts/progress.sh finish >/dev/null
+elif [[ "${branch_route:-}" == "I" ]]; then
+  # finish already ran, so active is gone — recover the pair from the archived
+  # primer (its `## Active scope` bullets), falling back to the archived
+  # review-context, so the stacked-branch note still fires after a resume.
+  v="$(latest_finalized_version "$active_feature")"
+  arch="$data_root/workflow-stream/$active_feature/blueprints/history/v${v}"
+  for src in "$arch/primer.md" "$arch/implementation/review-context.md"; do
+    [[ -f "$src" ]] || continue
+    finished_branch="$(sed -n 's/^- branch: *//p' "$src" | head -1)"
+    finished_base="$(sed -n 's/^- base-commit: *//p' "$src" | head -1)"
+    [[ -n "$finished_branch" && -n "$finished_base" ]] && break
+  done
 fi
 remaining="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh queue-remaining 2>/dev/null || echo '')"
+
+# Stacked-branch note (all modes): warn when this feature's branch was cut on
+# top of the previous feature's still-unmerged branch.
+prev="$("$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" get-top 'completed-branches[]' 2>/dev/null \
+        | grep -vxF -- "$finished_branch" | tail -1 || true)"
+if [[ -n "$prev" && -n "$finished_base" && "$finished_base" != "null" ]] \
+   && git show-ref --verify --quiet "refs/heads/$prev" \
+   && git merge-base --is-ancestor "$prev" "$finished_base" 2>/dev/null; then
+  trunk=""
+  for t in main master; do git show-ref --verify --quiet "refs/heads/$t" && { trunk="$t"; break; }; done
+  if [[ -z "$trunk" ]] || ! git merge-base --is-ancestor "$prev" "$trunk" 2>/dev/null; then
+    echo "stacked: $finished_branch is based on $prev (unmerged)"
+  fi
+fi
 ```
+
+Relay the line when it prints. Merge stacked branches in queue order, or merge the last branch to bring in the whole stack.
 
 **Atomic finalize affordance (Phase 5.5).** `progress.sh finish` accepts optional `--set field=value` pairs (mirroring `advance-to`) so future stage-8 logic that needs to write a top-level `progress.md` field at finalize time can bundle the write atomically:
 
@@ -453,7 +483,7 @@ remaining="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh queue-remaining 2>/dev/null
 $CLAUDE_PLUGIN_ROOT/scripts/progress.sh finish --set last-completion=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 ```
 
-The `--set` writes target top-level fields only; setting `active.*` is rejected because `active` is being cleared. Do NOT introduce `advance-to 7 -1` as a finalize mechanism — `advance-to` only permits the whitelisted `3→5 | 5→7 | 6→7` transitions; stage-7 finalization stays on `progress.sh finish`.
+The `--set` writes target top-level fields only and go through the same helper as `progress.sh set-top` (`scripts/internal/progress_top.py`): `active.*` is rejected because `active` is being cleared, and the protected fields `queue`, `completed`, `id` and `todo-list-id` are refused. Do NOT introduce `advance-to 7 -1` as a finalize mechanism — `advance-to` only permits the whitelisted `3→5 | 5→7 | 6→7` transitions; stage-7 finalization stays on `progress.sh finish`.
 
 ### Step 7 — Report and auto-continue
 
@@ -518,6 +548,8 @@ $CLAUDE_PLUGIN_ROOT/scripts/ledger.sh append \
 ```
 
 Then print the recommendation block to the inspector and **halt** — do NOT auto-fire `/mi-apply-impact`:
+
+**Auto mode.** If `$CLAUDE_PLUGIN_ROOT/scripts/auto.sh is-on` succeeds, print `auto: clear gate stage-8-to-2 — type /clear, then /mi-continue` instead of the recommendation below, and stop (the `decisions.md` write-check above has already run). Otherwise continue below unchanged.
 
 > "Workflow for `$active_feature` complete. Queue continues with `$next`.
 >

@@ -1,0 +1,11 @@
+Prompt: `"Plan available at workflow-stream/<feature>/test/manual-test-plan.md. Perform the manual test now? Reply y, y-autonomous, or n.
+
+  y             — guided run. I bring the whole local environment up for you (the plan's
+                  What-to-run commands from the worktree — services in the background, one-shot
+                  bootstrap in the foreground, verified up), then walk you through the plan one
+                  test case at a time: what it checks in one or two plain sentences, a concrete
+                  example, and exactly what to do. I wait for your `pass` / `fail <what you saw>` /
+                  `skip <why>` before moving to the next one, and I'll add anything you ask me to
+                  into test/manual-test-results.md as we go.
+
+  y-autonomous  — full hands-off run. The millwright brings the environment up itself, then

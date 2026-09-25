@@ -1,0 +1,6 @@
+> "All findings have been resolved (no open findings remain in `inspector-review.md`). Confirming will complete the inspector-review stage and auto-fire `/mi-complete-workflow`. Continue?
+>
+>   - `y` — finalize the inspector-review stage and proceed (continues to the diagram-refresh prompt and atomic finalize).
+>   - `n` — stop here. Re-launch `/mi-review` if more findings need to be addressed, or re-run `/mi-continue` when ready.
+>
+> (y/n)"

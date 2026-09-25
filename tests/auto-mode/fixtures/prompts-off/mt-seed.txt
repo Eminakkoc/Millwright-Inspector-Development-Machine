@@ -1,0 +1,3 @@
+Manual test complete: <passed>/<total> passed, <failed> failed, <skipped> skipped, <deferred> deferred.
+Auto-seed <failed> failures as findings in inspector-review.md?
+Reply `y`, `n`, or `y --classify` to set scope per scenario (default if you reply `y`: scope=fix, severity=major).

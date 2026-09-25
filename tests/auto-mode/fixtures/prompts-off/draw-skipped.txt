@@ -1,0 +1,3 @@
+  > "Stage-4 diagrams were skipped earlier this cycle. Generate them now? Reply:
+  >   - `y` — delegate to a fresh sub-agent now (~30s); covers the full `base-commit..HEAD` range and clears the skip marker so stage 8 archives the diagrams.
+  >   - `n` — keep the skip; stage-2 blueprint diagrams remain authoritative for this cycle."

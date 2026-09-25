@@ -1,5 +1,75 @@
 # Changelog
 
+## 1.9.0 — Auto mode
+
+One cycle-wide switch that lets the millwright answer most stage 1.5–8 prompts itself,
+while the gates that need a human keep stopping.
+
+- **Turning it on.** `/mi-run <folders> --auto` starts a cycle with auto mode on;
+  `/mi-auto on|off` flips it mid-cycle, and `/mi-auto` with no argument prints the
+  current state.
+- **State.** `progress.sh get-top <field>` / `set-top <field>=<value>` read and write
+  top-level `progress.md` fields (`auto-mode`, `completed-branches`) independently of
+  the active feature; existing `get` / `set` are unchanged.
+- **What it answers.** Each auto-answered prompt prints one
+  `auto: <prompt> → <answer>` line and appends an `auto-answer` ledger row, then
+  continues as if the inspector had replied. Covers the stage-1.5 queue-order
+  confirmation, blueprint and implementation diagram prompts, branch creation on zero
+  candidates, planning mode, execution mode, the blueprint-drift check, the manual-test
+  plan/run offers and per-scenario auto-seeding, and the no-open-findings completion
+  confirm.
+- **What always stops.** Todo-item selection, D1 blueprint approval, the
+  `mi-apply-impact` Step B.5 scope gate, the stage-3 launcher's never-auto-fire rule,
+  the stage-2 review gate, the brainstorming design Q&A, two-or-more branch candidates,
+  the stage-5 review stop, DTI Gate 1, and the three clear gates never auto-answer —
+  auto mode prints a short line and waits, same as today, just shorter.
+- **`/mi-implement`** ends the brainstorming design Q&A (typing it counts as design
+  approval) and hands off to a shared `templates/auto-mode-chain-rules.md`: defer
+  blocking questions instead of stopping, stay on the current branch, and — at chain
+  end — walk any open points or deferred questions one at a time before finishing.
+  Works whether auto mode is on or off.
+- **Deferred questions.** `scripts/deferred-questions.sh` and
+  `implementation/deferred-questions.md` record a question and the assumption taken
+  instead of stopping the chain; answered entries marked `needs-finding` become
+  `major` findings at Resume Step 6, while entries still left open are listed at the
+  stage-5 review stop and block auto-completion (the no-findings path and the stage-6
+  approve guard).
+- **Stacked feature branches.** Zero-candidate branch creation now builds `feat/<slug>`
+  (or `-2`, `-3`, …) straight from HEAD; at stage 8, a `stacked: <branch> is based on
+  <previous> (unmerged)` note prints when the previous `completed-branches` entry is an
+  ancestor and still unmerged — merge in queue order, or merge the last branch to take
+  the whole stack. The `## GIT BRANCH` pre-fill from HEAD is now skipped for a
+  `completed-branches` head, so the next feature gets its own branch instead of
+  reusing the last one — this fix applies in every mode.
+- **Stage-5 review stop.** Fires once per feature — at the manual-test hand-off, or at
+  the Inspector Handler's entry when no test run reached it — and always halts with
+  `auto: review stop for <feature> — check commits <base>..HEAD, diagrams and test
+  results; add findings to inspector-review.md or leave it empty, then /mi-continue
+  (No findings → it approves and completes.)`, listing any
+  open deferred questions.
+- **Guarded auto-approve.** `/mi-review` runs in `direct` mode under auto mode; the
+  approve prompt only auto-answers when `auto.sh approve-guard` confirms every finding
+  is `fix`/`re-implement` and `fixed` and no deferred question is still open — otherwise
+  it prints which findings and questions need a human look and falls back to the normal prompt.
+- **Clear-gate pauses.** The three `/clear` gates (`stage-2-to-3`, `stage-5-to-6`,
+  `stage-8-to-2`) still stop and hand over in auto mode, just with a one-line
+  `auto: clear gate <gate> — type /clear, then /mi-continue`.
+- **Audit trail never drops silently.** When `ledger.sh` skips an append (exit 0 on
+  its "still missing after init" path), `auto.sh` now prints
+  `mi: warning: could not append ledger row …` instead of losing the row unseen.
+- **Stacked note survives a resume.** A stage-8 run resumed through Branch I recovers
+  the finished branch and base from the archived `primer.md` (or `review-context.md`),
+  so the `stacked:` note still prints after an interruption.
+- **Validation.** `implementation/deferred-questions.md` is now schema-checked by the
+  validate-on-write hook, like every other workflow artifact.
+- **One top-level writer.** `progress.sh set-top` and `finish --set` share
+  `scripts/internal/progress_top.py`; `finish --set` therefore now refuses the
+  protected fields `queue`, `completed`, `id` and `todo-list-id` as well as `active.*`.
+- **Tests.** New `tests/auto-mode/run.sh` — behaviour, off-mode byte-for-byte
+  fixtures, on-mode auto-paragraph placement, chain-rules single-sourcing, and a
+  never-auto audit that greps `commands/` and `docs/` for manual-only language and
+  diffs it against an expected list.
+
 ## 1.8.1 — Blueprint review Phase C runs without stalling
 
 Two faults in the stage-2 auto-review, found on the first run after 1.8.0.

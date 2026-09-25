@@ -1,0 +1,7 @@
+> "Stage-4 drift check: did anything in the requirements change during brainstorming? Reply:
+>
+>   - `<short reason>` — I'll run `/mi-update-blueprint --reason-kind=spec-update <reason>` to rotate `blueprints/current/` into history and regenerate `requirements.md` / `config.md` / `diagrams/` from the **implementation** (codebase + `base-commit..HEAD` diff) plus the just-rotated history version. The previous blueprint's `todo-item-ids`, `## Planned`, `## Non-goals`, `## GIT BRANCH`, and `## Inspector Additions` are preserved verbatim. The active quest cycle's `todo-list.md` and `summary.md` (under `quest/<slug>/`) and `journal/` are NOT consulted.
+>   - `auto` — I'll analyze `blueprints/current/requirements.md` against the implementation (`base-commit..HEAD` diff + current code) to detect drift myself. If I find meaningful divergence (added requirements, dropped scope, shifted boundaries), I'll generate a one-line reason summary and run `/mi-update-blueprint --reason-kind=spec-update <auto-detected reason>`. If I don't find drift, I'll skip the rotation and mark drift-check complete.
+>   - `continue` — proceed without updating the blueprint. Any drift will surface as findings during inspector review.
+>
+> Skipping is fine — the review loop catches drift via `re-spec` / `re-plan` findings if needed."
