@@ -575,6 +575,22 @@ PYEOF
 )"
 [[ "$check" == "yes" ]] && ok "$t" || ng "$t" "check=$check"
 
+# ---- Task 12: never-auto audit --------------------------------------------------------
+t="never-auto rules match the audited list"
+cur="$(cd "$REPO_ROOT" && grep -rniE 'never auto|do not auto|Do NOT auto-fire|Wait for the' commands docs \
+       | grep -v '^docs/superpowers/' | sed -E 's/:[0-9]+:/:/' | sort)"
+if [[ "$cur" == "$(cat "$FIX/never-auto-expected.txt")" ]]; then ok "$t"; else
+  ng "$t" "diff: $(diff <(printf '%s\n' "$cur") "$FIX/never-auto-expected.txt" | head -5)"
+fi
+
+assert_contains "plugin.json is 1.9.0" .claude-plugin/plugin.json '"version": "1.9.0"'
+t="CHANGELOG top heading is 1.9.0"
+top="$(grep -m1 '^## ' "$REPO_ROOT/CHANGELOG.md")"
+[[ "$top" == "## 1.9.0 — Auto mode" ]] && ok "$t" || ng "$t" "top=$top"
+assert_contains "README has an Auto mode section" README.md '## Auto mode'
+assert_contains "project doc lists /mi-auto" docs/millwright-inspector-project.md '/mi-auto'
+assert_contains "project doc lists /mi-implement" docs/millwright-inspector-project.md '/mi-implement'
+
 # ---- end of tests --------------------------------------------------------------
 echo
 echo "auto-mode: $pass passed, $fail failed"

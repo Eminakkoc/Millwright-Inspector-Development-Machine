@@ -175,13 +175,18 @@ progress_block = read_frontmatter_block(progress_path)
 if progress_block is None:
     print(render_unreadable(slug)); sys.exit(0)
 
+# Auto-mode badge (v1.9.0). Same top-level field `auto.sh is-on` reads via
+# `progress.sh get-top auto-mode` — read directly here (progress_block is
+# already parsed) rather than shelling out, to stay inside the hot-path budget.
+auto_badge = " AUTO" if yaml_top_level(progress_block, "auto-mode") == "true" else ""
+
 active_top = yaml_top_level(progress_block, "active")
 nested_feature = yaml_nested(progress_block, "active", "feature")
 nested_stage = yaml_nested(progress_block, "active", "current-stage")
 
 # active=null cases: literal null/~, or no nested block at all.
 if (active_top in ("null", "~")) or (active_top == "" and nested_feature is None and nested_stage is None):
-    print(render_cycle(slug)); sys.exit(0)
+    print(render_cycle(slug) + auto_badge); sys.exit(0)
 
 # Block exists but is missing required fields → corrupt.
 if not nested_feature or nested_stage is None:
@@ -196,5 +201,5 @@ todo_block = read_frontmatter_block(os.path.join(data_root, "quest", slug, "todo
 ft_name = yaml_top_level(todo_block, "feature-test") if todo_block else None
 sub_flow = yaml_nested(progress_block, "active", "sub-flow")
 mt_state = yaml_nested(progress_block, "active", "manual-test-state")
-print(render_active(nested_feature, stage, ft_name, sub_flow, mt_state))
+print(render_active(nested_feature, stage, ft_name, sub_flow, mt_state) + auto_badge)
 '
