@@ -29,7 +29,7 @@ backed by one shared helper script** (`scripts/auto.sh`). The prompt text itself
 edited: each branch is a paragraph inserted immediately *before* the prompt it answers, in
 this fixed shape:
 
-> **Auto mode.** If `auto.sh on?` → run `auto.sh answer "<prompt>" "<answer>" --cmd <cmd>`
+> **Auto mode.** If `auto.sh is-on` → run `auto.sh answer "<prompt>" "<answer>" --cmd <cmd>`
 > and continue as if the inspector had replied `<answer>`. Otherwise show the prompt below
 > unchanged.
 
@@ -67,7 +67,7 @@ Existing `get` / `set` stay byte-identical.
 
 | Subcommand | Behaviour | Exit |
 |---|---|---|
-| `on?` | Reads `get-top auto-mode`. No cycle / missing / false → off. | 0 on, 1 off |
+| `is-on` | Reads `get-top auto-mode`. No cycle / missing / false → off. | 0 on, 1 off |
 | `answer "<prompt>" "<answer>" [--cmd <cmd>]` | Prints `auto: <prompt> → <answer>`; appends `ledger.sh append "<stage\|->" "<cmd\|->" "auto-answer" small main "<prompt> → <answer>"`. Stage is `active.current-stage`, `-` when `active` is null. A ledger failure only warns. | 0 |
 | `switch on\|off` | `set-top auto-mode=true\|false`; ledger row `"<stage\|->" "/mi-auto" "auto-mode-switch" small main "auto-mode → on\|off"`; if a feature is active, `progress.sh set diagram-prompt=auto\|prompt`. Refuses without an active quest cycle. | 0 / 1 |
 | `create-branch <slug> <config.md>` | `git status --porcelain --untracked-files=no -- . ":(exclude)<data-root>"` must be empty, else prints `auto: uncommitted changes — commit or stash, then /mi-continue` and exits 3. Picks `feat/<slug>`, then `feat/<slug>-2`, `-3`, … while the local branch exists. `git switch -c <name>` from current HEAD. Rewrites `## GIT BRANCH` in `config.md` to the single bare line (HTML comment kept). Prints `auto: created branch <name> from <base>` and a ledger row. | 0 / 3 / 1 |
@@ -88,7 +88,7 @@ Existing `get` / `set` stay byte-identical.
   write the plan without an inspector review; run implementation with sub-agents; follow
   `templates/auto-mode-chain-rules.md` (read the file — never inlined). Works whether auto
   mode is on or off. The step list is numbered correctly (fixes the "3 steps" wording).
-- **Optional:** an `AUTO` badge in the status-line script when `auto.sh on?` succeeds.
+- **Optional:** an `AUTO` badge in the status-line script when `auto.sh is-on` succeeds.
 
 ### 2.5 Shared end-of-chain rules (`templates/auto-mode-chain-rules.md`, new)
 
@@ -205,7 +205,7 @@ feature's own stacked branch.
 
 ## 5. Error handling
 
-- `auto.sh on?` treats every read failure as off — an unreadable state never auto-answers.
+- `auto.sh is-on` treats every read failure as off — an unreadable state never auto-answers.
 - `auto.sh answer` never blocks the workflow on a ledger failure (warning only).
 - `create-branch` never reuses an existing branch; exit 3 on a dirty tracked tree is a
   normal stop, not an error.
