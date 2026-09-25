@@ -30,8 +30,9 @@ while the gates that need a human keep stopping.
   Works whether auto mode is on or off.
 - **Deferred questions.** `scripts/deferred-questions.sh` and
   `implementation/deferred-questions.md` record a question and the assumption taken
-  instead of stopping the chain; unresolved ones become `major` findings at Resume
-  Step 6 and still count as open issues at the stage-5 review stop.
+  instead of stopping the chain; answered entries marked `needs-finding` become
+  `major` findings at Resume Step 6, while entries still left open are listed at the
+  stage-5 review stop and block the no-findings auto-complete.
 - **Stacked feature branches.** Zero-candidate branch creation now builds `feat/<slug>`
   (or `-2`, `-3`, …) straight from HEAD; at stage 8, a `stacked: <branch> is based on
   <previous> (unmerged)` note prints when the previous `completed-branches` entry is an

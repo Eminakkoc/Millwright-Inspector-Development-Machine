@@ -108,6 +108,8 @@ case "$cmd" in
   create-branch)
     slug="${1:?slug required}"; config="${2:?config.md path required}"
     [[ -f "$config" ]] || mi_die "create-branch: config not found: $config"
+    grep -qE '^## GIT BRANCH[[:space:]]*$' "$config" \
+      || mi_die "create-branch: no '## GIT BRANCH' heading in config.md"
     top="$(git rev-parse --show-toplevel)"
     # Exclude the data root when it lives inside the work tree: stage 2 has
     # just written blueprints/current/* there, and those must not count.

@@ -87,7 +87,7 @@ data_root="$($CLAUDE_PLUGIN_ROOT/scripts/data-root.sh)"
 
 - **Zero candidates** — the section is empty. Prompt the inspector in chat with both paths:
 
-  **Auto mode.** If `$CLAUDE_PLUGIN_ROOT/scripts/auto.sh is-on` succeeds, do not show the prompt below. Instead run `"$CLAUDE_PLUGIN_ROOT/scripts/auto.sh" create-branch "$active_feature" "$config_file"` and relay its output line. On exit 3 (uncommitted changes) relay the line and stop — the inspector commits or stashes, then types `/mi-continue`. On exit 0 the new branch is checked out and written to `config.md`; continue to validation below. Otherwise show the prompt below unchanged.
+  **Auto mode.** If `$CLAUDE_PLUGIN_ROOT/scripts/auto.sh is-on` succeeds, do not show the prompt below. Instead run `"$CLAUDE_PLUGIN_ROOT/scripts/auto.sh" create-branch "$active_feature" "$config_file"` and relay its output line. On exit 3 (uncommitted changes) relay the line and stop — the inspector commits or stashes, then types `/mi-continue`. On any other non-zero exit, relay the error and stop. On exit 0 the new branch is checked out and written to `config.md`; continue to validation below. Otherwise show the prompt below unchanged.
 
   > "`config.md`'s `## GIT BRANCH` section is empty. I can't advance to brainstorming without the feature branch. Two options:
   >

@@ -592,7 +592,7 @@ PYEOF
 
    > `<ft_name>` is pinned last — it exercises the assembled result of every ordinary feature in this cycle, so it cannot run before them. This is a structural constraint, not a priority judgement; an order placing it earlier is refused at stage 1.5.
 
-7. **Stop.** Do NOT auto-fire Step 2B from here — unless auto mode is on (`auto.sh is-on`), in which case record `auto.sh answer "queue order" "accept"` and continue straight into Step 2B (the draft batch is then confirmed by auto mode). Otherwise the draft batch needs the inspector's explicit confirmation. The dispatcher routes the next `/mi-continue` to Step 2B (extended) automatically because top-level `status` is now `draft`.
+7. **Stop.** Do NOT auto-fire Step 2B from here — unless auto mode is on (`auto.sh is-on`), in which case continue straight into Step 2B without re-prompting (item 5 above already recorded `auto.sh answer "queue order" "accept"`). Otherwise the draft batch needs the inspector's explicit confirmation. The dispatcher routes the next `/mi-continue` to Step 2B (extended) automatically because top-level `status` is now `draft`.
 
    For the **initial cycle** (queue was already seeded by `/mi-run`, no prior batches exist): skip the file write here and let Step 2B's case (a) write the file from scratch when the inspector confirms. (This preserves the current behavior for fresh cycles.)
 
@@ -1408,7 +1408,11 @@ Runs only when auto mode is on. Guarantees the stage-5 human review stop fires e
 if "$CLAUDE_PLUGIN_ROOT/scripts/auto.sh" is-on \
    && [[ "$("$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" get review-stop-shown 2>/dev/null)" != "true" ]]; then
   "$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" set review-stop-shown=true
-  "$CLAUDE_PLUGIN_ROOT/scripts/deferred-questions.sh" list-open "$active_feature"
+  open_dq="$("$CLAUDE_PLUGIN_ROOT/scripts/deferred-questions.sh" list-open "$active_feature")"
+  if [[ -n "$open_dq" ]]; then
+    echo "Open deferred questions:"
+    printf '%s\n' "$open_dq"
+  fi
   base_short="$(git rev-parse --short "$("$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" get base-commit)")"
   echo "auto: review stop — check commits <base>..HEAD, diagrams and test results; add findings to inspector-review.md or leave it empty, then /mi-continue" \
     | sed "s/<base>/$base_short/"
@@ -1629,7 +1633,7 @@ remaining_open="$($CLAUDE_PLUGIN_ROOT/scripts/review.sh list-open "$active_featu
 
 If `remaining_open` is empty, **prompt the inspector to confirm before completing the stage**. This guard mirrors Inspector Step 3a: once finalize fires, `/mi-complete-workflow` archives blueprints and advances the queue, so the inspector gets one explicit beat to re-launch the review session or add new findings instead.
 
-**Auto mode.** If `$CLAUDE_PLUGIN_ROOT/scripts/auto.sh is-on` succeeds, run `$CLAUDE_PLUGIN_ROOT/scripts/auto.sh answer "all findings resolved, complete" "y" --cmd /mi-continue` and continue as if the inspector had replied `y` — do not show the prompt below. Otherwise show the prompt below unchanged. (This confirm is only reached after a passing `auto.sh approve-guard` in auto mode, so answering `y` here is safe.)
+**Auto mode.** If `$CLAUDE_PLUGIN_ROOT/scripts/auto.sh is-on` succeeds, run `"$CLAUDE_PLUGIN_ROOT/scripts/auto.sh" approve-guard "$active_feature"`. If it exits 0, run `$CLAUDE_PLUGIN_ROOT/scripts/auto.sh answer "all findings resolved, complete" "y" --cmd /mi-continue` and continue as if the inspector had replied `y` — do not show the prompt below. If it exits 1, print its line and show the prompt below unchanged. Otherwise (auto mode off) show the prompt below unchanged.
 
 > "All findings have been resolved (no open findings remain in `inspector-review.md`). Confirming will complete the inspector-review stage and auto-fire `/mi-complete-workflow`. Continue?
 >

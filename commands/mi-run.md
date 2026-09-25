@@ -60,7 +60,7 @@ Tokenize `$ARGUMENTS`. Pull `--archive-active` out as a flag if present; every o
 
 ```
 error: no journal folders specified. Usage:
-  /mi-run <folder1> [<folder2> ...] [--archive-active]
+  /mi-run <folder1> [<folder2> ...] [--archive-active] [--auto]
 ```
 
 `--auto` — create the cycle with auto mode on. A bare `auto` token is also read as the flag, **only** when `journal/auto/` does not exist; if it exists, `auto` stays a journal folder name. Neither form counts as a journal folder.

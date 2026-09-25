@@ -147,12 +147,12 @@ Rules:
 | 12 | `mi-manual-test-plan` run offer | execution mode | Answer `y-autonomous` |
 | 13 | `mi-manual-test-run` auto-seed | seed failures? | Answer `y` (failed scenarios only) |
 | 14 | `mi-manual-test-run` guided re-run offer | re-run guided? | Answer `n` |
-| 15 | `mi-manual-test-run` per-IR actions | action | default action |
+| 15 | `mi-manual-test-run` per-IR actions | action | Answer `a` (reopen the closed IR / seed into the regression family — keeps the failure open) |
 | 16 | `mi-manual-test-run` 4.8 hand-off | — | Stop with the review-stop line (§4.1) |
 | 17 | `mi-continue` Inspector Step 3a | no findings, confirm? | Answer `y` when no open findings and no open DQ entries; DTI Gate 1 still runs |
 | 18 | `mi-review` Step 2.6 | review mode | Answer `direct`; the switch-to-brainstorming question becomes a warning line |
 | 19 | `mi-review` Step 3a.2.7 / Step 3b approve / Step 4 | approve? | `approve-guard` pass → answer `approve`, run `/mi-continue`; fail → print the guard line, then the unchanged prompt |
-| 20 | `mi-continue` Review-Resume Step 1 | all resolved, confirm? | Answer `y` (only reached after a passing guard) |
+| 20 | `mi-continue` Review-Resume Step 1 | all resolved, confirm? | Answer `y` only when `approve-guard` passes; otherwise print its line and show the prompt |
 | 21 | `mi-continue` Inspector Step 3b | "Do not auto-fire `/mi-complete-workflow`" | gains "unless auto mode is on and the approve guard passes" |
 
 Before editing, re-grep `commands/` and `docs/` for `never auto`, `do not auto`,

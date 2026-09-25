@@ -15,6 +15,7 @@ Toggles the cycle-wide `auto-mode` flag stored at the top level of the active cy
 2. Run:
 
    ```bash
+   mode="$ARGUMENTS"
    "$CLAUDE_PLUGIN_ROOT/scripts/auto.sh" switch "${mode:-status}"
    ```
 

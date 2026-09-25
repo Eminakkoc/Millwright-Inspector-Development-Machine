@@ -525,7 +525,7 @@ Dispatch on three shapes:
 - **Family empty** (no base, no regressions): default helper call — `review.sh upsert-manual-test-failure ... <severity> <scope>`. Inserts a new base IR with chosen severity/scope.
 - **Base missing but family non-empty** (orphan regressions from a prior cycle whose review session deleted the base): run the orphan-regression default-interactive prompt:
 
-  **Auto mode.** If `$CLAUDE_PLUGIN_ROOT/scripts/auto.sh is-on` succeeds, take the prompt's default action, record it with `$CLAUDE_PLUGIN_ROOT/scripts/auto.sh answer "seed <IR-NNN>" "<default action>" --cmd /mi-manual-test-run`, and do not show the prompt below. Otherwise show the prompt below unchanged.
+  **Auto mode.** If `$CLAUDE_PLUGIN_ROOT/scripts/auto.sh is-on` succeeds, pick `a` — seed into the existing regression family, which keeps the failure as an open finding — record it with `$CLAUDE_PLUGIN_ROOT/scripts/auto.sh answer "seed <scenario id>" "a" --cmd /mi-manual-test-run`, and do not show the prompt below. Otherwise show the prompt below unchanged.
 
   ```
   scenario <id>: base IR missing but regression family exists; latest family IR is <IR-NNN> (status=<status>)
@@ -544,7 +544,7 @@ Dispatch on three shapes:
 - **Base present, status=open:** default helper call. Helper's open-update path replaces details and preserves prior severity/scope unless `y --classify` reclassified them (in which case the runner passes `--reclassify`).
 - **Base present, status ∈ {fixed, wontfix}:** default helper call. Helper emits the closed-IR warning; runner surfaces the per-IR prompt:
 
-  **Auto mode.** If `$CLAUDE_PLUGIN_ROOT/scripts/auto.sh is-on` succeeds, take the prompt's default action, record it with `$CLAUDE_PLUGIN_ROOT/scripts/auto.sh answer "seed <IR-NNN>" "<default action>" --cmd /mi-manual-test-run`, and do not show the prompt below. Otherwise show the prompt below unchanged.
+  **Auto mode.** If `$CLAUDE_PLUGIN_ROOT/scripts/auto.sh is-on` succeeds, pick `a` — reopen the IR with the new observation, which keeps the failure as an open finding — record it with `$CLAUDE_PLUGIN_ROOT/scripts/auto.sh answer "seed <IR-NNN>" "a" --cmd /mi-manual-test-run`, and do not show the prompt below. Otherwise show the prompt below unchanged.
 
   ```
   IR-<NNN> is fixed/wontfix; the manual test failed it again. Pick:

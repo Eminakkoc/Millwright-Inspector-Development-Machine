@@ -407,7 +407,7 @@ assert_auto_before queue-order commands/mi-continue.md '"queue order" "accept"'
 assert_prompt_kept draw-skipped commands/mi-draw-diagrams.md
 assert_auto_before draw-skipped commands/mi-draw-diagrams.md '"generate skipped diagrams" "y"'
 assert_contains "item 7 Stop gains the auto-mode exception" commands/mi-continue.md \
-  'Do NOT auto-fire Step 2B from here — unless auto mode is on (`auto.sh is-on`), in which case record `auto.sh answer "queue order" "accept"` and continue straight into Step 2B'
+  'Do NOT auto-fire Step 2B from here — unless auto mode is on (`auto.sh is-on`), in which case continue straight into Step 2B without re-prompting (item 5 above already recorded'
 assert_contains "mi-run parses --auto" commands/mi-run.md '--auto'
 assert_contains "mi-run passes --auto to progress.sh init" commands/mi-run.md 'progress.sh" init --auto'
 assert_contains "mi-apply-impact logs the blueprint-diagrams auto answer" commands/mi-apply-impact.md \
@@ -489,9 +489,9 @@ assert_auto_before mt-run-offer commands/mi-manual-test-plan.md '"run manual tes
 assert_prompt_kept mt-seed commands/mi-manual-test-run.md
 assert_auto_before mt-seed commands/mi-manual-test-run.md '"auto-seed failures" "y"'
 assert_prompt_kept mt-closed-ir commands/mi-manual-test-run.md
-assert_auto_before mt-closed-ir commands/mi-manual-test-run.md 'default'
+assert_auto_before mt-closed-ir commands/mi-manual-test-run.md '"seed <IR-NNN>" "a"' 'reopen the IR'
 assert_prompt_kept mt-orphan commands/mi-manual-test-run.md
-assert_auto_before mt-orphan commands/mi-manual-test-run.md 'default'
+assert_auto_before mt-orphan commands/mi-manual-test-run.md '"seed <scenario id>" "a"' 'seed into the existing regression family'
 assert_prompt_kept mt-guided-rerun commands/mi-manual-test-run.md
 assert_auto_before mt-guided-rerun commands/mi-manual-test-run.md '"guided re-run" "n"'
 assert_prompt_kept mt-handoff commands/mi-manual-test-run.md
@@ -590,6 +590,87 @@ top="$(grep -m1 '^## ' "$REPO_ROOT/CHANGELOG.md")"
 assert_contains "README has an Auto mode section" README.md '## Auto mode'
 assert_contains "project doc lists /mi-auto" docs/millwright-inspector-project.md '/mi-auto'
 assert_contains "project doc lists /mi-implement" docs/millwright-inspector-project.md '/mi-implement'
+
+# ---- Final fixes ---------------------------------------------------------------
+
+# Item 1: Review-Resume Step 1 only auto-answers "y" after a passing approve-guard.
+assert_auto_before rr-confirm $MC 'auto.sh" approve-guard'
+
+# Item 2: create-branch verifies the '## GIT BRANCH' heading BEFORE switching branches.
+t="create-branch exits 1 (not 3) when config.md has no GIT BRANCH heading; HEAD and branches unchanged"
+sb="$(make_sandbox --auto)"
+cfg="$sb/millwright-inspector/workflow-stream/alpha/blueprints/current/config.md"
+mkdir -p "$(dirname "$cfg")"
+cat > "$cfg" <<'EOF'
+# Config
+
+## Lessons learned
+- path: (none yet)
+EOF
+before_branches="$(cd "$sb" && git branch --format='%(refname:short)' | sort)"
+out="$(run_in "$sb" "$A" create-branch alpha "$cfg" 2>&1)"; rc=$?
+head_now="$(cd "$sb" && git rev-parse --abbrev-ref HEAD)"
+after_branches="$(cd "$sb" && git branch --format='%(refname:short)' | sort)"
+if [[ $rc -eq 1 && "$head_now" == "main" && "$before_branches" == "$after_branches" \
+      && "$out" == *"GIT BRANCH"* ]]; then
+  ok "$t"
+else
+  ng "$t" "rc=$rc head=$head_now before=[$before_branches] after=[$after_branches] out=$out"
+fi
+
+assert_contains "mi-plan-implementation relays non-3 create-branch exits and stops" commands/mi-plan-implementation.md \
+  'On any other non-zero exit, relay the error and stop.'
+
+# Item 3: /mi-auto's fence no longer reads an unassigned $mode.
+assert_contains "mi-auto.md assigns mode inside the fence" commands/mi-auto.md 'mode="$ARGUMENTS"'
+
+# Item 4: orphan-family / closed-IR auto answers name the concrete reopen/seed option
+# (needles updated above at the mt-closed-ir / mt-orphan assert_auto_before calls).
+
+# Item 6: CHANGELOG/README no longer claim every unresolved deferred question becomes a finding.
+assert_contains "CHANGELOG deferred-questions wording: needs-finding conversion" CHANGELOG.md \
+  'answered entries marked `needs-finding` become'
+assert_contains "README deferred-questions wording: needs-finding conversion" README.md \
+  'Answered entries marked `needs-finding` become findings automatically'
+
+# Item 7: Inspector Step 0.5 prints an 'Open deferred questions:' header only when rows exist.
+t="Step 0.5 prints 'Open deferred questions:' header only when open DQ rows exist"
+snippet="$(python3 - "$REPO_ROOT/$MC" <<'PYEOF'
+import re, sys
+s = open(sys.argv[1]).read()
+m = re.search(r'```bash\n(if "\$CLAUDE_PLUGIN_ROOT/scripts/auto\.sh" is-on.*?)```', s, re.S)
+print(m.group(1) if m else '')
+PYEOF
+)"
+if [[ -z "$snippet" ]]; then
+  ng "$t" "Inspector Step 0.5 snippet not found"
+else
+  sb1="$(make_sandbox --auto)"; run_in "$sb1" "$P" activate >/dev/null 2>&1
+  out_no_dq="$(run_in "$sb1" env CLAUDE_PLUGIN_ROOT="$REPO_ROOT" active_feature=alpha bash -c "$snippet" 2>&1)"
+
+  sb2="$(make_sandbox --auto)"; run_in "$sb2" "$P" activate >/dev/null 2>&1
+  run_in "$sb2" "$DQ" add alpha "TTL?" "60s" >/dev/null 2>&1
+  out_with_dq="$(run_in "$sb2" env CLAUDE_PLUGIN_ROOT="$REPO_ROOT" active_feature=alpha bash -c "$snippet" 2>&1)"
+
+  if [[ "$out_no_dq" != *"Open deferred questions:"* \
+        && "$out_with_dq" == *"Open deferred questions:"* \
+        && "$out_with_dq" == *"TTL?"* ]]; then
+    ok "$t"
+  else
+    ng "$t" "no_dq=[$out_no_dq] with_dq=[$out_with_dq]"
+  fi
+fi
+
+# Item 8: mi-run's usage/error string mentions --auto.
+assert_contains "mi-run usage/error string lists --auto" commands/mi-run.md \
+  '/mi-run <folder1> [<folder2> ...] [--archive-active] [--auto]'
+
+# Item 9: spec §3 rows 15 and 20 carry the concrete auto behaviour, not a placeholder.
+SPEC=docs/superpowers/specs/2026-09-25-auto-mode-design.md
+assert_contains "spec row 15 names the concrete reopen/seed answer" $SPEC \
+  'Answer `a` (reopen the closed IR / seed into the regression family — keeps the failure open)'
+assert_contains "spec row 20 requires a passing approve-guard" $SPEC \
+  'Answer `y` only when `approve-guard` passes; otherwise print its line and show the prompt'
 
 # ---- end of tests --------------------------------------------------------------
 echo
