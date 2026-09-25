@@ -415,6 +415,35 @@ assert_contains "mi-apply-impact logs the blueprint-diagrams auto answer" comman
 assert_contains "Step B skips pre-fill for completed branches" docs/blueprint-regeneration.md \
   "completed-branches[]"
 
+# ---- Task 7: stage 3 -----------------------------------------------------------
+assert_prompt_kept branch-empty commands/mi-plan-implementation.md
+assert_auto_before branch-empty commands/mi-plan-implementation.md 'auto.sh" create-branch' 'exit 3'
+assert_prompt_kept planning-mode commands/mi-plan-implementation.md
+assert_auto_before planning-mode commands/mi-plan-implementation.md '"planning mode" "brainstorming"'
+assert_prompt_kept primer-4a commands/mi-plan-implementation.md
+
+RULES=templates/auto-mode-chain-rules.md
+for needle in 'deferred-questions.sh" add' 'Do not create a git worktree' \
+  'one item per reply' 'auto: open point <X> unresolved — answer, then /mi-continue' \
+  'option 3' 'progress.sh" set chain-finished=true' '/mi-continue'; do
+  assert_contains "chain rules mention: $needle" "$RULES" "$needle"
+done
+
+t="chain rules are referenced, never inlined, by /mi-implement and the 4a primer"
+ref='$CLAUDE_PLUGIN_ROOT/templates/auto-mode-chain-rules.md'
+marker='one item per reply'
+if grep -qF "$ref" "$REPO_ROOT/commands/mi-implement.md" \
+   && grep -qF "$ref" "$REPO_ROOT/commands/mi-plan-implementation.md" \
+   && ! grep -qF "$marker" "$REPO_ROOT/commands/mi-implement.md" \
+   && ! grep -qF "$marker" "$REPO_ROOT/commands/mi-plan-implementation.md"; then
+  ok "$t"
+else
+  ng "$t" "reference missing or rules text inlined"
+fi
+
+assert_contains "/mi-implement counts as design approval" commands/mi-implement.md 'counts as design approval'
+assert_contains "/mi-implement: plan without inspector review" commands/mi-implement.md 'without waiting for an inspector review'
+
 # ---- end of tests --------------------------------------------------------------
 echo
 echo "auto-mode: $pass passed, $fail failed"

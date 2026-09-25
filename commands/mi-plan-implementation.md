@@ -87,6 +87,8 @@ data_root="$($CLAUDE_PLUGIN_ROOT/scripts/data-root.sh)"
 
 - **Zero candidates** — the section is empty. Prompt the inspector in chat with both paths:
 
+  **Auto mode.** If `$CLAUDE_PLUGIN_ROOT/scripts/auto.sh is-on` succeeds, do not show the prompt below. Instead run `"$CLAUDE_PLUGIN_ROOT/scripts/auto.sh" create-branch "$active_feature" "$config_file"` and relay its output line. On exit 3 (uncommitted changes) relay the line and stop — the inspector commits or stashes, then types `/mi-continue`. On exit 0 the new branch is checked out and written to `config.md`; continue to validation below. Otherwise show the prompt below unchanged.
+
   > "`config.md`'s `## GIT BRANCH` section is empty. I can't advance to brainstorming without the feature branch. Two options:
   >
   >   1. Tell me the branch here (e.g. `feat/pricing/webhook`) and I'll fill `config.md` for you.
@@ -262,6 +264,8 @@ The `## On-demand canonical files` section is template-emitted and does not need
 
 Prompt the inspector:
 
+**Auto mode.** If `$CLAUDE_PLUGIN_ROOT/scripts/auto.sh is-on` succeeds, run `$CLAUDE_PLUGIN_ROOT/scripts/auto.sh answer "planning mode" "brainstorming" --cmd /mi-plan-implementation` and continue as if the inspector had replied `brainstorming` — do not show the prompt below. Otherwise show the prompt below unchanged.
+
 > "Stage 3 — pick a planning mode for `$active_feature`:
 >
 >   - **`brainstorming`** (default) — invokes the brainstorming → writing-plans → executing-plans / subagent-driven-development chain in an isolated session. Best for non-trivial features where the design isn't obvious from the requirements, or where you want the chain's design-question / spec-approval / plan-approval gates.
@@ -302,6 +306,12 @@ I'm working on the "<$active_feature>" feature. Use these documents as primary c
 The IMPLEMENTING items listed in primer.md `## Active scope` are the committed scope for this run. Sibling features in PENDING/TODO are out of scope.
 
 Proceed with your normal brainstorming flow: clarifying questions → design sections → spec doc → writing-plans → execution. Do NOT worry about the mi-workflow — I'll resume it automatically after your chain finishes.
+```
+
+**Auto mode.** If `$CLAUDE_PLUGIN_ROOT/scripts/auto.sh is-on` succeeds, append this paragraph to the primer above before invoking the Skill (substitute the resolved plugin root):
+
+```
+**End-of-chain rules.** Read `$CLAUDE_PLUGIN_ROOT/templates/auto-mode-chain-rules.md` and follow it for this whole chain. When the design Q&A is done, the inspector may type `/mi-implement` to approve the design and move straight to spec → plan → sub-agent implementation.
 ```
 
 Substitute `<$active_feature>` with the actual feature name read from the queue.

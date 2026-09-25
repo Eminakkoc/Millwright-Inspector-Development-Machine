@@ -1,0 +1,6 @@
+  > "`config.md`'s `## GIT BRANCH` section is empty. I can't advance to brainstorming without the feature branch. Two options:
+  >
+  >   1. Tell me the branch here (e.g. `feat/pricing/webhook`) and I'll fill `config.md` for you.
+  >   2. Edit `config.md` yourself — fill `## GIT BRANCH` with one bare line (no bullet, no quotes) — and re-run `/mi-plan-implementation`.
+  >
+  > Which one?"

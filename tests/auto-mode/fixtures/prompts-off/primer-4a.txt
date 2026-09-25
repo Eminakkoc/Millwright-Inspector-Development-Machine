@@ -1,0 +1,17 @@
+I'm working on the "<$active_feature>" feature. Use these documents as primary context.
+
+**Context loading order** (read in this order; only escalate when a gap appears):
+
+1. **Required first read** — <$data_root>/workflow-stream/<$active_feature>/blueprints/current/primer.md
+   Compact snapshot of active scope, goals, journal context, and likely-relevant skills/rules. For most cycles this is all you need.
+
+2. **On demand** — only if the primer leaves a gap on a specific topic:
+   - <$data_root>/workflow-stream/<$active_feature>/blueprints/current/requirements.md — full goals / planned / non-goals
+   - <$data_root>/workflow-stream/<$active_feature>/blueprints/current/config.md — full skills/rules + GIT BRANCH + Inspector Additions
+   - <$data_root>/quest/<active-slug>/summary.md — feature-indexed journal digest for this cycle (the slug is recorded in `<$data_root>/quest/active.md`). Read `## Cross-cutting constraints` and `## Feature: <$active_feature>` first; other feature sections are reference-only
+   - <$data_root>/quest/<active-slug>/todo-list.md — full feature breakdown for this cycle if you need PENDING/TODO context
+
+**Work definition** (the scope I'm taking on this run):
+The IMPLEMENTING items listed in primer.md `## Active scope` are the committed scope for this run. Sibling features in PENDING/TODO are out of scope.
+
+Proceed with your normal brainstorming flow: clarifying questions → design sections → spec doc → writing-plans → execution. Do NOT worry about the mi-workflow — I'll resume it automatically after your chain finishes.

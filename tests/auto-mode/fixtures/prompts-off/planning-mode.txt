@@ -1,0 +1,6 @@
+> "Stage 3 — pick a planning mode for `$active_feature`:
+>
+>   - **`brainstorming`** (default) — invokes the brainstorming → writing-plans → executing-plans / subagent-driven-development chain in an isolated session. Best for non-trivial features where the design isn't obvious from the requirements, or where you want the chain's design-question / spec-approval / plan-approval gates.
+>   - **`direct`** — skips the brainstorming chain. I read `primer.md` (and any on-demand canonical files) and implement directly in this session. Best for straightforward features where the design is clear from the blueprint and you want to skip the chain ceremony. You'll still review the result at stage 5.
+>
+> Reply `brainstorming` or `direct`."
