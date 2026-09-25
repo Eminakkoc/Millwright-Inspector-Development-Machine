@@ -350,6 +350,44 @@ sb="$(make_sandbox)"
 out="$(run_in "$sb" "$A" approve-guard alpha 2>/dev/null)"; rc=$?
 [[ $rc -eq 1 && "$out" == "auto: review needs your look — inspector-review.md missing" ]] && ok "$t" || ng "$t" "rc=$rc out=$out"
 
+# ---- Task 4: deferred questions -----------------------------------------------
+
+DQ="$REPO_ROOT/scripts/deferred-questions.sh"
+
+t="deferred-questions init renders a valid file with no phantom entries"
+sb="$(make_sandbox)"
+f="$(run_in "$sb" "$DQ" init alpha 2>/dev/null)"
+if [[ -f "$f" ]] && run_in "$sb" "$FM" validate "$f" deferred-questions >/dev/null 2>&1 \
+   && [[ -z "$(run_in "$sb" "$DQ" list-open alpha 2>/dev/null)" ]]; then
+  ok "$t"
+else
+  ng "$t" "file=$f"
+fi
+
+t="deferred-questions add/list-open/answer/list-needs-finding/set-follow-up round-trip"
+id1="$(run_in "$sb" "$DQ" add alpha "Which cache TTL?" "assumed 60s" 2>/dev/null)"
+id2="$(run_in "$sb" "$DQ" add alpha $'Multi\nline?' "assumed no" 2>/dev/null)"
+open1="$(run_in "$sb" "$DQ" list-open alpha 2>/dev/null)"
+run_in "$sb" "$DQ" answer alpha "$id1" "use 300s" --needs-finding >/dev/null 2>&1
+open2="$(run_in "$sb" "$DQ" list-open alpha 2>/dev/null)"
+nf1="$(run_in "$sb" "$DQ" list-needs-finding alpha 2>/dev/null)"
+run_in "$sb" "$DQ" set-follow-up alpha "$id1" IR-007 >/dev/null 2>&1
+nf2="$(run_in "$sb" "$DQ" list-needs-finding alpha 2>/dev/null)"
+if [[ "$id1" == "DQ-001" && "$id2" == "DQ-002" \
+      && "$open1" == $'DQ-001\tWhich cache TTL?\nDQ-002\tMulti line?' \
+      && "$open2" == $'DQ-002\tMulti line?' \
+      && "$nf1" == $'DQ-001\tWhich cache TTL?\tuse 300s' \
+      && -z "$nf2" ]]; then
+  ok "$t"
+else
+  ng "$t" "id1=$id1 id2=$id2 open1=[$open1] open2=[$open2] nf1=[$nf1] nf2=[$nf2]"
+fi
+
+t="deferred-questions list-open with no file prints nothing and exits 0"
+sb="$(make_sandbox)"
+out="$(run_in "$sb" "$DQ" list-open alpha 2>/dev/null)"; rc=$?
+[[ $rc -eq 0 && -z "$out" ]] && ok "$t" || ng "$t" "rc=$rc out=$out"
+
 # ---- end of tests --------------------------------------------------------------
 echo
 echo "auto-mode: $pass passed, $fail failed"

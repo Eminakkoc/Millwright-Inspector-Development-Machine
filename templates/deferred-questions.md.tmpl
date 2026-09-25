@@ -1,0 +1,24 @@
+---
+id: {{UUID}}
+feature: {{FEATURE}}
+---
+
+# Deferred questions — {{FEATURE}}
+
+Questions the implementation chain recorded instead of stopping to ask. Each one
+names the assumption the chain took so work could continue. At the end of the
+chain they are walked through one per reply; an answer that needs code is either
+fixed then or marked `needs-finding: true`, which `/mi-continue` turns into an
+`IR-NNN` finding at Resume Step 6.
+
+<!--
+ENTRY SHAPE (managed by scripts/deferred-questions.sh — do not hand-number):
+
+  ## DQ-NNN
+  - question: <the question, one line>
+  - assumed: <the assumption the chain took>
+  - status: open | answered
+  - answer: <the inspector's answer>
+  - needs-finding: true | false
+  - follow-up: <IR-NNN once converted>
+-->
