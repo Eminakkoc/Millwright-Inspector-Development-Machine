@@ -1,0 +1,6 @@
+> "Review session — pick a mode for addressing the open findings on `$active_feature`:
+>
+>   - **`direct`** (default — recommended) — All N open findings are simple fixes (`scope: fix`). I'll address them myself in this session, applying patches directly. This skips the brainstorming chain ceremony and is the cheapest path when every finding is a fix.
+>   - **`brainstorming`** — runs the loop in main with one fresh sub-agent per iteration. The sub-agent reads each finding's `scope:` as a hint and decides per-finding whether to `fix`, `re-implement`, `re-plan`, or `re-spec`. Use this if you want sub-agent dispatch even though findings are all fixes (e.g., to keep main context small).
+>
+> Reply `direct` (or just press Enter to accept the default), or `brainstorming` to override."

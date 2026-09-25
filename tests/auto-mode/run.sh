@@ -504,6 +504,27 @@ assert_contains "Inspector Handler review stop line" $MC \
 assert_prompt_kept inspector-3a $MC
 assert_auto_before inspector-3a $MC 'deferred-questions.sh" list-open' '"no findings, complete" "y"'
 
+# ---- Task 10: review + approval ----------------------------------------------------
+MR=commands/mi-review.md
+assert_prompt_kept review-mode $MR
+assert_auto_before review-mode $MR '"review mode" "direct"'
+assert_prompt_kept review-3a-approve $MR
+assert_auto_before review-3a-approve $MR 'auto.sh" approve-guard' '"review approve" "approve"'
+assert_prompt_kept review-3b-approve $MR
+assert_auto_before review-3b-approve $MR 'auto.sh" approve-guard' '"review approve" "approve"'
+assert_contains "direct-mode caveat becomes a warning in auto mode" $MR \
+  'auto: warning — <IR-NNN> is <scope>; direct mode may skip the design/plan gates it needs'
+assert_contains "mi-review header allows the guarded auto hand-off" $MR \
+  'unless auto mode is on and `auto.sh approve-guard` passes'
+assert_prompt_kept rr-confirm $MC
+assert_auto_before rr-confirm $MC '"all findings resolved, complete" "y"'
+assert_prompt_kept rr-stale $MC
+assert_auto_before rr-stale $MC '"refresh diagrams" "y"'
+assert_prompt_kept rr-skipped $MC
+assert_auto_before rr-skipped $MC '"generate skipped diagrams" "y"'
+assert_contains "Inspector Step 3b rule loosened" $MC \
+  'Do not auto-fire `/mi-complete-workflow` — unless auto mode is on and `auto.sh approve-guard` passes'
+
 # ---- end of tests --------------------------------------------------------------
 echo
 echo "auto-mode: $pass passed, $fail failed"

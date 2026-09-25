@@ -1,0 +1,1 @@
+   3. Tell the inspector: *"All open findings addressed (resolved: \<ids\>). Either: (a) reply `approve` to end the review session — then type `/mi-continue` to resume mi-workflow and finalize; (b) add new findings to `inspector-review.md` (plain sentences are fine — I'll canonicalize them) and reply `go again` so I re-read; (c) reply `abort` to invoke `/mi-abort-workflow`."*

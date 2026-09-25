@@ -1601,7 +1601,7 @@ Hand the review off to a **brainstorming review session** by invoking `/mi-revie
 /mi-review
 ```
 
-After `/mi-review` returns, **stop**. Do not advance the stage. Do not auto-fire `/mi-complete-workflow`. The Review-Resume Handler will run when the inspector types `/mi-continue` again after the brainstorming review session exits.
+After `/mi-review` returns, **stop**. Do not advance the stage. Do not auto-fire `/mi-complete-workflow` — unless auto mode is on and `auto.sh approve-guard` passes, in which case `/mi-review` hands back through `/mi-continue` itself. The Review-Resume Handler will run when the inspector types `/mi-continue` again after the brainstorming review session exits.
 
 **If `/mi-review` halted at its `stage-5-to-6` clear-point gate** (first entry — it printed a `/clear` recommendation and did NOT launch the session), say nothing further: the gate's recommendation is the terminal message for this turn. State stays at `current-stage=5`, so the inspector's next `/mi-continue` re-enters this handler and auto-fires `/mi-review` again, which then proceeds past the gate.
 
@@ -1626,6 +1626,8 @@ remaining_open="$($CLAUDE_PLUGIN_ROOT/scripts/review.sh list-open "$active_featu
 ```
 
 If `remaining_open` is empty, **prompt the inspector to confirm before completing the stage**. This guard mirrors Inspector Step 3a: once finalize fires, `/mi-complete-workflow` archives blueprints and advances the queue, so the inspector gets one explicit beat to re-launch the review session or add new findings instead.
+
+**Auto mode.** If `$CLAUDE_PLUGIN_ROOT/scripts/auto.sh is-on` succeeds, run `$CLAUDE_PLUGIN_ROOT/scripts/auto.sh answer "all findings resolved, complete" "y" --cmd /mi-continue` and continue as if the inspector had replied `y` — do not show the prompt below. Otherwise show the prompt below unchanged. (This confirm is only reached after a passing `auto.sh approve-guard` in auto mode, so answering `y` here is safe.)
 
 > "All findings have been resolved (no open findings remain in `inspector-review.md`). Confirming will complete the inspector-review stage and auto-fire `/mi-complete-workflow`. Continue?
 >
@@ -1669,6 +1671,8 @@ Branch on `freshness`:
 - **`fresh`** (exit 0) — diagrams are already current. Skip the prompt entirely; fall through to Step 2.6.
 - **`stale`** (exit 0) — refresh prompt:
 
+  **Auto mode.** If `$CLAUDE_PLUGIN_ROOT/scripts/auto.sh is-on` succeeds, run `$CLAUDE_PLUGIN_ROOT/scripts/auto.sh answer "refresh diagrams" "y" --cmd /mi-continue` and continue as if the inspector had replied `y` — do not show the prompt below. Otherwise show the prompt below unchanged.
+
   > "The review session committed additional commits since the implementation diagrams were generated. Regenerate them?
   >
   >   - `y` — re-run `/mi-draw-diagrams` before finalizing (~30 seconds; useful so the final snapshot reflects the review-loop fixes before stage 8 archives the diagrams into `blueprints/history/v[N+1]/implementation/diagrams/`).
@@ -1677,6 +1681,8 @@ Branch on `freshness`:
   > (y/n)"
 
 - **`skipped`** (exit 0) — recovery prompt (stage 4 was skipped):
+
+  **Auto mode.** If `$CLAUDE_PLUGIN_ROOT/scripts/auto.sh is-on` succeeds, run `$CLAUDE_PLUGIN_ROOT/scripts/auto.sh answer "generate skipped diagrams" "y" --cmd /mi-continue` and continue as if the inspector had replied `y` — do not show the prompt below. Otherwise show the prompt below unchanged.
 
   > "Implementation diagrams were skipped at stage 4. The review session committed commits in `base-commit..HEAD` since then. Reply:
   >   - `y` — generate implementation diagrams now via `/mi-draw-diagrams` (~30s; covers the full `base-commit..HEAD` range and clears the skip marker so stage 8 archives them).

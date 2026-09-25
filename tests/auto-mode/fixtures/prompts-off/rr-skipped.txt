@@ -1,0 +1,5 @@
+  > "Implementation diagrams were skipped at stage 4. The review session committed commits in `base-commit..HEAD` since then. Reply:
+  >   - `y` — generate implementation diagrams now via `/mi-draw-diagrams` (~30s; covers the full `base-commit..HEAD` range and clears the skip marker so stage 8 archives them).
+  >   - `n` — proceed without implementation diagrams. Stage-2 blueprint diagrams remain the only diagram artifact archived at stage 8.
+  >
+  > (y/n)"

@@ -1,0 +1,6 @@
+> "Iteration <N> complete. Resolved IR-IDs: `<list-from-summary>`. <Optional: surface 'Findings / risks' or 'Main should read' lines if non-empty.>
+>
+> Reply:
+>   - `approve` — exit the review loop. I'll tell you to type `/mi-continue` to resume mi-workflow and finalize.
+>   - `go again` — open `inspector-review.md` (any text editor) to add new findings (plain sentences are fine — I'll canonicalize them; or use the `### IR-NNN` block format directly). Then reply `go again` to start another iteration.
+>   - `abort` — invoke `/mi-abort-workflow` to cancel the workflow."
