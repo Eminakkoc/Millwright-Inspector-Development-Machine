@@ -77,7 +77,7 @@ PYEOF
 
 cmd="${1:-}"; shift || true
 case "$cmd" in
-  path) dq_file "${1:?feature required}"; echo ;;
+  path) dq_file "${1:?feature required}" ;;
   init) dq_init "${1:?feature required}"; echo ;;
   add)
     f="$(dq_init "${1:?feature required}")"

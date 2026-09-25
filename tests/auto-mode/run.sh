@@ -388,6 +388,19 @@ sb="$(make_sandbox)"
 out="$(run_in "$sb" "$DQ" list-open alpha 2>/dev/null)"; rc=$?
 [[ $rc -eq 0 && -z "$out" ]] && ok "$t" || ng "$t" "rc=$rc out=$out"
 
+t="deferred-questions path prints exactly one line with no trailing blank line"
+sb="$(make_sandbox)"
+outfile="$(mktemp)"; expectfile="$(mktemp)"
+run_in "$sb" "$DQ" path alpha >"$outfile" 2>/dev/null
+printf '%s\n' "$sb/millwright-inspector/workflow-stream/alpha/implementation/deferred-questions.md" >"$expectfile"
+lines="$(wc -l < "$outfile" | tr -d ' ')"
+if [[ "$lines" == "1" ]] && diff -q "$outfile" "$expectfile" >/dev/null 2>&1; then
+  ok "$t"
+else
+  ng "$t" "lines=$lines content=[$(cat "$outfile")]"
+fi
+rm -f "$outfile" "$expectfile"
+
 # ---- end of tests --------------------------------------------------------------
 echo
 echo "auto-mode: $pass passed, $fail failed"
