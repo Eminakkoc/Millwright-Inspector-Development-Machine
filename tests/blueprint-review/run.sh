@@ -1153,6 +1153,41 @@ b
 P")" == 2 ]] || bad+="foreign-wrapper "
 [[ -z "$bad" ]] && ok "$t" || ng "$t" "not blocked: $bad"
 
+# guard_at <hook-plugin-root> <agent_type> <command>: the hook as loaded from a
+# different install than the wrapper path in the command (v1.8.1).
+guard_at() {
+  python3 -c 'import json,sys; print(json.dumps({"agent_type": sys.argv[1], "tool_name": "Bash", "tool_input": {"command": sys.argv[2]}}))' "$2" "$3" \
+    | CLAUDE_PLUGIN_ROOT="$1" "$REPO_ROOT/hooks/guard-batch-reviewer.sh" >/dev/null 2>&1
+  echo $?
+}
+gh_dir="$(mktemp -d)"
+mk_install() {  # mk_install <dir> <plugin-name|""> — fake install with a wrapper
+  mkdir -p "$1/scripts" "$1/.claude-plugin"
+  printf '#!/usr/bin/env bash\n' > "$1/scripts/codex-review.sh"
+  [[ -n "$2" ]] && printf '{"name": "%s"}\n' "$2" > "$1/.claude-plugin/plugin.json"
+  return 0
+}
+mk_install "$gh_dir/installed" "millwright-inspector-development-machine"
+mk_install "$gh_dir/other-plugin" "some-other-plugin"
+mk_install "$gh_dir/no-manifest" ""
+
+t="guard hook: accepts a source-checkout wrapper when the hook runs from the installed plugin"
+r="$(guard_at "$gh_dir/installed" "$BBR" "$ok_cmd")"
+[[ "$r" == 0 ]] && ok "$t" || ng "$t" "dev-checkout wrapper blocked (exit $r)"
+
+t="guard hook: rejects a codex-review.sh outside any install of this plugin"
+bad=""
+for d in other-plugin no-manifest; do
+  [[ "$(guard_at "$gh_dir/installed" "$BBR" "$gh_dir/$d/scripts/codex-review.sh open --effort high <<'P'
+b
+P")" == 2 ]] || bad+="$d "
+done
+[[ "$(guard_at "$gh_dir/installed" "$BBR" "scripts/codex-review.sh open --effort high <<'P'
+b
+P")" == 2 ]] || bad+="relative-path "
+[[ -z "$bad" ]] && ok "$t" || ng "$t" "not blocked: $bad"
+rm -rf "$gh_dir"
+
 t="guard hook: other callers pass through"
 [[ "$(guard "" "rm -rf build")$(guard "Explore" "ls")" == "00" ]] && ok "$t" || ng "$t" "main or other agent was blocked"
 
