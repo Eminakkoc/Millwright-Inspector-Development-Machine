@@ -537,7 +537,7 @@ t="stacked-branch note prints only for an unmerged previous branch under this ba
 snippet="$(python3 - "$REPO_ROOT/commands/mi-complete-workflow.md" <<'PYEOF'
 import re, sys
 s = open(sys.argv[1]).read()
-m = re.search(r'```bash\n(# Stacked-branch note.*?)```', s, re.S)
+m = re.search(r'```bash\n(?:(?!```).)*?(# Stacked-branch note.*?)```', s, re.S)
 print(m.group(1) if m else '')
 PYEOF
 )"
@@ -558,6 +558,22 @@ else
     ng "$t" "out1=[$out1] out2=[$out2]"
   fi
 fi
+
+t="stacked note shares one continuous bash fence with the finished_branch/finished_base capture and the finish call (no re-query after finish)"
+check="$(python3 - "$REPO_ROOT/commands/mi-complete-workflow.md" <<'PYEOF'
+import re, sys
+s = open(sys.argv[1]).read()
+result = "missing"
+for fence in re.findall(r'```bash\n(.*?)```', s, re.S):
+    if '# Stacked-branch note' in fence:
+        before = fence[:fence.index('# Stacked-branch note')]
+        needles = ['finished_branch=', 'finished_base=', 'progress.sh finish']
+        result = "yes" if all(n in before for n in needles) else "no"
+        break
+print(result)
+PYEOF
+)"
+[[ "$check" == "yes" ]] && ok "$t" || ng "$t" "check=$check"
 
 # ---- end of tests --------------------------------------------------------------
 echo

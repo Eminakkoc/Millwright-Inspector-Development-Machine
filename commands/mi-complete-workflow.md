@@ -446,18 +446,7 @@ if [[ "${branch_route:-III}" == "III" || "${branch_route:-}" == "0a" || "${branc
   $CLAUDE_PLUGIN_ROOT/scripts/progress.sh finish >/dev/null
 fi
 remaining="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh queue-remaining 2>/dev/null || echo '')"
-```
 
-**Atomic finalize affordance (Phase 5.5).** `progress.sh finish` accepts optional `--set field=value` pairs (mirroring `advance-to`) so future stage-8 logic that needs to write a top-level `progress.md` field at finalize time can bundle the write atomically:
-
-```bash
-# Example (no current call site uses this — affordance is reserved for future):
-$CLAUDE_PLUGIN_ROOT/scripts/progress.sh finish --set last-completion=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-```
-
-The `--set` writes target top-level fields only; setting `active.*` is rejected because `active` is being cleared. Do NOT introduce `advance-to 7 -1` as a finalize mechanism — `advance-to` only permits the whitelisted `3→5 | 5→7 | 6→7` transitions; stage-7 finalization stays on `progress.sh finish`.
-
-```bash
 # Stacked-branch note (all modes): warn when this feature's branch was cut on
 # top of the previous feature's still-unmerged branch.
 prev="$("$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" get-top 'completed-branches[]' 2>/dev/null \
@@ -474,6 +463,15 @@ fi
 ```
 
 Relay the line when it prints. Merge stacked branches in queue order, or merge the last branch to bring in the whole stack.
+
+**Atomic finalize affordance (Phase 5.5).** `progress.sh finish` accepts optional `--set field=value` pairs (mirroring `advance-to`) so future stage-8 logic that needs to write a top-level `progress.md` field at finalize time can bundle the write atomically:
+
+```bash
+# Example (no current call site uses this — affordance is reserved for future):
+$CLAUDE_PLUGIN_ROOT/scripts/progress.sh finish --set last-completion=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+```
+
+The `--set` writes target top-level fields only; setting `active.*` is rejected because `active` is being cleared. Do NOT introduce `advance-to 7 -1` as a finalize mechanism — `advance-to` only permits the whitelisted `3→5 | 5→7 | 6→7` transitions; stage-7 finalization stays on `progress.sh finish`.
 
 ### Step 7 — Report and auto-continue
 
