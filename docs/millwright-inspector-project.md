@@ -762,6 +762,7 @@ stage — the single most useful view of the workflow's blast radius.
 | Inspector | recovery commands | `/mi-abort-workflow`, `/mi-resume-workflow`, `/mi-update-blueprint`, `/mi-update-todo-list`, `/mi-export-bundle`, `/mi-sidequest`. | any |
 | Inspector | `/mi-analyze-review <pr-url>` | Standalone — turns a GitHub PR review into a triaged `report.md`. | n/a |
 | **PostToolUse hook** | `hooks/validate-on-write.sh` | Validates YAML frontmatter against schemas on every Write/Edit to a workflow `.md`; blocks the turn on failure. | always |
+| **PreToolUse hook** | `hooks/guard-batch-reviewer.sh` | (v1.8.0) Scopes `blueprint-batch-reviewer`'s Bash to `codex-review.sh open\|reply` with a quoted-heredoc prompt; exits 2 on anything else. Other callers pass through untouched. | always |
 | **MCP server** | `plantuml-mcp-server` | Renders `.puml` sources to images for use-case / sequence / class / component diagrams. | 2, Resume |
 | Optional companions | `rtk`, `docling` | Token-saving shell-output filter; document → markdown converter. Detected by `/mi-doctor`; never required. | optional |
 
@@ -1451,23 +1452,23 @@ terminal) or `partial` (some non-terminal). The handler auto-fires nothing else.
 ### 7.9 Blueprint review — `/mi-blueprint-review*` (v1.2.0+; token-reduction refit in v1.5.0)
 
 Three commands that use an **external coding agent** as a reviewer (Codex first; future
-agents plug in by adding to `plugin.json`'s `mcpServers` + `scripts/blueprint-review.sh
-resolve-tool`) to inspect markdown specification files for consistency and per-item
+agents plug in by adding a CLI wrapper like `scripts/codex-review.sh` + a case in
+`scripts/blueprint-review.sh resolve-reviewer`) to inspect markdown specification files for consistency and per-item
 completeness. The millwright (Claude) is the **fixer** that applies the reviewer's
 suggested edits between iterations. The inspector intervenes only on max-iter `y/n`
 prompts.
 
 **v1.5 refit headline:** every review loop now opens a **single codex session** and
-continues it across iterations — round 1 via `mcp__codex__codex`, rounds 2+ via
-`mcp__codex__codex-reply` with delta-only prompts (the file / batch content lives in
+continues it across iterations — round 1 via `codex-review.sh open`, rounds 2+ via
+`codex-review.sh reply` (`codex exec resume`) with delta-only prompts (the file / batch content lives in
 session state instead of being re-shipped). Combined with a per-batch reviewer (replacing
 the per-item reviewer), envelope-trim across the prompt templates, and a deterministic
 `review-history.md` summary fed into every session opener, the v1.5 path cuts a 20-item
 stage-2 auto-fire from ~107 codex calls / ~1M tokens to ~25 / ~50k (REPORT-4 baseline →
-v1.5 projection in `docs/blueprint-review-token-reduction/plan.md`). When `codex-reply`
-is unavailable (codex-cli < 0.130.0), sub-agents fall back to stateless mode and reach
-~60% reduction instead of ~95%; `mi-doctor` annotates the codex check with the detected
-codex-reply availability.
+v1.5 projection in `docs/blueprint-review-token-reduction/plan.md`). Through v1.7 the
+session ran over the codex MCP server (`mcp__codex__codex` / `-reply`); v1.8.0 moved it
+to headless `codex exec` after codex-cli 0.154.0 removed `codex mcp-server` (see
+"Reviewer transport" below).
 
 Findings live **inline in the reviewed file** as `<!-- REVIEW-FINDING ... -->` HTML
 comments — invisible in rendered markdown, visible to both agents in raw text. Each
@@ -1519,15 +1520,16 @@ inspector reviews a post-review `requirements.md` rather than the raw stage-2 ou
   Defaults: `--auto-iter 5`, `--reasoning-effort medium`. Delegates to the
   `blueprint-consistency-reviewer` sub-agent, which writes the file directly between
   rounds (safe — consistency review is always serial) and owns a single codex session
-  across rounds via `codex-reply`.
+  across rounds (`codex-review.sh reply`).
 
 - **`/mi-blueprint-review-item <agent> <file>:<item-id> | <content> [--auto-iter N] [--reasoning-effort <low|medium|high>]`** (v1.5)
   — single per-item review run through the v1.5 orchestrator as a `batch_size=1` batch.
   Two modes: file-anchored (Mode A, edits the file in place) and stateless (Mode B,
   prints results to terminal). Delegates to the `blueprint-batch-reviewer` sub-agent,
-  which is **structurally read-only** — its `tools:` frontmatter contains ONLY the
-  codex MCP tools (`mcp__codex__codex`, `mcp__codex__codex-reply`; no `Read`, `Write`,
-  `Edit`, `Bash`, or `Grep`). The calling command applies any region replacement in
+  which is **structurally read-only** — its `tools:` frontmatter is `[Bash]` alone, and
+  the plugin's `hooks/guard-batch-reviewer.sh` PreToolUse hook blocks every Bash call
+  from it except `codex-review.sh open|reply` with a quoted-heredoc prompt (no `Read`,
+  `Write`, `Edit`, or `Grep`; codex itself runs in a read-only sandbox). The calling command applies any region replacement in
   main via Edit-exact-match. This lets the orchestrator run multiple batch sub-agents
   in parallel without write conflicts.
 
@@ -1569,7 +1571,7 @@ inspector reviews a post-review `requirements.md` rather than the raw stage-2 ou
   4. **Phase D — consistency pass.** Single fix-and-converge loop that sees Phase C's
      per-item findings as inline context. v1.2.x's initial consistency loop is gone —
      Phase D is the only whole-file consistency pass. The `blueprint-consistency-reviewer`
-     spawn here uses the same codex-reply continuation pattern.
+     spawn here uses the same session-resume continuation pattern.
   5. **Phase E — scope-expansion gate.** Collects every inline finding marked
      `scope-impact: expanding` (proposals that would add mechanism the spec does not
      contain today — the fixer is forbidden from applying these), shows them to the
@@ -1697,21 +1699,36 @@ Two writers / one reader:
 
 A new `review-history` schema validates the artifact; a new template (`templates/review-history.md.tmpl`) initializes it; the PostToolUse hook (§8.2) validates writes to it.
 
-#### MCP integration
+#### Reviewer transport (v1.8.0)
 
-`plugin.json` declares the codex MCP server (`codex mcp-server` stdio entrypoint).
-Adding a new reviewer agent requires (1) declaring its MCP server in `plugin.json`,
-(2) adding a case to `scripts/blueprint-review.sh resolve-tool` mapping the agent name
-to its `mcp__*` tool name, and (3) listing the round-1 and round-2+ tools in both
-reviewer sub-agents' `tools:` frontmatter so they are callable at runtime (for codex:
-`mcp__codex__codex` and `mcp__codex__codex-reply`). `--reasoning-effort <low|medium|high>`
-(default `medium`) is plumbed through every sub-agent spawn to every MCP call; it is
-locked at the round-1 call (`config.model_reasoning_effort`) and inherited by rounds 2+
-through the same session. Production cost at `high` is ~2× `medium`, and `low` already
-produces high-quality findings (per the v1.2.0–1.2.4 test runs).
+codex runs headless through `scripts/codex-review.sh`, a thin wrapper around `codex exec`.
+Through v1.7 the plugin declared a codex MCP server (`codex mcp-server`) in `plugin.json`;
+codex-cli 0.154.0 (2026-09-09, openai/codex#42993) removed that entry point, so the
+server stopped connecting and the reviewer tools vanished. The wrapper keeps the same
+contract the MCP tools had:
+
+| Wrapper call | codex invocation | Replaces |
+| --- | --- | --- |
+| `codex-review.sh open --effort R` (prompt on stdin) | `codex exec --json -c sandbox_mode="read-only" -c approval_policy="never" -c model_reasoning_effort=R -` | `mcp__codex__codex` |
+| `codex-review.sh reply --thread ID --effort R` | `codex exec resume … ID -` (same `-c` overrides) | `mcp__codex__codex-reply` |
+
+Both print one JSON object, `{"threadId", "content"}`. `threadId` comes from the
+`thread.started` JSONL event and `content` from `--output-last-message`. Exit `3` means
+the session was not found (codex reports `no rollout found for thread id`); the
+sub-agents' session-expiry fallback re-opens on that. `--effort` is passed on every
+`reply` because a resumed `exec` session does not lock settings the way `codex-reply`
+did.
+
+`scripts/blueprint-review.sh resolve-reviewer <agent>` checks the CLI and prints the
+wrapper's absolute path, which the orchestrator hands every sub-agent as `reviewer_cli`.
+Adding a new reviewer agent requires (1) a wrapper script with the same
+`open`/`reply` contract and (2) a `resolve-reviewer` case mapping the agent name to it.
+`--reasoning-effort <low|medium|high>` (default `medium`) is plumbed through every
+sub-agent spawn to every call. Production cost at `high` is ~2× `medium`, and `low`
+already produces high-quality findings (per the v1.2.0–1.2.4 test runs).
 
 See `docs/blueprint-review-token-reduction/plan.md` for the v1.5 design and
-`docs/blueprint-review-token-reduction/phase-0-findings.md` for the verified
+`docs/blueprint-review-token-reduction/phase-0-findings.md` for the (pre-v1.8.0)
 `mcp__codex__codex-reply` MCP shape. The v1.2.x prior art at
 `docs/blueprints-review/plan.md` carries forward unchanged (item enumeration, canonical
 region descriptor, `alloc-final-id` semantics). `CHANGELOG.md` has the per-version
@@ -1767,6 +1784,15 @@ matches a known schema — runs `scripts/internal/validate-frontmatter.sh <file>
 On failure it emits `{"decision": "block", "reason": "…"}` and exits 2 to halt the turn.
 It is a no-op outside the data root and for unknown filenames, so general project edits
 proceed normally.
+
+`hooks.json` also registers one `PreToolUse` hook on `Bash` (v1.8.0),
+`hooks/guard-batch-reviewer.sh`. It exits 0 for every caller except the
+`blueprint-batch-reviewer` sub-agent (identified by the hook input's `agent_type`). For
+that agent it admits only `<plugin>/scripts/codex-review.sh open|reply …` with a
+quoted-heredoc prompt as the whole command, and blocks anything else with exit 2. Plugin
+agents cannot carry their own `hooks` frontmatter, and a `tools: [Bash(...)]` specifier
+removes the whole tool rather than scoping it. A plugin-level hook is therefore the only
+way to keep that agent read-only now that it needs Bash to reach codex (§7.9).
 
 Coverage policy:
 
@@ -1890,7 +1916,8 @@ refit for per-batch use in v1.5; rendered by the sub-agents at review-call time,
 | `info-bar.sh` | Pull-only Claude Code `statusLine` renderer (not a hook). Reads stdin JSON, prints one line, exits 0; ≤ 100 ms hot-path target. |
 | `ledger.sh` | Manage `context-ledger.md`. Subcommands: `init`, `append`. Append failures warn but never block. |
 | `pr-review.sh` | Drive `/mi-analyze-review`. Subcommands: `parse-url`, `new-session`, `fetch`, `canonicalize`, `count-marked`, `find-awaiting`, `list-actionable`, `normalize`, `set-status`, `post-reply`, `report-status`. |
-| `blueprint-review.sh` | Drive the three `/mi-blueprint-review*` commands (v1.2.0+; v1.5 refit; see §7.9). Subcommands: `resolve-tool` (agent name → MCP tool name), `enumerate` (deterministic byte-offset computation from reviewer-supplied `{id, anchor_line, occurrence_index}`), `parse-findings` (extract `<!-- REVIEW-FINDING -->` blocks as JSON), `alloc-final-id` (lifetime-monotonic F-NNN allocator backed by `last-finding-id` frontmatter), `diff-drift` (heads-up diff against `summary.md` / `todo-list.md` after stage-2 review), `build-summary` (v1.5; deterministic ≤ 1500-token `review-history.md` summary for reviewer-session openers; truncation invariant protects every unresolved reportable severity — blocker/critical/high/medium — plus current-item-tied resolved findings, and drops oldest legacy low-severity unresolved first), `persist-findings` (v1.5; append new + flip earlier entries to resolved/dropped/deferred + recompute frontmatter counters), `size-stat` (v1.6.10; `<body-lines> <items> <bytes>` with frontmatter and REVIEW-FINDING blocks excluded, for the Phase A → G growth report), `ledger … meta` (v1.6.10; run-scoped key/value so the size baseline survives across fresh Bash subshells). |
+| `blueprint-review.sh` | Drive the three `/mi-blueprint-review*` commands (v1.2.0+; v1.5 refit; see §7.9). Subcommands: `resolve-reviewer` (v1.8.0; agent name → absolute path of its CLI wrapper, after checking the CLI works), `enumerate` (deterministic byte-offset computation from reviewer-supplied `{id, anchor_line, occurrence_index}`), `parse-findings` (extract `<!-- REVIEW-FINDING -->` blocks as JSON), `alloc-final-id` (lifetime-monotonic F-NNN allocator backed by `last-finding-id` frontmatter), `diff-drift` (heads-up diff against `summary.md` / `todo-list.md` after stage-2 review), `build-summary` (v1.5; deterministic ≤ 1500-token `review-history.md` summary for reviewer-session openers; truncation invariant protects every unresolved reportable severity — blocker/critical/high/medium — plus current-item-tied resolved findings, and drops oldest legacy low-severity unresolved first), `persist-findings` (v1.5; append new + flip earlier entries to resolved/dropped/deferred + recompute frontmatter counters), `size-stat` (v1.6.10; `<body-lines> <items> <bytes>` with frontmatter and REVIEW-FINDING blocks excluded, for the Phase A → G growth report), `ledger … meta` (v1.6.10; run-scoped key/value so the size baseline survives across fresh Bash subshells). |
+| `codex-review.sh` | (v1.8.0; see §7.9 "Reviewer transport") Headless codex transport for the reviewer sub-agents. `open --effort R` starts a read-only `codex exec` session; `reply --thread ID --effort R` resumes it; `check` verifies the CLI. Prompt on stdin; prints `{"threadId", "content"}`; exit 3 = session not found. |
 | `lessons.sh` | Manage `lessons-learned.md` (cumulative PR-review + workflow-completion lessons). Subcommands: `path`, `append` (auto-increments `L-NNN` ids, self-validates after each write). |
 | `migrate-diagrams-readme.sh` | One-shot back-fill of `requirements-id` / `id` into legacy diagram READMEs. |
 | `migrate-test-folder.sh` | One-shot migration of legacy manual-test artifacts into the feature-permanent `test/` folder. |
@@ -1923,8 +1950,8 @@ contract doc's "Payload JSON extension" section). There are **15 profiles**:
 | `sidequest-writer` | sonnet | `/mi-sidequest --write` | answers + performs a small fix; edits project source only — workflow artifacts stay read-only |
 | `review-comment-analyst` | sonnet / high | `/mi-analyze-review` | appends one `### PR-NNN` block per comment to `report.md`; read-only on source |
 | `pr-review-fixer` | sonnet / high | `/mi-continue` PR-Review Apply Handler | applies marked fix blocks, commits them, appends lessons to `lessons-learned.md`; enforces a clean-worktree invariant |
-| `blueprint-consistency-reviewer` | opus / high | `/mi-blueprint-review-consistency` and `/mi-blueprint-review` Phase D (v1.5+; §7.9) | runs one whole-file consistency review, owning a single codex session (round 1 via `mcp__codex__codex`, rounds 2+ via `mcp__codex__codex-reply` with delta-only prompts). Writes the reviewed file directly between rounds (safe — always serial). Applies the severity gate (drops `low` entries before allocating ids). Exits on `success`, `stable`, `stable-medium`, or `max-iter`. |
-| `blueprint-batch-reviewer` | opus / high | `/mi-blueprint-review` Phase C and `/mi-blueprint-review-item` (v1.5+; §7.9; replaces `blueprint-item-reviewer`) | runs one review on a batch of 1..N items, owning a single codex session per batch. **Structurally read-only** — `tools:` contains ONLY codex MCP tools (`mcp__codex__codex`, `mcp__codex__codex-reply`), no filesystem tools. Returns multi-item Payload JSON; calling command applies each item's region replacement via Edit-exact-match in main. |
+| `blueprint-consistency-reviewer` | opus / high | `/mi-blueprint-review-consistency` and `/mi-blueprint-review` Phase D (v1.5+; §7.9) | runs one whole-file consistency review, owning a single codex session (round 1 via `codex-review.sh open`, rounds 2+ via `codex-review.sh reply` with delta-only prompts). Writes the reviewed file directly between rounds (safe — always serial). Applies the severity gate (drops `low` entries before allocating ids). Exits on `success`, `stable`, `stable-medium`, or `max-iter`. |
+| `blueprint-batch-reviewer` | opus / high | `/mi-blueprint-review` Phase C and `/mi-blueprint-review-item` (v1.5+; §7.9; replaces `blueprint-item-reviewer`) | runs one review on a batch of 1..N items, owning a single codex session per batch. **Structurally read-only** — `tools:` is `[Bash]` alone, and `hooks/guard-batch-reviewer.sh` admits only `codex-review.sh open|reply` calls from it; no filesystem tools. Returns multi-item Payload JSON; calling command applies each item's region replacement via Edit-exact-match in main. |
 
 **Do NOT delegate** (these stay with main): workflow state mutations (`progress.sh`,
 `todo.sh`, `blueprints.sh`, `review.sh set-status` outside `review-iteration-runner`),

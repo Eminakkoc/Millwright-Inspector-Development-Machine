@@ -21,7 +21,7 @@ Defaults: `--auto-iter 5`, `--reasoning-effort medium`.
 
 ## Preconditions
 
-- Reviewer's MCP server reachable (`/mi-doctor`).
+- The `codex` CLI installed and logged in, with the `exec` subcommand (`/mi-doctor`).
 - (Mode A only) File exists and is writable.
 
 ## Execution
@@ -40,13 +40,9 @@ reasoning_effort="medium"
   exit 64
 }
 
-reviewer_tool="$($CLAUDE_PLUGIN_ROOT/scripts/blueprint-review.sh resolve-tool "$agent")" || exit 1
-reviewer_reply_tool="mcp__${agent}__${agent}-reply"
-# resolve-tool prints the unprefixed candidate. Apply /mi-blueprint-review
-# Step 1's tool-name resolution: if the unprefixed pair is absent from the
-# session's tool inventory but the plugin-prefixed pair exists
-# (mcp__plugin_millwright-inspector-development-machine_codex__codex[-reply]),
-# reassign both variables to the prefixed spellings; if neither exists, refuse.
+reviewer_cli="$($CLAUDE_PLUGIN_ROOT/scripts/blueprint-review.sh resolve-reviewer "$agent")" || exit 1
+# Absolute path of scripts/codex-review.sh (headless `codex exec`); see
+# /mi-blueprint-review Step 1 "Reviewer transport".
 
 # Mode detection (identical to v1.2.x):
 mode=""
@@ -94,7 +90,7 @@ done
 
 **Phase A:** same logic as `/mi-blueprint-review` Step 2 (lazily init `review-history.md` if under `blueprints/current/`; build `history_summary` filtered to `[item_id]` plus file; build `file_metadata_brief`).
 
-**Phase B (single-item enumerate):** render `templates/blueprint-reviewer-prompt-enumerate.md.tmpl` with no scope (return all items). Call the resolved reviewer tool (`$reviewer_tool`; single-shot, discard threadId). Filter the returned JSON array to the entry matching `item_id`; abort with `"item <id> not found in file"` if absent. Run `scripts/blueprint-review.sh enumerate <file> <items.json>` to compute the canonical descriptor.
+**Phase B (single-item enumerate):** render `templates/blueprint-reviewer-prompt-enumerate.md.tmpl` with no scope (return all items). Call `"$reviewer_cli" open --effort "$reasoning_effort"` with the rendered template as a quoted heredoc (single-shot; use `content`, discard `threadId`). Filter the returned JSON array to the entry matching `item_id`; abort with `"item <id> not found in file"` if absent. Run `scripts/blueprint-review.sh enumerate <file> <items.json>` to compute the canonical descriptor.
 
 **Phase C (batch=1):** spawn `blueprint-batch-reviewer` with:
 
@@ -104,8 +100,7 @@ batch_id = B1
 items = [<single canonical descriptor>]
 max_iterations = $auto_iter
 agent = $agent
-reviewer_tool_name = $reviewer_tool
-reviewer_reply_tool_name = $reviewer_reply_tool
+reviewer_cli = $reviewer_cli
 reasoning_effort = $reasoning_effort
 sub_agent_instance_id = T1
 history_summary = (from A — scoped to [item_id])
@@ -133,8 +128,7 @@ batch_id = B1
 items = [{item_id: "(unnamed)", original_region: <content>}]
 max_iterations = $auto_iter
 agent = $agent
-reviewer_tool_name = $reviewer_tool
-reviewer_reply_tool_name = $reviewer_reply_tool
+reviewer_cli = $reviewer_cli
 reasoning_effort = $reasoning_effort
 sub_agent_instance_id = T1
 history_summary = ""

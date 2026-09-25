@@ -1050,6 +1050,114 @@ fi
 
 rm -rf "$sc_dir"
 
+# ---- v1.8.0: codex exec transport -----------------------------------------
+# A fake `codex` on PATH records its argv and stdin and replays canned output,
+# so these run offline and never reach a real model.
+
+cx_dir="$(mktemp -d)"
+mkdir -p "$cx_dir/bin"
+cat > "$cx_dir/bin/codex" <<'FAKE'
+#!/usr/bin/env bash
+[[ "$*" == *"--help"* ]] && exit 0
+printf '%s\n' "$@" > "$FAKE_CODEX_DIR/argv"
+out=""; prev=""
+for a in "$@"; do [[ "$prev" == "-o" ]] && out="$a"; prev="$a"; done
+cat > "$FAKE_CODEX_DIR/stdin"
+if [[ "${FAKE_CODEX_MODE:-ok}" == "missing" ]]; then
+  echo "Error: thread/resume: thread/resume failed: no rollout found for thread id x (code -32600)"
+  exit 1
+fi
+echo '{"type":"thread.started","thread_id":"thread-abc"}'
+echo '{"type":"turn.completed"}'
+printf '{"items": []}' > "$out"
+FAKE
+chmod +x "$cx_dir/bin/codex"
+CX="$REPO_ROOT/scripts/codex-review.sh"
+cx_env=(env PATH="$cx_dir/bin:$PATH" FAKE_CODEX_DIR="$cx_dir")
+
+t="codex-review: open returns {threadId, content} and pins read-only + effort"
+got="$(printf 'line1\n$(not expanded)\n' | "${cx_env[@]}" "$CX" open --effort high)"
+argv="$(cat "$cx_dir/argv")"
+if [[ "$got" == '{"threadId": "thread-abc", "content": "{\"items\": []}"}' ]] \
+   && grep -qx 'exec' <<<"$argv" && grep -qx 'sandbox_mode="read-only"' <<<"$argv" \
+   && grep -qx 'approval_policy="never"' <<<"$argv" && grep -qx 'model_reasoning_effort="high"' <<<"$argv" \
+   && grep -qF '$(not expanded)' "$cx_dir/stdin"; then
+  ok "$t"
+else
+  ng "$t" "got: $got / argv: $(tr '\n' ' ' <<<"$argv")"
+fi
+
+t="codex-review: reply resumes the given thread"
+got="$(echo delta | "${cx_env[@]}" "$CX" reply --thread thread-abc --effort low)"
+argv="$(tr '\n' ' ' < "$cx_dir/argv")"
+if [[ "$got" == *'"threadId": "thread-abc"'* && "$argv" == "exec resume "*"thread-abc -"* ]]; then
+  ok "$t"
+else
+  ng "$t" "got: $got / argv: $argv"
+fi
+
+t="codex-review: unknown thread → exit 3"
+echo x | "${cx_env[@]}" FAKE_CODEX_MODE=missing "$CX" reply --thread nope >/dev/null 2>&1
+rc=$?
+[[ $rc -eq 3 ]] && ok "$t" || ng "$t" "expected exit 3, got $rc"
+
+t="codex-review: usage errors → exit 64"
+bad=""
+echo x | "${cx_env[@]}" "$CX" open >/dev/null 2>&1;                   [[ $? -eq 64 ]] || bad+="open-without-effort "
+echo x | "${cx_env[@]}" "$CX" reply >/dev/null 2>&1;                  [[ $? -eq 64 ]] || bad+="reply-without-thread "
+echo x | "${cx_env[@]}" "$CX" open --effort extreme >/dev/null 2>&1;  [[ $? -eq 64 ]] || bad+="bad-effort "
+printf '' | "${cx_env[@]}" "$CX" open --effort low >/dev/null 2>&1;   [[ $? -eq 64 ]] || bad+="empty-prompt "
+[[ -z "$bad" ]] && ok "$t" || ng "$t" "wrong exit for: $bad"
+
+t="resolve-reviewer: codex → absolute wrapper path; unknown agent → 64"
+got="$("${cx_env[@]}" "$REPO_ROOT/scripts/blueprint-review.sh" resolve-reviewer codex 2>/dev/null)"
+"$REPO_ROOT/scripts/blueprint-review.sh" resolve-reviewer gemini >/dev/null 2>&1
+rc=$?
+if [[ "$got" == "$REPO_ROOT/scripts/codex-review.sh" && $rc -eq 64 ]]; then
+  ok "$t"
+else
+  ng "$t" "got path '$got', unknown-agent exit $rc"
+fi
+
+# guard hook: returns the hook's exit code for (agent_type, command)
+guard() {
+  python3 -c 'import json,sys; print(json.dumps({"agent_type": sys.argv[1], "tool_name": "Bash", "tool_input": {"command": sys.argv[2]}}))' "$1" "$2" \
+    | CLAUDE_PLUGIN_ROOT="$REPO_ROOT" "$REPO_ROOT/hooks/guard-batch-reviewer.sh" >/dev/null 2>&1
+  echo $?
+}
+BBR="millwright-inspector-development-machine:blueprint-batch-reviewer"
+ok_cmd="$REPO_ROOT/scripts/codex-review.sh open --effort high <<'MI_REVIEW_PROMPT'
+Item A: ; rm -rf / | \$(x)
+MI_REVIEW_PROMPT"
+
+t="guard hook: batch reviewer may call codex-review.sh open|reply with a quoted heredoc"
+r1="$(guard "$BBR" "$ok_cmd")"
+r2="$(guard "$BBR" "\"$REPO_ROOT/scripts/codex-review.sh\" reply --thread t-1 --effort=low <<'P'
+d
+P")"
+[[ "$r1$r2" == "00" ]] && ok "$t" || ng "$t" "exits: open=$r1 reply=$r2"
+
+t="guard hook: batch reviewer blocked from anything else (exit 2)"
+bad=""
+[[ "$(guard "$BBR" "cat /etc/passwd")" == 2 ]] || bad+="plain-command "
+[[ "$(guard "$BBR" "$ok_cmd
+touch pwned")" == 2 ]] || bad+="trailing-command "
+[[ "$(guard "$BBR" "$REPO_ROOT/scripts/codex-review.sh open --effort high <<P
+\$(whoami)
+P")" == 2 ]] || bad+="unquoted-heredoc "
+[[ "$(guard "$BBR" "$REPO_ROOT/scripts/codex-review.sh open --effort high; touch x <<'P'
+b
+P")" == 2 ]] || bad+="chained "
+[[ "$(guard "$BBR" "/tmp/scripts/codex-review.sh open --effort high <<'P'
+b
+P")" == 2 ]] || bad+="foreign-wrapper "
+[[ -z "$bad" ]] && ok "$t" || ng "$t" "not blocked: $bad"
+
+t="guard hook: other callers pass through"
+[[ "$(guard "" "rm -rf build")$(guard "Explore" "ls")" == "00" ]] && ok "$t" || ng "$t" "main or other agent was blocked"
+
+rm -rf "$cx_dir"
+
 # ---- Summary --------------------------------------------------------------
 
 printf "\n--- summary: %d pass, %d fail ---\n" "$pass" "$fail"

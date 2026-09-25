@@ -3,7 +3,7 @@
 # See docs/blueprints-review/plan.md.
 #
 # Subcommands:
-#   resolve-tool <agent>          # → MCP tool name for the agent argument
+#   resolve-reviewer <agent>      # → absolute path of the reviewer CLI wrapper (v1.8.0)
 #   enumerate <file> <items.json> # (added in Task 1.4)
 #   parse-findings <file>         # (added in Task 1.5)
 #   size-stat <file>              # (v1.6.10) "<body-lines> <items> <bytes>" growth snapshot
@@ -23,19 +23,18 @@ cmd="${1:-}"
 shift
 
 case "$cmd" in
-  resolve-tool)
+  resolve-reviewer)
     agent="${1:-}"
-    [[ -n "$agent" ]] || { echo "usage: $0 resolve-tool <agent>" >&2; exit 64; }
+    [[ -n "$agent" ]] || { echo "usage: $0 resolve-reviewer <agent>" >&2; exit 64; }
     case "$agent" in
       codex)
-        # Unprefixed candidate only — correct when the codex server is
-        # registered at user/project level. When it comes from this plugin's
-        # plugin.json (marketplace install), the session exposes the tools as
-        # mcp__plugin_millwright-inspector-development-machine_codex__codex
-        # instead; a shell script cannot see the session's tool registry, so
-        # the caller (runbook Step 1) verifies which spelling exists and
-        # reassigns. MCP shape verified in Phase 0 Task 0.2.
-        echo "mcp__codex__codex"
+        # v1.8.0: codex runs headless via `codex exec` behind codex-review.sh —
+        # codex-cli 0.154.0 removed the `codex mcp-server` entry point the
+        # plugin used to register. Print an absolute path so sub-agents can
+        # call it without $CLAUDE_PLUGIN_ROOT in their shell.
+        wrapper="$(cd "$(dirname "$0")" && pwd)/codex-review.sh"
+        "$wrapper" check || exit 1
+        echo "$wrapper"
         ;;
       *)
         echo "error: agent '$agent' is not supported. Supported: codex" >&2

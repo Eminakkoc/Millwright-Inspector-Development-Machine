@@ -1,6 +1,6 @@
 {
   "name": "millwright-inspector-development-machine",
-  "version": "1.7.1",
+  "version": "1.8.0",
   "description": "Millwright-Inspector agentic workflow system — delegates coding to an AI 'millwright' while the human acts as 'inspector' who reviews generated specs, plans, implementations, and diagrams at each stage.",
   "author": {
     "name": "Emin Akkoc",
@@ -20,10 +20,6 @@
     "plantuml": {
       "command": "plantuml-mcp-server",
       "args": []
-    },
-    "codex": {
-      "command": "codex",
-      "args": ["mcp-server"]
     }
   },
   "userConfig": {

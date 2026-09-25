@@ -351,34 +351,19 @@ check_cli rtk false              "$(hints_rtk)"
 # Safe to omit for text-only journals.
 check_cli docling false "$(hints_docling)"
 
-# OPTIONAL — codex CLI + mcp-server subcommand (used by blueprint-review commands).
+# OPTIONAL — codex CLI with `exec` + `exec resume` (used by blueprint-review commands).
 # Missing codex disables stage-2 auto-review but the rest of the workflow is unaffected.
 #
-# v1.5 token-reduction refit (docs/blueprint-review-token-reduction/plan.md) additionally
-# depends on the mcp__codex__codex-reply tool for session continuation. That tool was
-# introduced in codex-cli 0.130.0. Older codex versions still work — the sub-agents fall
-# back to stateless mode (each round = fresh codex call, ~60% reduction instead of ~95%) —
-# but the doctor probe surfaces an informational note when the version is too old to
-# benefit from session continuation.
+# v1.8.0: the reviewer runs headless through scripts/codex-review.sh (`codex exec` for
+# round 1, `codex exec resume <thread>` for rounds 2+). The plugin no longer registers a
+# codex MCP server — codex-cli 0.154.0 removed `codex mcp-server` (openai/codex#42993).
 if command -v codex >/dev/null 2>&1; then
   codex_version="$(codex --version 2>/dev/null | head -1 || echo 'unknown')"
-  if codex mcp-server --help >/dev/null 2>&1; then
-    # Try to extract the numeric version (e.g., "codex-cli 0.133.0" → "0.133.0") and gate
-    # on >= 0.130.0 for codex-reply availability. If parsing fails, assume modern.
-    codex_num="$(echo "$codex_version" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)"
-    codex_reply_note=""
-    if [[ -n "$codex_num" ]]; then
-      if printf '%s\n%s\n' "0.130.0" "$codex_num" | sort -V -C 2>/dev/null; then
-        codex_reply_note=" (codex-reply available)"
-      else
-        codex_reply_note=" (codex-reply unavailable; v1.5 review falls back to stateless mode — upgrade to 0.130.0+ for ~95% token reduction)"
-      fi
-    fi
-    record "codex" cli false true "${codex_version}${codex_reply_note}" '{}'
+  if codex exec resume --help >/dev/null 2>&1; then
+    record "codex" cli false true "$codex_version" '{}'
   else
-    # Binary exists but the mcp-server subcommand is missing — this CLI is too
-    # old / wrong build.
-    record "codex" cli false false "$codex_version (no mcp-server)" "$(hints_codex)"
+    # Binary exists but predates `codex exec resume` — upgrade.
+    record "codex" cli false false "$codex_version (no 'exec resume' — upgrade codex)" "$(hints_codex)"
   fi
 else
   record "codex" cli false false "" "$(hints_codex)"

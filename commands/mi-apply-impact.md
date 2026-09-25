@@ -347,7 +347,7 @@ This is a non-blocking quality gate: an external coding agent (Codex by default)
 **Expect one inspector prompt from this auto-fire (v1.6.10).** The review's Phase E is a scope-expansion gate: any finding whose fix would add mechanism the blueprint does not contain today is NOT applied automatically — the review stops and asks. Answering `none` (the default) is a perfectly good answer at stage 2; those proposals stay inline as comments, get recorded as declined, and are not re-raised by later runs. This prompt is the reason `requirements.md` no longer grows on every review, so do not suppress or auto-answer it. If the session cannot prompt, the gate applies nothing and says so.
 
 ```bash
-# Skip if codex MCP server is unavailable — graceful degradation per
+# Skip if the codex CLI (`codex exec`) is unavailable — graceful degradation per
 # docs/blueprints-review/plan.md §10.2.
 if "$CLAUDE_PLUGIN_ROOT/scripts/doctor.sh" --format=json | python3 -c '
 import sys, json
@@ -373,8 +373,8 @@ sys.exit(1)
   /mi-blueprint-review codex "$requirements_path" --scope "Goals (this cycle)" --reasoning-effort medium "${ref_flag[@]}"
   review_status="auto-reviewed by codex; any remaining findings are inline as \`<!-- REVIEW-FINDING -->\` comments"
 else
-  echo "warning: codex MCP unavailable — skipping stage-2 blueprint review" >&2
-  review_status="(blueprint review skipped — codex MCP unavailable)"
+  echo "warning: codex CLI unavailable — skipping stage-2 blueprint review" >&2
+  review_status="(blueprint review skipped — codex CLI unavailable)"
 fi
 ```
 
