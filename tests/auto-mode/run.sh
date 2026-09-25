@@ -238,6 +238,118 @@ out="$(run_in "$sb" "$A" switch status 2>/dev/null)"
 t="/mi-auto command exists and wraps auto.sh switch"
 assert_contains "$t" commands/mi-auto.md 'auto.sh" switch'
 
+# ---- Task 3: create-branch / approve-guard -------------------------------------
+
+# cfg_file <sb> — write a config.md with an empty GIT BRANCH section; print path.
+cfg_file() {
+  local c="$1/millwright-inspector/workflow-stream/alpha/blueprints/current/config.md"
+  mkdir -p "$(dirname "$c")"
+  cat > "$c" <<'EOF'
+# Config
+
+## GIT BRANCH
+
+<!-- one bare line -->
+
+## Lessons learned
+- path: (none yet)
+EOF
+  printf '%s' "$c"
+}
+
+t="create-branch ignores untracked + data-root changes, creates feat/<slug>, writes config"
+sb="$(make_sandbox --auto)"
+cfg="$(cfg_file "$sb")"
+echo junk > "$sb/untracked.txt"
+out="$(run_in "$sb" "$A" create-branch alpha "$cfg" 2>/dev/null)"; rc=$?
+head_now="$(cd "$sb" && git rev-parse --abbrev-ref HEAD)"
+section="$(awk '/^## GIT BRANCH/{f=1;next} /^## /{f=0} f' "$cfg" | grep -v '^[[:space:]]*$' | grep -v '^<!--')"
+if [[ $rc -eq 0 && "$head_now" == "feat/alpha" && "$section" == "feat/alpha" \
+      && "$out" == "auto: created branch feat/alpha from main" ]]; then
+  ok "$t"
+else
+  ng "$t" "rc=$rc head=$head_now section=[$section] out=$out"
+fi
+
+t="create-branch appends -2 when feat/<slug> exists"
+sb="$(make_sandbox --auto)"
+cfg="$(cfg_file "$sb")"
+(cd "$sb" && git branch feat/alpha)
+run_in "$sb" "$A" create-branch alpha "$cfg" >/dev/null 2>&1
+[[ "$(cd "$sb" && git rev-parse --abbrev-ref HEAD)" == "feat/alpha-2" ]] && ok "$t" || ng "$t" "not on feat/alpha-2"
+
+t="create-branch replaces an existing candidate line in config"
+sb="$(make_sandbox --auto)"
+cfg="$(cfg_file "$sb")"
+python3 - "$cfg" <<'PYEOF'
+import sys; p=sys.argv[1]; s=open(p).read()
+open(p,'w').write(s.replace('<!-- one bare line -->\n', '<!-- one bare line -->\nfeat/old\n'))
+PYEOF
+run_in "$sb" "$A" create-branch alpha "$cfg" >/dev/null 2>&1
+section="$(awk '/^## GIT BRANCH/{f=1;next} /^## /{f=0} f' "$cfg" | grep -v '^[[:space:]]*$' | grep -v '^<!--')"
+[[ "$section" == "feat/alpha" ]] && ok "$t" || ng "$t" "section=[$section]"
+
+t="create-branch exits 3 on a dirty tracked file and does not switch"
+sb="$(make_sandbox --auto)"
+cfg="$(cfg_file "$sb")"
+echo changed >> "$sb/README.md"
+out="$(run_in "$sb" "$A" create-branch alpha "$cfg" 2>/dev/null)"; rc=$?
+if [[ $rc -eq 3 && "$out" == "auto: uncommitted changes — commit or stash, then /mi-continue" \
+      && "$(cd "$sb" && git rev-parse --abbrev-ref HEAD)" == "main" ]]; then
+  ok "$t"
+else
+  ng "$t" "rc=$rc out=$out"
+fi
+
+t="create-branch succeeds when a tracked data-root file is dirty (data root excluded)"
+sb="$(make_sandbox --auto)"
+cfg="$(cfg_file "$sb")"
+(cd "$sb" && git add -f millwright-inspector/workflow-stream/alpha/blueprints/current/config.md \
+   && git commit -qm "track config")
+echo more >> "$cfg"
+out="$(run_in "$sb" "$A" create-branch alpha "$cfg" 2>/dev/null)"; rc=$?
+if [[ $rc -eq 0 && "$(cd "$sb" && git rev-parse --abbrev-ref HEAD)" == "feat/alpha" \
+      && "$out" == "auto: created branch feat/alpha from main" ]]; then
+  ok "$t"
+else
+  ng "$t" "rc=$rc out=$out"
+fi
+
+# review_file <sb> <blocks...>: each block "IR-001|fix|fixed"; "IR-009|-|-" = no scope/status lines.
+review_file() {
+  local sb="$1"; shift
+  local f="$sb/millwright-inspector/workflow-stream/alpha/implementation/inspector-review.md"
+  mkdir -p "$(dirname "$f")"
+  { printf -- '---\nfeature: alpha\n---\n\n## Implementation Review\n\n'
+    local b id sc st
+    for b in "$@"; do
+      IFS='|' read -r id sc st <<< "$b"
+      printf '### %s — thing\n- severity: major\n' "$id"
+      [[ "$sc" != "-" ]] && printf -- '- scope: %s\n' "$sc"
+      [[ "$st" != "-" ]] && printf -- '- status: %s\n' "$st"
+      printf -- '- details: |\n    x\n\n'
+    done
+  } > "$f"
+}
+
+t="approve-guard passes when every finding is fix/re-implement and fixed"
+sb="$(make_sandbox)"
+review_file "$sb" "IR-001|fix|fixed" "IR-002|re-implement|fixed"
+out="$(run_in "$sb" "$A" approve-guard alpha 2>/dev/null)"; rc=$?
+[[ $rc -eq 0 && -z "$out" ]] && ok "$t" || ng "$t" "rc=$rc out=$out"
+
+t="approve-guard stops and names re-spec, re-plan, wontfix, open, unreadable"
+review_file "$sb" "IR-001|fix|fixed" "IR-002|re-spec|fixed" "IR-003|re-plan|fixed" \
+  "IR-004|fix|wontfix" "IR-005|fix|open" "IR-006|-|-"
+out="$(run_in "$sb" "$A" approve-guard alpha 2>/dev/null)"; rc=$?
+want="auto: review needs your look — IR-002 (re-spec), IR-003 (re-plan), IR-004 (wontfix), IR-005 (open), IR-006 (unreadable)"
+[[ $rc -eq 1 && "$out" == "$want" ]] && ok "$t" || ng "$t" "rc=$rc out=$out"
+
+t="approve-guard stops when inspector-review.md is missing"
+sb="$(make_sandbox)"
+out="$(run_in "$sb" "$A" approve-guard alpha 2>/dev/null)"; rc=$?
+[[ $rc -eq 1 && "$out" == "auto: review needs your look — inspector-review.md missing" ]] && ok "$t" || ng "$t" "rc=$rc out=$out"
+
 # ---- end of tests --------------------------------------------------------------
 echo
 echo "auto-mode: $pass passed, $fail failed"

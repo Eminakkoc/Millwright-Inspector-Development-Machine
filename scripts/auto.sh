@@ -14,8 +14,16 @@
 #                                                 # current-stage, or `-` between features).
 #                                                 # A ledger failure only warns.
 #   auto.sh switch on|off|status                  # /mi-auto backend
-#   auto.sh create-branch <slug> <config.md>      # see case below
-#   auto.sh approve-guard <feature>               # see case below
+#   auto.sh create-branch <slug> <config.md>      # dirty tracked tree (data root excluded) →
+#                                                 # exit 3; else creates feat/<slug> (or -2, -3,
+#                                                 # ...), switches to it, rewrites config.md's
+#                                                 # ## GIT BRANCH section to one bare branch
+#                                                 # line, prints the created-branch line, and
+#                                                 # logs an auto-answer ledger row.
+#   auto.sh approve-guard <feature>               # exit 0 when every ### IR-NNN block is
+#                                                 # scope fix/re-implement + status fixed;
+#                                                 # else exit 1 and list the offenders needing
+#                                                 # your look (or "inspector-review.md missing").
 
 set -euo pipefail
 source "$(dirname "$0")/internal/common.sh"
@@ -95,6 +103,81 @@ case "$cmd" in
         ;;
       *) mi_die "switch: expected on|off|status, got '$mode'" ;;
     esac
+    ;;
+
+  create-branch)
+    slug="${1:?slug required}"; config="${2:?config.md path required}"
+    [[ -f "$config" ]] || mi_die "create-branch: config not found: $config"
+    top="$(git rev-parse --show-toplevel)"
+    # Exclude the data root when it lives inside the work tree: stage 2 has
+    # just written blueprints/current/* there, and those must not count.
+    rel="$(python3 -c 'import os,sys; r=os.path.relpath(os.path.realpath(sys.argv[1]), os.path.realpath(sys.argv[2])); print("" if r.startswith("..") else r)' "$(mi_data_root)" "$top")"
+    if [[ -n "$rel" && "$rel" != "." ]]; then
+      dirty="$(git -C "$top" status --porcelain --untracked-files=no -- . ":(exclude)$rel")"
+    else
+      dirty="$(git -C "$top" status --porcelain --untracked-files=no)"
+    fi
+    if [[ -n "$dirty" ]]; then
+      echo "auto: uncommitted changes — commit or stash, then /mi-continue"
+      exit 3
+    fi
+    base="$(git rev-parse --abbrev-ref HEAD)"
+    [[ "$base" == "HEAD" ]] && base="$(git rev-parse --short HEAD)"
+    name="feat/$slug"; n=2
+    while git show-ref --verify --quiet "refs/heads/$name"; do
+      name="feat/$slug-$n"; n=$((n + 1))
+    done
+    git switch -q -c "$name"
+    python3 - "$config" "$name" <<'PYEOF'
+import sys, re
+path, name = sys.argv[1], sys.argv[2]
+s = open(path).read()
+m = re.search(r'(?m)^## GIT BRANCH[ \t]*\n', s)
+if not m:
+    sys.stderr.write("error: create-branch: no '## GIT BRANCH' heading in config.md\n"); sys.exit(1)
+start = m.end()
+nxt = re.search(r'(?m)^## ', s[start:])
+end = start + (nxt.start() if nxt else len(s) - start)
+body = s[start:end]
+# Keep HTML comments only; drop every other non-blank line (old candidates).
+comments = re.findall(r'<!--.*?-->', body, re.DOTALL)
+new_body = '\n' + ''.join(c + '\n\n' for c in comments) + name + '\n\n'
+open(path, 'w').write(s[:start] + new_body + s[end:])
+PYEOF
+    echo "auto: created branch $name from $base"
+    ledger_row "/mi-plan-implementation" "auto-answer" "feature branch → $name (from $base)"
+    ;;
+
+  approve-guard)
+    feature="${1:?feature required}"
+    rf="$(mi_impl_dir "$feature")/inspector-review.md"
+    if [[ ! -f "$rf" ]]; then
+      echo "auto: review needs your look — inspector-review.md missing"
+      exit 1
+    fi
+    python3 - "$rf" <<'PYEOF'
+import re, sys
+content = open(sys.argv[1]).read()
+bad = []
+for m in re.finditer(r'(?ms)^### (IR-\d{3}) —.*?(?=^### |^## |\Z)', content):
+    block = m.group(0)
+    scope = re.search(r'(?m)^- scope:\s*(\S+)', block)
+    status = re.search(r'(?m)^- status:\s*(\S+)', block)
+    if not scope or not status:
+        bad.append(f"{m.group(1)} (unreadable)"); continue
+    sc, st = scope.group(1), status.group(1)
+    if st == 'open':
+        bad.append(f"{m.group(1)} (open)")
+    elif st == 'wontfix':
+        bad.append(f"{m.group(1)} (wontfix)")
+    elif sc not in ('fix', 're-implement'):
+        bad.append(f"{m.group(1)} ({sc})")
+    elif st != 'fixed':
+        bad.append(f"{m.group(1)} (unreadable)")
+if bad:
+    print("auto: review needs your look — " + ", ".join(bad))
+    sys.exit(1)
+PYEOF
     ;;
 
   *)
