@@ -1,29 +1,33 @@
 #!/usr/bin/env bash
-# codex-review.sh — headless codex reviewer transport for the blueprint-review
+# codex-review.sh — headless reviewer transport for the blueprint-review
 # sub-agents. Replaces the codex MCP server (`codex mcp-server`), which codex-cli
-# removed in 0.154.0 (openai/codex#42993). See CHANGELOG 1.8.0.
+# removed in 0.154.0 (openai/codex#42993). See CHANGELOG 1.8.0. Since 1.10.0 it
+# can drive Claude (`claude -p`) instead of codex when codex is unavailable.
 #
 # Subcommands:
-#   open  --effort <low|medium|high>                 # round 1: new read-only session
-#   reply --thread <id> [--effort <low|medium|high>] # rounds 2+: resume that session
-#   check                                            # exit 0 iff codex exec is usable
+#   open  [--backend B] --effort <low|medium|high>                 # round 1: new read-only session
+#   reply [--backend B] --thread <id> [--effort <low|medium|high>] # rounds 2+: resume that session
+#   check [--backend B]                                            # exit 0 iff the backend CLI is usable
 #
-# `open` and `reply` read the prompt from STDIN and print ONE JSON object to stdout:
-#   {"threadId": "<uuid>", "content": "<reviewer's final message>"}
+# --backend is codex (default) or claude. `open` and `reply` read the prompt from
+# STDIN and print ONE JSON object to stdout:
+#   {"threadId": "<id>", "content": "<reviewer's final message>"}
 # — the same two fields the codex MCP tools returned, so callers parse `content`
-# exactly as before and pass `threadId` back to `reply`.
+# exactly as before and pass `threadId` back to `reply` with the same --backend.
 #
-# Exit codes: 0 ok · 1 codex failed (log tail on stderr) · 3 session not found
+# Exit codes: 0 ok · 1 reviewer failed (log tail on stderr) · 3 session not found
 # (thread expired or unknown — re-open with a full round-1 prompt) · 64 usage ·
-# 69 codex CLI missing or lacks `exec`.
+# 69 backend CLI missing or unusable.
 #
-# Every session runs with sandbox read-only and approval policy never: the
-# reviewer can read the workspace but never write to it or prompt for approval.
+# Every session is read-only: codex runs with sandbox read-only and approval
+# policy never; claude runs in safe mode with only Read/Grep/Glob. The reviewer
+# can read the workspace but never write to it or prompt for approval. Claude's
+# model is $MI_REVIEW_CLAUDE_MODEL (default opus).
 
 set -euo pipefail
 
 usage() {
-  sed -n '2,19p' "$0"
+  sed -n '2,25p' "$0"
 }
 
 die_usage() { echo "error: $*" >&2; exit 64; }
@@ -37,6 +41,15 @@ require_codex() {
   codex exec --help >/dev/null 2>&1 || { echo "error: installed codex CLI has no 'exec' subcommand — upgrade codex" >&2; exit 69; }
 }
 
+require_claude() {
+  command -v claude >/dev/null 2>&1 || { echo "error: claude CLI not found on PATH" >&2; exit 69; }
+}
+
+require_backend() {
+  if [[ "$backend" == "claude" ]]; then require_claude; else require_codex; fi
+}
+
+backend="codex"
 effort=""
 thread=""
 while [[ $# -gt 0 ]]; do
@@ -45,14 +58,17 @@ while [[ $# -gt 0 ]]; do
     --effort=*) effort="${1#--effort=}"; shift ;;
     --thread)   thread="${2:-}"; shift 2 ;;
     --thread=*) thread="${1#--thread=}"; shift ;;
+    --backend)   backend="${2:-}"; shift 2 ;;
+    --backend=*) backend="${1#--backend=}"; shift ;;
     *) die_usage "unknown argument: $1" ;;
   esac
 done
 [[ -z "$effort" || "$effort" =~ ^(low|medium|high)$ ]] || die_usage "--effort must be low|medium|high"
+[[ "$backend" =~ ^(codex|claude)$ ]] || die_usage "--backend must be codex|claude"
 
 case "$cmd" in
   check)
-    require_codex
+    require_backend
     exit 0
     ;;
   open)
@@ -67,13 +83,55 @@ case "$cmd" in
     ;;
 esac
 
-require_codex
+require_backend
 
 work="$(mktemp -d "${TMPDIR:-/tmp}/mi-codex-review.XXXXXX")"
 trap 'rm -rf "$work"' EXIT
 
 cat > "$work/prompt.md"
 [[ -s "$work/prompt.md" ]] || die_usage "empty prompt on stdin"
+
+if [[ "$backend" == "claude" ]]; then
+  # --safe-mode drops plugins, hooks and CLAUDE.md, so the reviewer sees only
+  # the prompt; --tools leaves it nothing that can write.
+  args=(-p --output-format json --safe-mode
+        --tools "Read,Grep,Glob" --allowedTools "Read Grep Glob"
+        --permission-mode dontAsk
+        --model "${MI_REVIEW_CLAUDE_MODEL:-opus}")
+  [[ -n "$effort" ]] && args+=(--effort "$effort")
+  [[ "$cmd" == "reply" ]] && args+=(--resume "$thread")
+
+  set +e
+  claude "${args[@]}" < "$work/prompt.md" > "$work/result.json" 2> "$work/stderr.log"
+  rc=$?
+  set -e
+
+  if [[ $rc -ne 0 ]]; then
+    if grep -qiE 'no conversation found' "$work/result.json" "$work/stderr.log"; then
+      echo "error: session not found for thread_id $thread" >&2
+      exit 3
+    fi
+    echo "error: claude -p failed (exit $rc)" >&2
+    tail -n 20 "$work/result.json" "$work/stderr.log" >&2
+    exit 1
+  fi
+
+  python3 - "$work/result.json" <<'PYEOF'
+import json, sys
+
+try:
+    with open(sys.argv[1], encoding="utf-8") as f:
+        res = json.load(f)
+except (OSError, ValueError):
+    sys.exit("error: claude produced no JSON result")
+if res.get("is_error") or not res.get("session_id"):
+    sys.exit(f"error: claude review failed: {res.get('result') or res.get('subtype')}")
+
+json.dump({"threadId": res["session_id"], "content": res.get("result") or ""}, sys.stdout)
+sys.stdout.write("\n")
+PYEOF
+  exit 0
+fi
 
 common=(--json --skip-git-repo-check
         -c 'sandbox_mode="read-only"'

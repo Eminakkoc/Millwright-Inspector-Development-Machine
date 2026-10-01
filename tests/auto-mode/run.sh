@@ -650,10 +650,7 @@ if [[ "$cur" == "$(cat "$FIX/never-auto-expected.txt")" ]]; then ok "$t"; else
   ng "$t" "diff: $(diff <(printf '%s\n' "$cur") "$FIX/never-auto-expected.txt" | head -5)"
 fi
 
-assert_contains "plugin.json is 1.9.0" .claude-plugin/plugin.json '"version": "1.9.0"'
-t="CHANGELOG top heading is 1.9.0"
-top="$(grep -m1 '^## ' "$REPO_ROOT/CHANGELOG.md")"
-[[ "$top" == "## 1.9.0 — Auto mode" ]] && ok "$t" || ng "$t" "top=$top"
+assert_contains "CHANGELOG has the 1.9.0 Auto mode entry" CHANGELOG.md '## 1.9.0 — Auto mode'
 assert_contains "README has an Auto mode section" README.md '## Auto mode'
 assert_contains "project doc lists /mi-auto" docs/millwright-inspector-project.md '/mi-auto'
 assert_contains "project doc lists /mi-implement" docs/millwright-inspector-project.md '/mi-implement'

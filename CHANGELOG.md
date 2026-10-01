@@ -1,5 +1,30 @@
 # Changelog
 
+## 1.10.0 — Claude as a fallback blueprint reviewer
+
+Blueprint reviews no longer need codex. When codex is missing or unusable, the
+inspector can run them on Claude instead.
+
+- **Asked once per cycle.** `/mi-run` checks codex at Step 0.5. If it is unavailable,
+  it asks: use Claude for this cycle's reviews, or install codex first. Choosing
+  Claude saves `review-backend: claude` in `progress.md`.
+- **Asked at review time too.** `/mi-blueprint-review` (and `-item`, `-consistency`)
+  resolve the reviewer with `blueprint-review.sh resolve-agent`: a saved `claude`
+  wins; otherwise codex if usable; otherwise ask — Claude or skip. Auto mode answers
+  `claude`. This replaces stage 2's silent skip when codex was missing.
+- **One wrapper, two backends.** `scripts/codex-review.sh` takes `--backend codex|claude`.
+  The Claude backend runs `claude -p` in safe mode with only Read/Grep/Glob, resumes
+  rounds 2+ with `--resume`, and keeps the `{threadId, content}` output and exit codes.
+  Model: `$MI_REVIEW_CLAUDE_MODEL` (default `opus`). The reviewer sub-agents pass
+  `--backend <agent>`; the batch-reviewer guard hook admits the flag.
+- **Doctor.** When codex is missing or too old, `/mi-doctor` also checks the `claude`
+  CLI (optional; a warning with an install hint if it is absent too). With a working
+  codex it is not checked.
+- **Doctor no longer hangs** on `plantuml-mcp-server --version`, which ignores the flag
+  and serves on stdin; version lookups now run with stdin closed.
+- **Visible in the report.** Phase G prints `Reviewer: <agent>`, and notes that a Claude
+  review of a Claude-written blueprint is not an independent second opinion.
+
 ## 1.9.0 — Auto mode
 
 One cycle-wide switch that lets the millwright answer most stage 1.5–8 prompts itself,

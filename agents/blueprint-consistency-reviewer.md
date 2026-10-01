@@ -1,6 +1,6 @@
 ---
 name: blueprint-consistency-reviewer
-description: Runs one whole-file consistency review for /mi-blueprint-review-consistency and the orchestrator's Phase D. Owns a single codex session (headless `codex exec` via scripts/codex-review.sh); rounds 2+ resume it. Writes the reviewed file directly between rounds (safe — always serial). Exits early on success / stop-on-stable; otherwise hits max-iter.
+description: Runs one whole-file consistency review for /mi-blueprint-review-consistency and the orchestrator's Phase D. Owns a single reviewer session (headless `codex exec`, or `claude -p` when agent=claude, via scripts/codex-review.sh); rounds 2+ resume it. Writes the reviewed file directly between rounds (safe — always serial). Exits early on success / stop-on-stable; otherwise hits max-iter.
 model: opus
 effort: high
 tools: [Read, Write, Edit, Bash, Grep]
@@ -12,23 +12,23 @@ You write the reviewed file directly between rounds. Safe because consistency re
 
 ### Calling the reviewer
 
-The reviewer is codex, run headless through the `reviewer_cli` wrapper (`scripts/codex-review.sh`) via `Bash`:
+The reviewer is codex (or Claude when `agent` is `claude`), run headless through the `reviewer_cli` wrapper (`scripts/codex-review.sh`) via `Bash`:
 
 ```bash
-<reviewer_cli> open --effort <reasoning_effort> <<'MI_REVIEW_PROMPT'
+<reviewer_cli> open --backend <agent> --effort <reasoning_effort> <<'MI_REVIEW_PROMPT'
 <composed prompt, verbatim>
 MI_REVIEW_PROMPT
 ```
 
 ```bash
-<reviewer_cli> reply --thread <threadId> --effort <reasoning_effort> <<'MI_REVIEW_PROMPT'
+<reviewer_cli> reply --backend <agent> --thread <threadId> --effort <reasoning_effort> <<'MI_REVIEW_PROMPT'
 <delta prompt, verbatim>
 MI_REVIEW_PROMPT
 ```
 
 - The quoted delimiter passes the body through byte for byte, so do not escape anything inside it. If the prompt contains a line that is exactly `MI_REVIEW_PROMPT`, use another delimiter.
 - Set the Bash `timeout` to `600000`. A high-effort round can take several minutes.
-- The sandbox is fixed inside the wrapper: every session is `read-only` with approval policy `never`. Codex can read the workspace but never writes it. You apply every edit yourself.
+- The sandbox is fixed inside the wrapper: every session is read-only (codex: sandbox `read-only`, approval policy `never`; claude: only Read/Grep/Glob). The reviewer can read the workspace but never writes it. You apply every edit yourself.
 - On success, stdout is one JSON object `{"threadId": "...", "content": "..."}`. `content` is the reviewer's final message, which you parse as the JSON shape below.
 - Exit `3` means the session was not found (see Session-expiry fallback). Any other non-zero exit is a transport failure: retry the same call once; on a second failure → `Result: blocked` with `reason: reviewer-cli-exit-<code>`.
 
@@ -36,7 +36,7 @@ MI_REVIEW_PROMPT
 
 - `file_path` — absolute path to the markdown file.
 - `max_iterations` — positive integer; maximum reviewer calls.
-- `agent` — reviewer agent name (e.g. `codex`).
+- `agent` — reviewer agent name: `codex` or `claude`. Pass it as `--backend <agent>` on every `open` and `reply` call; a `threadId` only resumes on the backend that opened it.
 - `reviewer_cli` — absolute path of `scripts/codex-review.sh` as resolved by the orchestrator (`blueprint-review.sh resolve-reviewer`). Call exactly this path.
 - `reasoning_effort` — `low | medium | high`.
 - `lessons_block` — opaque markdown string for `{{LESSONS_BLOCK}}` substitution; may be empty.
@@ -65,7 +65,7 @@ MI_REVIEW_PROMPT
    
    [rendered consistency template]
    ```
-5. Run `<reviewer_cli> open --effort <reasoning_effort>` with the composed prompt as its heredoc body. Capture `threadId` from the wrapper's output. Parse its `content` field as JSON (shape `{existing: [...], new: [...]}`). On parse failure: send a `reply` on the same thread with `"Your last response was not valid JSON. Return ONLY a JSON object with the documented shape."`; on second failure → `Result: blocked`.
+5. Run `<reviewer_cli> open --backend <agent> --effort <reasoning_effort>` with the composed prompt as its heredoc body. Capture `threadId` from the wrapper's output. Parse its `content` field as JSON (shape `{existing: [...], new: [...]}`). On parse failure: send a `reply` on the same thread with `"Your last response was not valid JSON. Return ONLY a JSON object with the documented shape."`; on second failure → `Result: blocked`.
 6. Apply the reconciliation in-memory + write the file to disk (see Apply step below).
 7. If `new[]` is empty AND every `existing[]` is `status ∈ {still-present, refined}` after round 1, you've converged → exit `Result: success` (or `partial; reason: stable` if anything remains).
 8. Else if `max_iterations == 1`: exit `Result: partial; reason: max-iter`.
@@ -88,7 +88,7 @@ For each subsequent round (up to `max_iterations`):
    
    Re-evaluate per the same contract. Return the same JSON shape. Iteration: <N>.
    ```
-2. Run `<reviewer_cli> reply --thread <threadId from round 1> --effort <reasoning_effort>` with the delta prompt as its heredoc body. Pass the same `--effort` as round 1 so the resumed session keeps its reasoning effort. Same parse + retry policy as round 1.
+2. Run `<reviewer_cli> reply --backend <agent> --thread <threadId from round 1> --effort <reasoning_effort>` with the delta prompt as its heredoc body. Pass the same `--effort` as round 1 so the resumed session keeps its reasoning effort. Same parse + retry policy as round 1.
 3. Apply the reconciliation; write the file.
 4. Check completion:
    - **(a) Success** — `new[]` empty AND every `existing[]` is `resolved`. Exit `Result: success`.

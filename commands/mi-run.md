@@ -52,7 +52,20 @@ if ! $CLAUDE_PLUGIN_ROOT/scripts/doctor.sh --preflight; then
 fi
 ```
 
-If preflight fails, **invoke `/mi-doctor` immediately** (do not stop and ask the inspector to run it themselves). Follow the `/mi-doctor` command's flow to present missing deps, propose install commands, and run them after approval. Once doctor reports `status: ok`, re-run preflight and continue to Step 1.
+If preflight fails, **invoke `/mi-doctor` immediately** (do not stop and ask the inspector to run it themselves). Follow the `/mi-doctor` command's flow to present missing deps, propose install commands, and run them after approval. Once doctor reports `status: ok`, re-run preflight and continue to Step 0.5.
+
+### Step 0.5 — Blueprint reviewer check (1.10.0)
+
+Stage 2 reviews every blueprint with codex. Check now whether codex is usable, so the inspector decides once instead of mid-cycle:
+
+```bash
+"$CLAUDE_PLUGIN_ROOT/scripts/codex-review.sh" check
+```
+
+On exit `0`, continue to Step 1. On any other exit, ask the inspector in one line: `"Codex isn't available (<its error line>) — use Claude for this cycle's blueprint reviews, or install codex first?"`
+
+- `claude`: remember it — Step 5 saves `review-backend: claude` into the new `progress.md`, and every blueprint review in this cycle then runs on Claude without asking. Continue to Step 1.
+- `install`: follow `/mi-doctor`'s install flow for codex (`codex login` afterwards), re-run the check, and ask again if it still fails.
 
 ### Step 1 — Parse arguments
 
@@ -464,6 +477,12 @@ When the `--auto` flag (or bare `auto` token) was given in Step 1, pass `--auto`
 
 ```bash
 "$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" init --auto "$todo_list_id" <feature1> [<feature2> ...]
+```
+
+When the inspector chose Claude at Step 0.5, save it right after `init`:
+
+```bash
+"$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" set-top review-backend=claude
 ```
 
 `progress.sh init` resolves the destination path through the active-quest pointer, so the file lands at `$quest_dir/progress.md` automatically. The new file has the queue populated, `completed: []`, and `active: null`. The feature list here is the distinct feature names surfaced in the todo list — the inspector confirms the priority order in the next step (that's stage 1.5 / item 3 of the workflow). For now, pass them in an order that seems sensible from the journal context; dependencies are resolved later.

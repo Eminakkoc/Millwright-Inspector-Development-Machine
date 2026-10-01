@@ -1,5 +1,5 @@
 ---
-description: Run a single whole-file consistency review (v1.5) — thin wrapper around Phase A + D + F + G of /mi-blueprint-review. One codex session per loop (headless `codex exec`); rounds 2+ resume it. See docs/blueprint-review-token-reduction/plan.md.
+description: Run a single whole-file consistency review (v1.5) — thin wrapper around Phase A + D + F + G of /mi-blueprint-review. One reviewer session per loop (headless `codex exec`, or `claude -p` when codex is unavailable); rounds 2+ resume it. See docs/blueprint-review-token-reduction/plan.md.
 ---
 
 # /mi-blueprint-review-consistency
@@ -18,7 +18,7 @@ Defaults: `--auto-iter 5`, `--reasoning-effort medium`. No `--batch-size`, no `-
 
 ## Preconditions
 
-- The `codex` CLI installed and logged in, with the `exec` subcommand (`/mi-doctor`).
+- The `codex` CLI installed and logged in, with the `exec` subcommand (`/mi-doctor`) — or the `claude` CLI when the review runs on Claude (see `/mi-blueprint-review` Step 1).
 - File exists and is writable.
 
 ## Execution
@@ -47,9 +47,12 @@ done
 [[ "$reasoning_effort" =~ ^(low|medium|high)$ ]] || { echo "error: --reasoning-effort must be low|medium|high" >&2; exit 64; }
 [[ -f "$file" && -w "$file" ]] || { echo "error: file not found or not writable: $file" >&2; exit 1; }
 
+# 1.10.0: exit 69 = codex unavailable — handle exactly as /mi-blueprint-review
+# Step 1 "Codex unavailable" (ask: Claude or skip; save the choice).
+agent="$("$CLAUDE_PLUGIN_ROOT/scripts/blueprint-review.sh" resolve-agent "$agent")" || exit $?
 reviewer_cli="$($CLAUDE_PLUGIN_ROOT/scripts/blueprint-review.sh resolve-reviewer "$agent")" || exit 1
-# Absolute path of scripts/codex-review.sh (headless `codex exec`); see
-# /mi-blueprint-review Step 1 "Reviewer transport".
+# Absolute path of scripts/codex-review.sh (headless `codex exec`, or `claude -p`
+# with --backend claude); see /mi-blueprint-review Step 1 "Reviewer transport".
 ```
 
 ### Step 2 — Run Phase A (preflight + summary build)
