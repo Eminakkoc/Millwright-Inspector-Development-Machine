@@ -350,43 +350,30 @@ The manifest is **persisted** with the rest of `blueprints/current/` so manual r
 
 #### Step B.5 — Auto-invoke `/mi-blueprint-review` on the new `requirements.md`
 
-This is a non-blocking quality gate: an external coding agent (Codex by default) reviews `requirements.md` for consistency and per-item completeness before the inspector sees the blueprint. Findings live inline in the file as `<!-- REVIEW-FINDING -->` comments; resolved ones are cleaned up automatically.
+This is a non-blocking quality gate: an external coding agent (Codex by default; Claude when codex is unavailable and the inspector picks it) reviews `requirements.md` for consistency and per-item completeness before the inspector sees the blueprint. Findings live inline in the file as `<!-- REVIEW-FINDING -->` comments; resolved ones are cleaned up automatically.
 
-**Run it through to the end in this turn (v1.8.1).** Follow `/mi-blueprint-review` from Phase A to Phase G without ending the turn in between. Spawn its batch reviewers at Phase C and its consistency reviewer at Phase D as soon as their inputs are ready — the delegation contract above already covers them. Do not stop after building the batch inputs to report status or wait for a go-ahead; the only sanctioned pause for inspector input is the Phase E prompt below.
+**Run it through to the end in this turn (v1.8.1).** Follow `/mi-blueprint-review` from Phase A to Phase G without ending the turn in between. Spawn its batch reviewers at Phase C and its consistency reviewer at Phase D as soon as their inputs are ready — the delegation contract above already covers them. Do not stop after building the batch inputs to report status or wait for a go-ahead; the only sanctioned pauses for inspector input are the Phase E prompt below and, when codex is unavailable and the cycle has no saved choice, the review's one Claude-or-skip question.
 
 **Expect one inspector prompt from this auto-fire (v1.6.10).** The review's Phase E is a scope-expansion gate: any finding whose fix would add mechanism the blueprint does not contain today is NOT applied automatically — the review stops and asks. Answering `none` (the default) is a perfectly good answer at stage 2; those proposals stay inline as comments, get recorded as declined, and are not re-raised by later runs. This prompt is the reason `requirements.md` no longer grows on every review, so do not suppress or auto-answer it. If the session cannot prompt, the gate applies nothing and says so.
 
 ```bash
-# Skip if the codex CLI (`codex exec`) is unavailable — graceful degradation per
-# docs/blueprints-review/plan.md §10.2.
-if "$CLAUDE_PLUGIN_ROOT/scripts/doctor.sh" --format=json | python3 -c '
-import sys, json
-status = json.load(sys.stdin)
-checks = status.get("checks", [])
-for r in checks:
-    if r.get("name") == "codex" and r.get("present"):
-        sys.exit(0)
-sys.exit(1)
-'; then
-  requirements_path="$data_root/workflow-stream/$active_feature/blueprints/current/requirements.md"
-  blueprint_review_context_path="$data_root/workflow-stream/$active_feature/blueprints/current/blueprint-review-context.md"
-  # v1.5 CLI: --auto-iter replaces positional <max-c-iter> <max-i-iter>. Defaults
-  # (--auto-iter 3, --batch-size 3, --concurrency 3, --reasoning-effort medium) are
-  # the right starting point for stage-2 auto-fire (see docs/blueprint-review-token-reduction/plan.md §11.1).
-  # --scope restricts per-item enumeration to Goals only — Planned and Non-goals
-  # items don't need per-item review.
-  # --reference-file (v1.6): only when Step B.4.5 successfully wrote the manifest.
-  # If the manifest is missing, the auto-fire still runs — without the reference block —
-  # preserving the non-blocking-gate property.
-  ref_flag=()
-  [[ -r "$blueprint_review_context_path" ]] && ref_flag=(--reference-file "$blueprint_review_context_path")
-  /mi-blueprint-review codex "$requirements_path" --scope "Goals (this cycle)" --reasoning-effort medium "${ref_flag[@]}"
-  review_status="auto-reviewed by codex; any remaining findings are inline as \`<!-- REVIEW-FINDING -->\` comments"
-else
-  echo "warning: codex CLI unavailable — skipping stage-2 blueprint review" >&2
-  review_status="(blueprint review skipped — codex CLI unavailable)"
-fi
+requirements_path="$data_root/workflow-stream/$active_feature/blueprints/current/requirements.md"
+blueprint_review_context_path="$data_root/workflow-stream/$active_feature/blueprints/current/blueprint-review-context.md"
+# v1.5 CLI: --auto-iter replaces positional <max-c-iter> <max-i-iter>. Defaults
+# (--auto-iter 3, --batch-size 3, --concurrency 3, --reasoning-effort medium) are
+# the right starting point for stage-2 auto-fire (see docs/blueprint-review-token-reduction/plan.md §11.1).
+# --scope restricts per-item enumeration to Goals only — Planned and Non-goals
+# items don't need per-item review.
+# --reference-file (v1.6): only when Step B.4.5 successfully wrote the manifest.
+# If the manifest is missing, the auto-fire still runs — without the reference block —
+# preserving the non-blocking-gate property.
+ref_flag=()
+[[ -r "$blueprint_review_context_path" ]] && ref_flag=(--reference-file "$blueprint_review_context_path")
+/mi-blueprint-review codex "$requirements_path" --scope "Goals (this cycle)" --reasoning-effort medium "${ref_flag[@]}"
+review_status="auto-reviewed by <agent>; any remaining findings are inline as \`<!-- REVIEW-FINDING -->\` comments"
 ```
+
+`<agent>` is the reviewer the review actually used (`codex`, or `claude` — Phase G prints it). When codex is unavailable, the review's Step 1 asks whether to use Claude or skip (1.10.0; usually already answered at `/mi-run`, which saves the choice for the cycle). On `skip`, set `review_status="(blueprint review skipped — codex unavailable)"` and continue to Step B.6.
 
 #### Step B.6 — Surface drift in `summary.md` and `todo-list.md`
 

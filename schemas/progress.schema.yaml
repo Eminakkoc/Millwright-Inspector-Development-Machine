@@ -53,6 +53,15 @@ properties:
       first feature. Written by `progress.sh init --auto` and `progress.sh set-top`
       (via `auto.sh switch`); read via `progress.sh get-top auto-mode`.
 
+  review-backend:
+    type: string
+    enum: [codex, claude]
+    description: >
+      Which CLI runs this cycle's blueprint reviews (1.10.0). Optional — missing
+      means codex. Set to `claude` by `progress.sh set-top` when the inspector
+      chooses Claude because codex is unavailable, at /mi-run or at the first
+      review that finds codex missing; read by `blueprint-review.sh resolve-agent`.
+
   completed-branches:
     type: array
     items:

@@ -1119,6 +1119,83 @@ else
   ng "$t" "got path '$got', unknown-agent exit $rc"
 fi
 
+# ---- 1.10.0: claude backend + resolve-agent ---------------------------------
+
+cat > "$cx_dir/bin/claude" <<'FAKE'
+#!/usr/bin/env bash
+printf '%s\n' "$@" > "$FAKE_CODEX_DIR/claude-argv"
+cat > "$FAKE_CODEX_DIR/claude-stdin"
+if [[ "${FAKE_CLAUDE_MODE:-ok}" == "missing" ]]; then
+  echo "No conversation found with session ID: x" >&2
+  exit 1
+fi
+echo '{"type":"result","subtype":"success","is_error":false,"session_id":"sess-123","result":"{\"items\": []}"}'
+FAKE
+chmod +x "$cx_dir/bin/claude"
+
+t="codex-review --backend claude: open returns {threadId, content}, read-only tools, effort"
+got="$(printf 'p\n$(not expanded)\n' | "${cx_env[@]}" "$CX" open --backend claude --effort high)"
+argv="$(cat "$cx_dir/claude-argv")"
+if [[ "$got" == '{"threadId": "sess-123", "content": "{\"items\": []}"}' ]] \
+   && grep -qx -- '-p' <<<"$argv" && grep -qx -- '--safe-mode' <<<"$argv" \
+   && grep -qx 'Read,Grep,Glob' <<<"$argv" && grep -qx 'dontAsk' <<<"$argv" \
+   && grep -qx 'high' <<<"$argv" && grep -qx 'opus' <<<"$argv" \
+   && ! grep -qx -- '--resume' <<<"$argv" && grep -qF '$(not expanded)' "$cx_dir/claude-stdin"; then
+  ok "$t"
+else
+  ng "$t" "got: $got / argv: $(tr '\n' ' ' <<<"$argv")"
+fi
+
+t="codex-review --backend claude: reply resumes the session; MI_REVIEW_CLAUDE_MODEL picks the model"
+got="$(echo delta | "${cx_env[@]}" MI_REVIEW_CLAUDE_MODEL=sonnet "$CX" reply --backend=claude --thread sess-123 --effort low)"
+argv="$(tr '\n' ' ' < "$cx_dir/claude-argv")"
+if [[ "$got" == *'"threadId": "sess-123"'* && "$argv" == *"--resume sess-123"* && "$argv" == *"--model sonnet"* ]]; then
+  ok "$t"
+else
+  ng "$t" "got: $got / argv: $argv"
+fi
+
+t="codex-review --backend claude: unknown session → exit 3; bad backend → 64"
+echo x | "${cx_env[@]}" FAKE_CLAUDE_MODE=missing "$CX" reply --backend claude --thread nope >/dev/null 2>&1
+rc3=$?
+echo x | "${cx_env[@]}" "$CX" open --backend gemini --effort low >/dev/null 2>&1
+rc64=$?
+[[ $rc3 -eq 3 && $rc64 -eq 64 ]] && ok "$t" || ng "$t" "exits: missing=$rc3 bad-backend=$rc64"
+
+t="resolve-reviewer: claude → same wrapper path"
+got="$("${cx_env[@]}" "$REPO_ROOT/scripts/blueprint-review.sh" resolve-reviewer claude 2>/dev/null)"
+[[ "$got" == "$REPO_ROOT/scripts/codex-review.sh" ]] && ok "$t" || ng "$t" "got '$got'"
+
+# PATH holding only the fake claude (no codex) + the system tools.
+nocx_dir="$(mktemp -d)"
+mkdir -p "$nocx_dir/bin"
+cp "$cx_dir/bin/claude" "$nocx_dir/bin/claude"
+nocx_path="$nocx_dir/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+BR="$REPO_ROOT/scripts/blueprint-review.sh"
+ra_sb="$(mktemp -d)"   # no quest cycle here → no saved choice
+
+t="resolve-agent: codex usable → codex; codex missing → exit 69; claude → claude"
+a1="$(cd "$ra_sb" && "${cx_env[@]}" MI_DATA_ROOT="$ra_sb/mi" "$BR" resolve-agent codex 2>/dev/null)"
+(cd "$ra_sb" && env PATH="$nocx_path" MI_DATA_ROOT="$ra_sb/mi" "$BR" resolve-agent codex >/dev/null 2>&1)
+rc=$?
+a3="$(cd "$ra_sb" && env PATH="$nocx_path" "$BR" resolve-agent claude 2>/dev/null)"
+[[ "$a1" == codex && $rc -eq 69 && "$a3" == claude ]] && ok "$t" || ng "$t" "a1=$a1 rc=$rc a3=$a3"
+
+t="resolve-agent: saved review-backend=claude wins even when codex is usable"
+dr="$ra_sb/mi"
+mkdir -p "$dr/quest/2026-10-01-demo"
+printf -- '---\nslug: 2026-10-01-demo\nstarted: "2026-10-01"\njournal-folders: [demo]\nstatus: active\n---\n' > "$dr/quest/active.md"
+(cd "$ra_sb" && git init -q -b main && git config user.email t@t && git config user.name t \
+   && echo seed > README.md && git add README.md && git commit -qm seed)
+(cd "$ra_sb" && MI_DATA_ROOT="$dr" "$REPO_ROOT/scripts/progress.sh" init 11111111-1111-4111-8111-111111111111 alpha >/dev/null 2>&1)
+(cd "$ra_sb" && MI_DATA_ROOT="$dr" "$REPO_ROOT/scripts/progress.sh" set-top review-backend=claude >/dev/null 2>&1)
+saved="$(cd "$ra_sb" && MI_DATA_ROOT="$dr" "$REPO_ROOT/scripts/progress.sh" get-top review-backend 2>/dev/null)"
+a="$(cd "$ra_sb" && "${cx_env[@]}" MI_DATA_ROOT="$dr" "$BR" resolve-agent codex 2>/dev/null)"
+bad_rc=0
+(cd "$ra_sb" && MI_DATA_ROOT="$dr" "$REPO_ROOT/scripts/progress.sh" set-top review-backend=gemini >/dev/null 2>&1) || bad_rc=$?
+[[ "$saved" == claude && "$a" == claude && $bad_rc -ne 0 ]] && ok "$t" || ng "$t" "saved=$saved agent=$a schema-reject-rc=$bad_rc"
+rm -rf "$nocx_dir" "$ra_sb"
+
 # guard hook: returns the hook's exit code for (agent_type, command)
 guard() {
   python3 -c 'import json,sys; print(json.dumps({"agent_type": sys.argv[1], "tool_name": "Bash", "tool_input": {"command": sys.argv[2]}}))' "$1" "$2" \
@@ -1135,7 +1212,10 @@ r1="$(guard "$BBR" "$ok_cmd")"
 r2="$(guard "$BBR" "\"$REPO_ROOT/scripts/codex-review.sh\" reply --thread t-1 --effort=low <<'P'
 d
 P")"
-[[ "$r1$r2" == "00" ]] && ok "$t" || ng "$t" "exits: open=$r1 reply=$r2"
+r3="$(guard "$BBR" "$REPO_ROOT/scripts/codex-review.sh open --backend claude --effort high <<'P'
+d
+P")"
+[[ "$r1$r2$r3" == "000" ]] && ok "$t" || ng "$t" "exits: open=$r1 reply=$r2 claude-open=$r3"
 
 t="guard hook: batch reviewer blocked from anything else (exit 2)"
 bad=""

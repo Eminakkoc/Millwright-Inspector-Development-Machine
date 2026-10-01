@@ -6,7 +6,7 @@
 # hooks or scoped Bash rules. So this plugin-level hook fires for every Bash call,
 # ignores every caller except that agent, and admits exactly one command shape:
 #
-#   <plugin>/scripts/codex-review.sh open|reply [--effort X] [--thread Y] <<'DELIM'
+#   <plugin>/scripts/codex-review.sh open|reply [--backend B] [--effort X] [--thread Y] <<'DELIM'
 #   ...prompt body (quoted heredoc — never expanded)...
 #   DELIM
 #
@@ -47,7 +47,7 @@ lines = command.rstrip("\n").split("\n")
 head = re.fullmatch(
     r"""\s*(["']?)(?P<path>[^\s"']+)\1"""
     r"""\s+(?:open|reply)"""
-    r"""(?:\s+--(?:effort|thread)(?:=|\s+)[A-Za-z0-9._-]+)*"""
+    r"""(?:\s+--(?:backend|effort|thread)(?:=|\s+)[A-Za-z0-9._-]+)*"""
     r"""\s+<<-?\s*'(?P<delim>[A-Za-z_][A-Za-z0-9_]*)'\s*""",
     lines[0],
 )

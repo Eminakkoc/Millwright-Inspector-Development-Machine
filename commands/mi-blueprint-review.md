@@ -1,5 +1,5 @@
 ---
-description: Orchestrate a token-reduced blueprint review (v1.5) — Phase A (preflight + summary build) → B (enumerate) → C (per-batch parallel review) → D (single consistency pass) → E (scope-expansion gate) → F (persist to review-history.md) → G (report). Every phase is recorded in a deterministic phase ledger; Phase G renders it as a table and FAILS if any mandatory phase was skipped. Runs codex headless via `codex exec` (scripts/codex-review.sh) — `open` for round 1, `reply` to resume the session for rounds 2+; wrapper path resolved at Step 1. See docs/blueprint-review-token-reduction/plan.md.
+description: Orchestrate a token-reduced blueprint review (v1.5) — Phase A (preflight + summary build) → B (enumerate) → C (per-batch parallel review) → D (single consistency pass) → E (scope-expansion gate) → F (persist to review-history.md) → G (report). Every phase is recorded in a deterministic phase ledger; Phase G renders it as a table and FAILS if any mandatory phase was skipped. Runs codex headless via `codex exec` (or Claude via `claude -p` when codex is unavailable and the inspector picks it) through scripts/codex-review.sh — `open` for round 1, `reply` to resume the session for rounds 2+; wrapper path resolved at Step 1. See docs/blueprint-review-token-reduction/plan.md.
 ---
 
 # /mi-blueprint-review
@@ -19,7 +19,7 @@ description: Orchestrate a token-reduced blueprint review (v1.5) — Phase A (pr
 
 | Param | Default | Meaning |
 | --- | --- | --- |
-| `<agent>` | (required) | Reviewer agent name. Currently `codex`. |
+| `<agent>` | (required) | Reviewer agent name: `codex` or `claude`. `codex` falls back to Claude when the cycle saved that choice, and asks when codex is unavailable (Step 1). |
 | `<file-path>` | (required) | Markdown file. Edits in place. |
 | `--auto-iter N` | 5 | Per-batch / per-consistency-pass round budget. `1` = find-only (no fix step). |
 | `--batch-size N` | 3 | Items per batch in Phase C. |
@@ -31,7 +31,7 @@ description: Orchestrate a token-reduced blueprint review (v1.5) — Phase A (pr
 
 ## Preconditions
 
-- The `codex` CLI installed and logged in, with the `exec` subcommand (`/mi-doctor`). Step 1's `resolve-reviewer` verifies this and refuses otherwise.
+- The `codex` CLI installed and logged in, with the `exec` subcommand (`/mi-doctor`) — or the `claude` CLI on PATH when the review runs on Claude. Step 1's `resolve-agent` / `resolve-reviewer` verify this.
 - File exists and is writable.
 
 ## Phase progression contract (READ BEFORE EXECUTING)
@@ -126,6 +126,9 @@ done
 [[ -f "$file" && -w "$file" ]] || { echo "error: file not found or not writable: $file" >&2; exit 1; }
 [[ -z "$reference_file" || -r "$reference_file" ]] || { echo "error: --reference-file path not readable: $reference_file" >&2; exit 64; }
 
+# 1.10.0: codex → claude when the cycle saved review-backend=claude; exit 69 when
+# codex is unavailable and nothing is saved (see "Codex unavailable" below).
+agent="$("$CLAUDE_PLUGIN_ROOT/scripts/blueprint-review.sh" resolve-agent "$agent")" || exit $?
 reviewer_cli="$($CLAUDE_PLUGIN_ROOT/scripts/blueprint-review.sh resolve-reviewer "$agent")" || exit 1
 MAX_ITEMS_PER_REVIEW="$max_items"
 
@@ -136,7 +139,12 @@ MAX_ITEMS_PER_REVIEW="$max_items"
 "$CLAUDE_PLUGIN_ROOT/scripts/blueprint-review.sh" ledger init "$file"
 ```
 
-**Reviewer transport (v1.8.0).** `resolve-reviewer` prints the absolute path of `scripts/codex-review.sh` after checking that `codex exec` is usable; if it fails, relay its error and stop (`run /mi-doctor`). codex-cli 0.154.0 removed `codex mcp-server`, so the reviewer is no longer an MCP tool. Every codex call — Phase B's here, and every sub-agent round — goes through this wrapper: `open --effort <R>` starts a read-only session and `reply --thread <id> --effort <R>` resumes it. The prompt goes on stdin and the output is `{"threadId", "content"}`. `$reviewer_cli` flows into every sub-agent spawn input as `reviewer_cli`.
+**Codex unavailable (1.10.0).** When `resolve-agent` exits `69`, codex is missing or unusable and the cycle has no saved choice. Ask the inspector in one line: `"Codex isn't available (<its error line>) — run this review with Claude instead, or skip it?"`. With auto mode on (`auto.sh is-on`), answer `claude` yourself via `auto.sh answer "Codex unavailable — review with Claude or skip?" "claude"`.
+
+- `claude`: save the choice so later reviews in this cycle use Claude without asking — `"$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" set-top review-backend=claude` (with no active cycle there is nothing to save; ignore its error) — then re-run Step 1 with `<agent>` = `claude`.
+- `skip`: stop here without reviewing. A caller that auto-fired this review (e.g. `/mi-apply-impact` Step B.5) records the review as skipped.
+
+**Reviewer transport (v1.8.0; Claude backend 1.10.0).** `resolve-reviewer` prints the absolute path of `scripts/codex-review.sh` after checking that the backend's CLI is usable (`codex exec`, or `claude` for `agent=claude`); if it fails, relay its error and stop (`run /mi-doctor`). Every reviewer call — Phase B's here, and every sub-agent round — goes through this wrapper with `--backend "$agent"`: `open --backend <A> --effort <R>` starts a read-only session and `reply --backend <A> --thread <id> --effort <R>` resumes it. The prompt goes on stdin and the output is `{"threadId", "content"}`. `$agent` and `$reviewer_cli` flow into every sub-agent spawn input as `agent` and `reviewer_cli`. On Claude the model is `$MI_REVIEW_CLAUDE_MODEL` (default `opus`).
 
 ### Step 2 — Phase A: preflight + summary build **(MANDATORY)**
 
@@ -227,7 +235,7 @@ Record entry: `blueprint-review.sh ledger mark "$file" B running`.
 
 Render `templates/blueprint-reviewer-prompt-enumerate.md.tmpl` (unchanged from v1.2.x) — substitute `{{SCOPE_INSTRUCTION}}` and `{{SCOPE_EMPTY_HINT}}` according to whether `--scope` was passed (same logic as v1.2.x orchestrator).
 
-Call the reviewer directly from main (one-shot; no sub-agent): `"$reviewer_cli" open --effort "$reasoning_effort" <<'MI_REVIEW_PROMPT'` with the rendered template as the heredoc body, Bash `timeout: 600000`. Take the `content` field of the output and discard `threadId` — enumeration is single-call.
+Call the reviewer directly from main (one-shot; no sub-agent): `"$reviewer_cli" open --backend "$agent" --effort "$reasoning_effort" <<'MI_REVIEW_PROMPT'` with the rendered template as the heredoc body, Bash `timeout: 600000`. Take the `content` field of the output and discard `threadId` — enumeration is single-call.
 
 Parse the fenced ```json ... ``` array; pass to `scripts/blueprint-review.sh enumerate <file> <items.json>` for deterministic descriptor computation.
 
@@ -461,7 +469,7 @@ Record entry: `blueprint-review.sh ledger mark "$file" G running`.
 render_rc=$?
 ```
 
-Show the table stdout to the inspector **verbatim** — it is the mandated "each phase, did it run, did it find anything" report. Do NOT hand-author or paraphrase it.
+Show the table stdout to the inspector **verbatim** — it is the mandated "each phase, did it run, did it find anything" report. Do NOT hand-author or paraphrase it. Under the table, print `Reviewer: <agent>` — and when `<agent>` is `claude`, add `(codex unavailable — Claude reviewed a Claude-written blueprint, so this is not an independent second opinion)`.
 
 - If `render_rc == 0`: every mandatory phase ran. Continue to G.2.
 - If `render_rc == 3`: the table names a mandatory phase that was NOT run (e.g. Phase C or Phase D). **Stop. Do not report success.** Go back and actually execute the missing phase(s) per Steps 4/5, mark them (`ledger mark`), then re-run `ledger render` until it exits 0. Skipping the phase and editing the ledger by hand is a contract violation.

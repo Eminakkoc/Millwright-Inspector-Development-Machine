@@ -3,6 +3,9 @@
 # See docs/blueprints-review/plan.md.
 #
 # Subcommands:
+#   resolve-agent <agent>         # → effective reviewer: claude if asked for, or if the
+#                                 #   cycle saved review-backend=claude; codex if usable;
+#                                 #   else exit 69 (codex unavailable — ask the inspector)
 #   resolve-reviewer <agent>      # → absolute path of the reviewer CLI wrapper (v1.8.0)
 #   enumerate <file> <items.json> # (added in Task 1.4)
 #   parse-findings <file>         # (added in Task 1.5)
@@ -15,7 +18,7 @@
 set -euo pipefail
 
 usage() {
-  sed -n '2,13p' "$0"
+  sed -n '2,16p' "$0"
 }
 
 cmd="${1:-}"
@@ -23,6 +26,33 @@ cmd="${1:-}"
 shift
 
 case "$cmd" in
+  resolve-agent)
+    agent="${1:-}"
+    [[ -n "$agent" ]] || { echo "usage: $0 resolve-agent <agent>" >&2; exit 64; }
+    wrapper="$(cd "$(dirname "$0")" && pwd)/codex-review.sh"
+    case "$agent" in
+      claude)
+        echo claude
+        ;;
+      codex)
+        # 1.10.0: the inspector may have picked Claude for this cycle (asked at
+        # /mi-run, or at the first review that found codex missing).
+        saved="$("$(dirname "$0")/progress.sh" get-top review-backend 2>/dev/null)" || saved=""
+        if [[ "$saved" == "claude" ]]; then
+          echo claude
+        elif "$wrapper" check; then
+          echo codex
+        else
+          exit 69
+        fi
+        ;;
+      *)
+        echo "error: agent '$agent' is not supported. Supported: codex, claude" >&2
+        exit 64
+        ;;
+    esac
+    ;;
+
   resolve-reviewer)
     agent="${1:-}"
     [[ -n "$agent" ]] || { echo "usage: $0 resolve-reviewer <agent>" >&2; exit 64; }
@@ -36,8 +66,14 @@ case "$cmd" in
         "$wrapper" check || exit 1
         echo "$wrapper"
         ;;
+      claude)
+        # 1.10.0: same wrapper, `--backend claude` (headless `claude -p`).
+        wrapper="$(cd "$(dirname "$0")" && pwd)/codex-review.sh"
+        "$wrapper" check --backend claude || exit 1
+        echo "$wrapper"
+        ;;
       *)
-        echo "error: agent '$agent' is not supported. Supported: codex" >&2
+        echo "error: agent '$agent' is not supported. Supported: codex, claude" >&2
         exit 64
         ;;
     esac

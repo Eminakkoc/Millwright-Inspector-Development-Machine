@@ -86,7 +86,9 @@ check_cli() {
   local bin="$1" required="$2" hints="$3"
   if command -v "$bin" >/dev/null 2>&1; then
     local version
-    version="$("$bin" --version 2>&1 | head -1 | tr '\n' ' ' | sed 's/"/\\"/g' || echo "unknown")"
+    # </dev/null: plantuml-mcp-server ignores --version and starts serving on
+    # stdin; with stdin closed it exits instead of hanging doctor.
+    version="$("$bin" --version </dev/null 2>&1 | head -1 | tr '\n' ' ' | sed 's/"/\\"/g' || echo "unknown")"
     record "$bin" cli "$required" true "$version" "$hints"
   else
     record "$bin" cli "$required" false "" "$hints"
@@ -319,6 +321,15 @@ hints_codex() {
 JSON
 }
 
+hints_claude() {
+  cat <<'JSON'
+{
+  "any": "curl -fsSL https://claude.ai/install.sh | bash",
+  "note": "optional — the blueprint-review fallback when codex is unavailable (headless `claude -p`). The desktop app alone does not put `claude` on PATH."
+}
+JSON
+}
+
 # ---------- Run checks ----------------------------------------------------
 
 # REQUIRED
@@ -352,7 +363,8 @@ check_cli rtk false              "$(hints_rtk)"
 check_cli docling false "$(hints_docling)"
 
 # OPTIONAL — codex CLI with `exec` + `exec resume` (used by blueprint-review commands).
-# Missing codex disables stage-2 auto-review but the rest of the workflow is unaffected.
+# Missing codex: blueprint reviews ask to run on Claude instead (1.10.0, `claude -p`
+# through the same wrapper); the rest of the workflow is unaffected.
 #
 # v1.8.0: the reviewer runs headless through scripts/codex-review.sh (`codex exec` for
 # round 1, `codex exec resume <thread>` for rounds 2+). The plugin no longer registers a
@@ -361,12 +373,19 @@ if command -v codex >/dev/null 2>&1; then
   codex_version="$(codex --version 2>/dev/null | head -1 || echo 'unknown')"
   if codex exec resume --help >/dev/null 2>&1; then
     record "codex" cli false true "$codex_version" '{}'
+    codex_ok=1
   else
     # Binary exists but predates `codex exec resume` — upgrade.
     record "codex" cli false false "$codex_version (no 'exec resume' — upgrade codex)" "$(hints_codex)"
   fi
 else
   record "codex" cli false false "" "$(hints_codex)"
+fi
+
+# OPTIONAL — claude CLI, the blueprint reviewer when codex is unavailable (1.10.0).
+# Checked only then: with a working codex it is never called.
+if (( ! ${codex_ok:-0} )); then
+  check_cli claude false "$(hints_claude)"
 fi
 
 # REQUIRED skills — stage 3 of the workflow hands off to brainstorming → writing-plans →
