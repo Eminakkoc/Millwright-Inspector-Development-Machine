@@ -288,21 +288,27 @@ fi
 
 ## Step B — Generate `config.md` (auto + manual sections)
 
-Scan `.claude/skills/` and `.claude/rules/` in the current project. Summarize each skill and rule in one or two lines. Write these summaries **only between the `<!-- auto:start -->` and `<!-- auto:end -->` markers** in the template.
+**Skill selection (1.11.0).** Fill the auto block from three inputs — never by listing `.claude/skills/` or `.claude/rules/` yourself:
 
-**Relevance filter (critical for token cost).** `config.md` is loaded into the brainstorming primer at stage 3 and re-loaded on every chain re-entry during the review loop. Every line in the auto block costs tokens repeatedly.
+1. `"$CLAUDE_PLUGIN_ROOT/scripts/skills.sh" inventory` — every installed project skill, enabled-plugin skill and project-scope catalog skill (TSV `name kind origin description path needs`).
+2. The `## Requested skills` lines of the cycle's `summary.md` whose `features:` names this feature or `all` (`quest.sh dir` gives the folder). A missing heading means no requests.
+3. `"$CLAUDE_PLUGIN_ROOT/scripts/skills.sh" lookup <names…>` for every requested name and `bundle:<name>`, to classify it (`kind`, `scope`; bundles expand into their members).
 
-**Quantitative budget.** Across the three auto-block sections combined: **≤ 10 entries total, ≤ 2 lines each**. Cite the canonical path on every entry — that lets the chain pull more detail on demand without bloating the primer. If you find yourself wanting more than 10 entries, demote the borderline cases to `## Load on demand` rather than expanding the always-loaded sections.
+Use `grounding-report.md` and the Goals as relevance input. Drop every `(excluded)` name everywhere — it must not appear in any section. Then place each candidate:
 
-**Three-tier structure.** The auto block has three sections, in this order:
+| Candidate | Goes to |
+|---|---|
+| requested, not a skill (rule, plugin, MCP server, hook — including such bundle members), or a `scope: user` catalog skill | left out; reported at hand-off |
+| requested + installed (`kind=skill`) | `## Skills` |
+| requested + `catalog-skill` with `needs` = `-` | `## Catalog suggestions`, `requested: journal` |
+| any `catalog-skill` whose `needs` ≠ `-` | left out (reported only when requested) |
+| `broken` | left out; reported with `catalog add <name> --force` |
+| requested, `unknown` everywhere | left out; reported |
+| `(unresolved)` request, or your own useful pick | installed → `## Skills` / `## Load on demand`; catalog → `## Catalog suggestions`, `requested: no` |
 
-1. **`## Skills`** — skills that are likely to be consulted while implementing the active Goals. Cycle-specific. Each entry: `- <name>: <one-line reason>; path: .claude/skills/<name>/SKILL.md`.
-2. **`## Rules`** — rules that constrain the implementation. Same format with `path: .claude/rules/<name>.md`.
-3. **`## Load on demand`** — skills/rules that exist in the project and may apply if a related concern surfaces during brainstorming or review, but aren't required up front for the active Goals. Examples: `mobile-react-native` listed here when the feature is web-only but might cross over later; `ci-templates` when CI changes are possible but not planned. Each entry: `- <name>: <when to load>; path: ...`.
+Every `## Skills` / `## Load on demand` entry carries `stages:`, `skill:` and `path:` (copy `path` from the inventory row: project-relative for project skills, absolute for plugin skills). Every suggestion carries `stages:`, `requested:` and `install: catalog add <name>`. Respect the budget written at the top of the block. Keep the lists you will need for the hand-off (Step 3.2 of `/mi-apply-impact`): requested not-skills, requested not-found, broken, held back for dependencies (`requested: journal` only), and selected skills shadowed by a personal `~/.claude/skills/<name>` copy (check with `[[ -d ~/.claude/skills/<name> ]]`).
 
-For skills/rules that are clearly off-topic (e.g., `github-actions-templates` when no CI change is in scope and there's no realistic future need this cycle), **omit them entirely** — they remain discoverable via `.claude/skills/` if a need surfaces.
-
-When uncertain whether something is relevant: prefer `## Load on demand` over `## Skills` / `## Rules`. The chain pays nothing for `## Load on demand` entries unless it explicitly opts in.
+Write the entries **only between the `<!-- auto:start -->` and `<!-- auto:end -->` markers** in the template.
 
 ```bash
 requirements_id="$($CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get \
@@ -324,7 +330,7 @@ section — a single fixed pointer outside the auto-block entry budget. The
 planning and implementation chains read that file (when its path is real) to
 avoid repeating mistakes flagged in earlier PR reviews.
 
-Then, using Edit, replace the auto-section placeholder with the real skill/rule summaries. If `config.md` already exists from a prior run (e.g., the inspector aborted and restarted `mi-apply-impact` for the same feature without rotating), preserve content below the `## GIT BRANCH` heading AND below the `## Inspector Additions` heading — only the auto block is overwritten. (This is a same-cycle re-run case. For mid-cycle preservation across rotations, see `commands/mi-update-blueprint.md` Step 4d, which calls `blueprints.sh preserve-inspector-sections`.)
+Then, using Edit, replace the auto-section placeholder with the selected skill entries. If `config.md` already exists from a prior run (e.g., the inspector aborted and restarted `mi-apply-impact` for the same feature without rotating), preserve content below the `## GIT BRANCH` heading AND below the `## Inspector Additions` heading — only the auto block is overwritten. (This is a same-cycle re-run case. For mid-cycle preservation across rotations, see `commands/mi-update-blueprint.md` Step 4d, which calls `blueprints.sh preserve-inspector-sections`.)
 
 **Pre-fill `## GIT BRANCH` if possible.** Immediately after writing the auto block, check the current HEAD:
 

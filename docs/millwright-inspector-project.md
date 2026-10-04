@@ -425,7 +425,7 @@ workflow-stream/<feature>/
 ├── blueprints/
 │   ├── current/
 │   │   ├── requirements.md   # Goals / Planned / Non-goals
-│   │   ├── config.md         # auto-summary of skills+rules; ## GIT BRANCH; ## Inspector Additions
+│   │   ├── config.md         # auto block (selected skills); ## GIT BRANCH; ## Inspector Additions
 │   │   ├── primer.md         # compact stage-3 launch primer (layered-load entry point)
 │   │   ├── review-history.md # blueprint-review cross-cycle memory (v1.5; rotates with the blueprint)
 │   │   └── diagrams/
@@ -897,8 +897,11 @@ queues.
   scenarios. `/mi-update-blueprint` re-derives the same bullet from the
   `base-commit..HEAD` diff instead of the grounding report, so a rotated blueprint states
   the regression impact the implementation actually had.
-- *Step B* — scan `.claude/skills/` and `.claude/rules/`; write `config.md`'s auto-block
-  (≤ 10 entries / ≤ 2 lines each; `## Skills`, `## Rules`, `## Load on demand`); pre-fill
+- *Step B* — select skills from `skills.sh inventory`, the summary's `## Requested skills` and
+  `skills.sh lookup`; write `config.md`'s auto block (`## Skills`, `## Load on demand`,
+  `## Catalog suggestions`; ≤ 10 entries across the first two, ≤ 2 lines each, entries in the
+  form `- <name> — <reason>` plus a `stages: …; skill: …; path: …` line). All consumers read
+  the selection through `scripts/skills.sh` (`brief`, `entries`, `suggestions`); pre-fill
   `## GIT BRANCH` from HEAD when non-trunk; preserve `## Inspector Additions` verbatim.
 
 After Steps A and B, Step B.4 lazily initializes `review-history.md` (the v1.5 cross-cycle reviewer-memory artifact; §7.9) alongside `requirements.md` if it does not already exist, then Step B.5 auto-invokes `/mi-blueprint-review codex "<requirements_path>" --scope "Goals (this cycle)" --reasoning-effort medium` to review the freshly-generated blueprint for consistency and per-item completeness. The v1.5 CLI relies on defaults (`--auto-iter 5`, `--batch-size 3`, `--concurrency 3`) and no longer takes positional iter args. Step B.6 then surfaces any drift in `summary.md` / `todo-list.md` (drift is surfaced only — never auto-edited). Diagrams (Step C) are generated last so they reflect the post-review spec. When codex is unavailable, the review asks once whether to run on Claude or skip (1.10.0); `/mi-run` usually settles this up front and saves it for the cycle. See §7.9 for the full command surface and `docs/blueprint-review-token-reduction/plan.md` for the v1.5 design.
