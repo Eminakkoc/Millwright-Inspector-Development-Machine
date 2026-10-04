@@ -306,6 +306,8 @@ Use `grounding-report.md` and the Goals as relevance input. Drop every `(exclude
 | requested, `unknown` everywhere | left out; reported |
 | `(unresolved)` request, or your own useful pick | installed → `## Skills` / `## Load on demand`; catalog → `## Catalog suggestions`, `requested: no` |
 
+Your own installed picks go to `## Skills` only when a Goal clearly needs them; when unsure, use `## Load on demand`.
+
 Every `## Skills` / `## Load on demand` entry carries `stages:`, `skill:` and `path:` (copy `path` from the inventory row: project-relative for project skills, absolute for plugin skills). Every suggestion carries `stages:`, `requested:` and `install: catalog add <name>`. Respect the budget written at the top of the block. Keep the lists you will need for the hand-off (Step 3.2 of `/mi-apply-impact`): requested not-skills, requested not-found, broken, held back for dependencies (`requested: journal` only), and selected skills shadowed by a personal `~/.claude/skills/<name>` copy (check with `[[ -d ~/.claude/skills/<name> ]]`).
 
 Write the entries **only between the `<!-- auto:start -->` and `<!-- auto:end -->` markers** in the template.
