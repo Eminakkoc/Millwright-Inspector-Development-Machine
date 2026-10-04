@@ -260,6 +260,24 @@ if [[ $rc -eq 0 && -z "$got" ]]; then ok "$t"; else ng "$t" "rc=$rc got [$got]";
 t="brief rejects an unknown tag"
 if run_in "$sb" "$S" brief feat deploy >/dev/null 2>&1; then ng "$t" "accepted 'deploy'"; else ok "$t"; fi
 
+# ---- suggestions ---------------------------------------------------------------
+sb="$(feature_sandbox gate-config.md)"
+
+t="suggestions lists every catalog suggestion as TSV"
+got="$(run_in "$sb" "$S" suggestions feat | head -2)"
+exp="$(printf 'j-one\tjournal\timplement\tcatalog add j-one\tnamed in the journal\no-one\tno\treview\tcatalog add o-one\tuseful for tests')"
+if [[ "$got" == "$exp" ]]; then ok "$t"; else ng "$t" "got [$got]"; fi
+
+t="suggestions prints nothing once the gate has emptied the section"
+cp "$FIX/gate-after-retry.md" "$(cfg_of "$sb")"
+got="$(run_in "$sb" "$S" suggestions feat)"; rc=$?
+if [[ $rc -eq 0 && -z "$got" ]]; then ok "$t"; else ng "$t" "rc=$rc got [$got]"; fi
+
+t="suggestions prints nothing for a pre-1.11.0 config or a missing feature"
+sb="$(feature_sandbox old-config.md)"
+got="$(run_in "$sb" "$S" suggestions feat)$(run_in "$sb" "$S" suggestions nope)"; rc=$?
+if [[ $rc -eq 0 && -z "$got" ]]; then ok "$t"; else ng "$t" "got [$got]"; fi
+
 # ---- catalog-files -------------------------------------------------------------
 t="catalog-files lists new/changed skill files and the lock file only"
 sb="$(make_sandbox)"

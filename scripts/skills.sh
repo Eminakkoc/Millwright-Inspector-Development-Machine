@@ -16,6 +16,8 @@
 #                                              # "## Skills for reviewing this work" block
 #   skills.sh entries <feature> implement|review
 #                                              # TSV: name abs-path (same entries as brief)
+#   skills.sh suggestions <feature>            # TSV: name requested stages install reason
+#                                              # (## Catalog suggestions; empty when none)
 #   skills.sh catalog-files                    # project-relative paths to commit after an install
 #   skills.sh apply-installs <feature> [--installed a,b] [--declined c] [--failed d] [--stop]
 #                                              # rewrites config.md's auto block after the
@@ -29,7 +31,7 @@ source "$(dirname "$0")/internal/common.sh"
 
 SKILLS_PY="$(cd "$(dirname "$0")" && pwd)/internal/skills.py"
 
-usage() { sed -n '2,25p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
+usage() { sed -n '2,27p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
 
 feature_config() {
   [[ -n "${1:-}" ]] || usage
@@ -60,6 +62,10 @@ case "$cmd" in
     [[ $# -eq 2 ]] || usage
     check_tag "$2"
     python3 "$SKILLS_PY" "$cmd" "$(feature_config "$1")" "$2"
+    ;;
+  suggestions)
+    [[ $# -eq 1 ]] || usage
+    python3 "$SKILLS_PY" suggestions "$(feature_config "$1")"
     ;;
   catalog-files)
     [[ $# -eq 0 ]] || usage

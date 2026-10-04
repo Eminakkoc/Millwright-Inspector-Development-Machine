@@ -206,6 +206,16 @@ def cmd_entries(config, tag):
         print("%s\t%s" % (name, path))
 
 
+def cmd_suggestions(config):
+    _, span, sections, _ = read_config(config)
+    if span is None:
+        return
+    for e in sections.get("Catalog suggestions", []):
+        f = e["fields"]
+        print("\t".join([e["name"], f.get("requested", "no"), f.get("stages", "-"),
+                         f.get("install", "catalog add %s" % e["name"]), e["reason"] or "-"]))
+
+
 def cmd_apply_installs(config, installed, declined, failed, stop):
     lines, span, sections, order = read_config(config)
     if lines is None:
@@ -455,6 +465,8 @@ def main(argv):
         cmd_brief(argv[1], argv[2])
     elif cmd == "entries":
         cmd_entries(argv[1], argv[2])
+    elif cmd == "suggestions":
+        cmd_suggestions(argv[1])
     elif cmd == "catalog-files":
         cmd_catalog_files()
     elif cmd == "apply-installs":
