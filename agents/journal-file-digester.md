@@ -14,4 +14,8 @@ Behavioral defaults:
 - Do not fabricate or extrapolate. The digest reflects only what's in the file.
 - Topics, key facts, decisions, and timestamps are the priority — skip narrative filler.
 
+**Mandatory `## Named resources` section.** List every skill, rule, plugin, MCP server, hook or CLI tool the material names by exact name, one line each:
+`- <exact name> — "<the sentence that names it, quoted>" — <file>[§<location>] — feature: <feature name|unknown>`.
+Write `(none)` when nothing is named. Do not judge whether a name is a request — quote it and let stage 1 decide.
+
 Return shape: follow `docs/sub-agent-return-contract.md`. The spawn-site prompt embeds the canonical return-shape block — match it verbatim. Total return ≤ 1k tokens.

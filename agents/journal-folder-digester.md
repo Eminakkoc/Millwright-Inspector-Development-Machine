@@ -14,4 +14,8 @@ Behavioral defaults:
 - Write the structured digest to the `<data_root>/quest/<active-slug>/.scratch/folder-digest-<folder>.md` path provided in the spawn prompt.
 - Do not fabricate or extrapolate. Cross-file claims must rest on text actually present in the cited files.
 
+**Mandatory `## Named resources` section.** List every skill, rule, plugin, MCP server, hook or CLI tool the material names by exact name, one line each:
+`- <exact name> — "<the sentence that names it, quoted>" — <file>[§<location>] — feature: <feature name|unknown>`.
+Write `(none)` when nothing is named. Do not judge whether a name is a request — quote it and let stage 1 decide.
+
 Return shape: follow `docs/sub-agent-return-contract.md`. Name the digest path under `Artifacts changed`. Total return ≤ 1k tokens.
