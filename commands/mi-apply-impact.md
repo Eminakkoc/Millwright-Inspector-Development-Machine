@@ -484,7 +484,7 @@ When Phase E of the auto-fired review declined or kept any scope-expanding propo
 - `<name>: broken catalog install — repair with catalog add <name> --force`
 - `<name> needs <needs> (installs outside the project) — run catalog add <name> yourself before /mi-continue` (requested ones only; your own picks with missing dependencies are dropped silently)
 
-Empty groups print nothing. On the `check-current=0` short-circuit re-entry Step B did not run, so `skill_report` is empty there — do not guess. When `skill_report` is empty, omit its line (and its blank `>` line) from the message entirely, as with `scope_gate_note`.
+Empty groups print nothing. On the `check-current=0` short-circuit re-entry Step B did not run, so `skill_report` is empty there — do not guess. When `skill_report` is empty, omit its line (and its blank `>` line) from the message entirely, as with `scope_gate_note`. Write each line of `skill_report` as its own `> `-prefixed line inside the blockquote.
 
 Tell the inspector (append `$effort_suggestion` only when non-empty):
 
