@@ -479,9 +479,13 @@ def main(argv):
                 stop = True
                 i += 1
                 continue
-            vals = {v for v in (rest[i + 1] if i + 1 < len(rest) else "").split(",") if v}
-            {"--installed": installed, "--declined": declined, "--failed": failed}[opt].update(vals)
-            i += 2
+            targets = {"--installed": installed, "--declined": declined, "--failed": failed}
+            if opt not in targets:
+                sys.stderr.write("error: unexpected argument: %s\n" % opt)
+                sys.exit(1)
+            val = rest[i + 1] if i + 1 < len(rest) and not rest[i + 1].startswith("--") else ""
+            targets[opt].update(v for v in val.split(",") if v)
+            i += 2 if val else 1
         cmd_apply_installs(config, installed, declined, failed, stop)
 
 

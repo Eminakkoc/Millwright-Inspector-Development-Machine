@@ -334,6 +334,21 @@ cfg="$(cfg_of "$sb")"
 grep -v 'auto:' "$FIX/gate-config.md" > "$cfg"
 if run_in "$sb" "$S" apply-installs feat --installed j-one >/dev/null 2>&1; then ng "$t" "accepted"; else ok "$t"; fi
 
+t="apply-installs: a list flag never swallows --stop (failed journal entry is kept)"
+sb="$(feature_sandbox gate-config.md)"
+cfg="$(cfg_of "$sb")"
+run_in "$sb" "$S" apply-installs feat --installed j-one --failed j-two --declined --stop
+if awk '/^## Catalog suggestions/{f=1;next} /^<!-- auto:end/{f=0} f' "$cfg" | grep -q 'j-two'; then ok "$t"
+else ng "$t" "$(sed -n '/auto:start/,/auto:end/p' "$cfg")"; fi
+
+t="apply-installs: a stray positional argument fails cleanly and leaves config.md unchanged"
+sb="$(feature_sandbox gate-config.md)"
+cfg="$(cfg_of "$sb")"
+cp "$cfg" "$sb/before-stray"
+out="$(run_in "$sb" "$S" apply-installs feat j-one 2>&1)"; rc=$?
+if [[ $rc -ne 0 && "$out" != *Traceback* ]] && diff -q "$sb/before-stray" "$cfg" >/dev/null; then ok "$t"
+else ng "$t" "rc=$rc out=[$out]"; fi
+
 # ---- summary -------------------------------------------------------------------
 echo
 echo "skills: $pass passed, $fail failed"
