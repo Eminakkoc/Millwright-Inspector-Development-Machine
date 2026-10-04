@@ -1345,6 +1345,40 @@ Tell the inspector. The wording branches on `implementation-diagrams-skipped` so
 skipped="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get implementation-diagrams-skipped 2>/dev/null || echo 'false')"
 ```
 
+**Skills report (print before the hand-off; never a prompt).** Silent when no plan was found (direct mode) or config lists no skills of either tag:
+
+```bash
+base_commit="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get base-commit)"
+plan_candidates="$(
+  {
+    git log --diff-filter=AM --name-only --format= "$base_commit..HEAD" -- 'docs/superpowers/plans/*.md' 2>/dev/null
+    git status --porcelain -uall -- docs/superpowers/plans/ 2>/dev/null | sed -E 's/^.. //; s/^.*-> //' | grep '\.md$' || true
+  } | sort -u
+)"
+has_impl="$("$CLAUDE_PLUGIN_ROOT/scripts/skills.sh" entries "$active_feature" implement)"
+has_rev="$("$CLAUDE_PLUGIN_ROOT/scripts/skills.sh" entries "$active_feature" review)"
+if [[ -n "$plan_candidates" && ( -n "$has_impl" || -n "$has_rev" ) ]]; then
+  printf '%s\n' "$plan_candidates" | python3 -c '
+import re, sys
+total = no_skill = no_review = 0
+for path in filter(None, sys.stdin.read().split("\n")):
+    try:
+        text = open(path).read()
+    except OSError:
+        continue
+    for task in re.split(r"(?m)^(?=### Task \d+)", text)[1:]:
+        total += 1
+        no_skill += "**Skills:**" not in task
+        no_review += "**Review skills:**" not in task
+if total:
+    print("skills: %d of %d plan tasks name no skill, %d of %d name no review skill"
+          % (no_skill, total, no_review, total))
+'
+fi
+```
+
+(The block recomputes `plan_candidates` because Resume Step 2.5 runs in an earlier Bash call.) The line prints outside the blockquotes below and does not move their auto-answer lines.
+
 **When `skipped=false` (the normal case):**
 
 **Auto mode.** If `$CLAUDE_PLUGIN_ROOT/scripts/auto.sh is-on` succeeds, run `$CLAUDE_PLUGIN_ROOT/scripts/auto.sh answer "manual test plan" "y" --cmd /mi-continue` and continue as if the inspector had replied `y` — do not show the prompt below. Otherwise show the prompt below unchanged.
