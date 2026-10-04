@@ -1000,11 +1000,10 @@ Behavior:
        destructively scrubbed.
      - `\.claude/(?:skills|rules|commands)/...`. Was previously in the
        table; removed because project rules under `.claude/rules/`
-       can be legitimate non-workflow content. The `; path:
-       .claude/rules/<name>.md` suffix that appears inside
-       `config.md → ## Rules` is stripped by §5.5 itself, so removing
-       this scrub pattern does not cause the rules section to leak
-       paths.
+       can be legitimate non-workflow content. Since 1.11.0 the
+       bundle carries no `config.md` skills or rules section (§5.5
+       was removed; rules load through Claude Code itself), so
+       removing this scrub pattern does not leak such paths.
 
      **Residual edge case (acknowledged, not fixed in v1).** If a
      project's diff legitimately includes a file whose bare name
@@ -1118,8 +1117,9 @@ across multiple review rounds because both files carry load-bearing
 content that isn't guaranteed to appear elsewhere: cross-cutting
 constraints and per-feature journal context in `summary.md`;
 Inspector Additions and Rules in `config.md`. §5.2 (Inspector
-Additions), §5.3 (cross-cutting), §5.4 (active-feature journal),
-and §5.5 (Rules) fix that.
+Additions), §5.3 (cross-cutting) and §5.4 (active-feature journal)
+fix that. (§5.5, Rules, was removed in 1.11.0: rules load through
+Claude Code itself.)
 
 ## 11. v1 limitations and possible follow-ups
 
@@ -1216,7 +1216,7 @@ guarantees were inconsistent across §2, §10, §12).
      `## Non-goals (out of scope)`, and a non-empty `todo-item-ids`
      frontmatter list.
    - `config.md` with non-empty `## Inspector Additions` and at least
-     one real entry under `## Rules`.
+     one real entry under `## Skills` in the auto block.
    - `summary.md` with non-empty `## Cross-cutting constraints` and
      a non-empty `## Feature: <active_feature>` section for the
      active feature.

@@ -272,7 +272,7 @@ The content flow — write `requirements.md`, write `config.md` (auto-block + GI
 active_item_ids="$($CLAUDE_PLUGIN_ROOT/scripts/todo.sh list PENDING --feature "$active_feature")"
 ```
 
-Pass `$active_feature` and `$active_item_ids` through to the shared steps. The shared runbook handles: computing `$planned_ids`, initializing frontmatter, writing the three requirements body sections, scanning skills/rules for the config auto-block, pre-filling the GIT BRANCH section from HEAD, and rendering use-case/sequence/class diagrams with the PlantUML MCP.
+Pass `$active_feature` and `$active_item_ids` through to the shared steps. The shared runbook handles: computing `$planned_ids`, initializing frontmatter, writing the three requirements body sections, filling the config auto-block from `skills.sh inventory` / `lookup`, pre-filling the GIT BRANCH section from HEAD, and rendering use-case/sequence/class diagrams with the PlantUML MCP.
 
 After completing Steps A and B of `docs/blueprint-regeneration.md` (requirements + config generation) and before Step C (diagrams), execute Steps B.4, B.5, and B.6:
 

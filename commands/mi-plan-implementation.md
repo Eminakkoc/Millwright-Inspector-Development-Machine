@@ -227,7 +227,7 @@ Then write each section per the template's guide:
   review_block="$("$CLAUDE_PLUGIN_ROOT/scripts/skills.sh" brief "$active_feature" review)"
   ```
 
-  Write `$skills_block`, a blank line, then `$review_block` in place of the placeholder line; when both are empty, delete the placeholder line. Do not list skills any other way — `config.md`'s `## Load on demand` stays reachable through the on-demand files.
+  Write the non-empty ones of `$skills_block` and `$review_block`, in that order, in place of the placeholder line, with one blank line between them only when both are non-empty; when both are empty, delete the placeholder line. Do not list skills any other way — `config.md`'s `## Load on demand` stays reachable through the on-demand files.
 
 - **`## Decisions`** — folded from `$data_root/workflow-stream/$active_feature/decisions.md` if it exists. Extract only stage sections that contain real entries (bullets), skipping sections that still hold their template HTML-comment placeholder:
 

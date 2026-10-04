@@ -141,7 +141,7 @@ else
 fi
 ```
 
-PR-based pick (when `skills_block` is empty and the branch did not match): run `"$CLAUDE_PLUGIN_ROOT/scripts/skills.sh" inventory --installed`, pick at most 5 rows whose description fits the PR's changed files (`gh pr diff "$pr_number" --repo "$repo" --name-only`), and render them in the `brief` format — heading `## Skills for reviewing this work`, the load-instruction line, then `- <name> — <why it fits> — <absolute path>` (make project-relative paths absolute with the repo root). Nothing relevant → leave the block out.
+PR-based pick (when `skills_block` is empty and the branch did not match): run `"$CLAUDE_PLUGIN_ROOT/scripts/skills.sh" inventory --installed`, pick at most 5 rows whose `kind` is `skill` and whose description fits the PR's changed files (`gh pr diff "$pr_number" --repo "$repo" --name-only`), and render them in the `brief` format — heading `## Skills for reviewing this work`, the load-instruction line, then `- <name> — <why it fits> — <absolute path>` (make project-relative paths absolute with the repo root). Nothing relevant → leave the block out.
 
 Spawn the analyst with `subagent_type: millwright-inspector-development-machine:review-comment-analyst`.
 Substitute the resolved values into the spawn prompt:

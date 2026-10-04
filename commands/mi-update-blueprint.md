@@ -333,7 +333,7 @@ Read into working memory:
 
   Goals re-derivation in Step 4b reads from `change-summary.md` plus targeted diff hunks for the entrypoints it lists. Do NOT re-walk the whole codebase here.
 
-- **Codebase context** for skills/rules summaries: re-scan `.claude/skills/` and `.claude/rules/` (used at Step 4d).
+- **Skills:** no re-scan. Step 4c copies the previous `config.md` auto block verbatim, and Step 4f renders the primer's skills blocks with `skills.sh brief`.
 
 **Hard exclusion:** never read `blueprints/current/diagrams/*.svg` or `blueprints/history/*/diagrams/*.svg`. The `.puml` sources carry the same information at a fraction of the size.
 
@@ -531,7 +531,7 @@ Then write each section per the same guide as `mi-plan-implementation` Step 3.5:
   review_block="$("$CLAUDE_PLUGIN_ROOT/scripts/skills.sh" brief "$active_feature" review)"
   ```
 
-  Write `$skills_block`, a blank line, then `$review_block` in place of the placeholder line; when both are empty, delete the placeholder line. Do not list skills any other way.
+  Write the non-empty ones of `$skills_block` and `$review_block`, in that order, in place of the placeholder line, with one blank line between them only when both are non-empty; when both are empty, delete the placeholder line. Do not list skills any other way.
 - **`## Decisions`** — apply the same fold-in as `mi-plan-implementation` Step 3.5: read `decisions.md` (if exists), extract real-bullet stage sections via the Python helper, replace the `_(none recorded)_` placeholder line in the rendered primer's `## Decisions` section with the extracted body. If `decisions.md` is absent or every section is placeholder-only, leave `_(none recorded)_` untouched. **Do NOT delete the `## Decisions` heading itself.** Mandatory — same rationale as Step 3.5 (the chain inherits decisions only through primer.md).
 
 The `## On-demand canonical files` section is template-emitted and does not need editing.

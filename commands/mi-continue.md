@@ -717,12 +717,12 @@ The default mode is correct here: `primer.md` is written at stage 3 by `/mi-plan
 
 Runs on every entry to the Approve Handler, before the clear-point gate. Re-running it is a no-op once the branch is current and nothing is left to install or commit.
 
-**Step 0 — Resolve the branch.** Run `/mi-plan-implementation`'s **Step 2 — Resolve and validate the primary branch from `config.md`** here, exactly as written there (in auto mode that is `auto.sh create-branch`). It runs even when there is nothing to install, and before any install so `create-branch`'s clean-tree check sees only your own changes. If it stops (prompt, refusal, non-zero exit), this handler stops with it; the next `/mi-continue` re-enters here.
+**Step 0 — Resolve the branch.** Run `/mi-plan-implementation`'s **Step 2 — Resolve and validate the primary branch from `config.md`** here, exactly as written there (in auto mode that is `auto.sh create-branch`). It runs even when there is nothing to install, and before any install so `create-branch`'s clean-tree check sees only your own changes. If it stops (prompt, refusal, non-zero exit), this handler stops with it; the next `/mi-continue` re-enters here. Where Step 2's wording tells the inspector to re-run `/mi-plan-implementation`, tell them to type `/mi-continue` instead, so the gate's own checks still run.
 
 **Step 1 — Read the suggestions.**
 
 ```bash
-data_root="$($CLAUDE_PLUGIN_ROOT/scripts/data-root.sh)"
+active_feature="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get-active)"
 "$CLAUDE_PLUGIN_ROOT/scripts/skills.sh" suggestions "$active_feature"
 ```
 
@@ -749,6 +749,7 @@ The confirmed names join the install list; the rest are declined. Rows with `req
 **Step 4 — Rewrite `config.md`.**
 
 ```bash
+active_feature="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get-active)"
 "$CLAUDE_PLUGIN_ROOT/scripts/skills.sh" apply-installs "$active_feature" \
   --installed "<installed, comma-joined>" --declined "<declined>" --failed "<failed>" [--stop]
 ```
@@ -1214,7 +1215,7 @@ A session that was closed mid-chain looks identical to a clean exit at this poin
 
    **Required first reads (in order):**
 
-   1. <$data_root>/workflow-stream/<active_feature>/blueprints/current/primer.md — the original stage-3 launch primer (active scope, goals, journal context, likely-relevant skills/rules).
+   1. <$data_root>/workflow-stream/<active_feature>/blueprints/current/primer.md — the original stage-3 launch primer (active scope, goals, journal context, and the `skills.sh brief` skills blocks).
    2. <picked_plan_path> — the plan you wrote in the previous session. Checkbox state (`- [x]` vs `- [ ]`) reflects what's been executed; the next `- [ ]` is where you pick up.
    3. <picked_spec_path> — the spec the plan implements. *(omit this line if no spec candidates were found)*
 
@@ -1349,6 +1350,7 @@ skipped="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get implementation-diagrams-s
 
 ```bash
 base_commit="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get base-commit)"
+active_feature="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get-active)"
 plan_candidates="$(
   {
     git log --diff-filter=AM --name-only --format= "$base_commit..HEAD" -- 'docs/superpowers/plans/*.md' 2>/dev/null
@@ -1887,7 +1889,7 @@ else
 fi
 ```
 
-PR-based pick (when `skills_block` is empty and the branch did not match): run `"$CLAUDE_PLUGIN_ROOT/scripts/skills.sh" inventory --installed`, pick at most 5 rows whose description fits the PR's changed files (`gh pr diff "$pr_number" --repo "$repo" --name-only`), and render them in the `brief` format — heading `## Skills for this work (from config.md)`, the load-instruction line, then `- <name> — <why it fits> — <absolute path>` (make project-relative paths absolute with the repo root). Nothing relevant → leave the block out.
+PR-based pick (when `skills_block` is empty and the branch did not match): run `"$CLAUDE_PLUGIN_ROOT/scripts/skills.sh" inventory --installed`, pick at most 5 rows whose `kind` is `skill` and whose description fits the PR's changed files (`gh pr diff "$pr_number" --repo "$repo" --name-only`), and render them in the `brief` format — heading `## Skills for this work (from config.md)`, the load-instruction line, then `- <name> — <why it fits> — <absolute path>` (make project-relative paths absolute with the repo root). Nothing relevant → leave the block out.
 
 Spawn the fixer with `subagent_type: millwright-inspector-development-machine:pr-review-fixer`. Spawn prompt:
 

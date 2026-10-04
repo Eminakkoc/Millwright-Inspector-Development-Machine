@@ -61,11 +61,13 @@ case "$cmd" in
   brief|entries)
     [[ $# -eq 2 ]] || usage
     check_tag "$2"
-    python3 "$SKILLS_PY" "$cmd" "$(feature_config "$1")" "$2"
+    config="$(feature_config "$1")"
+    python3 "$SKILLS_PY" "$cmd" "$config" "$2"
     ;;
   suggestions)
     [[ $# -eq 1 ]] || usage
-    python3 "$SKILLS_PY" suggestions "$(feature_config "$1")"
+    config="$(feature_config "$1")"
+    python3 "$SKILLS_PY" suggestions "$config"
     ;;
   catalog-files)
     [[ $# -eq 0 ]] || usage

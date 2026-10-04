@@ -257,6 +257,13 @@ t="brief prints nothing and exits 0 when the feature has no config.md"
 got="$(run_in "$sb" "$S" brief no-such-feature review)"; rc=$?
 if [[ $rc -eq 0 && -z "$got" ]]; then ok "$t"; else ng "$t" "rc=$rc got [$got]"; fi
 
+t="brief, entries and suggestions exit non-zero when the feature is empty"
+bad=""
+run_in "$sb" "$S" brief "" implement >/dev/null 2>&1 && bad+=" brief"
+run_in "$sb" "$S" entries "" review >/dev/null 2>&1 && bad+=" entries"
+run_in "$sb" "$S" suggestions "" >/dev/null 2>&1 && bad+=" suggestions"
+if [[ -z "$bad" ]]; then ok "$t"; else ng "$t" "exited 0:$bad"; fi
+
 t="brief rejects an unknown tag"
 if run_in "$sb" "$S" brief feat deploy >/dev/null 2>&1; then ng "$t" "accepted 'deploy'"; else ok "$t"; fi
 
