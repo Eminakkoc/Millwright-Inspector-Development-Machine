@@ -67,6 +67,17 @@ if [[ "$current_stage" == "2" && "$base_commit_persisted" != "null" && -n "$base
 fi
 ```
 
+**Pending catalog suggestions.** Skipped on stage-3 re-entry (`current-stage == 3`). Otherwise:
+
+```bash
+if [[ "$current_stage" != "3" && -n "$("$CLAUDE_PLUGIN_ROOT/scripts/skills.sh" suggestions "$active_feature")" ]]; then
+  echo "Catalog skills are still waiting to be installed — run /mi-continue to finish the stage-2 gate first." >&2
+  exit 1
+fi
+```
+
+A missing `## Catalog suggestions` section (pre-1.11.0 `config.md`) counts as empty.
+
 ### Step 2 — Resolve and validate the primary branch from `config.md`
 
 The feature branch lives in `config.md`'s `## GIT BRANCH` section (written at stage 2). Parse it, validate it, and persist to `progress.md`.
@@ -206,11 +217,14 @@ Then write each section per the template's guide:
 - **`## Active scope`** — `branch: <primer_branch>`, `base-commit: <primer_base_commit>`, and one bullet per id in `implementing_ids` (pull each item's description from the active cycle's `todo-list.md`'s matching line; resolve the path via `$CLAUDE_PLUGIN_ROOT/scripts/quest.sh dir`).
 - **`## Goals (this cycle)`** — 5–20 line excerpt extracted from `requirements.md`'s `## Goals (this cycle)` section. Tighten — the chain reads the full file only if the primer is insufficient.
 - **`## Journal context (active feature)`** — 5–20 line digest from the active cycle's `summary.md`'s `## Feature: <active_feature>` section (resolve the path via `quest.sh dir`), plus any items from `## Cross-cutting constraints` that materially affect this feature.
-- **`## Likely-relevant skills & rules`** — at most five entries from `config.md`'s **auto-block** (Phase 5.4 — pre-pass tighter skill metadata). Each entry: `<name>: <one-line reason>; path: <.claude/skills/...>`. Off-topic skills are reachable via `config.md`; do not list them here.
+- **Skills** — replace the template's skills placeholder (the line beginning `<!-- skills:brief`) with the two `brief` blocks, verbatim and in this order; each brings its own heading, and an empty one adds nothing:
 
-  **Read from `config.md` only — do NOT enumerate `.claude/skills/` or `.claude/rules/` directly.** Stage 2's `mi-apply-impact` already produced `config.md`'s three-section list (`## Skills`, `## Rules`, `## Load on demand`) by filtering the raw skill library to what's likely-relevant for this cycle. The primer's job is to surface the highest-priority subset; reading the raw directories at stage 3 would re-do work stage 2 already did and pull every skill name into main context. Use `frontmatter.sh get`-style section extraction or, when `commands/mi-run.md`'s artifact-excerpt commands ship (Phase 6.5), a dedicated slice command — both produce the same result.
+  ```bash
+  skills_block="$("$CLAUDE_PLUGIN_ROOT/scripts/skills.sh" brief "$active_feature" implement)"
+  review_block="$("$CLAUDE_PLUGIN_ROOT/scripts/skills.sh" brief "$active_feature" review)"
+  ```
 
-  Quantitative budget: **≤ 5 entries inline**. If `config.md`'s `## Skills` and `## Rules` sections together carry ≤ 10 entries, pass them inline as bullets. If more than 10, pick the most-likely-relevant five for the primer and reference `config.md` itself by path for the rest.
+  Write `$skills_block`, a blank line, then `$review_block` in place of the placeholder line; when both are empty, delete the placeholder line. Do not list skills any other way — `config.md`'s `## Load on demand` stays reachable through the on-demand files.
 
 - **`## Decisions`** — folded from `$data_root/workflow-stream/$active_feature/decisions.md` if it exists. Extract only stage sections that contain real entries (bullets), skipping sections that still hold their template HTML-comment placeholder:
 
@@ -294,7 +308,7 @@ I'm working on the "<$active_feature>" feature. Use these documents as primary c
 **Context loading order** (read in this order; only escalate when a gap appears):
 
 1. **Required first read** — <$data_root>/workflow-stream/<$active_feature>/blueprints/current/primer.md
-   Compact snapshot of active scope, goals, journal context, and likely-relevant skills/rules. For most cycles this is all you need.
+   Compact snapshot of active scope, goals, journal context, and the skills chosen for this feature. For most cycles this is all you need.
 
 2. **On demand** — only if the primer leaves a gap on a specific topic:
    - <$data_root>/workflow-stream/<$active_feature>/blueprints/current/requirements.md — full goals / planned / non-goals
@@ -306,6 +320,8 @@ I'm working on the "<$active_feature>" feature. Use these documents as primary c
 The IMPLEMENTING items listed in primer.md `## Active scope` are the committed scope for this run. Sibling features in PENDING/TODO are out of scope.
 
 Proceed with your normal brainstorming flow: clarifying questions → design sections → spec doc → writing-plans → execution. Do NOT worry about the mi-workflow — I'll resume it automatically after your chain finishes.
+
+**Skills.** primer.md's `## Skills for this work (from config.md)` and `## Skills for reviewing this work` sections list the skills chosen for this feature at stage 2 (either may be absent). Load the relevant ones with the `Skill` tool before proposing the design, and list them in the spec. In the plan, every task an entry covers carries `**Skills:** <name> (load: Skill <name> or Read <path>)` for its implementer and `**Review skills:** <name> (load: Skill <name> or Read <path>)` for its reviewer — a task brief passes only the task's own section, so these lines are how skills reach those sub-agents. Paste the primer's `## Skills for reviewing this work` section into the final whole-branch reviewer and re-review dispatches, and its `## Skills for this work (from config.md)` section into the fix dispatch.
 ```
 
 **Auto mode.** If `$CLAUDE_PLUGIN_ROOT/scripts/auto.sh is-on` succeeds, append this paragraph to the primer above before invoking the Skill (substitute the resolved plugin root):
@@ -321,6 +337,7 @@ Substitute `<$active_feature>` with the actual feature name read from the queue.
 The millwright (this session) owns the implementation directly — no Skill is invoked. Read the layered primer, implement, commit.
 
 1. **Read `primer.md`.** Required first read.
+1.5. **Load the skills** in `## Skills for this work (from config.md)` before editing the files they cover.
 2. **Escalate to canonical files only as needed:**
    - `blueprints/current/requirements.md` — full goals / planned / non-goals
    - `blueprints/current/config.md` — full skills/rules + GIT BRANCH + Inspector Additions

@@ -3,7 +3,7 @@ I'm working on the "<$active_feature>" feature. Use these documents as primary c
 **Context loading order** (read in this order; only escalate when a gap appears):
 
 1. **Required first read** — <$data_root>/workflow-stream/<$active_feature>/blueprints/current/primer.md
-   Compact snapshot of active scope, goals, journal context, and likely-relevant skills/rules. For most cycles this is all you need.
+   Compact snapshot of active scope, goals, journal context, and the skills chosen for this feature. For most cycles this is all you need.
 
 2. **On demand** — only if the primer leaves a gap on a specific topic:
    - <$data_root>/workflow-stream/<$active_feature>/blueprints/current/requirements.md — full goals / planned / non-goals
@@ -15,3 +15,5 @@ I'm working on the "<$active_feature>" feature. Use these documents as primary c
 The IMPLEMENTING items listed in primer.md `## Active scope` are the committed scope for this run. Sibling features in PENDING/TODO are out of scope.
 
 Proceed with your normal brainstorming flow: clarifying questions → design sections → spec doc → writing-plans → execution. Do NOT worry about the mi-workflow — I'll resume it automatically after your chain finishes.
+
+**Skills.** primer.md's `## Skills for this work (from config.md)` and `## Skills for reviewing this work` sections list the skills chosen for this feature at stage 2 (either may be absent). Load the relevant ones with the `Skill` tool before proposing the design, and list them in the spec. In the plan, every task an entry covers carries `**Skills:** <name> (load: Skill <name> or Read <path>)` for its implementer and `**Review skills:** <name> (load: Skill <name> or Read <path>)` for its reviewer — a task brief passes only the task's own section, so these lines are how skills reach those sub-agents. Paste the primer's `## Skills for reviewing this work` section into the final whole-branch reviewer and re-review dispatches, and its `## Skills for this work (from config.md)` section into the fix dispatch.
