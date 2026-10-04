@@ -248,6 +248,15 @@ t="brief and entries ignore Load on demand and Catalog suggestions"
 got="$(run_in "$sb" "$S" entries feat implement | cut -f1 | tr '\n' ' ')"
 if [[ "$got" == "vercel:nextjs web-images " ]]; then ok "$t"; else ng "$t" "got [$got]"; fi
 
+t="brief and suggestions tolerate loose entry formatting (hyphen, no spaces, tab indent)"
+sb="$(feature_sandbox brief-config.md)"
+printf -- '---\nid: 00000000-0000-4000-8000-000000000001\nrequirements-id: 00000000-0000-4000-8000-000000000002\n---\n\n<!-- auto:start -->\n\n## Skills\n\n- web-images - image pipeline\n  stages:implement;skill:web-images;path:.claude/skills/web-images/SKILL.md\n- a11y-review \xe2\x80\x94 accessibility\n\tstages: review ;skill: a11y-review; path: /abs/a11y/SKILL.md\n\n## Load on demand\n\n## Catalog suggestions\n\n- agent-browser - e2e checks\n  stages:review;requested:no;install:catalog add agent-browser\n\n<!-- auto:end -->\n' > "$(cfg_of "$sb")"
+impl="$(run_in "$sb" "$S" entries feat implement | cut -f1)"
+rev="$(run_in "$sb" "$S" entries feat review | cut -f1)"
+sug="$(run_in "$sb" "$S" suggestions feat | cut -f1,2,5)"
+if [[ "$impl" == "web-images" && "$rev" == "a11y-review" && "$sug" == "$(printf 'agent-browser\tno\te2e checks')" ]]; then ok "$t"
+else ng "$t" "impl=[$impl] rev=[$rev] sug=[$sug]"; fi
+
 t="brief prints nothing for a pre-1.11.0 config (no stages:/skill:)"
 sb="$(feature_sandbox old-config.md)"
 got="$(run_in "$sb" "$S" brief feat implement)$(run_in "$sb" "$S" entries feat review)"; rc=$?

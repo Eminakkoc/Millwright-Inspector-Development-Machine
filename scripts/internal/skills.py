@@ -9,6 +9,7 @@ Spec: docs/superpowers/specs/2026-10-04-skills-across-workflow-design.md
 import glob
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -135,14 +136,17 @@ def parse_sections(lines, start, end):
             continue
         if line.startswith("- "):
             head = line[2:]
-            name, _, reason = head.partition(" — ")
+            # Tolerate an ASCII " - " as well as the em dash; names like
+            # "web-images" are safe because the separator needs spaces around it.
+            parts = re.split(r"\s+[\u2014-]\s+", head, maxsplit=1)
+            name, reason = parts[0], (parts[1] if len(parts) > 1 else "")
             entry = {"name": name.strip(), "reason": reason.strip(),
                      "fields": {}, "lines": [i]}
             sections[current].append(entry)
             continue
-        if entry is not None and line.startswith("  ") and stripped:
-            for part in stripped.split("; "):
-                key, sep, value = part.partition(": ")
+        if entry is not None and line[:1] in (" ", "\t") and stripped:
+            for part in re.split(r"\s*;\s*", stripped):
+                key, sep, value = part.partition(":")
                 if sep:
                     entry["fields"][key.strip()] = value.strip()
             entry["lines"].append(i)
