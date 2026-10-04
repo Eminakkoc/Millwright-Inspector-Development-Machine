@@ -394,14 +394,31 @@ $CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh init config "$new_cfg" \
   "LESSONS_LEARNED_PATH=$lessons_token"
 ```
 
-Then, using `Edit`, fill the auto-section (between `<!-- auto:start -->` and `<!-- auto:end -->`) with summaries of the relevant skills and rules from `.claude/skills/` + `.claude/rules/`.
+Copy the previous `config.md`'s auto block **verbatim** — from the line beginning `<!-- auto:start` through `<!-- auto:end -->` — over the template's empty block. No reselection, no catalog suggestions, no installs. Run this in a fresh block; it re-derives its own variables (`$version` is the history version from Step 1.5 / Step 2 — substitute its literal value):
 
-Same relevance filter, budget, and three-section structure as `docs/blueprint-regeneration.md` Step B:
+```bash
+data_root="$($CLAUDE_PLUGIN_ROOT/scripts/data-root.sh)"
+active_feature="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get-active)"
+version=<the history version from Step 2>   # LLM substitutes the literal value
+prev_cfg="$data_root/workflow-stream/$active_feature/blueprints/history/v${version}/config.md"   # the just-rotated copy
+new_cfg="$data_root/workflow-stream/$active_feature/blueprints/current/config.md"
+python3 - "$prev_cfg" "$new_cfg" <<'PYEOF'
+import sys
+def span(lines):
+    s = next((i for i, l in enumerate(lines) if l.lstrip().startswith("<!-- auto:start")), None)
+    e = next((i for i, l in enumerate(lines) if s is not None and i > s and l.strip() == "<!-- auto:end -->"), None)
+    return s, e
+prev = open(sys.argv[1]).read().split("\n")
+new = open(sys.argv[2]).read().split("\n")
+ps, pe = span(prev)
+ns, ne = span(new)
+if ps is None or pe is None or ns is None or ne is None:
+    sys.exit(0)  # hand-edited previous block: keep the template's empty block
+open(sys.argv[2], "w").write("\n".join(new[:ns] + prev[ps:pe + 1] + new[ne + 1:]))
+PYEOF
+```
 
-- ≤ 10 entries combined across `## Skills`, `## Rules`, and `## Load on demand`; ≤ 2 lines each; always cite the canonical path.
-- `## Skills` and `## Rules` carry only the entries likely to be consulted up front for the regenerated Goals.
-- `## Load on demand` carries situational entries that may apply if a related concern surfaces; the chain opts in only when needed.
-- Off-topic skills/rules are omitted entirely — they remain discoverable via `.claude/skills/` and `.claude/rules/`.
+This copy runs before Step 4d.
 
 Leave `## GIT BRANCH` and `## Inspector Additions` empty / template-only here — Step 4d copies the previous content into them.
 
@@ -506,7 +523,15 @@ Then write each section per the same guide as `mi-plan-implementation` Step 3.5:
 - `## Active scope` — `branch: <primer_branch>`, `base-commit: <primer_base_commit>`, one bullet per id in `implementing_ids` (description from the active cycle's `todo-list.md`; resolve via `quest.sh dir`).
 - `## Goals (this cycle)` — 5–20 line excerpt from the new `requirements.md` `## Goals (this cycle)` (re-derived from the implementation in Step 4b).
 - `## Journal context (active feature)` — 5–20 line digest from the active cycle's `summary.md` `## Feature: <active_feature>` plus relevant `## Cross-cutting constraints`.
-- `## Likely-relevant skills & rules` — ≤ 5 entries from the new `config.md` auto-block (Step 4c).
+- **Skills** — replace the template's skills placeholder (the line beginning `<!-- skills:brief`) with the two `brief` blocks, verbatim and in this order; each brings its own heading, and an empty one adds nothing (the same rendering as `mi-plan-implementation` Step 3.5):
+
+  ```bash
+  active_feature="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get-active)"
+  skills_block="$("$CLAUDE_PLUGIN_ROOT/scripts/skills.sh" brief "$active_feature" implement)"
+  review_block="$("$CLAUDE_PLUGIN_ROOT/scripts/skills.sh" brief "$active_feature" review)"
+  ```
+
+  Write `$skills_block`, a blank line, then `$review_block` in place of the placeholder line; when both are empty, delete the placeholder line. Do not list skills any other way.
 - **`## Decisions`** — apply the same fold-in as `mi-plan-implementation` Step 3.5: read `decisions.md` (if exists), extract real-bullet stage sections via the Python helper, replace the `_(none recorded)_` placeholder line in the rendered primer's `## Decisions` section with the extracted body. If `decisions.md` is absent or every section is placeholder-only, leave `_(none recorded)_` untouched. **Do NOT delete the `## Decisions` heading itself.** Mandatory — same rationale as Step 3.5 (the chain inherits decisions only through primer.md).
 
 The `## On-demand canonical files` section is template-emitted and does not need editing.
