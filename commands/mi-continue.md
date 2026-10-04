@@ -682,7 +682,7 @@ fi
 
 ## Approve Handler (current-stage = 2)
 
-Runs after the inspector has reviewed the blueprint files (`requirements.md`, `config.md`, `diagrams/`) and is ready to advance into the planning chain.
+Runs after the inspector has reviewed the blueprint files (`requirements.md`, `config.md`, `diagrams/`) and is ready to advance into the planning chain. The handler sanity-checks the blueprint files, installs catalog skills, runs the clear-point gate, then auto-fires `/mi-plan-implementation`.
 
 ### Approve Step 1 — Sanity-check blueprint files
 
@@ -712,6 +712,61 @@ esac
 ```
 
 The default mode is correct here: `primer.md` is written at stage 3 by `/mi-plan-implementation` Step 3.5, so it does not exist yet at the stage-2 approve gate. Stage-3+ callers (`/mi-update-blueprint`, the Stage-4 drift probe, `/mi-complete-workflow` before completion rotation) use `--require-primer` to also validate the primer.
+
+### Approve Step 1.5 — Install catalog skills
+
+Runs on every entry to the Approve Handler, before the clear-point gate. Re-running it is a no-op once the branch is current and nothing is left to install or commit.
+
+**Step 0 — Resolve the branch.** Run `/mi-plan-implementation`'s **Step 2 — Resolve and validate the primary branch from `config.md`** here, exactly as written there (in auto mode that is `auto.sh create-branch`). It runs even when there is nothing to install, and before any install so `create-branch`'s clean-tree check sees only your own changes. If it stops (prompt, refusal, non-zero exit), this handler stops with it; the next `/mi-continue` re-enters here.
+
+**Step 1 — Read the suggestions.**
+
+```bash
+data_root="$($CLAUDE_PLUGIN_ROOT/scripts/data-root.sh)"
+"$CLAUDE_PLUGIN_ROOT/scripts/skills.sh" suggestions "$active_feature"
+```
+
+Each row is `name<TAB>requested<TAB>stages<TAB>install<TAB>reason`. No rows (including a pre-1.11.0 `config.md`) → skip to Step 5.
+
+**Step 2 — Confirm the millwright's own suggestions.** If any row has `requested=no`, ask once, in one sentence, with auto mode on or off:
+
+> "Not in your journal but looks useful: <name> (<reason>), … — install all, none, or name the ones you want?"
+
+The confirmed names join the install list; the rest are declined. Rows with `requested=journal` are installed without asking. In auto mode, log them first:
+
+```bash
+"$CLAUDE_PLUGIN_ROOT/scripts/auto.sh" is-on \
+  && "$CLAUDE_PLUGIN_ROOT/scripts/auto.sh" answer "catalog install" "<journal names, comma-joined>" --cmd /mi-continue \
+  || true
+```
+
+**Step 3 — Install.** For each name in the install list, run its `install` column plus `--yes` (e.g. `catalog add web-images --yes`), one at a time, recording installed and failed names. When a `requested=journal` install fails, ask:
+
+> "<name> (requested in your journal) failed to install: <error>. Retry, continue without it, or stop?"
+
+`retry` → run it again. `continue` → it counts as failed. `stop` → it counts as failed, the names not yet attempted are left alone, and Step 4 gets `--stop`. A failed `requested=no` install is reported by name and counts as failed. If `catalog` is not on PATH, every install fails with that message.
+
+**Step 4 — Rewrite `config.md`.**
+
+```bash
+"$CLAUDE_PLUGIN_ROOT/scripts/skills.sh" apply-installs "$active_feature" \
+  --installed "<installed, comma-joined>" --declined "<declined>" --failed "<failed>" [--stop]
+```
+
+Omit an option whose list is empty. Installed entries move to `## Skills` (`origin: catalog-installed`); declined and failed entries are deleted, except failed journal entries and unattempted ones on `--stop`, which stay for the next `/mi-continue`.
+
+**Step 5 — Commit the installs.**
+
+```bash
+paths="$("$CLAUDE_PLUGIN_ROOT/scripts/skills.sh" catalog-files)"
+if [[ -n "$paths" ]]; then
+  items="$(printf '%s\n' "$paths" | sed -n 's|^\.claude/skills/\([^/]*\)/.*|\1|p' | sort -u | paste -sd, - | sed 's/,/, /g')"
+  printf '%s\n' "$paths" | tr '\n' '\0' | xargs -0 git add --
+  printf '%s\n' "$paths" | tr '\n' '\0' | xargs -0 git commit -m "chore(skills): install ${items:-catalog skills} from catalog" --
+fi
+```
+
+The trailing pathspec keeps any other staged file staged and out of this commit. If `git add` or `git commit` fails, stop and relay the error; the next `/mi-continue` re-runs this step and commits the still-changed paths. If the inspector chose `stop` in Step 3, stop here after the commit and say which entries are still waiting. Otherwise continue to Approve Step 2.
 
 ### Approve Step 2 — Clear-point gate (`stage-2-to-3`)
 
