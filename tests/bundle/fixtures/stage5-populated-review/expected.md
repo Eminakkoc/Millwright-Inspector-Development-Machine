@@ -41,11 +41,6 @@ Acceptance hints from the journal:
 - The `/auth/refresh` endpoint already exists; it issues a fresh signed token given a valid refresh token. JWT-001 should reuse it, not duplicate refresh logic.
 - The JWKS endpoint is `https://auth.internal/.well-known/jwks.json` and is cached for 10 minutes.
 
-## Implementation rules to follow
-
-- structured-error-envelope: every 4xx response must use `{ code, message }` per the security review on 2026-04-30
-- no-direct-jwks-fetch: route every JWKS read through `services/auth/jwks-cache.ts`
-
 ## Objective
 
 Implement signed JWT verification on every protected request, replacing the legacy session-cookie flow. Tokens are RS256, signed by the auth service.

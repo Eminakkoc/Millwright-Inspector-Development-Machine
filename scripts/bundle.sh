@@ -396,28 +396,6 @@ def emit_feature_background(summary_text, feature):
     return "## Feature background\n\n" + body + "\n"
 
 
-def emit_implementation_rules(config_text):
-    """§5.5 — config.md → ## Rules. Strip the `; path: …` suffix per entry."""
-    body = extract_section(strip_html_comments(strip_frontmatter(config_text)),
-                           "Rules")
-    body = strip_template_placeholders(body)
-    out_lines = []
-    for line in body.splitlines():
-        if not line.strip():
-            continue
-        # Match a bullet, drop the trailing "; path: ..." if present.
-        m = re.match(r"^(\s*-\s+.*?)(\s*;\s*path:\s*\.claude/rules/[^\s]+)?\s*$", line)
-        if m:
-            cleaned = m.group(1).rstrip()
-            out_lines.append(cleaned)
-        else:
-            out_lines.append(line)
-    body = scrub_body_paths(normalize_blanks("\n".join(out_lines)))
-    if not body.strip():
-        return ""
-    return "## Implementation rules to follow\n\n" + body + "\n"
-
-
 def emit_objective(requirements_text):
     """§5.6 — first paragraph of requirements.md body. Omit if no leading paragraph."""
     body = strip_html_comments(strip_frontmatter(requirements_text))
@@ -962,7 +940,6 @@ sections.append(emit_prompt_block(FEATURE))                                 # §
 sections.append(emit_custom_instructions(config_text))                       # §5.2
 sections.append(emit_project_wide_constraints(summary_text))                 # §5.3
 sections.append(emit_feature_background(summary_text, FEATURE))              # §5.4
-sections.append(emit_implementation_rules(config_text))                      # §5.5
 sections.append(emit_objective(requirements_text))                           # §5.6
 sections.append(emit_scope(requirements_text, todo_text, FEATURE))           # §5.7
 sections.append(emit_requirements(requirements_text))                        # §5.8

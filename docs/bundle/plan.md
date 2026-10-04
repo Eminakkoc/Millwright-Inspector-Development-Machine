@@ -326,27 +326,6 @@ If `summary.md` is missing (extreme edge case — the cycle never ran
 stage 1) or the `## Feature: <active_feature>` section is absent or
 empty, this bundle section is omitted.
 
-### 5.5 Implementation rules to follow (review fix: extract `config.md → ## Rules`)
-
-Extracted from `blueprints/current/config.md → ## Rules` — the
-workflow's source for project constraints that govern this cycle's
-implementation. The template format for each entry is
-`- <name>: <one-line reason>; path: .claude/rules/<name>.md`. The
-script:
-
-- Strips the `; path: .claude/rules/<name>.md` tail from each bullet,
-  since the path is workflow-internal.
-- Re-emits the remainder (`<name>: <reason>`) as a bullet under the
-  task-neutral header "Implementation rules to follow".
-- Leaves `<name>` as-is even though it may be workflow-flavored —
-  per Principle §2.5 the script does not paraphrase. The prompt
-  block tells the receiver to read such names charitably.
-
-`config.md → ## Skills` and `## Load on demand` remain dropped (§10);
-they describe workflow tooling, not project constraints.
-
-If `## Rules` is empty after stripping, this section is omitted.
-
 ### 5.6 Objective
 
 The first paragraph of `blueprints/current/requirements.md`'s body
@@ -1250,7 +1229,7 @@ guarantees were inconsistent across §2, §10, §12).
    - `tmp/bundles/.gitignore` exists with content `*\n!.gitignore\n`.
    - **Sections present** (in order): Top prompt block, Custom project
      instructions (§5.2), Project-wide constraints (§5.3), Feature
-     background (§5.4), Implementation rules to follow (§5.5),
+     background (§5.4),
      Objective (if `requirements.md` has body prose, §5.6), Scope in
      this session (§5.7), Requirements and constraints (§5.8),
      Planned for future work (§5.9), Out of scope (§5.10), Decisions
@@ -1304,8 +1283,6 @@ guarantees were inconsistent across §2, §10, §12).
        bug for the `## Planned (future cycles)` heading).
      - Out of scope section is non-empty (catches the same bug for
        `## Non-goals (out of scope)`).
-     - Implementation rules to follow section contains the rule entry
-       with the `; path: …` suffix removed.
      - Feature background section is non-empty and contains the
        active feature's `## Feature: <feature>` body verbatim
        (catches a regression where the new §5.4 extraction silently
@@ -1464,7 +1441,7 @@ For traceability against the review rounds applied to v3.
 | Requirements extraction pointed at the wrong canonical headings (`## Goals` vs `## Goals (this cycle)`) and omitted `## Planned (future cycles)` | Major | §5.8 (corrected to `## Goals (this cycle)`), §5.9 (new "Planned for future work" section pulling from `## Planned (future cycles)`), §5.10 (corrected to `## Non-goals (out of scope)`); §12.2 check 1 adds non-empty assertions for all three sections to catch silent-omission regressions. |
 | Acceptance grep tests contradicted body-passthrough policy (e.g., prompt block contained `IR-NNN` while test forbade it; humans may write workflow vocabulary in body text the bundler cannot rewrite) | Major | §12.1 introduces a chrome-vs-body split and scopes forbidden-pattern grep tests to bundler-authored chrome only; §5.1 prompt block reworded to drop concrete forbidden-token examples while still warning about technical phrasing in body. |
 | §2 Principle 3 claimed workflow paths are stripped from body text; other sections said body is passed through unchanged — incompatible | Medium | §2 Principle 3 rewritten: chrome (frontmatter, HTML comments, sync markers, template placeholders) is stripped at the boundary; body text is passed through unchanged. The prompt block and the §12.1 chrome-scoped grep tests are aligned with this single contract. |
-| `config.md → ## Rules` was dropped wholesale, losing potentially load-bearing project constraints | Medium | §5.5 ("Implementation rules to follow") extracts rule entries with the `; path: .claude/rules/<name>.md` suffix stripped; §10 drop list updated to drop only Skills / Load on demand / GIT BRANCH from `config.md`. |
+| `config.md → ## Rules` was dropped wholesale, losing potentially load-bearing project constraints | Medium | §5.5 ("Implementation rules to follow") extracts rule entries with the `; path: .claude/rules/<name>.md` suffix stripped; §10 drop list updated to drop only Skills / Load on demand / GIT BRANCH from `config.md`. (removed in 1.11.0: rules load through Claude Code itself) |
 | Open review findings section was gated only on open `### IR-NNN` blocks; would skip the section if review file held only freeform paragraphs | Medium | §5.16 gating rewritten: section is omitted only when both structured open findings and freeform paragraphs are absent; §12.2 checks 5, 6, 7, 8 cover structured-only / freeform-only / both / empty configurations explicitly. |
 
 ### Round-4 findings (resolved in this revision of the plan)
