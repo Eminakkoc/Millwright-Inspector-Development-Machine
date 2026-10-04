@@ -474,11 +474,25 @@ fi
 
 When Phase E of the auto-fired review declined or kept any scope-expanding proposals, set `scope_gate_note` to one line naming the count and where they live — e.g. `"2 scope-expanding proposals from the review were not applied (declined at the gate); they remain as \`<!-- REVIEW-FINDING -->\` comments in requirements.md if you want to revisit them."` Otherwise leave it empty and omit the line entirely.
 
+**Skill report.** Build `skill_report` — one line per non-empty group, in this order, from the lists Step B kept and from `"$CLAUDE_PLUGIN_ROOT/scripts/skills.sh" suggestions "$active_feature"`:
+
+- `Catalog skills to install at approval (requested in your journal): <names>`
+- `Suggested, waiting for your confirmation at /mi-continue: <name> (<reason>), …` (`requested: no` rows)
+- `Requested but not found anywhere: <names>`
+- `<name>: not a skill — set it up yourself before /mi-continue` (one line per requested rule, plugin, MCP server or hook)
+- `<name>: your personal ~/.claude/skills copy overrides the selected one on this machine`
+- `<name>: broken catalog install — repair with catalog add <name> --force`
+- `<name> needs <needs> (installs outside the project) — run catalog add <name> yourself before /mi-continue` (requested ones only; your own picks with missing dependencies are dropped silently)
+
+Empty groups print nothing. On the `check-current=0` short-circuit re-entry Step B did not run, so `skill_report` is empty there — do not guess. When `skill_report` is empty, omit its line (and its blank `>` line) from the message entirely, as with `scope_gate_note`.
+
 Tell the inspector (append `$effort_suggestion` only when non-empty):
 
 > "Blueprints generated for `$active_feature` at `workflow-stream/$active_feature/blueprints/current/`. The blueprint was ${review_status}. Review `requirements.md`, `config.md`, and `diagrams/`.
 >
 > ${scope_gate_note}
+>
+> ${skill_report}
 >
 > Optional: reply **`walkthrough`** and I'll go over `requirements.md` with you item by item — each item gets a one-sentence summary in plain language, a short explanation, and a concrete example, waiting for your go-ahead before moving to the next one.
 >
