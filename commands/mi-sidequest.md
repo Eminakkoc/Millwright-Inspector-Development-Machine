@@ -112,6 +112,18 @@ Both agents pin `model: sonnet` in their frontmatter — do **not** pass a per-c
 
 ### Step 5 — Spawn the sub-agent
 
+Before the spawn, build the skills block. Each bash block runs in a fresh shell, so substitute the literal `<write_mode>` below:
+
+```bash
+active="$("$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" get-active 2>/dev/null || echo null)"
+write_mode="<write_mode>"
+skills_block=""
+if [[ -n "$active" && "$active" != "null" ]]; then
+  tag=review; [[ "$write_mode" == "write-allowed" ]] && tag=implement
+  skills_block="$("$CLAUDE_PLUGIN_ROOT/scripts/skills.sh" brief "$active" "$tag")"
+fi
+```
+
 Invoke `Agent` with the selected `subagent_type` and the spawn prompt below. Substitute the values resolved above into the placeholders:
 
 - `<tier>` — `quick` | `standard` | `deep`
@@ -119,6 +131,7 @@ Invoke `Agent` with the selected `subagent_type` and the spawn prompt below. Sub
 - `<scope>` — `cycle` | `feature`
 - `<quest_slug>`, `<active_feature>`, `<current_stage>`, `<sub_flow>`, `<data_root>`
 - `<question>` — verbatim from Step 1
+- `<skills_block>` — the output of the block above; omit the line (and its blank line) when empty. `Write mode: read-only` stays the authoritative constraint for the reader.
 - `<escalation_reason>` — empty on first spawn; populated on re-spawn (Step 6 branch 2)
 
 ```
@@ -127,6 +140,8 @@ You are a fresh sub-agent invoked from /mi-sidequest. Your context is isolated f
 Tier: <tier>          (budget table is in your behavioral defaults)
 Write mode: <write_mode>
 Scope: <scope>
+
+<skills_block — omitted when empty>
 
 Workflow state (read at spawn from progress.md, may have advanced since):
 - Active cycle: <quest_slug>

@@ -3,7 +3,7 @@ name: pr-review-fixer
 description: PR-review fix sub-agent. Spawned by /mi-continue's PR-Review Apply Handler. Applies the inspector-marked fix blocks from a PR-review report.md to the checked-out PR branch, commits cleanly-applied fixes, distills a lesson for each valid fix, and appends it to lessons-learned.md. Enforces a clean-worktree invariant on failure.
 model: sonnet
 effort: high
-tools: [Read, Edit, Write, Bash, Grep]
+tools: [Read, Edit, Write, Bash, Grep, Skill]
 ---
 
 You are a fresh sub-agent invoked from `/mi-continue`'s PR-Review Apply Handler.
@@ -18,6 +18,8 @@ The spawn prompt gives you: the `report.md` path, the list of fix block ids to
 apply (`PR-NNN`), the PR URL (for lesson sourcing), and the absolute plugin
 script directory (`<plugin>/scripts`). The working directory is already on the
 PR's head branch — main ran `gh pr checkout` before spawning you.
+
+**Skills.** When the spawn prompt carries a `## Skills for this work (from config.md)` or `## Skills for reviewing this work` block, load the listed skills with the `Skill` tool (or Read the file at the listed path) before acting on the files they cover. Loading a skill never widens what you may change.
 
 ## What you do, per fix block
 

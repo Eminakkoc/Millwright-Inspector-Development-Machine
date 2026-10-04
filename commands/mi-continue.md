@@ -1871,6 +1871,41 @@ pr_number="$($CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get "$report" pr-number)
 
 ### Apply Step 5 — Apply fixes (skipped when there are no fix blocks)
 
+**Skills block.** When a feature is active and the PR's head branch equals `progress.md`'s `branch`, use the feature's selection; otherwise pick from what is installed. Each bash block runs in a fresh shell, so substitute the literal report path for `$report` (Step 2.0's selection) in the block below.
+
+```bash
+active="$("$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" get-active 2>/dev/null || echo null)"
+repo="$($CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get "$report" repo)"; pr_number="$($CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get "$report" pr-number)"
+pr_head="$(gh pr view "$pr_number" --repo "$repo" --json headRefName -q .headRefName 2>/dev/null || echo '')"
+feat_branch=""
+[[ -n "$active" && "$active" != "null" ]] && feat_branch="$("$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" get branch 2>/dev/null || echo '')"
+if [[ -n "$feat_branch" && "$pr_head" == "$feat_branch" ]]; then
+  skills_block="$("$CLAUDE_PLUGIN_ROOT/scripts/skills.sh" brief "$active" implement)"
+else
+  skills_block=""   # PR-based pick below
+fi
+```
+
+PR-based pick (when `skills_block` is empty and the branch did not match): run `"$CLAUDE_PLUGIN_ROOT/scripts/skills.sh" inventory --installed`, pick at most 5 rows whose description fits the PR's changed files (`gh pr diff "$pr_number" --repo "$repo" --name-only`), and render them in the `brief` format — heading `## Skills for this work (from config.md)`, the load-instruction line, then `- <name> — <why it fits> — <absolute path>` (make project-relative paths absolute with the repo root). Nothing relevant → leave the block out.
+
+**Skills block.** When a feature is active and the PR's head branch equals `progress.md`'s `branch`, use the feature's selection; otherwise pick from what is installed. Each bash block runs in a fresh shell, so substitute the literal report path for `<report>` in the block below.
+
+```bash
+active="$("$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" get-active 2>/dev/null || echo null)"
+report="<report>"   # literal report path from Step 2.0
+repo="$($CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get "$report" repo)"; pr_number="$($CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get "$report" pr-number)"
+pr_head="$(gh pr view "$pr_number" --repo "$repo" --json headRefName -q .headRefName 2>/dev/null || echo '')"
+feat_branch=""
+[[ -n "$active" && "$active" != "null" ]] && feat_branch="$("$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" get branch 2>/dev/null || echo '')"
+if [[ -n "$feat_branch" && "$pr_head" == "$feat_branch" ]]; then
+  skills_block="$("$CLAUDE_PLUGIN_ROOT/scripts/skills.sh" brief "$active" implement)"
+else
+  skills_block=""   # PR-based pick below
+fi
+```
+
+PR-based pick (when `skills_block` is empty and the branch did not match): run `"$CLAUDE_PLUGIN_ROOT/scripts/skills.sh" inventory --installed`, pick at most 5 rows whose description fits the PR's changed files (`gh pr diff "$pr_number" --repo "$repo" --name-only`), and render them in the `brief` format — heading `## Skills for this work (from config.md)`, the load-instruction line, then `- <name> — <why it fits> — <absolute path>` (make project-relative paths absolute with the repo root). Nothing relevant → leave the block out.
+
 Spawn the fixer with `subagent_type: millwright-inspector-development-machine:pr-review-fixer`. Spawn prompt:
 
 ```
@@ -1881,6 +1916,10 @@ Report:          <report>
 Fix block ids:   <space-separated PR-NNN list of action:fix actionable blocks>
 PR URL:          <pr-url from report frontmatter>
 Plugin scripts:  <absolute path to $CLAUDE_PLUGIN_ROOT/scripts>
+
+<skills_block — omitted when empty>
+
+<skills_block — omitted when empty>
 
 The working directory is already on the PR's head branch. For each fix block:
 read its proposed-fix + inspector-notes (inspector-notes overrides on conflict),

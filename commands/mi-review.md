@@ -363,6 +363,13 @@ If no open finding has cascade scope, omit the cascade hints section AND the del
 
 Invoke `Agent` with `subagent_type: millwright-inspector-development-machine:review-iteration-runner`. The prompt is composed inline below. **Use `subagent_type` explicitly — a fork would inherit main's context and defeat the optimization.**
 
+Before composing the prompt, build the skills block (re-derive the feature in this block — each bash block runs in a fresh shell; substitute the literal feature slug if `active_feature` is not set):
+
+```bash
+active_feature="${active_feature:-$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get-active 2>/dev/null || echo null)}"
+skills_block="$("$CLAUDE_PLUGIN_ROOT/scripts/skills.sh" brief "$active_feature" implement)"
+```
+
 Sub-agent prompt template (substitute literals for `<...>` placeholders):
 
 ```
@@ -378,6 +385,8 @@ You are a fresh sub-agent invoked from `mi-review` Step 3a to address inspector 
 - <blueprint_dir>/config.md — skills, rules, GIT BRANCH, Inspector Additions.
 - <blueprint_dir>/primer.md — original stage-3 launch primer.
 - <quest_summary> — read `## Cross-cutting constraints` and `## Feature: <active_feature>`.
+
+<skills_block — omit this line and the blank line after it when empty>
 
 **Open findings to address this iteration:**
 
@@ -480,6 +489,7 @@ Wait for the reply.
 
 The millwright (this session) addresses each finding directly — no Skill is invoked. The inspector interacts with the millwright in chat as fixes happen.
 
+0. Load the skills in `skills.sh brief "$active_feature" implement` before editing the files they cover (nothing to load when it prints nothing).
 1. **Read the required first reads:**
    - `implementation/review-context.md` — compact snapshot of active scope, goals, implemented surface, open-findings cheat sheet.
    - `implementation/inspector-review.md` — canonical findings (re-read on every `go again`).

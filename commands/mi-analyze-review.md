@@ -126,6 +126,23 @@ the per-comment blocks under that heading.
 
 ### Step 6 — Analyze (sub-agent)
 
+**Skills block.** When a feature is active and the PR's head branch equals `progress.md`'s `branch`, use the feature's selection; otherwise pick from what is installed. Each bash block runs in a fresh shell, so substitute the literal `<owner>/<repo>` and PR number in the block below.
+
+```bash
+active="$("$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" get-active 2>/dev/null || echo null)"
+repo="<owner>/<repo>"; pr_number="<pr>"   # literals from Steps 1-2
+pr_head="$(gh pr view "$pr_number" --repo "$repo" --json headRefName -q .headRefName 2>/dev/null || echo '')"
+feat_branch=""
+[[ -n "$active" && "$active" != "null" ]] && feat_branch="$("$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" get branch 2>/dev/null || echo '')"
+if [[ -n "$feat_branch" && "$pr_head" == "$feat_branch" ]]; then
+  skills_block="$("$CLAUDE_PLUGIN_ROOT/scripts/skills.sh" brief "$active" review)"
+else
+  skills_block=""   # PR-based pick below
+fi
+```
+
+PR-based pick (when `skills_block` is empty and the branch did not match): run `"$CLAUDE_PLUGIN_ROOT/scripts/skills.sh" inventory --installed`, pick at most 5 rows whose description fits the PR's changed files (`gh pr diff "$pr_number" --repo "$repo" --name-only`), and render them in the `brief` format — heading `## Skills for reviewing this work`, the load-instruction line, then `- <name> — <why it fits> — <absolute path>` (make project-relative paths absolute with the repo root). Nothing relevant → leave the block out.
+
 Spawn the analyst with `subagent_type: millwright-inspector-development-machine:review-comment-analyst`.
 Substitute the resolved values into the spawn prompt:
 
@@ -137,6 +154,8 @@ Repository (current working directory): <cwd_repo>
 PR: <owner>/<repo> #<pr>
 Normalized comments: <session>/comments.json
 Report to append to: <session>/report.md
+
+<skills_block — omitted when empty>
 
 Read <session>/comments.json — an object `{ "head_ref": ..., "comments": [...] }`.
 Each comment carries: kind (review-comment | review-summary | issue-comment),
