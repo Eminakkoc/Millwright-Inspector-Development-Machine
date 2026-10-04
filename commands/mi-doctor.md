@@ -69,6 +69,7 @@ Optional — missing:
   ⚠ ajv-cli (falls back to python jsonschema)
   ⚠ python-jsonschema (falls back to yq structural check)
   ⚠ gh (GitHub CLI — required only for /mi-analyze-review PR-review analysis)
+  ⚠ catalog (skills catalog CLI — optional; lets stage 2 suggest and install catalog skills)
 
 Skills (optional — at least one source required):
   ✓ brainstorming (local: .claude/skills/brainstorming)

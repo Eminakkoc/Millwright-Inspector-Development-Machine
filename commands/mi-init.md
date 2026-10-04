@@ -227,6 +227,8 @@ Optional companions (detected but never required):
   - docling           (enables /mi-ingest — convert PDF/DOCX/PPTX/XLSX/images
                        into sibling .md so /mi-run can consume them. Skip if
                        your journal will only ever contain .md and .txt.)
+  - catalog           (lets stage 2 suggest and install catalog skills; without
+                       it, catalog suggestions are skipped.)
 If any are missing, see /mi-doctor for install hints. The workflow
 runs identically without them.
 

@@ -330,6 +330,15 @@ hints_claude() {
 JSON
 }
 
+hints_catalog() {
+  cat <<'JSON'
+{
+  "any": "curl -fsSL https://raw.githubusercontent.com/Eminakkoc/skills/main/catalog.sh | bash -s -- setup",
+  "note": "optional — lets stage 2 suggest and install catalog skills (github.com/Eminakkoc/skills). Without it, catalog suggestions are skipped."
+}
+JSON
+}
+
 # ---------- Run checks ----------------------------------------------------
 
 # REQUIRED
@@ -353,6 +362,10 @@ check_pymod jsonschema false "$(hints_jsonschema)"
 # Not needed for the core 8-stage workflow; safe to omit if you never analyze
 # PR reviews. /mi-analyze-review does its own gh preflight + auth check.
 check_cli gh false "$(hints_gh)"
+
+# OPTIONAL — catalog CLI (github.com/Eminakkoc/skills) lets stage 2 suggest and install
+# catalog skills. Missing = catalog suggestions are skipped.
+check_cli catalog false "$(hints_catalog)"
 
 # OPTIONAL companions — token-reduction tools that our commands auto-detect and use
 # when present. Never required; missing = normal operation.
