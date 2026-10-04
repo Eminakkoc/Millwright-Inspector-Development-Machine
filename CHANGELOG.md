@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.11.0 — Skills across the workflow
+
+**Breaking — finish or abort (`/mi-abort-workflow`) any active workflow before upgrading.** `config.md` entries written before 1.11.0 have no `stages:`/`skill:` fields, so `skills.sh brief` renders nothing for them, `/mi-update-blueprint` copies the old block as is, and ongoing workflows are not migrated.
+
+- New `scripts/skills.sh` — the one reader of the skill selection: `inventory`, `lookup`, `brief`, `entries`, `suggestions`, `catalog-files`, `apply-installs`.
+- Stage 1: `summary.md` gains `## Requested skills`; the journal digesters return a `## Named resources` section.
+- Stage 2: `config.md`'s auto block is now `## Skills`, `## Load on demand`, `## Catalog suggestions`, with `stages:`/`skill:`/`path:` fields; `## Rules` is gone (rules load through Claude Code itself). The hand-off reports skills to install, suggestions to confirm, and things to set up yourself.
+- Stage-2 approve gate: new Approve Step 1.5 resolves the feature branch (moved here from stage 3, which now only re-validates), installs the agreed catalog skills, and commits them as `chore(skills): install … from catalog` before `base-commit`.
+- Stage 3+: the primer, the brainstorming chain (per-task `**Skills:**` / `**Review skills:**` lines), direct mode, the stage-6 runner, sidequests and the PR agents all receive the selected skills; `sidequest-reader`, `sidequest-writer`, `pr-review-fixer` and `review-comment-analyst` gain the `Skill` tool.
+- `/mi-export-bundle` no longer emits "Implementation rules to follow".
+- `/mi-doctor` reports the `catalog` CLI as optional. Bundle expansion needs a `catalog` with `list --json --bundles` (skills repo `b6b257c` or later).
+
 ## 1.10.0 — Claude as a fallback blueprint reviewer
 
 Blueprint reviews no longer need codex. When codex is missing or unusable, the
