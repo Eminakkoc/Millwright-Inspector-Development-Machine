@@ -70,6 +70,8 @@ fi
 **Pending catalog suggestions.** Skipped on stage-3 re-entry (`current-stage == 3`). Otherwise:
 
 ```bash
+active_feature="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get-active)"
+current_stage="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get current-stage)"
 if [[ "$current_stage" != "3" && -n "$("$CLAUDE_PLUGIN_ROOT/scripts/skills.sh" suggestions "$active_feature")" ]]; then
   echo "Catalog skills are still waiting to be installed — run /mi-continue to finish the stage-2 gate first." >&2
   exit 1
@@ -220,6 +222,7 @@ Then write each section per the template's guide:
 - **Skills** — replace the template's skills placeholder (the line beginning `<!-- skills:brief`) with the two `brief` blocks, verbatim and in this order; each brings its own heading, and an empty one adds nothing:
 
   ```bash
+  active_feature="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get-active)"
   skills_block="$("$CLAUDE_PLUGIN_ROOT/scripts/skills.sh" brief "$active_feature" implement)"
   review_block="$("$CLAUDE_PLUGIN_ROOT/scripts/skills.sh" brief "$active_feature" review)"
   ```
