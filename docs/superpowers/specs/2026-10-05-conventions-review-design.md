@@ -82,9 +82,11 @@ Parses the `@@ -a,b +c,d @@` headers of
    (exit 0). Otherwise `conventions review: N reviewers (<names>)` then
    `state: <state-dir>`.
 
-#### `ingest <feature> <state-dir>`
+#### `ingest <feature>`
 
 Main has saved each reviewer's final reply verbatim to `<state>/reply-<idx>.md`.
+`ingest` finds the run itself — `prepare` leaves exactly one `*.state` folder — so
+no path has to cross between prose bash blocks.
 
 - **Pass 1 — parse, write nothing.** Every entry needs a reply with `Entry:`,
   `Result: findings|clean|not-checkable` and `More: yes|no`; `findings` needs `### F-n`
