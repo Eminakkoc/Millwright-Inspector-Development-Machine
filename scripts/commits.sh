@@ -62,6 +62,14 @@
 #                                            # so renamed text files carry valid line stats. Used by
 #                                            # mi-generate-implementation-diagrams and
 #                                            # /mi-update-blueprint to bound their codebase reads.
+#   commits.sh changed-lines <feature> <review-head>
+#                                            # prints "<path>\t<start>-<end>" per block of added or
+#                                            # changed lines in base-commit..<review-head>, from the
+#                                            # hunk headers of `git diff -U0 --no-renames`. A
+#                                            # deletion-only hunk prints the surviving neighbour
+#                                            # lines (c-(c+1), clamped to the file); a deleted or
+#                                            # emptied file prints nothing; a moved file is fully
+#                                            # added. Used by scripts/conventions-review.sh.
 #   commits.sh change-summary-fresh <feature>
 #                                            # exit 0 if implementation/change-summary.md exists with
 #                                            #   frontmatter base-commit + head matching the current
@@ -230,6 +238,54 @@ for line in nu.splitlines():
 for path, s in sorted(status.items()):
     a, d = stats.get(path, ('-', '-'))
     print(f'{s}\t{a}\t{d}\t{path}')
+PYEOF
+    ;;
+
+  changed-lines)
+    feature="${1:?feature required}"
+    review_head="${2:?review-head required}"
+    range="$(get_range)"
+    base="${range%..*}"
+    python3 - "$base" "$review_head" <<'PYEOF'
+import re, subprocess, sys
+base, head = sys.argv[1], sys.argv[2]
+diff = subprocess.check_output(
+    ['git', '-c', 'core.quotePath=false', 'diff', '-U0', '--no-renames', '--no-color',
+     '--no-ext-diff', f'{base}..{head}'], text=True, errors='surrogateescape')
+HUNK = re.compile(r'^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@')
+counts = {}
+
+def line_count(path):
+    try:
+        blob = subprocess.check_output(['git', 'cat-file', 'blob', f'{head}:{path}'],
+                                       stderr=subprocess.DEVNULL)
+    except subprocess.CalledProcessError:
+        return 0
+    if not blob:
+        return 0
+    return blob.count(b'\n') + (0 if blob.endswith(b'\n') else 1)
+
+path = None
+for line in diff.splitlines():
+    if line.startswith('+++ '):
+        target = line[4:].rstrip('\t')
+        path = None if target == '/dev/null' else (target[2:] if target.startswith('b/') else target)
+        continue
+    m = HUNK.match(line)
+    if not m or path is None:
+        continue
+    c = int(m.group(1))
+    d = 1 if m.group(2) is None else int(m.group(2))
+    if d > 0:
+        print(f'{path}\t{c}-{c + d - 1}')
+        continue
+    if path not in counts:
+        counts[path] = line_count(path)
+    n = counts[path]
+    if n == 0:
+        continue
+    lo, hi = max(c, 1), min(c + 1, n)
+    print(f'{path}\t{min(lo, hi)}-{hi}')
 PYEOF
     ;;
 
@@ -486,7 +542,7 @@ PYEOF
     ;;
 
   *)
-    echo "usage: commits.sh {list|yaml|populate-requirements|changed-files|changed-files-only|change-summary-fresh|diagrams-fresh|feature-test-range} ..." >&2
+    echo "usage: commits.sh {list|yaml|populate-requirements|changed-files|changed-lines|changed-files-only|change-summary-fresh|diagrams-fresh|feature-test-range} ..." >&2
     exit 2
     ;;
 esac
