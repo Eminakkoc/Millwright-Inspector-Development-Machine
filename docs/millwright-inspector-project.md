@@ -1980,7 +1980,7 @@ profile returns per `docs/sub-agent-return-contract.md` with a ≤ 1k-token retu
 (`Result`, `Artifacts changed`, `Commits`, `Findings / risks`, `Main should read`);
 detailed evidence belongs in artifact files, not the return. The `blueprint-batch-reviewer`
 profile additionally emits a **Payload JSON** block before the standard fields (see the
-contract doc's "Payload JSON extension" section). There are **15 profiles**:
+contract doc's "Payload JSON extension" section). There are **16 profiles**:
 
 | Profile | Model / effort | Spawned by | Output |
 | --- | --- | --- | --- |

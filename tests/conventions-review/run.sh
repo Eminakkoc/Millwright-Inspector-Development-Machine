@@ -496,6 +496,12 @@ for b in "$bd"/block-*.sh; do
 done
 [[ -z "$bad" ]] && ok "$t" || ng "$t" "blocks:$bad"
 
+t="command: prepare block stops on a prepare failure (no model line, non-zero exit)"
+sb2="$(prep_sandbox)"
+run_in "$sb2" "$P" set "current-stage=2" >/dev/null 2>&1
+got="$(cd "$sb2" && env -u active_feature CLAUDE_PLUGIN_ROOT="$REPO_ROOT" MI_DATA_ROOT="$sb2/millwright-inspector" bash "$bd/block-1.sh" 2>&1)"; rc=$?
+[[ $rc -ne 0 ]] && ! grep -q '^model:' <<<"$got" && ok "$t" || ng "$t" "rc=$rc got: $got"
+
 t="command: delegation contract names conventions-reviewer and the lint registers it"
 grep -q '^\*\*Delegation contract.\*\*.*conventions-reviewer' "$CMD" \
   && grep -q 'mi-conventions-review' "$REPO_ROOT/tests/lint/run.sh" && ok "$t" || ng "$t" "missing"

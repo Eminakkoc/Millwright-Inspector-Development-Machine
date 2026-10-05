@@ -18,7 +18,7 @@ if [[ -z "$active_feature" || "$active_feature" == "null" ]]; then
   echo "conventions review: failed — no active feature" >&2
   exit 1
 fi
-"$CLAUDE_PLUGIN_ROOT/scripts/conventions-review.sh" prepare "$active_feature"
+"$CLAUDE_PLUGIN_ROOT/scripts/conventions-review.sh" prepare "$active_feature" || exit $?
 echo "model: ${MI_CONVENTIONS_REVIEW_MODEL:-sonnet}"
 ```
 
