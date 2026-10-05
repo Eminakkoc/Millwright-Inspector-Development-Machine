@@ -266,8 +266,15 @@ def line_count(path):
     return blob.count(b'\n') + (0 if blob.endswith(b'\n') else 1)
 
 path = None
+in_header = False
 for line in diff.splitlines():
-    if line.startswith('+++ '):
+    if line.startswith('diff --git '):
+        in_header = True
+        path = None
+        continue
+    if in_header and line.startswith('@@'):
+        in_header = False
+    if in_header and line.startswith('+++ '):
         target = line[4:].rstrip('\t')
         path = None if target == '/dev/null' else (target[2:] if target.startswith('b/') else target)
         continue

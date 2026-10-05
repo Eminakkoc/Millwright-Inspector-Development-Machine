@@ -117,6 +117,14 @@ else
   ok "$t"
 fi
 
+t="changed-lines: an added line starting with '++ ' is not mistaken for a file header"
+sb3="$(make_sandbox)"
+(cd "$sb3" && seq 1 10 > pp.txt) && commit_all "$sb3" pp
+run_in "$sb3" "$P" set "base-commit=$(head_of "$sb3")" >/dev/null 2>&1
+(cd "$sb3" && seq 1 10 | sed '2s/.*/++ x/' | sed '8s/.*/eight/' > pp.txt) && commit_all "$sb3" pp-change
+got="$(run_in "$sb3" "$C" changed-lines feat "$(head_of "$sb3")")"
+[[ "$got" == $'pp.txt\t2-2\npp.txt\t8-8' ]] && ok "$t" || ng "$t" "got: $got"
+
 # ---- summary -----------------------------------------------------------------
 echo
 echo "conventions-review: $pass passed, $fail failed"
