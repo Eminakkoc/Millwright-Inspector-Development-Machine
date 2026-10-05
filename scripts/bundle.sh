@@ -86,7 +86,7 @@ fi
 # Self-containing gitignore: makes tmp/bundles/ ignore itself in any host repo,
 # regardless of whether the project's root .gitignore covers tmp/.
 gitignore="tmp/bundles/.gitignore"
-gitignore_body=$'*\n!.gitignore\n'
+gitignore_body=$'*\n'
 if [[ ! -f "$gitignore" ]] || [[ "$(cat "$gitignore")" != "$gitignore_body" ]]; then
   printf '%s' "$gitignore_body" > "$gitignore"
 fi

@@ -191,11 +191,11 @@ with body:
 
 ```
 *
-!.gitignore
 ```
 
 This makes the directory ignore itself — every bundle inside is
-gitignored, but the `.gitignore` file is committable. The command
+gitignored, and so is the `.gitignore` file, so `tmp/` never shows
+as untracked in a host repo whose own `.gitignore` does not cover it. The command
 never modifies the project's root `.gitignore`. Subsequent runs
 compare content rather than blindly overwriting; if the body is
 already correct, the write is a no-op.
@@ -915,7 +915,7 @@ Behavior:
    concurrent-export tiebreaker (§9). Single retry only — second-level
    collisions are ignored as not realistic.
 5. Ensure `tmp/bundles/.gitignore` exists with the canonical
-   `*\n!.gitignore\n` body (§4.1). Compare-then-write; no-op if
+   `*\n` body (§4.1). Compare-then-write; no-op if
    already correct.
 6. Run `git rev-parse HEAD` to capture the live HEAD for §5.14
    staleness comparison. Because step 3 already `cd`'d into the
@@ -1226,7 +1226,7 @@ guarantees were inconsistent across §2, §10, §12).
 
    Run `/mi-export-bundle`. Verify:
    - File lands at `tmp/bundles/<feature>-stage3-<timestamp>.md`.
-   - `tmp/bundles/.gitignore` exists with content `*\n!.gitignore\n`.
+   - `tmp/bundles/.gitignore` exists with content `*\n`.
    - **Sections present** (in order): Top prompt block, Custom project
      instructions (§5.2), Project-wide constraints (§5.3), Feature
      background (§5.4),

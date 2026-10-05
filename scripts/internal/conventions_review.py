@@ -11,7 +11,7 @@ import sys
 
 import yaml
 
-GITIGNORE = "*\n!.gitignore\n"
+GITIGNORE = "*\n"
 
 
 def die(msg):

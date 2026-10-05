@@ -246,7 +246,7 @@ t="prepare: a changed root .gitignore lands in the snapshot without touching the
 out="$(run_in "$sbs" "$CR" prepare feat 2>&1)"; state="$(state_of "$out")"
 snap="$(sed -n 's/^snapshot=//p' "$state/meta")"
 if [[ "$(cat "$snap/.gitignore")" == "node_modules" \
-      && "$(cat "$sbs/tmp/conventions-review/.gitignore")" == $'*\n!.gitignore' ]]; then ok "$t"
+      && "$(cat "$sbs/tmp/conventions-review/.gitignore")" == '*' ]]; then ok "$t"
 else ng "$t" "snapshot or run-root .gitignore wrong"; fi
 
 t="prepare: stale runs are cleared and tmp/bundles is untouched"
