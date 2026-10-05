@@ -454,6 +454,52 @@ t="agent: body states the return contract and the 10-finding cap"
 if grep -qF 'Result: findings | clean | not-checkable' "$AG" && grep -qF 'More: yes | no' "$AG" \
    && grep -qF 'At most 10 findings' "$AG"; then ok "$t"; else ng "$t" "contract text missing"; fi
 
+# ---- Task 5: command prose blocks -----------------------------------------------
+
+CMD="$REPO_ROOT/commands/mi-conventions-review.md"
+# extract_blocks <md> <dir> — writes each ```bash block to <dir>/block-N.sh.
+extract_blocks() {
+  python3 - "$1" "$2" <<'PYEOF'
+import re, sys, os
+text = open(sys.argv[1]).read()
+for i, b in enumerate(re.findall(r'```bash\n(.*?)```', text, re.DOTALL), 1):
+    open(os.path.join(sys.argv[2], 'block-%d.sh' % i), 'w').write(b)
+PYEOF
+}
+
+t="command: every bash block recovers active_feature itself (L-001)"
+sb="$(prep_sandbox)"
+bd="$(mktemp -d)"; SANDBOXES+=("$bd"); extract_blocks "$CMD" "$bd"
+bad=""
+for b in "$bd"/block-*.sh; do
+  grep -q 'progress.sh" get-active' "$b" || bad+=" $(basename "$b")"
+done
+[[ -z "$bad" && -e "$bd/block-1.sh" ]] && ok "$t" || ng "$t" "blocks without get-active:$bad"
+
+t="command: prepare block runs with active_feature unset"
+got="$(cd "$sb" && env -u active_feature CLAUDE_PLUGIN_ROOT="$REPO_ROOT" MI_DATA_ROOT="$sb/millwright-inspector" bash "$bd/block-1.sh" 2>&1)"
+grep -q 'conventions review: nothing to check' <<<"$got" && grep -q '^model: sonnet$' <<<"$got" \
+  && ok "$t" || ng "$t" "got: $got"
+
+t="command: every block fails cleanly with no active feature"
+run_in "$sb" "$P" set "current-stage=5" >/dev/null 2>&1
+python3 - "$sb/millwright-inspector/quest/2026-10-05-demo/progress.md" <<'PYEOF'
+import re, sys
+p = sys.argv[1]; s = open(p).read()
+s = re.sub(r'(?ms)^active:\n(?:  .*\n)+', 'active: null\n', s, count=1)
+open(p, 'w').write(s)
+PYEOF
+bad=""
+for b in "$bd"/block-*.sh; do
+  got="$(cd "$sb" && env -u active_feature CLAUDE_PLUGIN_ROOT="$REPO_ROOT" MI_DATA_ROOT="$sb/millwright-inspector" bash "$b" 2>&1)"; rc=$?
+  { [[ $rc -ne 0 ]] && grep -q 'conventions review: failed — no active feature' <<<"$got"; } || bad+=" $(basename "$b")"
+done
+[[ -z "$bad" ]] && ok "$t" || ng "$t" "blocks:$bad"
+
+t="command: delegation contract names conventions-reviewer and the lint registers it"
+grep -q '^\*\*Delegation contract.\*\*.*conventions-reviewer' "$CMD" \
+  && grep -q 'mi-conventions-review' "$REPO_ROOT/tests/lint/run.sh" && ok "$t" || ng "$t" "missing"
+
 # ---- summary -----------------------------------------------------------------
 echo
 echo "conventions-review: $pass passed, $fail failed"
