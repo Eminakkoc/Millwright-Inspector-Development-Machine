@@ -262,6 +262,163 @@ run_in "$sbb" "$P" set "base-commit=deadbeef" >/dev/null 2>&1
 got="$(run_in "$sbb" "$CR" prepare feat 2>&1)"; rc=$?
 if [[ $rc -ne 0 && "$got" != *"nothing to check"* ]]; then ok "$t"; else ng "$t" "rc=$rc got: $got"; fi
 
+# ---- Task 3: ingest -------------------------------------------------------------
+
+# ingest_sandbox — one rule "style" (no paths:) + one skill "forms"; src/a.ts
+# lines 1-4 exist at base, the feature changes lines 3-4 and adds b.ts.
+# Leaves the run prepared and prints the state dir.
+ingest_sandbox() {
+  local sb cur
+  sb="$(make_sandbox)"
+  (cd "$sb" && mkdir -p src && printf 'l1\nl2\nl3\nl4\n' > src/a.ts) && commit_all "$sb" base-a
+  run_in "$sb" "$P" set "base-commit=$(head_of "$sb")" >/dev/null 2>&1
+  (cd "$sb" && printf 'l1\nl2\nNEW3\nNEW4\n' > src/a.ts && printf 'b1\nb2\n' > 'src/b c.ts') && commit_all "$sb" work
+  mkdir -p "$sb/.claude/rules" "$sb/.claude/skills/forms/ref"
+  printf '# Style\n\nUse tabs for   indentation\nin every file.\nSee ref.md for more.\n' > "$sb/.claude/rules/style.md"
+  printf -- '---\nname: forms\ndescription: d\n---\n\nValidate input with zod.\nRead ref/schemas.md for schemas.\n' \
+    > "$sb/.claude/skills/forms/SKILL.md"
+  printf 'Schemas live in one file.\n' > "$sb/.claude/skills/forms/ref/schemas.md"
+  printf 'outside text\n' > "$sb/outside.md"
+  cur="$sb/millwright-inspector/workflow-stream/feat/blueprints/current"
+  printf -- '---\nid: %s\nrequirements-id: %s\n---\n\n<!-- auto:start -->\n\n## Skills\n\n- forms — forms\n  stages: review; skill: forms; path: .claude/skills/forms/SKILL.md\n\n## Load on demand\n\n<!-- auto:end -->\n' \
+    "33333333-3333-4333-8333-333333333333" "$UUID2" > "$cur/config.md"
+  run_in "$sb" "$R" init feat >/dev/null 2>&1
+  printf '%s' "$sb"
+}
+
+idx_of() { awk -F'\t' -v n="$2" '$2==n{print $1}' "$1/entries.tsv"; }
+
+# reply <file> <entry-line> <result> <more> [block...] — each block is the body
+# after "### F-n" (already formatted "- key: value" lines).
+reply() {
+  local f="$1" entry="$2" result="$3" more="$4"; shift 4
+  { printf 'Entry: %s\nResult: %s\nMore: %s\n' "$entry" "$result" "$more"
+    local n=1 b
+    for b in "$@"; do printf '\n### F-%d\n%s\n' "$n" "$b"; n=$((n + 1)); done
+  } > "$f"
+}
+
+blk() { # file sev scope quote source summary
+  printf -- '- file: %s\n- severity: %s\n- scope: %s\n- quote: %s\n- source: %s\n- summary: %s\n- details: |\n    why it matters\n' \
+    "$1" "$2" "$3" "$4" "$5" "$6"
+}
+
+sb="$(ingest_sandbox)"; STYLE="$sb/.claude/rules/style.md"; FORMS="$sb/.claude/skills/forms/SKILL.md"
+out="$(run_in "$sb" "$CR" prepare feat 2>&1)"; state="$(state_of "$out")"
+si="$(idx_of "$state" style)"; fi_="$(idx_of "$state" forms)"
+STYLE="$sb/.claude/rules/style.md"; FORMS="$sb/.claude/skills/forms/SKILL.md"
+reply "$state/reply-$si.md" "style (rule)" findings no \
+  "$(blk 'src/a.ts:3,1' minor fix '"Use tabs for indentation in every file."' "$STYLE" 'trimmed + wrapped quote')" \
+  "$(blk 'src/a.ts:3' minor fix '' "$STYLE" 'missing quote')" \
+  "$(blk 'src/a.ts:3' minor fix '"Use spaces."' "$STYLE" 'made-up quote')" \
+  "$(blk 'src/a.ts:3' minor fix '"outside text"' "$sb/outside.md" 'source outside entry')" \
+  "$(blk 'README.md:1' minor fix '"See ref.md for more."' "$STYLE" 'file outside change set')" \
+  "$(blk 'src/a.ts:3' blocker fix '"See ref.md for more."' "$STYLE" 'blocker severity')" \
+  "$(blk 'src/a.ts:1' minor fix '"See ref.md for more."' "$STYLE" 'pre-base line')" \
+  "$(blk 'src/a.ts:99' minor fix '"See ref.md for more."' "$STYLE" 'past end of file')" \
+  "$(blk 'src/a.ts' minor fix '"See ref.md for more."' "$STYLE" 'no line number')"
+reply "$state/reply-$fi_.md" "forms (skill)" findings yes \
+  "$(blk '`./src/a.ts:4`' major re-implement '“Validate input with zod.”' "$FORMS" 'backticked file, curly quote')" \
+  "$(blk 'src/b c.ts:2' minor fix '"Schemas live in one file."' "$sb/.claude/skills/forms/ref/schemas.md" 'linked ref inside folder')" \
+  "$(blk 'src/a.ts:3' minor fix '"Use tabs for indentation in every file."' "$STYLE" 'rule quote from a skill entry')"
+got="$(run_in "$sb" "$CR" ingest feat 2>&1 | tail -1)"
+
+t="ingest: report counts added, dropped, cap note"
+exp="conventions review: 3 findings added (forms: 2, style: 1), 9 dropped, 0 entries not checkable — forms hit the 10-finding cap; run /mi-conventions-review again after fixing"
+[[ "$got" == "$exp" ]] && ok "$t" || ng "$t" "got: $got"
+
+RMD="$sb/millwright-inspector/workflow-stream/feat/implementation/inspector-review.md"
+t="ingest: a finding citing a changed and an old line keeps only the changed line"
+grep -q 'file: src/a.ts:3$' "$RMD" && ok "$t" || ng "$t" "$(grep -n 'file:' "$RMD")"
+
+t="ingest: findings carry source conventions-review and the conventions seed-id"
+sha="$(printf '%s' 'Use tabs for indentation in every file.' | shasum -a 1 | cut -c1-8)"
+grep -q "seed-id: conventions:style:src/a.ts:$sha" "$RMD" && grep -q 'source: conventions-review' "$RMD" \
+  && ok "$t" || ng "$t" "seed-id or source missing"
+
+t="ingest: spaced path and backticked ./ citation are kept"
+grep -q 'file: src/b c.ts:2' "$RMD" && grep -q 'file: src/a.ts:4' "$RMD" && ok "$t" || ng "$t" "$(grep 'file:' "$RMD")"
+
+t="ingest: the run folder is deleted after success"
+[[ ! -e "$state" && ! -e "${state%.state}" ]] && ok "$t" || ng "$t" "run folder left behind"
+
+t="ingest: a second run with the same replies adds nothing (also after a line shift)"
+(cd "$sb" && printf 'top\nl1\nl2\nNEW3\nNEW4\n' > src/a.ts) && commit_all "$sb" shift
+out="$(run_in "$sb" "$CR" prepare feat 2>&1)"; state="$(state_of "$out")"
+si="$(idx_of "$state" style)"; fi_="$(idx_of "$state" forms)"
+reply "$state/reply-$si.md" "style (rule)" findings no \
+  "$(blk 'src/a.ts:4' minor fix '"Use tabs for indentation in every file."' "$STYLE" 'moved')"
+reply "$state/reply-$fi_.md" "forms (skill)" clean no
+before="$(grep -c '^### IR-' "$RMD")"
+got="$(run_in "$sb" "$CR" ingest feat 2>&1 | tail -1)"
+after="$(grep -c '^### IR-' "$RMD")"
+[[ "$before" == "$after" && "$got" == "conventions review: 0 findings added, 0 dropped, 0 entries not checkable" ]] \
+  && ok "$t" || ng "$t" "before=$before after=$after got: $got"
+
+t="ingest: a fixed finding reported again returns as :r1; wontfix stays skipped"
+ir_style="$(grep -B8 "seed-id: conventions:style:src/a.ts:$sha\$" "$RMD" | sed -n 's/^### \(IR-[0-9]*\).*/\1/p' | tail -1)"
+ir_forms="$(grep -B8 'seed-id: conventions:forms:src/a.ts:' "$RMD" | sed -n 's/^### \(IR-[0-9]*\).*/\1/p' | tail -1)"
+run_in "$sb" "$R" set-status feat "$ir_style" fixed >/dev/null 2>&1
+run_in "$sb" "$R" set-status feat "$ir_forms" wontfix >/dev/null 2>&1
+out="$(run_in "$sb" "$CR" prepare feat 2>&1)"; state="$(state_of "$out")"
+si="$(idx_of "$state" style)"; fi_="$(idx_of "$state" forms)"
+reply "$state/reply-$si.md" "style (rule)" findings no \
+  "$(blk 'src/a.ts:4' minor fix '"Use tabs for indentation in every file."' "$STYLE" 'again')"
+reply "$state/reply-$fi_.md" "forms (skill)" findings no \
+  "$(blk 'src/a.ts:5' major fix '"Validate input with zod."' "$FORMS" 'again')"
+run_in "$sb" "$CR" ingest feat >/dev/null 2>&1
+if grep -q "seed-id: conventions:style:src/a.ts:$sha:r1" "$RMD" \
+   && [[ "$(grep -c 'seed-id: conventions:forms:src/a.ts:' "$RMD")" == "1" ]]; then ok "$t"
+else ng "$t" "$(grep 'seed-id' "$RMD")"; fi
+
+t="ingest: two entries citing one line give two findings; not-checkable is counted"
+sb="$(ingest_sandbox)"; STYLE="$sb/.claude/rules/style.md"; FORMS="$sb/.claude/skills/forms/SKILL.md"
+out="$(run_in "$sb" "$CR" prepare feat 2>&1)"; state="$(state_of "$out")"
+si="$(idx_of "$state" style)"; fi_="$(idx_of "$state" forms)"
+reply "$state/reply-$si.md" "style (rule)" findings no \
+  "$(blk 'src/a.ts:3' minor fix '"See ref.md for more."' "$STYLE" 'pointer sentence')"
+reply "$state/reply-$fi_.md" "forms (skill)" findings no \
+  "$(blk 'src/a.ts:3' minor fix '"Validate input with zod."' "$FORMS" 'same line')"
+got="$(run_in "$sb" "$CR" ingest feat 2>&1 | tail -1)"
+[[ "$got" == "conventions review: 2 findings added (forms: 1, style: 1), 0 dropped, 0 entries not checkable" ]] \
+  && ok "$t" || ng "$t" "got: $got"
+
+t="ingest: a missing or unparseable reply fails and writes nothing"
+sb="$(ingest_sandbox)"; STYLE="$sb/.claude/rules/style.md"; FORMS="$sb/.claude/skills/forms/SKILL.md"
+out="$(run_in "$sb" "$CR" prepare feat 2>&1)"; state="$(state_of "$out")"
+si="$(idx_of "$state" style)"; fi_="$(idx_of "$state" forms)"
+reply "$state/reply-$si.md" "style (rule)" findings no \
+  "$(blk 'src/a.ts:3' minor fix '"See ref.md for more."' "$STYLE" 'would be added')"
+printf 'Sorry, I could not do this.\n' > "$state/reply-$fi_.md"
+RMD="$sb/millwright-inspector/workflow-stream/feat/implementation/inspector-review.md"
+if run_in "$sb" "$CR" ingest feat >/dev/null 2>&1; then ng "$t" "exited 0"
+elif grep -q '^### IR-[0-9]' "$RMD"; then ng "$t" "a finding was written"
+elif [[ ! -d "$state" ]]; then ng "$t" "run folder deleted on failure"
+else ok "$t"; fi
+
+t="ingest: a not-checkable reply counts the entry"
+reply "$state/reply-$fi_.md" "forms (skill)" not-checkable no
+printf 'reason: about how Claude works\n' >> "$state/reply-$fi_.md"
+got="$(run_in "$sb" "$CR" ingest feat 2>&1 | tail -1)"
+[[ "$got" == "conventions review: 1 findings added (style: 1), 0 dropped, 1 entries not checkable" ]] \
+  && ok "$t" || ng "$t" "got: $got"
+
+t="ingest: a rule finding on a file outside its paths: is dropped"
+sb="$(ingest_sandbox)"
+printf -- '---\npaths: ["src/b*"]\n---\n\nKeep it short.\n' > "$sb/.claude/rules/scoped.md"
+out="$(run_in "$sb" "$CR" prepare feat 2>&1)"; state="$(state_of "$out")"
+while IFS=$'\t' read -r idx name kind _ _; do
+  if [[ "$name" == "scoped" ]]; then
+    reply "$state/reply-$idx.md" "scoped (rule)" findings no \
+      "$(blk 'src/a.ts:3' minor fix '"Keep it short."' "$sb/.claude/rules/scoped.md" 'outside paths')"
+  else
+    reply "$state/reply-$idx.md" "$name ($kind)" clean no
+  fi
+done < "$state/entries.tsv"
+got="$(run_in "$sb" "$CR" ingest feat 2>&1 | tail -1)"
+[[ "$got" == "conventions review: 0 findings added, 1 dropped, 0 entries not checkable" ]] \
+  && ok "$t" || ng "$t" "got: $got"
+
 # ---- summary -----------------------------------------------------------------
 echo
 echo "conventions-review: $pass passed, $fail failed"
