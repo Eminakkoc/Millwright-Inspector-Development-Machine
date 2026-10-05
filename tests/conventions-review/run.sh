@@ -506,6 +506,29 @@ t="command: delegation contract names conventions-reviewer and the lint register
 grep -q '^\*\*Delegation contract.\*\*.*conventions-reviewer' "$CMD" \
   && grep -q 'mi-conventions-review' "$REPO_ROOT/tests/lint/run.sh" && ok "$t" || ng "$t" "missing"
 
+# ---- Task 6: mi-continue Resume Step 6.5 ---------------------------------------
+
+MC="$REPO_ROOT/commands/mi-continue.md"
+t="mi-continue: Resume Step 6.5 sits between Step 6 and Step 7"
+python3 - "$MC" <<'PYEOF' && ok "$t" || ng "$t" "order wrong or step missing"
+import sys
+s = open(sys.argv[1]).read()
+a, b, c = s.find('### Resume Step 6 '), s.find('### Resume Step 6.5'), s.find('### Resume Step 7')
+sys.exit(0 if -1 < a < b < c else 1)
+PYEOF
+
+t="mi-continue: Step 6.5 runs /mi-conventions-review and stops before Step 7 on failure"
+sec="$(sed -n '/^### Resume Step 6.5/,/^### Resume Step 7/p' "$MC")"
+grep -qF '/mi-conventions-review' <<<"$sec" && grep -qF 'conventions review: failed —' <<<"$sec" \
+  && grep -qi 'stop' <<<"$sec" && ok "$t" || ng "$t" "section: $sec"
+
+t="mi-continue: Step 7 prints the conventions report line before the hand-off"
+sec7="$(sed -n '/^### Resume Step 7/,/^\*\*When `skipped=false`/p' "$MC")"
+grep -qF 'conventions review:' <<<"$sec7" && ok "$t" || ng "$t" "no report line in Step 7"
+
+t="mi-continue: delegation contract lists conventions-reviewer"
+sed -n '9p' "$MC" | grep -qF 'conventions-reviewer' && ok "$t" || ng "$t" "line 9 lacks it"
+
 # ---- summary -----------------------------------------------------------------
 echo
 echo "conventions-review: $pass passed, $fail failed"

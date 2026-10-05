@@ -6,7 +6,7 @@ description: Universal advancement signal for the mi-workflow. Dispatches to the
 
 **The single advancement signal the inspector types throughout the workflow.** Reads `progress.md` (and a few sibling files) for the current state, decides where we are, and runs the appropriate handler.
 
-**Delegation contract.** This command REQUIRES the sub-agents listed below; §8.13's main-read budget forbids main from doing their work itself. **Invoking `/mi-continue` IS the user requesting them** — Claude Code's default "do not call the Agent tool unless the user requested it" (and any stricter house rule layered on it) does not reach a sub-agent this command names at the step that names it, so spawn them without asking for extra confirmation. The default still holds everywhere else: never spawn a sub-agent that neither this command nor an `mi-*` command it auto-fires names, and never invent fan-out to parallelize a step main is supposed to run. If a named delegation genuinely cannot run (type unavailable, harness refusal), say so and stop — never silently do its work in main. Sub-agents: `dependency-mapper` (Pre-flight Step 4c — only when feature ordering is ambiguous), `pr-review-fixer` (PR-Review Apply Handler), and — through the commands its handlers auto-fire — `lessons-filter`, `codebase-grounder`, `blueprint-diagrammer`, `blueprint-batch-reviewer` and `blueprint-consistency-reviewer` (via `/mi-apply-impact` at stage 2, including its auto-fired `/mi-blueprint-review`) and `review-iteration-runner` (via `/mi-review`). Handlers that auto-fire another `mi-*` command inherit that command's own delegation contract and run it to completion in the same turn. Canonical rule: `docs/millwright-inspector-project.md` §8.15.
+**Delegation contract.** This command REQUIRES the sub-agents listed below; §8.13's main-read budget forbids main from doing their work itself. **Invoking `/mi-continue` IS the user requesting them** — Claude Code's default "do not call the Agent tool unless the user requested it" (and any stricter house rule layered on it) does not reach a sub-agent this command names at the step that names it, so spawn them without asking for extra confirmation. The default still holds everywhere else: never spawn a sub-agent that neither this command nor an `mi-*` command it auto-fires names, and never invent fan-out to parallelize a step main is supposed to run. If a named delegation genuinely cannot run (type unavailable, harness refusal), say so and stop — never silently do its work in main. Sub-agents: `dependency-mapper` (Pre-flight Step 4c — only when feature ordering is ambiguous), `pr-review-fixer` (PR-Review Apply Handler), and — through the commands its handlers auto-fire — `lessons-filter`, `codebase-grounder`, `blueprint-diagrammer`, `blueprint-batch-reviewer` and `blueprint-consistency-reviewer` (via `/mi-apply-impact` at stage 2, including its auto-fired `/mi-blueprint-review`), `review-iteration-runner` (via `/mi-review`) and `conventions-reviewer` (via `/mi-conventions-review`, Resume Step 6.5). Handlers that auto-fire another `mi-*` command inherit that command's own delegation contract and run it to completion in the same turn. Canonical rule: `docs/millwright-inspector-project.md` §8.15.
 
 The inspector types `/mi-continue` at every gate where they previously typed a free-form approval:
 
@@ -1332,6 +1332,15 @@ Then convert deferred questions that need a finding (idempotent — converted en
     done
 ```
 
+### Resume Step 6.5 — Conventions review
+
+Run `/mi-conventions-review` now, in every mode (auto mode on or off), with no prompt. It is a prose command: follow it to completion in this turn, including its reviewer spawns.
+
+- If its last line is `conventions review: failed — <error>`, print that line and **stop**. Do not run Step 7: the feature stays at stage 3, and the next `/mi-continue` re-runs this handler (Step 5 diagrams are freshness-cached, Step 6 is idempotent, findings already written are skipped by seed-id).
+- Otherwise keep its last line — `conventions review: nothing to check`, the report line, or the feature-test line — for Step 7.
+
+Diagrams rendered at Step 5 are not re-rendered here; stage 6's Review-Resume diagram refresh covers fixes made later.
+
 ### Resume Step 7 — Final atomic advance-to (3 → 5, sub-flow=none)
 
 The Resume Handler eliminates stage 4 as a persisted state. The atomic `advance-to 3 5 --set sub-flow=none` collapses the old "advance 3 then advance 4" pair into a single transition, so a session break inside the handler can never strand the workflow at stage 4 with sub-flow=resuming.
@@ -1380,6 +1389,8 @@ fi
 ```
 
 (The block recomputes `plan_candidates` because Resume Step 2.5 runs in an earlier Bash call.) The line prints outside the blockquotes below and does not move their auto-answer lines.
+
+**Conventions report.** Print the line kept at Resume Step 6.5 (for example `conventions review: 2 findings added (react-forms: 2), 0 dropped, 0 entries not checkable`) right after the skills line, outside the blockquotes below. It never moves their auto-answer lines.
 
 **When `skipped=false` (the normal case):**
 
