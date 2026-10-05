@@ -383,20 +383,42 @@ got="$(run_in "$sb" "$CR" ingest feat 2>&1 | tail -1)"
 [[ "$got" == "conventions review: 2 findings added (forms: 1, style: 1), 0 dropped, 0 entries not checkable" ]] \
   && ok "$t" || ng "$t" "got: $got"
 
-t="ingest: a missing or unparseable reply fails and writes nothing"
-sb="$(ingest_sandbox)"; STYLE="$sb/.claude/rules/style.md"; FORMS="$sb/.claude/skills/forms/SKILL.md"
-out="$(run_in "$sb" "$CR" prepare feat 2>&1)"; state="$(state_of "$out")"
-si="$(idx_of "$state" style)"; fi_="$(idx_of "$state" forms)"
+# fail_case <label> <break-mode> — the entry parsed LAST gets the broken reply; every
+# earlier entry has a valid reply with a finding that would be written.
+fail_case() {
+  local label="$1" mode="$2" last_idx last_name last_kind idx name kind errf rc
+  t="ingest: $label fails, names the entry, writes nothing, keeps the run"
+  sb="$(ingest_sandbox)"; STYLE="$sb/.claude/rules/style.md"; FORMS="$sb/.claude/skills/forms/SKILL.md"
+  out="$(run_in "$sb" "$CR" prepare feat 2>&1)"; state="$(state_of "$out")"
+  IFS=$'\t' read -r last_idx last_name last_kind _ _ < <(tail -1 "$state/entries.tsv")
+  while IFS=$'\t' read -r idx name kind _ _; do
+    [[ "$idx" == "$last_idx" ]] && continue
+    reply "$state/reply-$idx.md" "$name ($kind)" findings no \
+      "$(blk 'src/a.ts:3' minor fix '"See ref.md for more."' "$STYLE" 'would be added')"
+  done < "$state/entries.tsv"
+  case "$mode" in
+    garbage) printf 'Sorry, I could not do this.\n' > "$state/reply-$last_idx.md" ;;
+    missing) rm -f "$state/reply-$last_idx.md" ;;
+    noblocks) reply "$state/reply-$last_idx.md" "$last_name ($last_kind)" findings no ;;
+  esac
+  RMD="$sb/millwright-inspector/workflow-stream/feat/implementation/inspector-review.md"
+  errf="$sb/err.txt"
+  run_in "$sb" "$CR" ingest feat >/dev/null 2>"$errf"; rc=$?
+  if [[ $rc -eq 0 ]]; then ng "$t" "exited 0"
+  elif grep -q '^### IR-[0-9]' "$RMD"; then ng "$t" "a finding was written"
+  elif [[ ! -d "$state" ]]; then ng "$t" "run folder deleted on failure"
+  elif ! grep -q "$last_name" "$errf"; then ng "$t" "stderr lacks entry name: $(cat "$errf")"
+  else ok "$t"; fi
+}
+fail_case "an unparseable reply" garbage
+fail_case "a missing reply file" missing
+fail_case "Result: findings with no F-n blocks" noblocks
+
+# state for the next test: style (parsed last) valid again, forms not-checkable
+t="ingest: a not-checkable reply counts the entry"
+fi_="$(idx_of "$state" forms)"; si="$(idx_of "$state" style)"
 reply "$state/reply-$si.md" "style (rule)" findings no \
   "$(blk 'src/a.ts:3' minor fix '"See ref.md for more."' "$STYLE" 'would be added')"
-printf 'Sorry, I could not do this.\n' > "$state/reply-$fi_.md"
-RMD="$sb/millwright-inspector/workflow-stream/feat/implementation/inspector-review.md"
-if run_in "$sb" "$CR" ingest feat >/dev/null 2>&1; then ng "$t" "exited 0"
-elif grep -q '^### IR-[0-9]' "$RMD"; then ng "$t" "a finding was written"
-elif [[ ! -d "$state" ]]; then ng "$t" "run folder deleted on failure"
-else ok "$t"; fi
-
-t="ingest: a not-checkable reply counts the entry"
 reply "$state/reply-$fi_.md" "forms (skill)" not-checkable no
 printf 'reason: about how Claude works\n' >> "$state/reply-$fi_.md"
 got="$(run_in "$sb" "$CR" ingest feat 2>&1 | tail -1)"
