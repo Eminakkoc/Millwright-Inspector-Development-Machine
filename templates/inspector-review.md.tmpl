@@ -29,12 +29,16 @@ When you type `/mi-continue`, the millwright will read every freeform paragraph,
                                   ← optional, paired with source: manual-test;
                                     written by /mi-manual-test-run's auto-seed loop so re-runs upsert
                                     by seed-id instead of duplicating. Hand-authored findings omit both.
+- source:   conventions-review    ← set by /mi-conventions-review on the findings it adds
+- seed-id:  conventions:<entry>:<file>:<sha8>[:r<N>]
+                                  ← paired with source: conventions-review; lets re-runs skip
+                                    findings already open or wontfix
 - details: |
     multi-line context
 - fix-note: (leave empty; the review session fills this in when resolved)
 ```
 
-Both formats may coexist in the same file. The id (`IR-NNN`) is auto-assigned in the order the millwright canonicalizes; pre-existing structured ids are preserved. The optional `source` / `seed-id` fields are auto-emitted by `/mi-manual-test-run` and read by `/mi-manual-test-run --seed-only` for idempotent re-seeding; never edit them by hand.
+Both formats may coexist in the same file. The id (`IR-NNN`) is auto-assigned in the order the millwright canonicalizes; pre-existing structured ids are preserved. The optional `source` / `seed-id` fields are auto-emitted by `/mi-manual-test-run` (`manual-test`) and `/mi-conventions-review` (`conventions-review`), and read by the same command on re-runs for idempotent seeding; never edit them by hand.
 
 **Scope guide** — pick the smallest rework that genuinely addresses the finding. The brainstorming review session reads this as a hint and decides the actual approach:
 

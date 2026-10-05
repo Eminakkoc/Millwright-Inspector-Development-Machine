@@ -529,6 +529,26 @@ grep -qF 'conventions review:' <<<"$sec7" && ok "$t" || ng "$t" "no report line 
 t="mi-continue: delegation contract lists conventions-reviewer"
 sed -n '9p' "$MC" | grep -qF 'conventions-reviewer' && ok "$t" || ng "$t" "line 9 lacks it"
 
+# ---- Task 7: fixer rule + template ----------------------------------------------
+
+RULE='If two open findings ask for opposite things, fix neither. Leave both `open` and name them as `Needs inspector: IR-x vs IR-y — <one line>`.'
+t="fixer rule: present in the runner, the 3a.2.4 spawn prompt and Step 3b"
+n_runner="$(grep -cF "$RULE" "$REPO_ROOT/agents/review-iteration-runner.md")"
+n_review="$(grep -cF "$RULE" "$REPO_ROOT/commands/mi-review.md")"
+[[ "$n_runner" -ge 1 && "$n_review" -ge 2 ]] && ok "$t" || ng "$t" "runner=$n_runner mi-review=$n_review"
+
+t="template: conventions-review source and seed-id documented"
+TM="$REPO_ROOT/templates/inspector-review.md.tmpl"
+grep -qF 'conventions-review' "$TM" && grep -qF 'conventions:<entry>:<file>:<sha8>[:r<N>]' "$TM" \
+  && ok "$t" || ng "$t" "missing"
+
+t="fixer rule: approve-guard refuses while a contradicting pair is open"
+sb="$(make_sandbox)"
+run_in "$sb" "$R" init feat >/dev/null 2>&1
+printf 'a\n' | run_in "$sb" "$R" add feat minor fix "use named exports" >/dev/null 2>&1
+printf 'b\n' | run_in "$sb" "$R" add feat minor fix "use default exports" >/dev/null 2>&1
+if run_in "$sb" "$REPO_ROOT/scripts/auto.sh" approve-guard feat >/dev/null 2>&1; then ng "$t" "guard passed"; else ok "$t"; fi
+
 # ---- summary -----------------------------------------------------------------
 echo
 echo "conventions-review: $pass passed, $fail failed"

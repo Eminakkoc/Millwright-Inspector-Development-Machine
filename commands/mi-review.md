@@ -424,6 +424,8 @@ Use `wontfix` instead of `fixed` if a finding turns out to be invalid or already
 
 **One-iteration discipline:** address ALL listed open findings before returning. Do not partially address and return. The main agent will spawn a new fresh sub-agent for the next iteration if the inspector types `go again`.
 
+If two open findings ask for opposite things, fix neither. Leave both `open` and name them as `Needs inspector: IR-x vs IR-y — <one line>`. Put that line under Findings / risks.
+
 ---
 
 Required return shape — return ONLY this structure. Do not narrate intermediate steps:
@@ -501,7 +503,8 @@ The millwright (this session) addresses each finding directly — no Skill is in
    ```
    Use `wontfix` instead of `fixed` if the inspector agrees to skip it.
 4. **One-iteration discipline:** address ALL open findings before asking for approval. Do not partially fix and ask.
-5. **Loop pattern (same iteration boundaries as brainstorming mode, just no sub-agent dispatch):**
+5. **Contradicting findings:** If two open findings ask for opposite things, fix neither. Leave both `open` and name them as `Needs inspector: IR-x vs IR-y — <one line>`. Say it in your end-of-iteration summary.
+6. **Loop pattern (same iteration boundaries as brainstorming mode, just no sub-agent dispatch):**
    1. Read `inspector-review.md`; list `open` findings.
    2. Address them per the rules above; commit; mark each resolved.
 
@@ -511,7 +514,7 @@ The millwright (this session) addresses each finding directly — no Skill is in
    4. On `approve`: tell the inspector *"Review session approved. Type `/mi-continue` to resume the mi-workflow and finalize."* Then stop. Do NOT call `progress.sh` for completion — that's mi-workflow's job, triggered by `/mi-continue`.
    5. On `go again`: re-canonicalize free-form additions (run `review.sh canonicalize` + classify any new spans + `review.sh add` per the recipe in `mi-continue.md` Inspector Step 1.5). Then re-run `mi-continue.md` Inspector Step 1.6 to update `review-mode-suggestion` based on the new scope mix. Then refresh `review-context.md` body via `review.sh sync-refs --refresh-body` (Phase 1.4). Then re-call `review.sh list-open` and go to step 1.
    6. On `abort`: invoke `/mi-abort-workflow`. Stop.
-6. **Existing scope rules** apply unchanged: pick the smallest tier that genuinely resolves the root cause; escalate if narrower tier leaves the cause in place.
+7. **Existing scope rules** apply unchanged: pick the smallest tier that genuinely resolves the root cause; escalate if narrower tier leaves the cause in place.
 
 ### Step 4 — Hand off
 
