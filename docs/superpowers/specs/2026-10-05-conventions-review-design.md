@@ -60,7 +60,7 @@ Parses the `@@ -a,b +c,d @@` headers of
    `tmp/bundles/` is never touched.
 4. **Snapshot.** `review_head=$(git rev-parse HEAD)`. Covered files = the distinct
    paths in `commits.sh changed-lines <feature> <review_head>`, minus anything under
-   the data root (`data-root.sh`). Copy each with `git cat-file blob "$review_head:$f"`
+   the data root (`data-root.sh`) or `docs/superpowers/`. Copy each with `git cat-file blob "$review_head:$f"`
    into `tmp/conventions-review/<review_head>/<f>` (not `git archive` — it honours
    `export-ignore` / `export-subst`).
 5. **Entries.**

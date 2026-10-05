@@ -556,6 +556,65 @@ v="$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["version"])'
 top="$(grep -m1 '^## ' "$REPO_ROOT/CHANGELOG.md")"
 [[ "$v" == "1.12.0" && "$top" == *"1.12.0"* ]] && ok "$t" || ng "$t" "version=$v top=$top"
 
+# ---- Final-review fixes ----------------------------------------------------------
+
+t="changed-lines: a submodule bump prints no gitlink row and prepare exits 0"
+sbm="$(make_sandbox)"
+subrepo="$(cd "$(mktemp -d)" && pwd -P)"; SANDBOXES+=("$subrepo")
+(cd "$subrepo" && git init -q -b main && git config user.email t@t && git config user.name t \
+   && printf 's\n' > f && git add f && git commit -qm s)
+run_in "$sbm" "$P" set "base-commit=$(head_of "$sbm")" >/dev/null 2>&1
+(cd "$sbm" && git -c protocol.file.allow=always submodule add -q "$subrepo" subm >/dev/null 2>&1 \
+   && mkdir -p src && printf 'x\n' > src/x.ts) && commit_all "$sbm" subm
+write_rule "$sbm" always.md ""
+got="$(run_in "$sbm" "$C" changed-lines feat "$(head_of "$sbm")")"
+out="$(run_in "$sbm" "$CR" prepare feat 2>&1)"; rc=$?
+if ! grep -q '^subm	' <<<"$got" && grep -q '^src/x.ts	' <<<"$got" && [[ $rc -eq 0 ]]; then ok "$t"
+else ng "$t" "rc=$rc rows: $got out: $out"; fi
+
+t="prepare: docs/superpowers/ files are never covered"
+sbd="$(prep_sandbox)"
+mkdir -p "$sbd/docs/superpowers/plans" && printf 'p\n' > "$sbd/docs/superpowers/plans/x.md" && commit_all "$sbd" plan
+write_rule "$sbd" always.md ""
+out="$(run_in "$sbd" "$CR" prepare feat 2>&1)"; state="$(state_of "$out")"
+if [[ -n "$state" ]] && ! grep -q 'docs/superpowers/' "$state"/entry-*.ranges && grep -q 'src/api/order.ts' "$state"/entry-*.ranges; then ok "$t"
+else ng "$t" "out: $out"; fi
+
+t="ingest: a reply whose Entry names another entry fails and writes nothing"
+sb="$(ingest_sandbox)"; STYLE="$sb/.claude/rules/style.md"; FORMS="$sb/.claude/skills/forms/SKILL.md"
+out="$(run_in "$sb" "$CR" prepare feat 2>&1)"; state="$(state_of "$out")"
+si="$(idx_of "$state" style)"; fi_="$(idx_of "$state" forms)"
+reply "$state/reply-$si.md" "style (rule)" findings no \
+  "$(blk 'src/a.ts:3' minor fix '"See ref.md for more."' "$STYLE" 'would be added')"
+reply "$state/reply-$fi_.md" "style (rule)" clean no
+RMD="$sb/millwright-inspector/workflow-stream/feat/implementation/inspector-review.md"
+errf="$sb/err.txt"
+run_in "$sb" "$CR" ingest feat >/dev/null 2>"$errf"; rc=$?
+if [[ $rc -ne 0 ]] && grep -q 'forms: reply is for style' "$errf" && ! grep -q '^### IR-[0-9]' "$RMD"; then ok "$t"
+else ng "$t" "rc=$rc err: $(cat "$errf")"; fi
+
+t="ingest: F-n blocks in a clean or not-checkable reply are ignored"
+reply "$state/reply-$si.md" "style (rule)" clean no \
+  "$(blk 'src/a.ts:3' minor fix '"See ref.md for more."' "$STYLE" 'ignored on clean')"
+reply "$state/reply-$fi_.md" "forms (skill)" not-checkable no \
+  "$(blk 'src/a.ts:3' minor fix '"Validate input with zod."' "$FORMS" 'ignored on not-checkable')"
+got="$(run_in "$sb" "$CR" ingest feat 2>&1 | tail -1)"
+[[ "$got" == "conventions review: 0 findings added, 0 dropped, 1 entries not checkable" ]] && ! grep -q '^### IR-[0-9]' "$RMD" \
+  && ok "$t" || ng "$t" "got: $got"
+
+t="command: an unknown MI_CONVENTIONS_REVIEW_MODEL stops the prepare block"
+sbg="$(prep_sandbox)"
+got="$(cd "$sbg" && env -u active_feature MI_CONVENTIONS_REVIEW_MODEL=gpt CLAUDE_PLUGIN_ROOT="$REPO_ROOT" MI_DATA_ROOT="$sbg/millwright-inspector" bash "$bd/block-1.sh" 2>&1)"; rc=$?
+[[ $rc -ne 0 ]] && grep -q 'must be sonnet, opus, haiku or fable' <<<"$got" && ok "$t" || ng "$t" "rc=$rc got: $got"
+
+t="command: prepare block prints decisions: only when decisions.md exists"
+sbg="$(prep_sandbox)"; write_rule "$sbg" always.md ""
+d0="$(cd "$sbg" && env -u active_feature CLAUDE_PLUGIN_ROOT="$REPO_ROOT" MI_DATA_ROOT="$sbg/millwright-inspector" bash "$bd/block-1.sh" 2>&1)"
+printf 'd\n' > "$sbg/millwright-inspector/workflow-stream/feat/decisions.md"
+d1="$(cd "$sbg" && env -u active_feature CLAUDE_PLUGIN_ROOT="$REPO_ROOT" MI_DATA_ROOT="$sbg/millwright-inspector" bash "$bd/block-1.sh" 2>&1)"
+if ! grep -q '^decisions:' <<<"$d0" && grep -qx "decisions: $sbg/millwright-inspector/workflow-stream/feat/decisions.md" <<<"$d1"; then ok "$t"
+else ng "$t" "without: $d0 | with: $d1"; fi
+
 # ---- summary -----------------------------------------------------------------
 echo
 echo "conventions-review: $pass passed, $fail failed"

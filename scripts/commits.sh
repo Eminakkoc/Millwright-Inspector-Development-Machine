@@ -251,7 +251,7 @@ import re, subprocess, sys
 base, head = sys.argv[1], sys.argv[2]
 diff = subprocess.check_output(
     ['git', '-c', 'core.quotePath=false', 'diff', '-U0', '--no-renames', '--no-color',
-     '--no-ext-diff', f'{base}..{head}'], text=True, errors='surrogateescape')
+     '--no-ext-diff', '--ignore-submodules=all', f'{base}..{head}'], text=True, errors='surrogateescape')
 HUNK = re.compile(r'^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@')
 counts = {}
 

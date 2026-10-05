@@ -422,7 +422,7 @@ $CLAUDE_PLUGIN_ROOT/scripts/review.sh set-status "<active_feature>" <IR-NNN> fix
 
 Use `wontfix` instead of `fixed` if a finding turns out to be invalid or already addressed. Do NOT mutate `progress.md` — that is mi-workflow's job, triggered later by the inspector's `/mi-continue`.
 
-**One-iteration discipline:** address ALL listed open findings before returning. Do not partially address and return. The main agent will spawn a new fresh sub-agent for the next iteration if the inspector types `go again`.
+**One-iteration discipline:** address ALL listed open findings before returning — except a contradicting pair (below). Do not partially address and return. The main agent will spawn a new fresh sub-agent for the next iteration if the inspector types `go again`.
 
 If two open findings ask for opposite things, fix neither. Leave both `open` and name them as `Needs inspector: IR-x vs IR-y — <one line>`. Put that line under Findings / risks.
 
@@ -502,7 +502,7 @@ The millwright (this session) addresses each finding directly — no Skill is in
    $CLAUDE_PLUGIN_ROOT/scripts/review.sh set-status "$active_feature" <IR-NNN> fixed "<one-line fix-note>"
    ```
    Use `wontfix` instead of `fixed` if the inspector agrees to skip it.
-4. **One-iteration discipline:** address ALL open findings before asking for approval. Do not partially fix and ask.
+4. **One-iteration discipline:** address ALL open findings before asking for approval — except a contradicting pair (below). Do not partially fix and ask.
 5. **Contradicting findings:** If two open findings ask for opposite things, fix neither. Leave both `open` and name them as `Needs inspector: IR-x vs IR-y — <one line>`. Say it in your end-of-iteration summary.
 6. **Loop pattern (same iteration boundaries as brainstorming mode, just no sub-agent dispatch):**
    1. Read `inspector-review.md`; list `open` findings.

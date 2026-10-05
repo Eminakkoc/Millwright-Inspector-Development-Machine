@@ -60,7 +60,7 @@ More: yes | no
 - severity: minor | major
 - scope: fix | re-implement
 - quote: "<exact sentence from the entry file or a file inside its boundary>"
-- source: <path of the file the quote is from>
+- source: <absolute path of the file the quote is from>
 - summary: <one line>
 - details: |
     what the code does, what the skill or rule asks for, the suggested change

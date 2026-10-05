@@ -4,7 +4,7 @@
 
 After implementation, the project's own rules and conventions are checked against the code that was written, and anything that breaks them lands in the review findings. Features already in flight when you upgrade run Step 6.5 at their next stage 3 → 5 transition.
 
-- New `conventions-reviewer` agent: read-only (Read and Grep only), Sonnet at high effort. Set `MI_CONVENTIONS_REVIEW_MODEL` to use a different model.
+- New `conventions-reviewer` agent: read-only (Read and Grep only), Sonnet at high effort. Set `MI_CONVENTIONS_REVIEW_MODEL` to use a different model (`sonnet`, `opus`, `haiku` or `fable`; anything else stops the run).
 - New `/mi-conventions-review` command. It runs when stage 3 resumes, or by hand at stage 5 or 6. At most 3 reviewers run per wave.
 - `/mi-continue` Resume Step 6.5 runs the conventions review before the stage-5 advance. If it fails, the workflow stops at stage 3. The stage-5 report gains a conventions-review line.
 - Findings land in `inspector-review.md` with `source: conventions-review`. They are deduplicated by the seed id `conventions:<entry>:<file>:<sha8>[:r<N>]`, and marking one `wontfix` silences that sentence for that file.

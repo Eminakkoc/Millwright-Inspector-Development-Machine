@@ -18,13 +18,20 @@ if [[ -z "$active_feature" || "$active_feature" == "null" ]]; then
   echo "conventions review: failed — no active feature" >&2
   exit 1
 fi
+model="${MI_CONVENTIONS_REVIEW_MODEL:-sonnet}"
+case "$model" in
+  sonnet|opus|haiku|fable) ;;
+  *) echo "conventions review: failed — MI_CONVENTIONS_REVIEW_MODEL must be sonnet, opus, haiku or fable" >&2; exit 1 ;;
+esac
 "$CLAUDE_PLUGIN_ROOT/scripts/conventions-review.sh" prepare "$active_feature" || exit $?
-echo "model: ${MI_CONVENTIONS_REVIEW_MODEL:-sonnet}"
+echo "model: $model"
+decisions="$("$CLAUDE_PLUGIN_ROOT/scripts/data-root.sh")/workflow-stream/$active_feature/decisions.md"
+if [[ -f "$decisions" ]]; then echo "decisions: $decisions"; fi
 ```
 
 - Exit non-zero → print `conventions review: failed — <its stderr line>` and stop.
 - `conventions review: nothing to check` or the feature-test line → relay it and stop. Both are success.
-- Otherwise relay the `conventions review: N reviewers (…)` line and keep the printed `state:` directory and `model:` value for Step 2.
+- Otherwise relay the `conventions review: N reviewers (…)` line and keep the printed `state:` directory, `model:` value and (when printed) `decisions:` path for Step 2.
 
 ## Step 2 — Spawn reviewers
 
@@ -38,7 +45,7 @@ Entry file:      <abs-path>
 Source boundary: <boundary>
 Snapshot folder: <snapshot — the state path without the trailing ".state">
 Ranges file:     <state>/entry-<idx>.ranges
-Decisions:       <data root>/workflow-stream/<active_feature>/decisions.md   (omit this line when the file does not exist)
+Decisions:       <the printed decisions: path>   (omit this line when none was printed)
 
 Follow agents/conventions-reviewer.md: report only inside the ranges, quote the
 exact sentence broken, at most 10 findings. Your whole final reply is the return

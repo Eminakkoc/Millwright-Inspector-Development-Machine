@@ -133,6 +133,8 @@ def cmd_prepare(top, head, data_root, feature):
         path, rng = row.rsplit("\t", 1)
         if inside and (dr == "." or path == dr or path.startswith(dr + "/")):
             continue
+        if path.startswith("docs/superpowers/"):
+            continue
         ranges.setdefault(path, []).append(rng)
     covered = list(ranges)
 
@@ -335,6 +337,12 @@ def cmd_ingest(top, state, feature):
             die("%s: no reply saved at %s" % (name, reply))
         except ParseError as e:
             die("%s: %s" % (name, e))
+        m = re.search(r"(?m)^Entry:\s*(.*?)\s*$", text)
+        got = re.sub(r"\s*\(.*$", "", m.group(1)).strip() if m else ""
+        if got != name:
+            die("%s: reply is for %s" % (name, got))
+        if result != "findings":
+            blocks = []
         parsed.append((idx, name, kind, boundary, result, more, blocks))
 
     # Pass 2 — validate, dedupe, write.
