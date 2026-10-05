@@ -256,6 +256,12 @@ run_in "$sbs" "$CR" prepare feat >/dev/null 2>&1
 if [[ ! -e "$sbs/tmp/conventions-review/deadbeef.state" && -f "$sbs/tmp/bundles/x.md" ]]; then ok "$t"
 else ng "$t" "stale run kept or bundles touched"; fi
 
+t="prepare: a failing changed-lines (bad base-commit) stops the step, not 'nothing to check'"
+sbb="$(prep_sandbox)"
+run_in "$sbb" "$P" set "base-commit=deadbeef" >/dev/null 2>&1
+got="$(run_in "$sbb" "$CR" prepare feat 2>&1)"; rc=$?
+if [[ $rc -ne 0 && "$got" != *"nothing to check"* ]]; then ok "$t"; else ng "$t" "rc=$rc got: $got"; fi
+
 # ---- summary -----------------------------------------------------------------
 echo
 echo "conventions-review: $pass passed, $fail failed"

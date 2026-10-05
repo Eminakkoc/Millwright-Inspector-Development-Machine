@@ -48,8 +48,9 @@ case "$cmd" in
     fi
     top="$(git rev-parse --show-toplevel)"
     review_head="$(git rev-parse HEAD)"
-    CVR_LINES="$("$S/commits.sh" changed-lines "$feature" "$review_head")" \
-    CVR_SKILLS="$("$S/skills.sh" entries "$feature" review)" \
+    lines="$("$S/commits.sh" changed-lines "$feature" "$review_head")"
+    skills="$("$S/skills.sh" entries "$feature" review)"
+    CVR_LINES="$lines" CVR_SKILLS="$skills" \
       python3 "$PY" prepare "$top" "$review_head" "$(mi_data_root)" "$feature"
     ;;
   ingest)
