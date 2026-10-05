@@ -621,6 +621,14 @@ env -u CLAUDE_PLUGIN_ROOT "$CR" >/dev/null 2>"$errf"; rc=$?
 if [[ $rc -eq 2 ]] && grep -q 'Usage:' "$errf" && ! grep -q 'set -euo' "$errf" && ! grep -q 'sed:' "$errf"; then ok "$t"
 else ng "$t" "rc=$rc err: $(cat "$errf")"; fi
 
+t="fixtures: every reviewer-checks.sh case has base/ and change/"
+missing=""
+for c in violation clean decision not-checkable; do
+  [[ -d "$FIX/$c/base" && -d "$FIX/$c/change" ]] || missing+=" $c"
+done
+if [[ -z "$missing" ]] && bash -n "$REPO_ROOT/tests/conventions-review/reviewer-checks.sh"; then ok "$t"
+else ng "$t" "missing:${missing:- none} (or reviewer-checks.sh has a syntax error)"; fi
+
 # ---- summary -----------------------------------------------------------------
 echo
 echo "conventions-review: $pass passed, $fail failed"

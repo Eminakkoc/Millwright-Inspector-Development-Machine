@@ -11,6 +11,8 @@ After implementation, the project's own rules and conventions are checked agains
 - New `scripts/conventions-review.sh` (`prepare` and `ingest`) and `scripts/commits.sh changed-lines`, which lists the lines each commit range changed.
 - The fixers (`review-iteration-runner` and `/mi-review` direct mode) follow a contradicting-findings rule: when two open findings ask for opposite things, they fix neither and flag both for the inspector.
 - Rule `paths:` accepts a YAML list or a comma-separated string, with brace expansion.
+- The self-ignoring `.gitignore` in `tmp/conventions-review/` and `tmp/bundles/` is now just `*`. The old `!.gitignore` line left `tmp/` showing as untracked in host repos that don't ignore it.
+- New opt-in `tests/conventions-review/reviewer-checks.sh` runs the real reviewer through `claude -p` against four fixtures (violation, clean, decision suppression, not checkable). It is not part of `run.sh`.
 
 
 ## 1.11.0 — Skills across the workflow
