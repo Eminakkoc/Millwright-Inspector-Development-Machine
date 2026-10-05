@@ -21,7 +21,7 @@ source "$(dirname "$0")/internal/common.sh"
 
 PY="$(dirname "$0")/internal/conventions_review.py"
 S="${MI_PLUGIN_ROOT}/scripts"
-usage() { sed -n '2,/^set /{/^set /!p}' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
+usage() { sed -n '2,/^set /p' "$0" | sed '$d' | sed 's/^# \{0,1\}//' >&2; exit 2; }
 
 cmd="${1:-}"; shift || true
 

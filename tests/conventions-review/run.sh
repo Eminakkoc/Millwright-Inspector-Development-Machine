@@ -615,6 +615,12 @@ d1="$(cd "$sbg" && env -u active_feature CLAUDE_PLUGIN_ROOT="$REPO_ROOT" MI_DATA
 if ! grep -q '^decisions:' <<<"$d0" && grep -qx "decisions: $sbg/millwright-inspector/workflow-stream/feat/decisions.md" <<<"$d1"; then ok "$t"
 else ng "$t" "without: $d0 | with: $d1"; fi
 
+t="conventions-review.sh: no arguments prints the usage header, exits 2"
+errf="$(mktemp)"; SANDBOXES+=("$errf")
+env -u CLAUDE_PLUGIN_ROOT "$CR" >/dev/null 2>"$errf"; rc=$?
+if [[ $rc -eq 2 ]] && grep -q 'Usage:' "$errf" && ! grep -q 'set -euo' "$errf" && ! grep -q 'sed:' "$errf"; then ok "$t"
+else ng "$t" "rc=$rc err: $(cat "$errf")"; fi
+
 # ---- summary -----------------------------------------------------------------
 echo
 echo "conventions-review: $pass passed, $fail failed"
