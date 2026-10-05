@@ -549,6 +549,13 @@ printf 'a\n' | run_in "$sb" "$R" add feat minor fix "use named exports" >/dev/nu
 printf 'b\n' | run_in "$sb" "$R" add feat minor fix "use default exports" >/dev/null 2>&1
 if run_in "$sb" "$REPO_ROOT/scripts/auto.sh" approve-guard feat >/dev/null 2>&1; then ng "$t" "guard passed"; else ok "$t"; fi
 
+# ---- Task 8: release -------------------------------------------------------------
+
+t="release: plugin.json is 1.12.0 and the changelog leads with it"
+v="$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["version"])' "$REPO_ROOT/.claude-plugin/plugin.json")"
+top="$(grep -m1 '^## ' "$REPO_ROOT/CHANGELOG.md")"
+[[ "$v" == "1.12.0" && "$top" == *"1.12.0"* ]] && ok "$t" || ng "$t" "version=$v top=$top"
+
 # ---- summary -----------------------------------------------------------------
 echo
 echo "conventions-review: $pass passed, $fail failed"

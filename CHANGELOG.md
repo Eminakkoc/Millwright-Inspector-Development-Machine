@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.12.0 — Conventions review after implementation
+
+After implementation, the project's own rules and conventions are checked against the code that was written, and anything that breaks them lands in the review findings. Features already in flight when you upgrade run Step 6.5 at their next stage 3 → 5 transition.
+
+- New `conventions-reviewer` agent: read-only (Read and Grep only), Sonnet at high effort. Set `MI_CONVENTIONS_REVIEW_MODEL` to use a different model.
+- New `/mi-conventions-review` command. It runs when stage 3 resumes, or by hand at stage 5 or 6. At most 3 reviewers run per wave.
+- `/mi-continue` Resume Step 6.5 runs the conventions review before the stage-5 advance. If it fails, the workflow stops at stage 3. The stage-5 report gains a conventions-review line.
+- Findings land in `inspector-review.md` with `source: conventions-review`. They are deduplicated by the seed id `conventions:<entry>:<file>:<sha8>[:r<N>]`, and marking one `wontfix` silences that sentence for that file.
+- New `scripts/conventions-review.sh` (`prepare` and `ingest`) and `scripts/commits.sh changed-lines`, which lists the lines each commit range changed.
+- The fixers (`review-iteration-runner` and `/mi-review` direct mode) follow a contradicting-findings rule: when two open findings ask for opposite things, they fix neither and flag both for the inspector.
+- Rule `paths:` accepts a YAML list or a comma-separated string, with brace expansion.
+
+
 ## 1.11.0 — Skills across the workflow
 
 **Breaking — finish or abort (`/mi-abort-workflow`) any active workflow before upgrading.** `config.md` entries written before 1.11.0 have no `stages:`/`skill:` fields, so `skills.sh brief` renders nothing for them, `/mi-update-blueprint` copies the old block as is, and ongoing workflows are not migrated.

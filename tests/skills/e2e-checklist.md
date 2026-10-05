@@ -1,6 +1,6 @@
 # skills-across-workflow — manual end-to-end checklist (mi-sample)
 
-Run one full cycle in the mi-sample project with the 1.11.0 plugin. Tick each line.
+Run one full cycle in the mi-sample project with the 1.12.0 plugin. Tick each line.
 
 - [ ] Journal names `web-images` (catalog skill) and an MCP server for one feature.
 - [ ] Stage 1: `summary.md` has `## Requested skills` with a `web-images` line and the MCP server line.
