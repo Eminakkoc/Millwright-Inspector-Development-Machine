@@ -441,6 +441,19 @@ got="$(run_in "$sb" "$CR" ingest feat 2>&1 | tail -1)"
 [[ "$got" == "conventions review: 0 findings added, 1 dropped, 0 entries not checkable" ]] \
   && ok "$t" || ng "$t" "got: $got"
 
+# ---- Task 4: reviewer agent -----------------------------------------------------
+
+AG="$REPO_ROOT/agents/conventions-reviewer.md"
+t="agent: frontmatter is exactly model sonnet, effort high, tools [Read, Grep]"
+fm="$(sed -n '2,/^---$/p' "$AG" 2>/dev/null)"
+if grep -qx 'model: sonnet' <<<"$fm" && grep -qx 'effort: high' <<<"$fm" \
+   && grep -qx 'tools: \[Read, Grep\]' <<<"$fm" && grep -qx 'name: conventions-reviewer' <<<"$fm"; then ok "$t"
+else ng "$t" "frontmatter: $fm"; fi
+
+t="agent: body states the return contract and the 10-finding cap"
+if grep -qF 'Result: findings | clean | not-checkable' "$AG" && grep -qF 'More: yes | no' "$AG" \
+   && grep -qF 'At most 10 findings' "$AG"; then ok "$t"; else ng "$t" "contract text missing"; fi
+
 # ---- summary -----------------------------------------------------------------
 echo
 echo "conventions-review: $pass passed, $fail failed"
