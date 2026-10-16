@@ -29,8 +29,8 @@ The command remains manually invokable for recovery — e.g. when `/mi-resume-wo
 Before running the normal forward path, check for in-flight rotation states (a prior `/mi-complete-workflow` invocation may have been interrupted) and post-finish recovery states (the rotation completed but Step 7 housekeeping was interrupted). Four branches (one of which is the normal path):
 
 ```bash
-data_root="$($CLAUDE_PLUGIN_ROOT/scripts/data-root.sh)"
-active_feature="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get-active 2>/dev/null || echo 'null')"
+data_root="$("$CLAUDE_PLUGIN_ROOT/scripts/data-root.sh")"
+active_feature="$("$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" get-active 2>/dev/null || echo 'null')"
 
 # Helper: read latest finalized v[N] under a feature's history.
 latest_finalized_version() {
@@ -49,7 +49,7 @@ latest_reason_kind() {
   local v
   v="$(latest_finalized_version "$feat")"
   [[ -n "$v" ]] || { echo ""; return; }
-  $CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get \
+  "$CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh" get \
     "$data_root/workflow-stream/$feat/blueprints/history/v${v}/reason.md" kind \
     2>/dev/null || echo ""
 }
@@ -73,9 +73,9 @@ single_partial() {
 if [[ "$active_feature" != "null" && -n "$active_feature" ]]; then
   partial_dir="$(single_partial "$active_feature")"
   if [[ -n "$partial_dir" ]]; then
-    partial_kind="$($CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get "$partial_dir/reason.md" kind 2>/dev/null || echo "")"
+    partial_kind="$("$CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh" get "$partial_dir/reason.md" kind 2>/dev/null || echo "")"
     if [[ "$partial_kind" == "completion" ]]; then
-      version="$($CLAUDE_PLUGIN_ROOT/scripts/blueprints.sh resume-partial "$active_feature" --expected-kind completion)"
+      version="$("$CLAUDE_PLUGIN_ROOT/scripts/blueprints.sh" resume-partial "$active_feature" --expected-kind completion)"
       echo "Resumed in-flight completion rotation: history/v${version}/"
       branch_route="0a"  # remembered so we know to skip Steps 1-4
     elif [[ -n "$partial_kind" ]]; then
@@ -92,7 +92,7 @@ fi
 
 ```bash
 if [[ "$active_feature" == "null" || -z "$active_feature" ]]; then
-  completed_last="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh queue-remaining 2>/dev/null >/dev/null; \
+  completed_last="$("$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" queue-remaining 2>/dev/null >/dev/null; \
     "$CLAUDE_PLUGIN_ROOT/scripts/py.sh" -c '
 import os, sys, yaml
 data_root = sys.argv[1]
@@ -121,7 +121,7 @@ fi
 # Verify inspector-review-completed only on the normal path (Branches 0a, II, III need it;
 # Branch I has active=null so the guard is skipped).
 if [[ "${branch_route:-III}" != "I" ]]; then
-  oc="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get inspector-review-completed 2>/dev/null || echo 'false')"
+  oc="$("$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" get inspector-review-completed 2>/dev/null || echo 'false')"
   [[ "$oc" == "true" ]] || { echo "error: inspector-review not complete; run /mi-continue first" >&2; exit 1; }
 fi
 ```
@@ -146,7 +146,7 @@ fi
 **Mode detection.** Every downstream step needs to know whether `$active_feature` is this cycle's declared feature-test entry, so resolve it once here:
 
 ```bash
-if $CLAUDE_PLUGIN_ROOT/scripts/todo.sh is-feature-test "$active_feature"; then
+if "$CLAUDE_PLUGIN_ROOT/scripts/todo.sh" is-feature-test "$active_feature"; then
   ft_mode=1
 else
   ft_mode=0
@@ -179,7 +179,7 @@ if [[ "${branch_route:-III}" == "III" ]]; then
   : "${active_feature:?already resolved above}"
 
   # Verify inspector-review-completed (re-checked here for the normal path).
-  oc="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get inspector-review-completed)"
+  oc="$("$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" get inspector-review-completed)"
   [[ "$oc" == "true" ]] || { echo "error: inspector-review not complete; run /mi-continue first" >&2; exit 1; }
 fi
 ```
@@ -192,7 +192,7 @@ The chain's plan / spec files under `docs/superpowers/` are not touched by this 
 
 ```bash
 if [[ "${branch_route:-III}" == "III" || "${branch_route:-}" == "0a" || "${branch_route:-}" == "II" ]]; then
-  $CLAUDE_PLUGIN_ROOT/scripts/todo.sh bulk-transition IMPLEMENTING IMPLEMENTED --feature "$active_feature"
+  "$CLAUDE_PLUGIN_ROOT/scripts/todo.sh" bulk-transition IMPLEMENTING IMPLEMENTED --feature "$active_feature"
 fi
 ```
 
@@ -207,9 +207,9 @@ if [[ "${branch_route:-III}" == "III" || "${branch_route:-}" == "0a" || "${branc
   if [[ "${ft_mode:-0}" == "1" ]]; then
     # Feature-test entries have no requirements.md; the union commit range
     # lands in the entry's own change-summary.md instead (Task 5).
-    $CLAUDE_PLUGIN_ROOT/scripts/commits.sh populate-feature-test "$active_feature"
+    "$CLAUDE_PLUGIN_ROOT/scripts/commits.sh" populate-feature-test "$active_feature"
   else
-    $CLAUDE_PLUGIN_ROOT/scripts/commits.sh populate-requirements "$active_feature"
+    "$CLAUDE_PLUGIN_ROOT/scripts/commits.sh" populate-requirements "$active_feature"
   fi
 fi
 ```
@@ -224,14 +224,14 @@ Main does NOT read the evidence artifacts (stage-8 main-read budget) — the rea
 
 ```bash
 if [[ "${branch_route:-III}" == "III" ]]; then
-  lessons_path="$($CLAUDE_PLUGIN_ROOT/scripts/lessons.sh path)"
+  lessons_path="$("$CLAUDE_PLUGIN_ROOT/scripts/lessons.sh" path)"
 
   if [[ "${ft_mode:-0}" == "1" ]]; then
     # Feature-test entries have no requirements.md to key evidence off; the
     # entry's own change-summary.md id substitutes (Step 3 above already
     # populated it), preserving the same re-append-fence shape.
     req_path="$data_root/workflow-stream/$active_feature/implementation/change-summary.md"
-    req_id="$($CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get "$req_path" id 2>/dev/null || echo "")"
+    req_id="$("$CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh" get "$req_path" id 2>/dev/null || echo "")"
     # frontmatter.sh get exits 0 and prints the literal "null" for an absent
     # field — never test presence by exit code, test the value. A terminal
     # bare `&&` here would make the whole if/then return 1 on the common
@@ -241,7 +241,7 @@ if [[ "${branch_route:-III}" == "III" ]]; then
     fi
   else
     req_path="$data_root/workflow-stream/$active_feature/blueprints/current/requirements.md"
-    req_id="$($CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get "$req_path" id 2>/dev/null || echo "")"
+    req_id="$("$CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh" get "$req_path" id 2>/dev/null || echo "")"
   fi
   source_prefix="workflow:$active_feature/$req_id"
 
@@ -352,7 +352,7 @@ if [[ "${branch_route:-III}" == "III" ]]; then
       echo "error: blueprints/current is incomplete (check-current --require-primer returned $cc_status). Completion rotation refused — repair current/ (regenerate primer.md, ensure all artifacts validate) before re-running /mi-complete-workflow." >&2
       exit 1
     fi
-    version="$($CLAUDE_PLUGIN_ROOT/scripts/blueprints.sh rotate "$active_feature" \
+    version="$("$CLAUDE_PLUGIN_ROOT/scripts/blueprints.sh" rotate "$active_feature" \
       --reason-kind completion \
       --reason-summary "completed at stage 8 for $active_feature")"
     echo "Blueprints archived into history/v${version}"
@@ -364,10 +364,10 @@ fi
 counter from the feature's `test/manual-test-results.md` when the file exists:
 
 ```bash
-results_path="$($CLAUDE_PLUGIN_ROOT/scripts/blueprints.sh manual-test-results-path "$active_feature")"
+results_path="$("$CLAUDE_PLUGIN_ROOT/scripts/blueprints.sh" manual-test-results-path "$active_feature")"
 deferred_n=0
 if [[ -f "$results_path" ]]; then
-  deferred_n="$($CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get "$results_path" deferred 2>/dev/null || echo 0)"
+  deferred_n="$("$CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh" get "$results_path" deferred 2>/dev/null || echo 0)"
   if [[ -z "$deferred_n" || "$deferred_n" == "null" ]]; then
     deferred_n=0
   fi
@@ -441,9 +441,9 @@ Archive the active feature into `completed` and set `active` to null. Under the 
 
 ```bash
 if [[ "${branch_route:-III}" == "III" || "${branch_route:-}" == "0a" || "${branch_route:-}" == "II" ]]; then
-  finished_branch="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get branch)"
-  finished_base="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get base-commit)"
-  $CLAUDE_PLUGIN_ROOT/scripts/progress.sh finish >/dev/null
+  finished_branch="$("$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" get branch)"
+  finished_base="$("$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" get base-commit)"
+  "$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" finish >/dev/null
 elif [[ "${branch_route:-}" == "I" ]]; then
   # finish already ran, so active is gone — recover the pair from the archived
   # primer (its `## Active scope` bullets), falling back to the archived
@@ -457,7 +457,7 @@ elif [[ "${branch_route:-}" == "I" ]]; then
     [[ -n "$finished_branch" && -n "$finished_base" ]] && break
   done
 fi
-remaining="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh queue-remaining 2>/dev/null || echo '')"
+remaining="$("$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" queue-remaining 2>/dev/null || echo '')"
 
 # Stacked-branch note (all modes): warn when this feature's branch was cut on
 # top of the previous feature's still-unmerged branch.
@@ -480,7 +480,7 @@ Relay the line when it prints. Merge stacked branches in queue order, or merge t
 
 ```bash
 # Example (no current call site uses this — affordance is reserved for future):
-$CLAUDE_PLUGIN_ROOT/scripts/progress.sh finish --set last-completion=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+"$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" finish --set last-completion=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 ```
 
 The `--set` writes target top-level fields only and go through the same helper as `progress.sh set-top` (`scripts/internal/progress_top.py`): `active.*` is rejected because `active` is being cleared, and the protected fields `queue`, `completed`, `id` and `todo-list-id` are refused. Do NOT introduce `advance-to 7 -1` as a finalize mechanism — `advance-to` only permits the whitelisted `3→5 | 5→7 | 6→7` transitions; stage-7 finalization stays on `progress.sh finish`.
@@ -492,7 +492,7 @@ The `--set` writes target top-level fields only and go through the same helper a
 If `remaining` is empty, check whether unmarked TODO items still exist in the cycle's `todo-list.md`. If so, the inspector can extend this cycle by marking more items rather than running `/mi-run` from scratch:
 
 ```bash
-todo_count="$($CLAUDE_PLUGIN_ROOT/scripts/todo.sh list TODO 2>/dev/null | sed '/^$/d' | wc -l | tr -d ' ')"
+todo_count="$("$CLAUDE_PLUGIN_ROOT/scripts/todo.sh" list TODO 2>/dev/null | sed '/^$/d' | wc -l | tr -d ' ')"
 ```
 
 - **If `todo_count > 0`:**
@@ -500,7 +500,7 @@ todo_count="$($CLAUDE_PLUGIN_ROOT/scripts/todo.sh list TODO 2>/dev/null | sed '/
   Resolve the active quest's todo-list path for the user-facing message:
 
   ```bash
-  active_quest_dir="$($CLAUDE_PLUGIN_ROOT/scripts/quest.sh dir)"
+  active_quest_dir="$("$CLAUDE_PLUGIN_ROOT/scripts/quest.sh" dir)"
   ```
 
   > "Workflow for `$active_feature` complete. Queue is now empty, but **$todo_count items still in `[ ] TODO`** state in `$active_quest_dir/todo-list.md`. To continue this cycle, mark the items you want next (`[x] (assignee) TODO — ...`) and type `/mi-continue` — I'll promote them to PENDING, enqueue their features, and resume from stage 1.5. Or run `/mi-run <folders> --archive-active` to retire this cycle (preserved as a historical subfolder under `quest/`) and start a brand-new one."
@@ -512,8 +512,8 @@ todo_count="$($CLAUDE_PLUGIN_ROOT/scripts/todo.sh list TODO 2>/dev/null | sed '/
   The cycle is fully complete — every item the inspector marked has shipped, and nothing else is queued. Archive the active-quest pointer so a fresh `/mi-run` can open a new cycle without `--archive-active`. The cycle's subfolder under `quest/<slug>/` stays intact as a historical record.
 
   ```bash
-  finished_slug="$($CLAUDE_PLUGIN_ROOT/scripts/quest.sh current 2>/dev/null || echo "")"
-  $CLAUDE_PLUGIN_ROOT/scripts/quest.sh end
+  finished_slug="$("$CLAUDE_PLUGIN_ROOT/scripts/quest.sh" current 2>/dev/null || echo "")"
+  "$CLAUDE_PLUGIN_ROOT/scripts/quest.sh" end
   ```
 
   > "Workflow for `$active_feature` complete. Queue empty and no TODO items remain. Cycle `$finished_slug` is now archived (subfolder preserved under `quest/$finished_slug/` for future reference). Run `/mi-run <folders>` for a new cycle."
@@ -542,14 +542,14 @@ Review the last several turns of conversation for instructions, scope decisions,
 Per `docs/clear-points/plan.md` §3.2, recommend a `/clear` between feature A's completion and feature B's activation. Unlike the `stage-2-to-3` and `stage-5-to-6` gates, this one needs **no persistence flag** — the post-clear state (`active=null`, queue non-empty) only happens once per feature transition by construction (`mi-apply-impact` immediately repopulates `active`), so the dispatcher cannot accidentally re-prompt.
 
 ```bash
-$CLAUDE_PLUGIN_ROOT/scripts/ledger.sh append \
+"$CLAUDE_PLUGIN_ROOT/scripts/ledger.sh" append \
   "8" "/mi-complete-workflow" "clear-offer-recommendation" "small" "main" \
   "stage-8-to-2 clear offered (${active_feature} -> ${next})" || true
 ```
 
 Then print the recommendation block to the inspector and **halt** — do NOT auto-fire `/mi-apply-impact`:
 
-**Auto mode.** If `$CLAUDE_PLUGIN_ROOT/scripts/auto.sh is-on` succeeds, print `auto: clear gate stage-8-to-2 — type /clear, then /mi-continue` instead of the recommendation below, and stop (the `decisions.md` write-check above has already run). Otherwise continue below unchanged.
+**Auto mode.** If `"$CLAUDE_PLUGIN_ROOT/scripts/auto.sh" is-on` succeeds, print `auto: clear gate stage-8-to-2 — type /clear, then /mi-continue` instead of the recommendation below, and stop (the `decisions.md` write-check above has already run). Otherwise continue below unchanged.
 
 > "Workflow for `$active_feature` complete. Queue continues with `$next`.
 >

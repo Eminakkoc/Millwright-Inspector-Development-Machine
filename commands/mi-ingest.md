@@ -113,7 +113,7 @@ If `docling_present=0`, **do not silently halt** — offer to install, with full
 >
 > The command runs in this Claude Code session via my `Bash` tool — you'll see progress output streamed inline. Nothing outside `pipx`'s managed venv (or `~/.local/lib/python*/site-packages/` for the `pip --user` fallback) is modified.
 >
-> **How I use it afterwards** — once `docling` is on PATH, I invoke it only via `$CLAUDE_PLUGIN_ROOT/scripts/ingest.sh`, which wraps `docling --to md --output <tmpdir> <src>` for each supported file. You never need to run `docling` by hand; `/mi-ingest` and `/mi-run`'s auto-ingest flow will handle invocation.
+> **How I use it afterwards** — once `docling` is on PATH, I invoke it only via `"$CLAUDE_PLUGIN_ROOT/scripts/ingest.sh"`, which wraps `docling --to md --output <tmpdir> <src>` for each supported file. You never need to run `docling` by hand; `/mi-ingest` and `/mi-run`'s auto-ingest flow will handle invocation.
 >
 > Install now? (y/n)"
 
@@ -150,7 +150,7 @@ Exit.
 Pass through the inspector's arguments verbatim:
 
 ```bash
-$CLAUDE_PLUGIN_ROOT/scripts/ingest.sh $ARGUMENTS
+"$CLAUDE_PLUGIN_ROOT/scripts/ingest.sh" $ARGUMENTS
 ```
 
 The script:

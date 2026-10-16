@@ -25,7 +25,7 @@ For any other workflow state, this command falls through to `/mi-resume-workflow
 
 #### Step 1a — Resolve the plugin runtime (load-bearing)
 
-Resolve `$CLAUDE_PLUGIN_ROOT` and verify the dispatcher's scripts are on disk. This must run **first**: the state-read fallbacks in Step 1b (`2>/dev/null || echo 'null'`) cannot distinguish "no active workflow" from "scripts unreachable" — without this check, an empty `$CLAUDE_PLUGIN_ROOT` would expand `$CLAUDE_PLUGIN_ROOT/scripts/progress.sh` to `/scripts/progress.sh`, silently fail with "command not found", and route the dispatcher to the pre-flight catch-all → `/mi-resume-workflow`, making it look like there's no active workflow when in fact the runtime is broken.
+Resolve `$CLAUDE_PLUGIN_ROOT` and verify the dispatcher's scripts are on disk. This must run **first**: the state-read fallbacks in Step 1b (`2>/dev/null || echo 'null'`) cannot distinguish "no active workflow" from "scripts unreachable" — without this check, an empty `$CLAUDE_PLUGIN_ROOT` would expand `"$CLAUDE_PLUGIN_ROOT/scripts/progress.sh"` to `/scripts/progress.sh`, silently fail with "command not found", and route the dispatcher to the pre-flight catch-all → `/mi-resume-workflow`, making it look like there's no active workflow when in fact the runtime is broken.
 
 **Why the resolver exists** (canonically documented in `docs/millwright-inspector-project.md` §8.14 — this Step 1a is the reference implementation every other command's Runtime-bootstrap note points at). Claude Code does not currently inject `$CLAUDE_PLUGIN_ROOT` as a shell env var into Bash tool subshells (open feature request: anthropics/claude-code#48230); the variable is only template-expanded inside config files like `hooks.json`/`plugin.json`. The inherited env var is therefore best-effort — sometimes leaked by a prior hook invocation, often empty (especially right after `/clear`). The resolver below is the canonical source of `$CLAUDE_PLUGIN_ROOT` for this command and falls back through three sources in order: (1) the inherited env var when it points at a working `scripts/progress.sh`, (2) the cwd when it's this plugin's source repo (local dev mode), (3) the marketplace install path from `~/.claude/plugins/installed_plugins.json`. On success the resolved path is exported AND persisted to a per-cwd tempfile so the rest of this invocation's Bash blocks can recover it (each Bash tool call is a fresh subshell that does NOT inherit exports from prior calls — see anthropics/claude-code#2508).
 
@@ -77,15 +77,15 @@ If the resolver fails, **stop**. Do not fall through to Step 1b, do not delegate
 [[ -z "${CLAUDE_PLUGIN_ROOT:-}" ]] && source "${TMPDIR:-/tmp}/mi-plugin-root.$(printf '%s' "$PWD" | git hash-object --stdin | cut -c1-16).sh" 2>/dev/null || true
 ```
 
-If the tempfile is missing (e.g. someone jumped to a later step without running Step 1a first), the source is a no-op and the original symptom — `$CLAUDE_PLUGIN_ROOT/...` expanding to `/...` — reappears. That's intentional: Step 1a is the only entry point that's expected to produce the tempfile, and a missing tempfile means Step 1a was skipped.
+If the tempfile is missing (e.g. someone jumped to a later step without running Step 1a first), the source is a no-op and the original symptom — `"$CLAUDE_PLUGIN_ROOT/..."` expanding to `/...` — reappears. That's intentional: Step 1a is the only entry point that's expected to produce the tempfile, and a missing tempfile means Step 1a was skipped.
 
 #### Step 1b — Read workflow state
 
 ```bash
-active_feature="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get-active 2>/dev/null || echo 'null')"
-queue_count="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh queue-remaining 2>/dev/null | sed '/^$/d' | wc -l | tr -d ' ')"
+active_feature="$("$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" get-active 2>/dev/null || echo 'null')"
+queue_count="$("$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" queue-remaining 2>/dev/null | sed '/^$/d' | wc -l | tr -d ' ')"
 # todo-list.md lives inside the active quest cycle's subfolder; resolve via quest.sh.
-quest_dir="$($CLAUDE_PLUGIN_ROOT/scripts/quest.sh dir 2>/dev/null || echo "")"
+quest_dir="$("$CLAUDE_PLUGIN_ROOT/scripts/quest.sh" dir 2>/dev/null || echo "")"
 todo_file="$quest_dir/todo-list.md"
 ```
 
@@ -100,7 +100,7 @@ If `progress.md` (or `quest/active.md` / the active cycle subfolder) is missing,
 `/mi-analyze-review` produces PR-review reports that have no active quest, so they are routed here, **before** the workflow dispatch table below. Scan for any report awaiting the inspector:
 
 ```bash
-pr_awaiting="$($CLAUDE_PLUGIN_ROOT/scripts/pr-review.sh find-awaiting 2>/dev/null || true)"
+pr_awaiting="$("$CLAUDE_PLUGIN_ROOT/scripts/pr-review.sh" find-awaiting 2>/dev/null || true)"
 pr_report_count="$(printf '%s' "$pr_awaiting" | sed '/^$/d' | wc -l | tr -d ' ')"
 ```
 
@@ -147,8 +147,8 @@ inside the sequence itself resolves it:
 - **Row A:**
 
   ```bash
-  next="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh queue-remaining | sed '/^$/d' | head -1)"
-  if $CLAUDE_PLUGIN_ROOT/scripts/todo.sh is-feature-test "$next"; then
+  next="$("$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" queue-remaining | sed '/^$/d' | head -1)"
+  if "$CLAUDE_PLUGIN_ROOT/scripts/todo.sh" is-feature-test "$next"; then
     ft_feature="$next"
     # → run the Feature-test entry sequence below. Do NOT call
     #   progress.sh activate here — step 2 below does that, and only after
@@ -173,7 +173,7 @@ inside the sequence itself resolves it:
 #    `| head -1` because set -euo pipefail is already active for that whole
 #    file; this prose block needs its own).
 set -o pipefail
-if ! range_line="$($CLAUDE_PLUGIN_ROOT/scripts/commits.sh feature-test-range "$ft_feature" | head -1)"; then
+if ! range_line="$("$CLAUDE_PLUGIN_ROOT/scripts/commits.sh" feature-test-range "$ft_feature" | head -1)"; then
   exit 1
 fi
 union_base="$(printf '%s' "$range_line" | cut -f1)"
@@ -188,7 +188,7 @@ stop. Nothing has been written by this sequence yet at this point.
    range resolves — call:
 
    ```bash
-   $CLAUDE_PLUGIN_ROOT/scripts/progress.sh activate >/dev/null
+   "$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" activate >/dev/null
    ```
 
    Deferring `activate` to this point, instead of calling it before step 1, is what
@@ -204,8 +204,8 @@ stop. Nothing has been written by this sequence yet at this point.
    name dies.
 
    ```bash
-   data_root="$($CLAUDE_PLUGIN_ROOT/scripts/data-root.sh)"
-   $CLAUDE_PLUGIN_ROOT/scripts/folder-id.sh ensure "$data_root/workflow-stream/$ft_feature"
+   data_root="$("$CLAUDE_PLUGIN_ROOT/scripts/data-root.sh")"
+   "$CLAUDE_PLUGIN_ROOT/scripts/folder-id.sh" ensure "$data_root/workflow-stream/$ft_feature"
    ```
 
    Idempotent: `ensure` returns the existing id when `id.md` is already present, which is
@@ -216,7 +216,7 @@ stop. Nothing has been written by this sequence yet at this point.
    `.active.base-commit` and HEAD.
 
    ```bash
-   $CLAUDE_PLUGIN_ROOT/scripts/progress.sh set "base-commit=$union_base"
+   "$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" set "base-commit=$union_base"
    ```
 
 5. **Run the complete-feature diagram pass** — invoke `/mi-generate-implementation-diagrams`,
@@ -225,15 +225,15 @@ stop. Nothing has been written by this sequence yet at this point.
 6. **Initialize the findings skeleton** (idempotent — `review.sh init` refuses to overwrite):
 
    ```bash
-   data_root="$($CLAUDE_PLUGIN_ROOT/scripts/data-root.sh)"
+   data_root="$("$CLAUDE_PLUGIN_ROOT/scripts/data-root.sh")"
    ov_file="$data_root/workflow-stream/$ft_feature/implementation/inspector-review.md"
-   [[ -f "$ov_file" ]] || $CLAUDE_PLUGIN_ROOT/scripts/review.sh init "$ft_feature"
+   [[ -f "$ov_file" ]] || "$CLAUDE_PLUGIN_ROOT/scripts/review.sh" init "$ft_feature"
    ```
 
 7. **Atomic advance into the review step:**
 
    ```bash
-   $CLAUDE_PLUGIN_ROOT/scripts/progress.sh advance-to 2 5 \
+   "$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" advance-to 2 5 \
      --set sub-flow=none \
      --set implementation-completed=true
    ```
@@ -261,8 +261,8 @@ unchanged on the `2 | any` row below. Ordinary features are unaffected.
 **Active cases (`active_feature != "null"`):**
 
 ```bash
-current_stage="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get current-stage)"
-sub_flow="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get sub-flow)"
+current_stage="$("$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" get current-stage)"
+sub_flow="$("$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" get sub-flow)"
 ```
 
 | Current stage | Sub-flow         | Handler                                                       |
@@ -299,8 +299,8 @@ Reached when the inspector has just finished marking items (`[x] TODO` lines exi
 
 1. **Promote the marked items.**
    ```bash
-   $CLAUDE_PLUGIN_ROOT/scripts/progress.sh queue-remaining >/dev/null  # confirms progress.md exists
-   promoted="$($CLAUDE_PLUGIN_ROOT/scripts/todo.sh pend-selected)"
+   "$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" queue-remaining >/dev/null  # confirms progress.md exists
+   promoted="$("$CLAUDE_PLUGIN_ROOT/scripts/todo.sh" pend-selected)"
    ```
    `pend-selected` rejects any `[x] TODO` line missing an `(assignee)` tag — relay the offenders to the inspector, ask for assignee names, and stop. The inspector fixes the file and re-types `/mi-continue`.
 
@@ -309,7 +309,7 @@ Reached when the inspector has just finished marking items (`[x] TODO` lines exi
 1.5. **Evaluate the feature-test entry (multi-feature cycles only).**
 
    ```bash
-   ft_row="$($CLAUDE_PLUGIN_ROOT/scripts/todo.sh feature-test-status)"
+   ft_row="$("$CLAUDE_PLUGIN_ROOT/scripts/todo.sh" feature-test-status)"
    ft_status="$(printf '%s' "$ft_row" | cut -f1)"
    ft_name="$(printf '%s' "$ft_row" | cut -f2)"
    ft_item_id="$(printf '%s' "$ft_row" | cut -f3)"
@@ -328,13 +328,13 @@ Reached when the inspector has just finished marking items (`[x] TODO` lines exi
    - **`ready`** — every ordinary item is now selected or cancelled. Inherit the assignee from the **last** row of `$promoted` (that is, the last one in document order on the pass that completed the selection); when `$promoted` is empty — a re-run after an interrupted session — fall back to `$ft_fallback_assignee`. If both are empty (only reachable by hand-editing, since `pend-selected` and `todo.sh add` both enforce the tag), **ask the inspector for a name** rather than promoting untagged: an untagged `[x]` line would fail the assignee invariant every later `pend-selected` re-checks.
 
      ```bash
-     $CLAUDE_PLUGIN_ROOT/scripts/todo.sh set-state "$ft_item_id" PENDING --assignee "$inherited_assignee"
+     "$CLAUDE_PLUGIN_ROOT/scripts/todo.sh" set-state "$ft_item_id" PENDING --assignee "$inherited_assignee"
      ```
 
    - **`premature`** — the inspector marked the entry by hand while ordinary items remain, and `pend-selected` promoted it early. Revert it (their `(assignee)` tag is preserved, leaving `- [ ] (emin) TODO — …`) and explain:
 
      ```bash
-     $CLAUDE_PLUGIN_ROOT/scripts/todo.sh set-state "$ft_item_id" TODO
+     "$CLAUDE_PLUGIN_ROOT/scripts/todo.sh" set-state "$ft_item_id" TODO
      ```
 
      > "`<ft_name>` is auto-managed — I've unmarked it. It selects itself once every ordinary item is selected or cancelled, and it's pinned last in the queue."
@@ -344,12 +344,12 @@ Reached when the inspector has just finished marking items (`[x] TODO` lines exi
 2. **Group PENDING items by feature.** Read `todo-list.md` and collect the set of feature section headings (`## <feature>`) that contain `[x] PENDING` lines.
 3. **Detect the queue source state.**
    ```bash
-   queue_count="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh queue-remaining 2>/dev/null | sed '/^$/d' | wc -l | tr -d ' ')"
+   queue_count="$("$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" queue-remaining 2>/dev/null | sed '/^$/d' | wc -l | tr -d ' ')"
    ```
    - **If `queue_count > 0`:** the queue was seeded by `/mi-run` (initial cycle). It already lists every feature found in the journal, in some default order — no repopulation needed. Proceed to item 3.5, then item 4 and step 5.
    - **If `queue_count == 0`:** mid-cycle re-entry (Finding 6 — the cycle's first batch already completed and the inspector is marking more items now). The queue must be repopulated from the freshly-PENDING feature names:
      ```bash
-     $CLAUDE_PLUGIN_ROOT/scripts/progress.sh enqueue <feat1> [<feat2> ...]
+     "$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" enqueue <feat1> [<feat2> ...]
      ```
      where `<featN>` is the de-duplicated set of feature headings that hold PENDING items in `todo-list.md`. `enqueue` refuses duplicates against `queue ∪ completed`, so a feature already finished in this cycle would error out — surface that to the inspector (they probably wrote a TODO under the wrong heading).
 
@@ -358,14 +358,14 @@ Reached when the inspector has just finished marking items (`[x] TODO` lines exi
 3.5. **Append the feature-test entry to the queue.** Runs after item 3 regardless of which branch fired — both the initial-cycle branch (`queue_count > 0`) and the mid-cycle branch (`queue_count == 0`) fall through to this item. Within that, it actually enqueues when `$ft_status` is `ready` or `selected` and the name is not already present in either the queue or `completed`. This is its own fence, so it re-derives `$ft_status`/`$ft_name` itself rather than trusting item 1.5's — each Bash tool call is a fresh subshell (Step 1a); relying on the earlier fence's export is exactly what makes this step fail silently:
 
    ```bash
-   quest_dir="$($CLAUDE_PLUGIN_ROOT/scripts/quest.sh dir)"
-   ft_row="$($CLAUDE_PLUGIN_ROOT/scripts/todo.sh feature-test-status)"
+   quest_dir="$("$CLAUDE_PLUGIN_ROOT/scripts/quest.sh" dir)"
+   ft_row="$("$CLAUDE_PLUGIN_ROOT/scripts/todo.sh" feature-test-status)"
    ft_status="$(printf '%s' "$ft_row" | cut -f1)"
    ft_name="$(printf '%s' "$ft_row" | cut -f2)"
 
    if [[ -n "$ft_name" && "$ft_status" != "none" && "$ft_status" != "blocked" && "$ft_status" != "premature" ]]; then
-     queued_now="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh queue-remaining 2>/dev/null || true)"
-     completed_now="$($CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get "$quest_dir/progress.md" 'completed[]' 2>/dev/null || true)"
+     queued_now="$("$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" queue-remaining 2>/dev/null || true)"
+     completed_now="$("$CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh" get "$quest_dir/progress.md" 'completed[]' 2>/dev/null || true)"
      ft_already=0
      if printf '%s\n' "$queued_now" | grep -qx "$ft_name"; then
        ft_already=1
@@ -374,7 +374,7 @@ Reached when the inspector has just finished marking items (`[x] TODO` lines exi
        ft_already=1
      fi
      if [[ "$ft_already" -eq 0 ]]; then
-       $CLAUDE_PLUGIN_ROOT/scripts/progress.sh enqueue "$ft_name"
+       "$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" enqueue "$ft_name"
      fi
 
      # Create the feature-test folder now (DTI-002) — see prose below. This
@@ -384,12 +384,12 @@ Reached when the inspector has just finished marking items (`[x] TODO` lines exi
      # when ft_already=1 skipped the enqueue, while a single-feature cycle
      # ($ft_status=none, $ft_name empty) or a still-blocked entry never
      # touches workflow-stream/ at all. Idempotent either way.
-     data_root="$($CLAUDE_PLUGIN_ROOT/scripts/data-root.sh)"
+     data_root="$("$CLAUDE_PLUGIN_ROOT/scripts/data-root.sh")"
      ft_dir="$data_root/workflow-stream/$ft_name"
      mkdir -p "$ft_dir/implementation" "$ft_dir/test"
-     $CLAUDE_PLUGIN_ROOT/scripts/folder-id.sh ensure "$ft_dir" >/dev/null
-     $CLAUDE_PLUGIN_ROOT/scripts/folder-id.sh link-feature "$ft_name"
-     $CLAUDE_PLUGIN_ROOT/scripts/deferred-tests.sh ensure "$ft_name" >/dev/null
+     "$CLAUDE_PLUGIN_ROOT/scripts/folder-id.sh" ensure "$ft_dir" >/dev/null
+     "$CLAUDE_PLUGIN_ROOT/scripts/folder-id.sh" link-feature "$ft_name"
+     "$CLAUDE_PLUGIN_ROOT/scripts/deferred-tests.sh" ensure "$ft_name" >/dev/null
    fi
    ```
 
@@ -436,12 +436,12 @@ Reached when the inspector has just finished marking items (`[x] TODO` lines exi
    **Step 4b — Heuristic short-circuit (Phase 4.2).** Decide whether step 4a is enough or whether a code-aware scan is justified. This fence re-derives `ft_name` from frontmatter rather than trusting item 1.5's export (fresh subshell — see Step 1a):
 
    ```bash
-   data_root="$($CLAUDE_PLUGIN_ROOT/scripts/data-root.sh)"
-   quest_dir="$($CLAUDE_PLUGIN_ROOT/scripts/quest.sh dir)"
+   data_root="$("$CLAUDE_PLUGIN_ROOT/scripts/data-root.sh")"
+   quest_dir="$("$CLAUDE_PLUGIN_ROOT/scripts/quest.sh" dir)"
    summary_file="$quest_dir/summary.md"
-   ft_name="$($CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get "$quest_dir/todo-list.md" feature-test 2>/dev/null || echo '')"
+   ft_name="$("$CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh" get "$quest_dir/todo-list.md" feature-test 2>/dev/null || echo '')"
    [[ "$ft_name" == "null" ]] && ft_name=""
-   features_in_queue="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh queue-remaining | sed '/^$/d')"
+   features_in_queue="$("$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" queue-remaining | sed '/^$/d')"
    if [[ -n "$ft_name" ]]; then
      features_in_queue="$(printf '%s\n' "$features_in_queue" | grep -vx "$ft_name" || true)"
    fi
@@ -461,7 +461,8 @@ for m in re.finditer(r'^## Feature:\s+(\S+)\s*\n(.*?)(?=^## |\Z)', content, re.M
     section_feat, body = m.group(1).strip(), m.group(2)
     if section_feat == target_feat:
         continue
-    # Does target_feat appear anywhere in this other feature's body?
+    # Does target_feat appear anywhere in the body of this other feature?
+    # (No apostrophes in this heredoc: bash 3.2 cannot parse one inside $( ).)
     if re.search(rf'\b{re.escape(target_feat)}\b', body):
         print('1')
         sys.exit(0)
@@ -488,11 +489,11 @@ PYEOF
    First check the cache. If a `queue-rationale.md` from a prior batch in this cycle exists with `scan-mode: code-aware` AND its cache key still matches, reuse the existing rationale instead of spawning a new sub-agent:
 
    ```bash
-   qr_file="$($CLAUDE_PLUGIN_ROOT/scripts/quest.sh dir)/queue-rationale.md"
+   qr_file="$("$CLAUDE_PLUGIN_ROOT/scripts/quest.sh" dir)/queue-rationale.md"
    if [[ -f "$qr_file" ]]; then
-     cached_scan_mode="$($CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get "$qr_file" scan-mode 2>/dev/null || echo 'journal-only')"
-     cached_summary_hash="$($CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get "$qr_file" summary-md-hash 2>/dev/null || echo '')"
-     cached_head="$($CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get "$qr_file" head-when-scanned 2>/dev/null || echo '')"
+     cached_scan_mode="$("$CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh" get "$qr_file" scan-mode 2>/dev/null || echo 'journal-only')"
+     cached_summary_hash="$("$CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh" get "$qr_file" summary-md-hash 2>/dev/null || echo '')"
+     cached_head="$("$CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh" get "$qr_file" head-when-scanned 2>/dev/null || echo '')"
      current_summary_hash="$(git hash-object "$summary_file" | cut -c1-16)"
      current_head="$(git rev-parse HEAD 2>/dev/null || echo '')"
      if [[ "$cached_scan_mode" == "code-aware" \
@@ -548,25 +549,25 @@ PYEOF
    Receive the sub-agent return summary. Use the proposed order in step 5. The cache key fields (`scan-mode: code-aware`, `summary-md-hash`, `head-when-scanned`) will be written into `queue-rationale.md` by Step 2B when the inspector confirms the order — main is responsible for passing these to Step 2B's frontmatter init/update.
 5. **Propose the prioritized order.** Print the order as a numbered list and the dependency reasoning underneath. End the message with:
 
-   **Auto mode.** If `$CLAUDE_PLUGIN_ROOT/scripts/auto.sh is-on` succeeds, run `$CLAUDE_PLUGIN_ROOT/scripts/auto.sh answer "queue order" "accept" --cmd /mi-continue` and continue as if the inspector had replied `accept` — do not show the prompt below. Otherwise show the prompt below unchanged.
+   **Auto mode.** If `"$CLAUDE_PLUGIN_ROOT/scripts/auto.sh" is-on` succeeds, run `"$CLAUDE_PLUGIN_ROOT/scripts/auto.sh" answer "queue order" "accept" --cmd /mi-continue` and continue as if the inspector had replied `accept` — do not show the prompt below. Otherwise show the prompt below unchanged.
 
    > "Reply `/mi-continue` to accept this order, or paste a different order (one feature per line) and then `/mi-continue` to confirm."
 
    When the feature-test entry is **in the queue** — not merely present in frontmatter — append `$ft_name` **last** to the proposal, then assert the pin before printing. Gate on queue membership, not frontmatter presence: item 3.5 only enqueues on `ready`/`selected`, so on a `blocked` partial selection (a common case — the inspector marks some but not all items) `ft_name` is populated in frontmatter but absent from the queue. Appending it to the proposal anyway would poison it with a name `check-feature-test-pin` happily accepts (it IS last in the *proposed* list) but that `progress.sh reorder` later rejects as "not in existing queue" — *after* Step 2B has already written `queue-rationale.md` with it in `features:`, breaking the Row A invariant (`queue-rationale.features − completed == queue`). This fence re-derives `ft_name` itself rather than trusting item 1.5's or item 3.5's export (fresh subshell — see Step 1a):
 
    ```bash
-   quest_dir="$($CLAUDE_PLUGIN_ROOT/scripts/quest.sh dir)"
-   ft_name="$($CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get "$quest_dir/todo-list.md" feature-test 2>/dev/null || echo '')"
+   quest_dir="$("$CLAUDE_PLUGIN_ROOT/scripts/quest.sh" dir)"
+   ft_name="$("$CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh" get "$quest_dir/todo-list.md" feature-test 2>/dev/null || echo '')"
    [[ "$ft_name" == "null" ]] && ft_name=""
    ft_queued=0
    if [[ -n "$ft_name" ]]; then
-     q="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh queue-remaining 2>/dev/null || true)"
+     q="$("$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" queue-remaining 2>/dev/null || true)"
      if printf '%s\n' "$q" | grep -qx "$ft_name"; then
        ft_queued=1
      fi
    fi
    if [[ "$ft_queued" -eq 1 ]]; then
-     $CLAUDE_PLUGIN_ROOT/scripts/progress.sh check-feature-test-pin "$ft_name" "${proposed_order[@]}"
+     "$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" check-feature-test-pin "$ft_name" "${proposed_order[@]}"
    fi
    ```
 
@@ -580,9 +581,10 @@ PYEOF
      # ^## Batch (\d+)\b. Files without batch headers are treated as implicit Batch 1.
      # Append ## Batch <N+1> — <today> + ### Order/Dependencies/Notes via Edit.
      # Then update top-level frontmatter:
-     #   $CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh set "$qr_file" batch <N+1>
-     #   $CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh set "$qr_file" status draft
-     #   $CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh set "$qr_file" features '[<cumulative>]'
+     #   "$CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh" set "$qr_file" batch <N+1>
+     #   "$CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh" set "$qr_file" status draft
+     #   "$CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh" set "$qr_file" features '[<cumulative>]'
+     :  # bash rejects an if-body of comments only
    fi
    ```
 
@@ -601,11 +603,11 @@ Reached when `[x] TODO` lines have been promoted (none remain) AND either (a) `q
 **Detect entry condition:**
 
 ```bash
-quest_dir="$($CLAUDE_PLUGIN_ROOT/scripts/quest.sh dir)"
+quest_dir="$("$CLAUDE_PLUGIN_ROOT/scripts/quest.sh" dir)"
 qr_file="$quest_dir/queue-rationale.md"
 if [[ -f "$qr_file" ]]; then
-  qr_status="$($CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get "$qr_file" status 2>/dev/null || echo 'confirmed')"
-  qr_batch="$($CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get "$qr_file" batch 2>/dev/null || echo '1')"
+  qr_status="$("$CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh" get "$qr_file" status 2>/dev/null || echo 'confirmed')"
+  qr_batch="$("$CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh" get "$qr_file" batch 2>/dev/null || echo '1')"
 else
   qr_status="missing"
   qr_batch="0"
@@ -618,11 +620,11 @@ fi
    **Pin validation.** When the feature-test entry is **in the queue** — not merely present in frontmatter — the confirmed order must keep it last. Gate on queue membership, not frontmatter presence: the same partial-selection gap as item 5 above applies here — `ft_name` can be populated in frontmatter while the entry is still `blocked` and was never enqueued:
 
    ```bash
-   ft_name="$($CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get "$quest_dir/todo-list.md" feature-test 2>/dev/null || echo '')"
+   ft_name="$("$CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh" get "$quest_dir/todo-list.md" feature-test 2>/dev/null || echo '')"
    if [[ -n "$ft_name" && "$ft_name" != "null" ]]; then
-     q="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh queue-remaining 2>/dev/null || true)"
+     q="$("$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" queue-remaining 2>/dev/null || true)"
      if printf '%s\n' "$q" | grep -qx "$ft_name"; then
-       $CLAUDE_PLUGIN_ROOT/scripts/progress.sh check-feature-test-pin "$ft_name" "${confirmed_order[@]}"
+       "$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" check-feature-test-pin "$ft_name" "${confirmed_order[@]}"
      fi
    fi
    ```
@@ -636,9 +638,9 @@ fi
    **(a) Missing — write a fresh file** (current behavior):
 
    ```bash
-   todo_list_id="$($CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get \
+   todo_list_id="$("$CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh" get \
      "$quest_dir/todo-list.md" id)"
-   $CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh init queue-rationale \
+   "$CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh" init queue-rationale \
      "$qr_file" \
      "TODO_LIST_ID=$todo_list_id" \
      "FEATURES=<comma-joined confirmed order>"
@@ -652,9 +654,9 @@ fi
    if [[ "$step_2a_scan_mode" == "code-aware" ]]; then
      summary_md_hash="$(git hash-object "$summary_file" | cut -c1-16)"
      head_when_scanned="$(git rev-parse HEAD 2>/dev/null || echo '')"
-     $CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh set "$qr_file" scan-mode code-aware
-     $CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh set "$qr_file" summary-md-hash "$summary_md_hash"
-     [[ -n "$head_when_scanned" ]] && $CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh set "$qr_file" head-when-scanned "$head_when_scanned"
+     "$CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh" set "$qr_file" scan-mode code-aware
+     "$CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh" set "$qr_file" summary-md-hash "$summary_md_hash"
+     [[ -n "$head_when_scanned" ]] && "$CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh" set "$qr_file" head-when-scanned "$head_when_scanned"
    fi
    # When step_2a_scan_mode is unset or `journal-only`, omit these fields — schema default is journal-only.
    ```
@@ -672,7 +674,7 @@ fi
 
 4. **Reorder the queue.**
    ```bash
-   $CLAUDE_PLUGIN_ROOT/scripts/progress.sh reorder <feature1> <feature2> ...
+   "$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" reorder <feature1> <feature2> ...
    ```
 5. **Auto-fire `/mi-apply-impact`.** Same as the prior end-of-stage-1.5 transition.
 
@@ -720,7 +722,7 @@ Runs on every entry to the Approve Handler, before the clear-point gate. Re-runn
 **Step 1 — Read the suggestions.**
 
 ```bash
-active_feature="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get-active)"
+active_feature="$("$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" get-active)"
 "$CLAUDE_PLUGIN_ROOT/scripts/skills.sh" suggestions "$active_feature"
 ```
 
@@ -747,7 +749,7 @@ The confirmed names join the install list; the rest are declined. Rows with `req
 **Step 4 — Rewrite `config.md`.**
 
 ```bash
-active_feature="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get-active)"
+active_feature="$("$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" get-active)"
 "$CLAUDE_PLUGIN_ROOT/scripts/skills.sh" apply-installs "$active_feature" \
   --installed "<installed, comma-joined>" --declined "<declined>" --failed "<failed>" [--stop]
 ```
@@ -772,7 +774,7 @@ The trailing pathspec keeps any other staged file staged and out of this commit.
 Per `docs/clear-points/plan.md` §3.1 / §5.2, this step offers the inspector a `/clear` between stage-2 blueprint approval and stage-3 implementation entry. The gate fires at most once per feature: on first entry it prints the recommendation and halts; on re-entry (whether the inspector cleared or skipped) it proceeds.
 
 ```bash
-data_root="$($CLAUDE_PLUGIN_ROOT/scripts/data-root.sh)"
+data_root="$("$CLAUDE_PLUGIN_ROOT/scripts/data-root.sh")"
 
 if "$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" has-clear-recommendation stage-2-to-3; then
   gate_already_fired=1
@@ -791,7 +793,7 @@ Review the last several turns of the conversation. If they contain instructions,
 decisions_file="$data_root/workflow-stream/$active_feature/decisions.md"
 if [[ ! -f "$decisions_file" ]]; then
   # File doesn't exist yet — initialize it on first use.
-  $CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh init decisions "$decisions_file" \
+  "$CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh" init decisions "$decisions_file" \
     "FEATURE=$active_feature"
 fi
 # Then use Edit to append bullets to the `## Stage 2 — Blueprint approval`
@@ -808,15 +810,15 @@ If the gate has already fired (`gate_already_fired=1`), the write-check still ru
 **If `gate_already_fired=0` (first entry — print recommendation + halt):**
 
 ```bash
-$CLAUDE_PLUGIN_ROOT/scripts/progress.sh add-clear-recommendation stage-2-to-3
-$CLAUDE_PLUGIN_ROOT/scripts/ledger.sh append \
+"$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" add-clear-recommendation stage-2-to-3
+"$CLAUDE_PLUGIN_ROOT/scripts/ledger.sh" append \
   "2" "/mi-continue" "clear-offer-recommendation" "small" "main" \
   "stage-2-to-3 clear offered" || true
 ```
 
 Then print the recommendation block to the inspector and **halt** — do NOT auto-fire `/mi-plan-implementation` in this branch:
 
-**Auto mode.** If `$CLAUDE_PLUGIN_ROOT/scripts/auto.sh is-on` succeeds, print `auto: clear gate stage-2-to-3 — type /clear, then /mi-continue` instead of the recommendation below, and stop (the `decisions.md` write-check above has already run). Otherwise continue below unchanged.
+**Auto mode.** If `"$CLAUDE_PLUGIN_ROOT/scripts/auto.sh" is-on` succeeds, print `auto: clear gate stage-2-to-3 — type /clear, then /mi-continue` instead of the recommendation below, and stop (the `decisions.md` write-check above has already run). Otherwise continue below unchanged.
 
 > "Blueprint for `$active_feature` approved. **Recommended:** type `/clear`, then `/mi-continue` to enter stage 3 with a fresh main context.
 >
@@ -834,7 +836,7 @@ Then exit. The inspector's next `/mi-continue` re-enters this handler with `gate
 **If `gate_already_fired=1` (re-entry — offer was already shown; proceed):**
 
 ```bash
-$CLAUDE_PLUGIN_ROOT/scripts/ledger.sh append \
+"$CLAUDE_PLUGIN_ROOT/scripts/ledger.sh" append \
   "2" "/mi-continue" "post-offer-resume" "small" "main" \
   "stage-2-to-3 Approve Handler resumed" || true
 
@@ -842,7 +844,7 @@ $CLAUDE_PLUGIN_ROOT/scripts/ledger.sh append \
 # workflow state post-clear. The handler does NOT itself read these here
 # (mi-plan-implementation reads what it needs), but the ledger row attributes
 # the read class to the gate transition for analytics.
-$CLAUDE_PLUGIN_ROOT/scripts/ledger.sh append \
+"$CLAUDE_PLUGIN_ROOT/scripts/ledger.sh" append \
   "2" "/mi-continue" "progress.md, summary.md, requirements.md, config.md" \
   "medium" "main" "stage-2-to-3 rehydration" || true
 ```
@@ -874,10 +876,10 @@ The handler is structured so re-runs after a session break are safe (Item 1 of t
 Skipped when `active.drift-check-completed` is already true (probe is gated to one-shot per cycle). Detects the case where `/mi-update-blueprint` rotated and regenerated successfully but the subsequent marker-set was lost to a session break — without this probe, the next `/mi-continue` would re-prompt the inspector for a drift decision they already answered.
 
 ```bash
-data_root="$($CLAUDE_PLUGIN_ROOT/scripts/data-root.sh)"
+data_root="$("$CLAUDE_PLUGIN_ROOT/scripts/data-root.sh")"
 hist="$data_root/workflow-stream/$active_feature/blueprints/history"
 
-drift_marker="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get drift-check-completed 2>/dev/null || echo 'false')"
+drift_marker="$("$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" get drift-check-completed 2>/dev/null || echo 'false')"
 
 # Helper: highest finalized v[N] for active.feature.
 latest_finalized_v() {
@@ -898,7 +900,7 @@ spec_update_after() {
     [[ "$v" =~ ^[0-9]+$ ]] || continue
     [[ "$v" -le "$baseline" ]] && continue
     local kind
-    kind="$($CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get "$d/reason.md" kind 2>/dev/null || echo "")"
+    kind="$("$CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh" get "$d/reason.md" kind 2>/dev/null || echo "")"
     if [[ "$kind" == "spec-update" ]]; then
       echo "$v"
       return 0
@@ -917,7 +919,7 @@ single_partial() {
 }
 
 if [[ "$drift_marker" != "true" ]]; then
-  baseline_str="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get history-baseline-version 2>/dev/null || echo 'null')"
+  baseline_str="$("$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" get history-baseline-version 2>/dev/null || echo 'null')"
 
   if [[ "$baseline_str" == "null" || -z "$baseline_str" ]]; then
     # Unknown baseline (older in-flight cycle, or Step 3 was partial). Do NOT
@@ -938,13 +940,13 @@ if [[ "$drift_marker" != "true" ]]; then
       recovered_kind=""
       recovered_summary=""
       if [[ -n "$partial_dir" && -f "$partial_dir/reason.md" ]]; then
-        recovered_kind="$($CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get "$partial_dir/reason.md" kind 2>/dev/null || echo "")"
-        recovered_summary="$($CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get "$partial_dir/reason.md" summary 2>/dev/null || echo "")"
+        recovered_kind="$("$CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh" get "$partial_dir/reason.md" kind 2>/dev/null || echo "")"
+        recovered_summary="$("$CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh" get "$partial_dir/reason.md" summary 2>/dev/null || echo "")"
       else
         latest_v_for_kind="$(latest_finalized_v)"
         if [[ -n "$latest_v_for_kind" ]]; then
-          recovered_kind="$($CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get "$hist/v${latest_v_for_kind}/reason.md" kind 2>/dev/null || echo "")"
-          recovered_summary="$($CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get "$hist/v${latest_v_for_kind}/reason.md" summary 2>/dev/null || echo "")"
+          recovered_kind="$("$CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh" get "$hist/v${latest_v_for_kind}/reason.md" kind 2>/dev/null || echo "")"
+          recovered_summary="$("$CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh" get "$hist/v${latest_v_for_kind}/reason.md" summary 2>/dev/null || echo "")"
         fi
       fi
 
@@ -952,13 +954,13 @@ if [[ "$drift_marker" != "true" ]]; then
         manual|spec-update)
           /mi-update-blueprint --reason-kind="$recovered_kind" "${recovered_summary:-recovery}"
           if [[ "$recovered_kind" == "spec-update" ]]; then
-            $CLAUDE_PLUGIN_ROOT/scripts/progress.sh set "drift-check-completed=true"
+            "$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" set "drift-check-completed=true"
             echo "Step 0: lazy-baseline recovery succeeded for spec-update; drift marker set. Re-run /mi-continue to advance."
             exit 0
           else
             # Manual recovery: capture fresh baseline, let the normal drift prompt run later in this invocation.
             baseline_after_recovery="$(latest_finalized_v)"; baseline_after_recovery="${baseline_after_recovery:-0}"
-            $CLAUDE_PLUGIN_ROOT/scripts/progress.sh set "history-baseline-version=$baseline_after_recovery"
+            "$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" set "history-baseline-version=$baseline_after_recovery"
           fi
           ;;
         completion)
@@ -977,7 +979,7 @@ if [[ "$drift_marker" != "true" ]]; then
     else
       # current/ is complete: just capture a fresh baseline and skip the probe for this invocation.
       baseline_capture="$(latest_finalized_v)"; baseline_capture="${baseline_capture:-0}"
-      $CLAUDE_PLUGIN_ROOT/scripts/progress.sh set "history-baseline-version=$baseline_capture"
+      "$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" set "history-baseline-version=$baseline_capture"
       echo "Step 0: lazy baseline capture (=$baseline_capture). Probe disabled for this invocation; the normal drift prompt may run."
     fi
   else
@@ -991,7 +993,7 @@ if [[ "$drift_marker" != "true" ]]; then
       fi
       if [[ "$cc_status" == "0" ]]; then
         # Drift rotated + regenerated successfully — only the marker write was lost. Persist it.
-        $CLAUDE_PLUGIN_ROOT/scripts/progress.sh set "drift-check-completed=true"
+        "$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" set "drift-check-completed=true"
         echo "Step 0: detected this-cycle spec-update at v${drift_done_v} with complete current/; persisted drift marker. Drift prompt will be skipped."
       else
         # Drift rotation started but regeneration is partial. Route to /mi-update-blueprint recovery.
@@ -999,11 +1001,11 @@ if [[ "$drift_marker" != "true" ]]; then
         # --force-regen and the workflow will keep landing on this same diagnostic until the
         # inspector intervenes. This is intentional (auto-firing --force-regen would discard
         # partial inspector-visible content without consent — which is what F2 closes).
-        v_summary="$($CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get "$hist/v${drift_done_v}/reason.md" summary 2>/dev/null || echo 'recovery')"
+        v_summary="$("$CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh" get "$hist/v${drift_done_v}/reason.md" summary 2>/dev/null || echo 'recovery')"
         echo "Step 0: detected this-cycle spec-update at v${drift_done_v} but current/ is incomplete (check-current=$cc_status). Routing to /mi-update-blueprint recovery."
         echo "Note: if /mi-update-blueprint refuses (partial state without --force-regen), the workflow will not progress until you repair current/ manually OR re-run /mi-update-blueprint --force-regen <reason>. This is intentional — see F2/Item 10 in the v11 plan."
         /mi-update-blueprint --reason-kind=spec-update "$v_summary"
-        $CLAUDE_PLUGIN_ROOT/scripts/progress.sh set "drift-check-completed=true"
+        "$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" set "drift-check-completed=true"
       fi
     fi
     # If no spec-update v > baseline, drift hasn't run yet in this cycle — let the normal Step 3 prompt fire.
@@ -1014,7 +1016,7 @@ fi
 ### Resume Step 1 — Verify the chain produced commits (zero-commit branch)
 
 ```bash
-base_commit="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get base-commit)"
+base_commit="$("$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" get base-commit)"
 commit_count="$(git rev-list --count "$base_commit..HEAD")"
 ```
 
@@ -1041,10 +1043,10 @@ if (( commit_count == 0 )); then
       # 1. Skip /mi-draw-diagrams entirely (no commits, nothing to diagram).
       # 2. Skip implementation/change-summary.md regeneration.
       # 3. Create/validate the inspector-review.md skeleton idempotently.
-      data_root="$($CLAUDE_PLUGIN_ROOT/scripts/data-root.sh)"
+      data_root="$("$CLAUDE_PLUGIN_ROOT/scripts/data-root.sh")"
       ov_file="$data_root/workflow-stream/$active_feature/implementation/inspector-review.md"
-      [[ -f "$ov_file" ]] || $CLAUDE_PLUGIN_ROOT/scripts/review.sh init "$active_feature"
-      $CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh validate "$ov_file" review-file >/dev/null
+      [[ -f "$ov_file" ]] || "$CLAUDE_PLUGIN_ROOT/scripts/review.sh" init "$active_feature"
+      "$CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh" validate "$ov_file" review-file >/dev/null
 
       # Insert the direct-empty HTML comment ONCE, immediately after the frontmatter
       # block and before any markdown heading. review.sh canonicalize explicitly
@@ -1076,14 +1078,14 @@ PYEOF
 
       # 4. Standalone flag writes — drift-check-completed=true skips the drift
       # prompt entirely (no drift to detect when there are zero commits).
-      $CLAUDE_PLUGIN_ROOT/scripts/progress.sh set \
+      "$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" set \
         "implementation-completed=true" \
         "drift-check-completed=true" \
         "execution-mode=inline" \
         "sub-flow=resuming"
 
       # 5. Final atomic advance-to 3 → 5.
-      $CLAUDE_PLUGIN_ROOT/scripts/progress.sh advance-to 3 5 --set sub-flow=none
+      "$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" advance-to 3 5 --set sub-flow=none
 
       # 6. Hand off at stage 5.
       echo "Direct-empty cycle for '$active_feature' — advanced to stage 5. Review inspector-review.md (the HTML comment documents the reason); type /mi-continue when ready."
@@ -1110,7 +1112,7 @@ Atomic batched write — these flags are idempotent on retry:
 ```bash
 # Prompt for execution-mode only when not yet persisted (a prior partial run
 # may have already chosen). Otherwise reuse the persisted value.
-mode_persisted="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get execution-mode 2>/dev/null || echo 'none')"
+mode_persisted="$("$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" get execution-mode 2>/dev/null || echo 'none')"
 if [[ "$mode_persisted" == "none" ]]; then
   if "$CLAUDE_PLUGIN_ROOT/scripts/auto.sh" is-on; then
     mode="subagent-driven"
@@ -1124,7 +1126,7 @@ else
   mode="$mode_persisted"
 fi
 
-$CLAUDE_PLUGIN_ROOT/scripts/progress.sh set \
+"$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" set \
   "implementation-completed=true" \
   "execution-mode=$mode" \
   "sub-flow=resuming"
@@ -1164,7 +1166,7 @@ A session that was closed mid-chain looks identical to a clean exit at this poin
 
 4. **Prompt the inspector.** Render the candidates as a numbered list with their checkbox counts and ask:
 
-   **Auto mode.** If `$CLAUDE_PLUGIN_ROOT/scripts/auto.sh is-on` succeeds **and** `progress.sh get chain-finished` prints `true`, run `$CLAUDE_PLUGIN_ROOT/scripts/auto.sh answer "chain completion" "completed" --cmd /mi-continue` and continue as if the inspector had replied `completed` — do not show the prompt below. When `chain-finished` is not `true`, show the prompt below even in auto mode: the chain did not confirm a clean finish, so auto mode does not guess. Otherwise show the prompt below unchanged.
+   **Auto mode.** If `"$CLAUDE_PLUGIN_ROOT/scripts/auto.sh" is-on` succeeds **and** `progress.sh get chain-finished` prints `true`, run `"$CLAUDE_PLUGIN_ROOT/scripts/auto.sh" answer "chain completion" "completed" --cmd /mi-continue` and continue as if the inspector had replied `completed` — do not show the prompt below. When `chain-finished` is not `true`, show the prompt below even in auto mode: the chain did not confirm a clean finish, so auto mode does not guess. Otherwise show the prompt below unchanged.
 
    > "Stage 4 — chain-completion check.
    >
@@ -1203,7 +1205,7 @@ A session that was closed mid-chain looks identical to a clean exit at this poin
    Reset sub-flow back to `chain-in-progress` (the chain is about to be live again):
 
    ```bash
-   $CLAUDE_PLUGIN_ROOT/scripts/progress.sh set "sub-flow=chain-in-progress"
+   "$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" set "sub-flow=chain-in-progress"
    ```
 
    Then invoke the `brainstorming` Skill with this **resume primer** (substitute literals for the `<...>` placeholders, paste the actual `git log` output where indicated). Substitute `<$data_root>` with the resolved data root (e.g. `millwright-inspector` by default; whatever `$data_root` evaluates to in this command's shell context).
@@ -1237,7 +1239,7 @@ A session that was closed mid-chain looks identical to a clean exit at this poin
 (Skipped when `active.drift-check-completed` was set true by Step 0's probe.)
 
 ```bash
-drift_marker_now="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get drift-check-completed 2>/dev/null || echo 'false')"
+drift_marker_now="$("$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" get drift-check-completed 2>/dev/null || echo 'false')"
 if [[ "$drift_marker_now" != "true" ]]; then
   # Existing inspector prompt and dispatch lives below in "Resume Step 4 — Blueprint drift check".
   drift_prompt_required=1
@@ -1255,7 +1257,7 @@ Brainstorming may have surfaced new requirements, dropped some, or shifted scope
 
 When `drift_prompt_required==1`, prompt the inspector:
 
-**Auto mode.** If `$CLAUDE_PLUGIN_ROOT/scripts/auto.sh is-on` succeeds, run `$CLAUDE_PLUGIN_ROOT/scripts/auto.sh answer "drift check" "auto" --cmd /mi-continue` and continue as if the inspector had replied `auto` — do not show the prompt below. Otherwise show the prompt below unchanged.
+**Auto mode.** If `"$CLAUDE_PLUGIN_ROOT/scripts/auto.sh" is-on` succeeds, run `"$CLAUDE_PLUGIN_ROOT/scripts/auto.sh" answer "drift check" "auto" --cmd /mi-continue` and continue as if the inspector had replied `auto` — do not show the prompt below. Otherwise show the prompt below unchanged.
 
 > "Stage-4 drift check: did anything in the requirements change during brainstorming? Reply:
 >
@@ -1298,7 +1300,7 @@ if [[ "${drift_prompt_required:-0}" == "1" ]]; then
   # or chose auto (drift or no-drift). Splitting it from the side effect closes F1
   # (a session break between /mi-update-blueprint's return and this line is
   # recovered by the Step 0 probe on the next /mi-continue).
-  $CLAUDE_PLUGIN_ROOT/scripts/progress.sh set "drift-check-completed=true"
+  "$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" set "drift-check-completed=true"
 fi
 ```
 
@@ -1311,9 +1313,9 @@ Run `/mi-draw-diagrams` (the user-facing wrapper around `mi-generate-implementat
 Initialize the inspector-review skeleton (idempotent — `review.sh init` refuses to overwrite, so skip the call if the file already exists). The stage advance is deferred to Step 7 so the whole resume sequence finalizes atomically.
 
 ```bash
-data_root="$($CLAUDE_PLUGIN_ROOT/scripts/data-root.sh)"
+data_root="$("$CLAUDE_PLUGIN_ROOT/scripts/data-root.sh")"
 ov_file="$data_root/workflow-stream/$active_feature/implementation/inspector-review.md"
-[[ -f "$ov_file" ]] || $CLAUDE_PLUGIN_ROOT/scripts/review.sh init "$active_feature"
+[[ -f "$ov_file" ]] || "$CLAUDE_PLUGIN_ROOT/scripts/review.sh" init "$active_feature"
 ```
 
 Then convert deferred questions that need a finding (idempotent — converted entries carry a `follow-up` id and are skipped). Choose scope `re-implement` instead of `fix` only when the recorded answer describes restructuring existing code; the default below is `fix`.
@@ -1344,20 +1346,20 @@ Diagrams rendered at Step 5 are not re-rendered here; stage 6's Review-Resume di
 The Resume Handler eliminates stage 4 as a persisted state. The atomic `advance-to 3 5 --set sub-flow=none` collapses the old "advance 3 then advance 4" pair into a single transition, so a session break inside the handler can never strand the workflow at stage 4 with sub-flow=resuming.
 
 ```bash
-$CLAUDE_PLUGIN_ROOT/scripts/progress.sh advance-to 3 5 --set sub-flow=none
+"$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" advance-to 3 5 --set sub-flow=none
 ```
 
 Tell the inspector. The wording branches on `implementation-diagrams-skipped` so the review target is unambiguous:
 
 ```bash
-skipped="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get implementation-diagrams-skipped 2>/dev/null || echo 'false')"
+skipped="$("$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" get implementation-diagrams-skipped 2>/dev/null || echo 'false')"
 ```
 
 **Skills report (print before the hand-off; never a prompt).** Silent when no plan was found (direct mode) or config lists no skills of either tag:
 
 ```bash
-base_commit="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get base-commit)"
-active_feature="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get-active)"
+base_commit="$("$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" get base-commit)"
+active_feature="$("$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" get-active)"
 plan_candidates="$(
   {
     git log --diff-filter=AM --name-only --format= "$base_commit..HEAD" -- 'docs/superpowers/plans/*.md' 2>/dev/null
@@ -1392,7 +1394,7 @@ fi
 
 **When `skipped=false` (the normal case):**
 
-**Auto mode.** If `$CLAUDE_PLUGIN_ROOT/scripts/auto.sh is-on` succeeds, run `$CLAUDE_PLUGIN_ROOT/scripts/auto.sh answer "manual test plan" "y" --cmd /mi-continue` and continue as if the inspector had replied `y` — do not show the prompt below. Otherwise show the prompt below unchanged.
+**Auto mode.** If `"$CLAUDE_PLUGIN_ROOT/scripts/auto.sh" is-on` succeeds, run `"$CLAUDE_PLUGIN_ROOT/scripts/auto.sh" answer "manual test plan" "y" --cmd /mi-continue` and continue as if the inspector had replied `y` — do not show the prompt below. Otherwise show the prompt below unchanged.
 
 > "Stage 5 — ready for your review. Look at: commits `$base_commit..HEAD` and diagrams under `implementation/diagrams` (existing-system context is shaded grey; new functionality is highlighted).
 >
@@ -1407,7 +1409,7 @@ fi
 
 **When `skipped=true` (inspector answered `n` to stage-4 diagram prompt):**
 
-**Auto mode.** If `$CLAUDE_PLUGIN_ROOT/scripts/auto.sh is-on` succeeds, run `$CLAUDE_PLUGIN_ROOT/scripts/auto.sh answer "manual test plan" "y" --cmd /mi-continue` and continue as if the inspector had replied `y` — do not show the prompt below. Otherwise show the prompt below unchanged.
+**Auto mode.** If `"$CLAUDE_PLUGIN_ROOT/scripts/auto.sh" is-on` succeeds, run `"$CLAUDE_PLUGIN_ROOT/scripts/auto.sh" answer "manual test plan" "y" --cmd /mi-continue` and continue as if the inspector had replied `y` — do not show the prompt below. Otherwise show the prompt below unchanged.
 
 > "Stage 5 — ready for your review. Look at: commits `$base_commit..HEAD` and the **stage-2 blueprint diagrams** under `blueprints/current/diagrams` (implementation diagrams were skipped at stage 4 — the blueprint diagrams remain authoritative for this cycle).
 >
@@ -1424,7 +1426,7 @@ fi
 - `n` → set the manual-test phase as declined and continue to findings authoring:
 
   ```bash
-  $CLAUDE_PLUGIN_ROOT/scripts/progress.sh set manual-test-state=skipped manual-test-failure-policy=none
+  "$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" set manual-test-state=skipped manual-test-failure-policy=none
   ```
 
   Then print the existing stage-5 review message tail (`"Write your findings into implementation/inspector-review.md (or leave it empty to approve). Type /mi-continue when done."`).
@@ -1440,17 +1442,17 @@ Reached when the dispatcher matches the `5 | manual-testing` row (a manual-test 
 ### Manual-Test-Resume Step 1 — Read state
 
 ```bash
-mt_state="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get manual-test-state)"
-mt_policy="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get manual-test-failure-policy)"
-plan_path="$($CLAUDE_PLUGIN_ROOT/scripts/blueprints.sh manual-test-plan-path "$active_feature")"
-results_path="$($CLAUDE_PLUGIN_ROOT/scripts/blueprints.sh manual-test-results-path "$active_feature")"
+mt_state="$("$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" get manual-test-state)"
+mt_policy="$("$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" get manual-test-failure-policy)"
+plan_path="$("$CLAUDE_PLUGIN_ROOT/scripts/blueprints.sh" manual-test-plan-path "$active_feature")"
+results_path="$("$CLAUDE_PLUGIN_ROOT/scripts/blueprints.sh" manual-test-results-path "$active_feature")"
 plan_exists=$([[ -f "$plan_path" ]] && echo 1 || echo 0)
 results_exists=$([[ -f "$results_path" ]] && echo 1 || echo 0)
 results_state=""
 results_cursor=""
 if [[ "$results_exists" == 1 ]]; then
-  results_state="$($CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get "$results_path" state 2>/dev/null || echo '')"
-  results_cursor="$($CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get "$results_path" current-scenario 2>/dev/null || echo '')"
+  results_state="$("$CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh" get "$results_path" state 2>/dev/null || echo '')"
+  results_cursor="$("$CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh" get "$results_path" current-scenario 2>/dev/null || echo '')"
 fi
 ```
 
@@ -1477,12 +1479,12 @@ Runs after the inspector has reviewed the implementation and either filled `insp
 If `workflow-stream/<active_feature>/test/manual-test-results.md` exists, surface a one-line summary in the entry log:
 
 ```bash
-results_path="$($CLAUDE_PLUGIN_ROOT/scripts/blueprints.sh manual-test-results-path "$active_feature")"
+results_path="$("$CLAUDE_PLUGIN_ROOT/scripts/blueprints.sh" manual-test-results-path "$active_feature")"
 if [[ -f "$results_path" ]]; then
-  passed="$($CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get "$results_path" passed)"
-  failed="$($CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get "$results_path" failed)"
-  total="$($CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get "$results_path" total)"
-  policy="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get manual-test-failure-policy)"
+  passed="$("$CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh" get "$results_path" passed)"
+  failed="$("$CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh" get "$results_path" failed)"
+  total="$("$CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh" get "$results_path" total)"
+  policy="$("$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" get manual-test-failure-policy)"
   # seeded_failed = count of failed verdict blocks whose `Seeded:` field is `true`.
   # Computed from the verdict blocks; do NOT infer from manual-test-failure-policy.
   seeded_failed="$(awk '
@@ -1525,13 +1527,13 @@ When the block prints and exits, **stop** — list any open deferred questions i
 ### Inspector Step 1 — Verify inspector-review.md exists
 
 ```bash
-data_root="$($CLAUDE_PLUGIN_ROOT/scripts/data-root.sh)"
+data_root="$("$CLAUDE_PLUGIN_ROOT/scripts/data-root.sh")"
 ov_file="$data_root/workflow-stream/$active_feature/implementation/inspector-review.md"
 [[ -f "$ov_file" ]] || {
   echo "inspector-review.md not found — did you mean to approve with no findings?" >&2
   read -p "Create empty inspector-review.md and approve? (y/n): " ans
   [[ "$ans" == "y" ]] || exit 1
-  $CLAUDE_PLUGIN_ROOT/scripts/review.sh init "$active_feature"
+  "$CLAUDE_PLUGIN_ROOT/scripts/review.sh" init "$active_feature"
 }
 ```
 
@@ -1540,7 +1542,7 @@ ov_file="$data_root/workflow-stream/$active_feature/implementation/inspector-rev
 The inspector is encouraged to write findings as plain sentences — one per line or paragraph — under `## Implementation Review`. Before checking for open findings, normalize the file so every finding is in `### IR-NNN — ...` block format. Without this step, a free-form finding would slip past `list-open` (which only matches structured `### IR-NNN` headings with a `- status: open` line) and the workflow would silently auto-finalize as "approved with no findings."
 
 ```bash
-unstructured="$($CLAUDE_PLUGIN_ROOT/scripts/review.sh canonicalize "$active_feature" || true)"
+unstructured="$("$CLAUDE_PLUGIN_ROOT/scripts/review.sh" canonicalize "$active_feature" || true)"
 canon_exit=$?
 ```
 
@@ -1561,13 +1563,13 @@ For each TSV row, the millwright (the LLM, not the script) classifies and conver
 4. **Generate a one-line summary** (≤ 80 chars) capturing the finding's intent.
 5. **Add the structured block:**
    ```bash
-   echo "<full original text>" | $CLAUDE_PLUGIN_ROOT/scripts/review.sh add \
+   echo "<full original text>" | "$CLAUDE_PLUGIN_ROOT/scripts/review.sh" add \
      "$active_feature" "<severity>" "<scope>" "<summary>"
    ```
    The original text becomes the block's `details:` body so the inspector's wording is preserved verbatim.
 6. **Strip the original freeform span.** After all spans have been added, call `strip-freeform` for each one **in reverse line order** (highest line first) so earlier line numbers stay valid:
    ```bash
-   $CLAUDE_PLUGIN_ROOT/scripts/review.sh strip-freeform "$active_feature" <line-start> <line-end>
+   "$CLAUDE_PLUGIN_ROOT/scripts/review.sh" strip-freeform "$active_feature" <line-start> <line-end>
    ```
 
 When all spans are converted, tell the inspector:
@@ -1587,9 +1589,9 @@ Logic:
 - If at least one open finding has scope ≠ fix: `suggestion=brainstorming`.
 
 ```bash
-data_root="$($CLAUDE_PLUGIN_ROOT/scripts/data-root.sh)"
+data_root="$("$CLAUDE_PLUGIN_ROOT/scripts/data-root.sh")"
 ov_file="$data_root/workflow-stream/$active_feature/implementation/inspector-review.md"
-open_count="$($CLAUDE_PLUGIN_ROOT/scripts/review.sh list-open "$active_feature" | wc -l | tr -d ' ')"
+open_count="$("$CLAUDE_PLUGIN_ROOT/scripts/review.sh" list-open "$active_feature" | wc -l | tr -d ' ')"
 if [[ "$open_count" == "0" ]]; then
   suggestion="none"
 else
@@ -1614,7 +1616,7 @@ PYEOF
     suggestion="direct"
   fi
 fi
-$CLAUDE_PLUGIN_ROOT/scripts/progress.sh set "review-mode-suggestion=$suggestion"
+"$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" set "review-mode-suggestion=$suggestion"
 ```
 
 The persisted hint is read at stage 6 by `commands/mi-review.md` Step 2.6 to default the `review-mode` prompt — `direct` defaults to direct mode with an explicit rationale; `brainstorming` and `none` keep the current default. The field is `none` until stage 5 sets it, and resets to `none` at the next feature's `progress.sh activate`.
@@ -1624,14 +1626,14 @@ Then fall through to Step 2.
 ### Inspector Step 2 — Check for open findings
 
 ```bash
-open_ids="$($CLAUDE_PLUGIN_ROOT/scripts/review.sh list-open "$active_feature")"
+open_ids="$("$CLAUDE_PLUGIN_ROOT/scripts/review.sh" list-open "$active_feature")"
 ```
 
 ### Inspector Step 3a — No findings
 
 If `open_ids` is empty, **prompt the inspector to confirm before completing the stage**. This guard exists because the no-findings path auto-fires `/mi-complete-workflow` immediately — once it runs, the workflow archives blueprints and advances the queue, which is non-trivial to undo. The confirmation gives the inspector one explicit beat to add findings instead.
 
-**Auto mode.** If `$CLAUDE_PLUGIN_ROOT/scripts/auto.sh is-on` succeeds and `"$CLAUDE_PLUGIN_ROOT/scripts/deferred-questions.sh" list-open "$active_feature"` prints nothing, run `$CLAUDE_PLUGIN_ROOT/scripts/auto.sh answer "no findings, complete" "y" --cmd /mi-continue` and continue as if the inspector had replied `y` — do not show the prompt below; the DTI Gate 1 check still runs before the advance. If deferred questions are still open, show the prompt below (they count as open issues). Otherwise show the prompt below unchanged.
+**Auto mode.** If `"$CLAUDE_PLUGIN_ROOT/scripts/auto.sh" is-on` succeeds and `"$CLAUDE_PLUGIN_ROOT/scripts/deferred-questions.sh" list-open "$active_feature"` prints nothing, run `"$CLAUDE_PLUGIN_ROOT/scripts/auto.sh" answer "no findings, complete" "y" --cmd /mi-continue` and continue as if the inspector had replied `y` — do not show the prompt below; the DTI Gate 1 check still runs before the advance. If deferred questions are still open, show the prompt below (they count as open issues). Otherwise show the prompt below unchanged.
 
 > "`inspector-review.md` has no open findings. Confirming will complete the inspector-review stage and auto-fire `/mi-complete-workflow`. Continue?
 >
@@ -1656,9 +1658,9 @@ The existing open-findings block is **not replaced** — this is a second, indep
 `AND`-condition beside it.
 
 ```bash
-if $CLAUDE_PLUGIN_ROOT/scripts/todo.sh is-feature-test "$active_feature" >/dev/null 2>&1; then
-  results_path="$($CLAUDE_PLUGIN_ROOT/scripts/blueprints.sh manual-test-results-path "$active_feature")"
-  unresolved="$($CLAUDE_PLUGIN_ROOT/scripts/deferred-tests.sh unresolved "$active_feature" "$results_path")"
+if "$CLAUDE_PLUGIN_ROOT/scripts/todo.sh" is-feature-test "$active_feature" >/dev/null 2>&1; then
+  results_path="$("$CLAUDE_PLUGIN_ROOT/scripts/blueprints.sh" manual-test-results-path "$active_feature")"
+  unresolved="$("$CLAUDE_PLUGIN_ROOT/scripts/deferred-tests.sh" unresolved "$active_feature" "$results_path")"
 else
   unresolved=""
 fi
@@ -1685,7 +1687,7 @@ deferred entries takes this path always**, so its behaviour is byte-identical to
 abandoned ones.
 
 ```bash
-$CLAUDE_PLUGIN_ROOT/scripts/progress.sh advance-to 5 7 \
+"$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" advance-to 5 7 \
   --set sub-flow=none \
   --set inspector-review-completed=true
 ```
@@ -1728,12 +1730,12 @@ This handler exists because stage 6's brainstorming review session runs **isolat
 ### Review-Resume Step 1 — Open-findings completion check
 
 ```bash
-remaining_open="$($CLAUDE_PLUGIN_ROOT/scripts/review.sh list-open "$active_feature")"
+remaining_open="$("$CLAUDE_PLUGIN_ROOT/scripts/review.sh" list-open "$active_feature")"
 ```
 
 If `remaining_open` is empty, **prompt the inspector to confirm before completing the stage**. This guard mirrors Inspector Step 3a: once finalize fires, `/mi-complete-workflow` archives blueprints and advances the queue, so the inspector gets one explicit beat to re-launch the review session or add new findings instead.
 
-**Auto mode.** If `$CLAUDE_PLUGIN_ROOT/scripts/auto.sh is-on` succeeds, run `"$CLAUDE_PLUGIN_ROOT/scripts/auto.sh" approve-guard "$active_feature"`. If it exits 0, run `$CLAUDE_PLUGIN_ROOT/scripts/auto.sh answer "all findings resolved, complete" "y" --cmd /mi-continue` and continue as if the inspector had replied `y` — do not show the prompt below. If it exits 1, print its line and show the prompt below unchanged. Otherwise (auto mode off) show the prompt below unchanged.
+**Auto mode.** If `"$CLAUDE_PLUGIN_ROOT/scripts/auto.sh" is-on` succeeds, run `"$CLAUDE_PLUGIN_ROOT/scripts/auto.sh" approve-guard "$active_feature"`. If it exits 0, run `"$CLAUDE_PLUGIN_ROOT/scripts/auto.sh" answer "all findings resolved, complete" "y" --cmd /mi-continue` and continue as if the inspector had replied `y` — do not show the prompt below. If it exits 1, print its line and show the prompt below unchanged. Otherwise (auto mode off) show the prompt below unchanged.
 
 > "All findings have been resolved (no open findings remain in `inspector-review.md`). Confirming will complete the inspector-review stage and auto-fire `/mi-complete-workflow`. Continue?
 >
@@ -1768,7 +1770,7 @@ If `remaining_open` is non-empty, the review session ended without resolving eve
 The review session may have committed new code. Before finalizing, offer the inspector a chance to update implementation diagrams. The prompt branches on the multi-state output of `commits.sh diagrams-fresh`:
 
 ```bash
-freshness="$($CLAUDE_PLUGIN_ROOT/scripts/commits.sh diagrams-fresh "$active_feature" 2>/dev/null)"
+freshness="$("$CLAUDE_PLUGIN_ROOT/scripts/commits.sh" diagrams-fresh "$active_feature" 2>/dev/null)"
 freshness_exit=$?
 ```
 
@@ -1777,7 +1779,7 @@ Branch on `freshness`:
 - **`fresh`** (exit 0) — diagrams are already current. Skip the prompt entirely; fall through to Step 2.6.
 - **`stale`** (exit 0) — refresh prompt:
 
-  **Auto mode.** If `$CLAUDE_PLUGIN_ROOT/scripts/auto.sh is-on` succeeds, run `$CLAUDE_PLUGIN_ROOT/scripts/auto.sh answer "refresh diagrams" "y" --cmd /mi-continue` and continue as if the inspector had replied `y` — do not show the prompt below. Otherwise show the prompt below unchanged.
+  **Auto mode.** If `"$CLAUDE_PLUGIN_ROOT/scripts/auto.sh" is-on` succeeds, run `"$CLAUDE_PLUGIN_ROOT/scripts/auto.sh" answer "refresh diagrams" "y" --cmd /mi-continue` and continue as if the inspector had replied `y` — do not show the prompt below. Otherwise show the prompt below unchanged.
 
   > "The review session committed additional commits since the implementation diagrams were generated. Regenerate them?
   >
@@ -1788,7 +1790,7 @@ Branch on `freshness`:
 
 - **`skipped`** (exit 0) — recovery prompt (stage 4 was skipped):
 
-  **Auto mode.** If `$CLAUDE_PLUGIN_ROOT/scripts/auto.sh is-on` succeeds, run `$CLAUDE_PLUGIN_ROOT/scripts/auto.sh answer "generate skipped diagrams" "y" --cmd /mi-continue` and continue as if the inspector had replied `y` — do not show the prompt below. Otherwise show the prompt below unchanged.
+  **Auto mode.** If `"$CLAUDE_PLUGIN_ROOT/scripts/auto.sh" is-on` succeeds, run `"$CLAUDE_PLUGIN_ROOT/scripts/auto.sh" answer "generate skipped diagrams" "y" --cmd /mi-continue` and continue as if the inspector had replied `y` — do not show the prompt below. Otherwise show the prompt below unchanged.
 
   > "Implementation diagrams were skipped at stage 4. The review session committed commits in `base-commit..HEAD` since then. Reply:
   >   - `y` — generate implementation diagrams now via `/mi-draw-diagrams` (~30s; covers the full `base-commit..HEAD` range and clears the skip marker so stage 8 archives them).
@@ -1817,7 +1819,7 @@ After the refresh prompt has been answered (or skipped), finalize the review-res
 verbatim — same predicate, same refusal). Only advance when it reports nothing unresolved.
 
 ```bash
-$CLAUDE_PLUGIN_ROOT/scripts/progress.sh advance-to 6 7 \
+"$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" advance-to 6 7 \
   --set sub-flow=none \
   --set inspector-review-completed=true
 ```
@@ -1837,7 +1839,7 @@ Runs when Step 2.0 routed a PR-review `report.md` here — the inspector ran `/m
 ### Apply Step 1 — Canonicalize
 
 ```bash
-$CLAUDE_PLUGIN_ROOT/scripts/pr-review.sh canonicalize "$report"
+"$CLAUDE_PLUGIN_ROOT/scripts/pr-review.sh" canonicalize "$report"
 ```
 
 `canonicalize` renumbers the `PR-NNN` ids and validates every block has an `action` and `status` line (exit 3 on a structural error — if it fails, read the offending block, fix it with Edit, and re-run).
@@ -1846,8 +1848,8 @@ $CLAUDE_PLUGIN_ROOT/scripts/pr-review.sh canonicalize "$report"
 
 1. **Guard a fresh report.** Count marked blocks **before** normalizing:
    ```bash
-   report_status="$($CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get "$report" status)"
-   marked_count="$($CLAUDE_PLUGIN_ROOT/scripts/pr-review.sh count-marked "$report")"
+   report_status="$("$CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh" get "$report" status)"
+   marked_count="$("$CLAUDE_PLUGIN_ROOT/scripts/pr-review.sh" count-marked "$report")"
    ```
    If `report_status == "awaiting-marks"` and `marked_count == 0`, print and stop — leaving the report **unchanged**:
 
@@ -1865,8 +1867,8 @@ Partition the actionable rows into **fix blocks** (`action: fix`) and **reply bl
 ### Apply Step 4 — gh preflight, repo guard (always), checkout (fix blocks only)
 
 ```bash
-repo="$($CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get "$report" repo)"
-pr_number="$($CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get "$report" pr-number)"
+repo="$("$CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh" get "$report" repo)"
+pr_number="$("$CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh" get "$report" pr-number)"
 ```
 
 - **gh preflight (always, first).** Before the repo guard, verify `gh` is usable: `command -v gh` and `gh auth status`. If `gh` is missing, stop with the install hint; if it is installed but not authenticated, stop with `gh auth login`. This must run **first** — without it a missing/unauthenticated `gh` makes `gh repo view` print nothing, and the empty result would surface as a misleading "wrong checkout" error instead of the real auth problem.
@@ -1887,7 +1889,7 @@ pr_number="$($CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get "$report" pr-number)
 ```bash
 active="$("$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" get-active 2>/dev/null || echo null)"
 report="<report>"   # literal report path from Step 2.0
-repo="$($CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get "$report" repo)"; pr_number="$($CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get "$report" pr-number)"
+repo="$("$CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh" get "$report" repo)"; pr_number="$("$CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh" get "$report" pr-number)"
 pr_head="$(gh pr view "$pr_number" --repo "$repo" --json headRefName -q .headRefName 2>/dev/null || echo '')"
 feat_branch=""
 [[ -n "$active" && "$active" != "null" ]] && feat_branch="$("$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" get branch 2>/dev/null || echo '')"
@@ -1956,7 +1958,7 @@ Lessons are appended by the fixer sub-agent in Step 5 (one per applied `valid` f
 ### Apply Step 8 — Finalize from all blocks
 
 ```bash
-new_status="$($CLAUDE_PLUGIN_ROOT/scripts/pr-review.sh report-status "$report")"
+new_status="$("$CLAUDE_PLUGIN_ROOT/scripts/pr-review.sh" report-status "$report")"
 ```
 
 `report-status` scans **every** block, sets the report frontmatter `status` to `applied` (all blocks terminal) or `partial` (any block still non-terminal), and prints the result. Then summarize for the inspector:

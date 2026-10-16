@@ -13,7 +13,7 @@ description: Check all millwright-inspector-development-machine dependencies (CL
 ### Step 1 — Run the detection script
 
 ```bash
-$CLAUDE_PLUGIN_ROOT/scripts/doctor.sh --format=json
+"$CLAUDE_PLUGIN_ROOT/scripts/doctor.sh" --format=json
 ```
 
 Capture the JSON output and parse it. The JSON has this shape:
@@ -158,7 +158,7 @@ When running commands that use `sudo`, surface this explicitly to the inspector 
 After all approved Bash installs complete, re-run doctor to confirm:
 
 ```bash
-$CLAUDE_PLUGIN_ROOT/scripts/doctor.sh --format=json
+"$CLAUDE_PLUGIN_ROOT/scripts/doctor.sh" --format=json
 ```
 
 Then evaluate the result:

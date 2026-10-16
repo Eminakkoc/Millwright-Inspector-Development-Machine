@@ -129,7 +129,7 @@ done
 # 1.10.0: codex → claude when the cycle saved review-backend=claude; exit 69 when
 # codex is unavailable and nothing is saved (see "Codex unavailable" below).
 agent="$("$CLAUDE_PLUGIN_ROOT/scripts/blueprint-review.sh" resolve-agent "$agent")" || exit $?
-reviewer_cli="$($CLAUDE_PLUGIN_ROOT/scripts/blueprint-review.sh resolve-reviewer "$agent")" || exit 1
+reviewer_cli="$("$CLAUDE_PLUGIN_ROOT/scripts/blueprint-review.sh" resolve-reviewer "$agent")" || exit 1
 MAX_ITEMS_PER_REVIEW="$max_items"
 
 # Initialize the phase ledger for this run. Every phase marks itself; Phase G

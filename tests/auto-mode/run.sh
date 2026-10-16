@@ -72,7 +72,7 @@ PYEOF
 }
 
 # assert_auto_before <site> <file> <needle>...: the 1500 chars before the fixture
-# block contain '**Auto mode.**', 'auto.sh is-on' and every needle.
+# block contain '**Auto mode.**', 'auto.sh" is-on' (the quoted call) and every needle.
 assert_auto_before() {
   local site="$1" file="$2"; shift 2
   if "$REPO_ROOT/scripts/py.sh" - "$FIX/prompts-off/$site.txt" "$REPO_ROOT/$file" "$@" <<'PYEOF'; then
@@ -82,7 +82,7 @@ body = open(sys.argv[2]).read()
 i = body.find(fx)
 if i < 0: sys.exit(1)
 before = body[max(0, i - 1500):i]
-needles = ['**Auto mode.**', 'auto.sh is-on'] + sys.argv[3:]
+needles = ['**Auto mode.**', 'auto.sh" is-on'] + sys.argv[3:]
 sys.exit(0 if all(n in before for n in needles) else 1)
 PYEOF
     ok "on: $site auto paragraph precedes prompt in $file"
@@ -612,7 +612,7 @@ result = "missing"
 for fence in re.findall(r'```bash\n(.*?)```', s, re.S):
     if '# Stacked-branch note' in fence:
         before = fence[:fence.index('# Stacked-branch note')]
-        needles = ['finished_branch=', 'finished_base=', 'progress.sh finish']
+        needles = ['finished_branch=', 'finished_base=', 'progress.sh" finish']
         result = "yes" if all(n in before for n in needles) else "no"
         break
 print(result)

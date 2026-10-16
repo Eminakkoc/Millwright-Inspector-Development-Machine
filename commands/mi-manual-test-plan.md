@@ -48,7 +48,7 @@ The §4.1 auto-rotation is a **filesystem mutation** but not a `progress.md` mut
 **Mode detection (ordinary vs. feature-test), runs first.** Auto-detected rather than flag-driven so it cannot be forgotten by a caller:
 
 ```bash
-if $CLAUDE_PLUGIN_ROOT/scripts/todo.sh is-feature-test "$active_feature"; then
+if "$CLAUDE_PLUGIN_ROOT/scripts/todo.sh" is-feature-test "$active_feature"; then
   ft_mode=1
 else
   ft_mode=0
@@ -64,10 +64,10 @@ have a missing field. Read it; if missing, mint and store one. The
 `docs/manual-testing-folder/plan.md` § 4.3 "compatibility").
 
 ```bash
-activation_id="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get activation-id 2>/dev/null || echo "")"
+activation_id="$("$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" get activation-id 2>/dev/null || echo "")"
 if [[ -z "$activation_id" || "$activation_id" == "null" ]]; then
-  activation_id="$($CLAUDE_PLUGIN_ROOT/scripts/uuid.sh)"
-  $CLAUDE_PLUGIN_ROOT/scripts/progress.sh set activation-id="$activation_id"
+  activation_id="$("$CLAUDE_PLUGIN_ROOT/scripts/uuid.sh")"
+  "$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" set activation-id="$activation_id"
 fi
 ```
 
@@ -75,11 +75,11 @@ fi
 Check `workflow-stream/<feature>/test/manual-test-plan.md`:
 
 ```bash
-plan_path="$($CLAUDE_PLUGIN_ROOT/scripts/blueprints.sh manual-test-plan-path "$active_feature")"
+plan_path="$("$CLAUDE_PLUGIN_ROOT/scripts/blueprints.sh" manual-test-plan-path "$active_feature")"
 preserved_seed_family_id=""
 if [[ -f "$plan_path" ]]; then
   if [[ -z "${flag_new_seed_family:-}" ]]; then
-    preserved_seed_family_id="$($CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get "$plan_path" seed-family-id)"
+    preserved_seed_family_id="$("$CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh" get "$plan_path" seed-family-id)"
   fi
 fi
 ```
@@ -94,18 +94,18 @@ into this activation, the runner's `state: complete` refusal (or
 on the triple-AND prior-activation guard:
 
 ```bash
-results_path="$($CLAUDE_PLUGIN_ROOT/scripts/blueprints.sh manual-test-results-path "$active_feature")"
+results_path="$("$CLAUDE_PLUGIN_ROOT/scripts/blueprints.sh" manual-test-results-path "$active_feature")"
 if [[ -f "$plan_path" && -f "$results_path" ]]; then
-  plan_id="$($CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get "$plan_path" id)"
-  results_plan_id="$($CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get "$results_path" plan-id)"
-  results_activation="$($CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get "$results_path" generated-in-activation 2>/dev/null || echo "")"
+  plan_id="$("$CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh" get "$plan_path" id)"
+  results_plan_id="$("$CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh" get "$results_path" plan-id)"
+  results_activation="$("$CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh" get "$results_path" generated-in-activation 2>/dev/null || echo "")"
   # Triple-AND guard: results match the plan AND belong to a prior activation.
   # Missing generated-in-activation on the results file counts as non-matching
   # (in-flight cycles without the field cannot be proven to belong to this
   # activation — rotate is the safe default).
   if [[ "$results_plan_id" == "$plan_id" \
         && ( -z "$results_activation" || "$results_activation" != "$activation_id" ) ]]; then
-    $CLAUDE_PLUGIN_ROOT/scripts/blueprints.sh manual-test-results-rotate-only "$active_feature" >&2
+    "$CLAUDE_PLUGIN_ROOT/scripts/blueprints.sh" manual-test-results-rotate-only "$active_feature" >&2
   fi
 fi
 ```
@@ -120,8 +120,8 @@ of the plan).
 If `--discard-existing` was passed AND the plan file exists:
 
 ```bash
-$CLAUDE_PLUGIN_ROOT/scripts/blueprints.sh manual-test-plan-rotate "$active_feature"
-$CLAUDE_PLUGIN_ROOT/scripts/progress.sh set manual-test-state=skipped manual-test-failure-policy=none
+"$CLAUDE_PLUGIN_ROOT/scripts/blueprints.sh" manual-test-plan-rotate "$active_feature"
+"$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" set manual-test-state=skipped manual-test-failure-policy=none
 echo "Existing manual-test plan discarded; manual-test phase marked skipped. Write findings into inspector-review.md and type /mi-continue when done."
 exit 0
 ```
@@ -138,9 +138,9 @@ If `plan_path` does NOT exist, skip this step entirely (nothing to be stale abou
 if [[ "${ft_mode:-0}" == "1" ]]; then
   norm() { tr -d '[]"' | tr ',' '\n' | sed -e 's/^- //' -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' | grep -v '^$' | sort; }
 
-  plan_req_ids="$($CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get "$plan_path" requirements-ids | norm)"
-  plan_base_commit="$($CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get "$plan_path" generated-from-base-commit)"
-  current_base_commit="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get base-commit)"
+  plan_req_ids="$("$CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh" get "$plan_path" requirements-ids | norm)"
+  plan_base_commit="$("$CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh" get "$plan_path" generated-from-base-commit)"
+  current_base_commit="$("$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" get base-commit)"
 
   # feature-test-range refuses (exit 3/4/5) when a finished feature's head is
   # unreachable, nothing contributed commits, or bases diverged. This is a
@@ -150,7 +150,7 @@ if [[ "${ft_mode:-0}" == "1" ]]; then
   # `init` branch. commits.sh's own stderr diagnostic is not redirected, so
   # it reaches the inspector directly; stop here rather than continuing with
   # an empty id list.
-  if ! ft_range_out="$($CLAUDE_PLUGIN_ROOT/scripts/commits.sh feature-test-range "$active_feature")"; then
+  if ! ft_range_out="$("$CLAUDE_PLUGIN_ROOT/scripts/commits.sh" feature-test-range "$active_feature")"; then
     exit 1
   fi
 
@@ -191,7 +191,7 @@ if [[ "${ft_mode:-0}" == "1" ]]; then
       echo "error: $req_file not found for contributor $row_feat" >&2
       exit 1
     fi
-    current_ids+=("$($CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get "$req_file" id)")
+    current_ids+=("$("$CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh" get "$req_file" id)")
   done <<< "$ft_range_out"
   if [[ ${#current_ids[@]} -eq 0 ]]; then
     echo "error: feature-test-range reported no contributors for $active_feature" >&2
@@ -204,11 +204,11 @@ if [[ "${ft_mode:-0}" == "1" ]]; then
     mismatch=1
   fi
 else
-  plan_req_id="$($CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get "$plan_path" requirements-id)"
-  plan_base_commit="$($CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get "$plan_path" generated-from-base-commit)"
+  plan_req_id="$("$CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh" get "$plan_path" requirements-id)"
+  plan_base_commit="$("$CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh" get "$plan_path" generated-from-base-commit)"
   req_path="$data_root/workflow-stream/$active_feature/blueprints/current/requirements.md"
-  current_req_id="$($CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get "$req_path" id)"
-  current_base_commit="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get base-commit)"
+  current_req_id="$("$CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh" get "$req_path" id)"
+  current_base_commit="$("$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" get base-commit)"
 
   mismatch=0
   if [[ "$plan_req_id" != "$current_req_id" || "$plan_base_commit" != "$current_base_commit" ]]; then
@@ -270,9 +270,9 @@ Branch on `(plan_exists, --from-resume, --force)`:
 **Resolve RUN_ROOT** from the active block. `progress.sh get <field>` already reads from `.active.<field>` internally — do not write `active.worktree-path`:
 
 ```bash
-RUN_ROOT="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get worktree-path)"
+RUN_ROOT="$("$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" get worktree-path)"
 if [[ -z "$RUN_ROOT" || "$RUN_ROOT" == "null" ]]; then
-  RUN_ROOT="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get git-worktree-dir)"
+  RUN_ROOT="$("$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" get git-worktree-dir)"
 fi
 [[ -n "$RUN_ROOT" && "$RUN_ROOT" != "null" ]] || {
   echo "error: cannot resolve worktree path from progress.md active block" >&2
@@ -285,7 +285,7 @@ All codebase search performed during plan generation runs from `RUN_ROOT`.
 **Change-summary freshness gate.** `commits.sh change-summary-fresh` is a check, NOT a regenerator — exit 0 = fresh cache hit, exit 1 = stale, exit 2 = missing. Refuse with a recovery diagnostic if the summary isn't fresh:
 
 ```bash
-if ! $CLAUDE_PLUGIN_ROOT/scripts/commits.sh change-summary-fresh "$active_feature"; then
+if ! "$CLAUDE_PLUGIN_ROOT/scripts/commits.sh" change-summary-fresh "$active_feature"; then
   rc=$?
   case "$rc" in
     1) echo "error: change-summary.md is stale for $active_feature; run /mi-draw-diagrams (or /mi-generate-implementation-diagrams) to regenerate, then re-run /mi-manual-test-plan." >&2 ;;
@@ -324,7 +324,7 @@ This is the last read-only step. Any refusal up to this point — invalid existi
 Only when `--force` was passed OR Step 1.5 set `freshness_forced_regen=true`, AND we're proceeding to render:
 
 ```bash
-$CLAUDE_PLUGIN_ROOT/scripts/progress.sh set manual-test-state=none manual-test-failure-policy=none manual-test-env-mode=guided
+"$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" set manual-test-state=none manual-test-failure-policy=none manual-test-env-mode=guided
 ```
 
 Resetting `manual-test-env-mode` alongside `manual-test-state`/`manual-test-failure-policy` keeps a forced regeneration starting from a clean slate — without it, a prior run's `autonomous` would silently govern the next one. Step 7 re-sets the mode explicitly whenever the inspector answers `y` or `y-autonomous`, so this reset only governs the deferred (`n`) path, where it is the mode a later bare `/mi-manual-test-run` will use.
@@ -338,7 +338,7 @@ This is the FIRST `progress.md` mutation in the regeneration branch. It runs AFT
 If an existing plan was found and we're regenerating (direct `y`, `--force`, `freshness_forced_regen=true`, or `--discard-existing`):
 
 ```bash
-$CLAUDE_PLUGIN_ROOT/scripts/blueprints.sh manual-test-plan-rotate "$active_feature"
+"$CLAUDE_PLUGIN_ROOT/scripts/blueprints.sh" manual-test-plan-rotate "$active_feature"
 ```
 
 The `seed-family-id` to preserve was already captured in step 1. Preserving `seed-family-id` is required so forced re-runs can still find prior auto-seeded IR families even though the per-render plan `id` changes.
@@ -358,7 +358,7 @@ if [[ "${ft_mode:-0}" == "1" ]]; then
   # plain-(unpiped)-while-loop shape as Step 1.5 above, for the same reason:
   # a hard `exit 1` inside a piped loop is swallowed by the pipeline's own
   # (always-0) exit status unless pipefail is set, which it isn't here.
-  if ! ft_range_out="$($CLAUDE_PLUGIN_ROOT/scripts/commits.sh feature-test-range "$active_feature")"; then
+  if ! ft_range_out="$("$CLAUDE_PLUGIN_ROOT/scripts/commits.sh" feature-test-range "$active_feature")"; then
     exit 1
   fi
   req_ids=()
@@ -385,7 +385,7 @@ if [[ "${ft_mode:-0}" == "1" ]]; then
       echo "error: $req_file not found for contributor $row_feat" >&2
       exit 1
     fi
-    req_ids+=("$($CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get "$req_file" id)")
+    req_ids+=("$("$CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh" get "$req_file" id)")
   done <<< "$ft_range_out"
   if [[ ${#req_ids[@]} -eq 0 ]]; then
     echo "error: feature-test-range reported no contributors for $active_feature" >&2
@@ -394,7 +394,7 @@ if [[ "${ft_mode:-0}" == "1" ]]; then
   ids_csv="$(IFS=,; echo "${req_ids[*]}")"
   requirements_field="!RAW!requirements-ids: [$ids_csv]"
 else
-  requirements_id="$($CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get "$data_root/workflow-stream/$active_feature/blueprints/current/requirements.md" id)"
+  requirements_id="$("$CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh" get "$data_root/workflow-stream/$active_feature/blueprints/current/requirements.md" id)"
   requirements_field="!RAW!requirements-id: $requirements_id"
 fi
 ```
@@ -449,7 +449,7 @@ block in `deferred-tests.md` and writes the merge back-reference — one loop, n
 disconnected snippets:
 
 ```bash
-dt="$($CLAUDE_PLUGIN_ROOT/scripts/deferred-tests.sh path "$active_feature")"
+dt="$("$CLAUDE_PLUGIN_ROOT/scripts/deferred-tests.sh" path "$active_feature")"
 while IFS=$'\t' read -r orig_feature orig_scenario merged title; do
   [[ -z "$orig_feature" ]] && continue
 
@@ -493,9 +493,9 @@ PYEOF
   # write the back-reference in the same iteration — this is what makes the
   # completion gate machine-checkable (`/mi-continue`, DTI-007) without
   # touching the plan's or the results' own contracts:
-  $CLAUDE_PLUGIN_ROOT/scripts/deferred-tests.sh set-merged-as \
+  "$CLAUDE_PLUGIN_ROOT/scripts/deferred-tests.sh" set-merged-as \
     "$active_feature" "$orig_feature" "$orig_scenario" "$new_scenario_id"
-done < <($CLAUDE_PLUGIN_ROOT/scripts/deferred-tests.sh list "$active_feature")
+done < <("$CLAUDE_PLUGIN_ROOT/scripts/deferred-tests.sh" list "$active_feature")
 ```
 
 **Attribution (`DTI-006`).** The scenario title carries the marker:
@@ -546,7 +546,7 @@ vocabulary-rendering site beyond the seven the design table lists, gated on the 
 predicate as the other seven:
 
 ```bash
-if $CLAUDE_PLUGIN_ROOT/scripts/deferred-tests.sh offer-defer "$active_feature" >/dev/null 2>&1; then
+if "$CLAUDE_PLUGIN_ROOT/scripts/deferred-tests.sh" offer-defer "$active_feature" >/dev/null 2>&1; then
   offer_defer=1
 else
   offer_defer=0
@@ -554,7 +554,7 @@ fi
 printf 'offer_defer=%s\n' "$offer_defer"
 ```
 
-**Auto mode.** If `$CLAUDE_PLUGIN_ROOT/scripts/auto.sh is-on` succeeds, run `$CLAUDE_PLUGIN_ROOT/scripts/auto.sh answer "run manual test" "y-autonomous" --cmd /mi-manual-test-plan` and continue as if the inspector had replied `y-autonomous` — do not show the prompt below. Otherwise show the prompt below unchanged.
+**Auto mode.** If `"$CLAUDE_PLUGIN_ROOT/scripts/auto.sh" is-on` succeeds, run `"$CLAUDE_PLUGIN_ROOT/scripts/auto.sh" answer "run manual test" "y-autonomous" --cmd /mi-manual-test-plan` and continue as if the inspector had replied `y-autonomous` — do not show the prompt below. Otherwise show the prompt below unchanged.
 
 Prompt: `"Plan available at workflow-stream/<feature>/test/manual-test-plan.md. Perform the manual test now? Reply y, y-autonomous, or n.
 
@@ -590,7 +590,7 @@ If you'd rather start the services yourself, that is still available — type `/
 - On `y`:
 
   ```bash
-  $CLAUDE_PLUGIN_ROOT/scripts/progress.sh set sub-flow=manual-testing manual-test-state=running manual-test-env-mode=guided
+  "$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" set sub-flow=manual-testing manual-test-state=running manual-test-env-mode=guided
   ```
 
   Then auto-fire `/mi-manual-test-run`.
@@ -598,7 +598,7 @@ If you'd rather start the services yourself, that is still available — type `/
 - On `y-autonomous`:
 
   ```bash
-  $CLAUDE_PLUGIN_ROOT/scripts/progress.sh set sub-flow=manual-testing manual-test-state=running manual-test-env-mode=autonomous
+  "$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" set sub-flow=manual-testing manual-test-state=running manual-test-env-mode=autonomous
   ```
 
   Then auto-fire `/mi-manual-test-run`.

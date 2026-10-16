@@ -23,7 +23,7 @@ For per-dep prompts, `select` mode, detailed JSON output, and sudo handling — 
 ### Step 1 — Run the detection script
 
 ```bash
-$CLAUDE_PLUGIN_ROOT/scripts/doctor.sh --format=json
+"$CLAUDE_PLUGIN_ROOT/scripts/doctor.sh" --format=json
 ```
 
 Parse the JSON. Collect all checks where `required == true` and `present == false` into two buckets:
@@ -90,12 +90,12 @@ Do not proceed to Step 5 with plugin deps still missing — the workflow's stage
 Resolve the data root via the canonical helper (`scripts/data-root.sh`), which honors `$MI_DATA_ROOT`, then `$CLAUDE_PLUGIN_USER_CONFIG_data_root`, then defaults to `$PWD/millwright-inspector`:
 
 ```bash
-data_root="$($CLAUDE_PLUGIN_ROOT/scripts/data-root.sh)"
+data_root="$("$CLAUDE_PLUGIN_ROOT/scripts/data-root.sh")"
 mkdir -p "$data_root/journal" "$data_root/quest" "$data_root/workflow-stream"
 
 # Seed the empty active-quest pointer (idempotent — won't overwrite an
 # existing pointer or any per-cycle subfolder).
-$CLAUDE_PLUGIN_ROOT/scripts/quest.sh init-pointer
+"$CLAUDE_PLUGIN_ROOT/scripts/quest.sh" init-pointer
 
 # Line endings for the shared workflow files: the plugin's own .gitattributes
 # (LF for text, binaries untouched). Written whenever it is missing — even on
@@ -161,7 +161,7 @@ Next steps — what you do to start and drive the workflow:
      `## GIT BRANCH` section at stage 2.
 
   3. Open the new cycle's todo-list.md (the path is printed by /mi-run; you can
-     also resolve it with `bash $CLAUDE_PLUGIN_ROOT/scripts/quest.sh dir`).
+     also resolve it with `bash "$CLAUDE_PLUGIN_ROOT/scripts/quest.sh" dir`).
      For each item you want implemented this cycle:
        a. Put an `x` inside its checkbox: `- [ ] TODO — ...` → `- [x] TODO — ...`.
        b. Add the assignee — your inspector name in parentheses between the

@@ -17,9 +17,9 @@ Generates the single set of diagrams the inspector reviews at stage 5. Each diag
 ### Step 1 — Resolve inputs
 
 ```bash
-data_root="$($CLAUDE_PLUGIN_ROOT/scripts/data-root.sh)"
-active_feature="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get-active)"
-base_commit="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get base-commit)"
+data_root="$("$CLAUDE_PLUGIN_ROOT/scripts/data-root.sh")"
+active_feature="$("$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" get-active)"
+base_commit="$("$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" get base-commit)"
 dest_dir="$data_root/workflow-stream/$active_feature/implementation/diagrams"
 mkdir -p "$dest_dir"
 ```
@@ -27,7 +27,7 @@ mkdir -p "$dest_dir"
 ### Step 1.4 — Invocation mode (ordinary vs. feature-test)
 
 ```bash
-if $CLAUDE_PLUGIN_ROOT/scripts/todo.sh is-feature-test "$active_feature"; then
+if "$CLAUDE_PLUGIN_ROOT/scripts/todo.sh" is-feature-test "$active_feature"; then
   ft_mode=1
   # feature-test-range refuses (exit 3/4/5) when a rebase leaves a finished
   # feature's head unreachable, no feature contributed commits, or bases
@@ -36,7 +36,7 @@ if $CLAUDE_PLUGIN_ROOT/scripts/todo.sh is-feature-test "$active_feature"; then
   # mi-continue.md's Feature-test entry sequence Step 1 already uses for
   # this exact call.
   set -o pipefail
-  if ! range_line="$($CLAUDE_PLUGIN_ROOT/scripts/commits.sh feature-test-range "$active_feature" | head -1)"; then
+  if ! range_line="$("$CLAUDE_PLUGIN_ROOT/scripts/commits.sh" feature-test-range "$active_feature" | head -1)"; then
     exit 1
   fi
   union_base="$(printf '%s' "$range_line" | cut -f1)"
@@ -71,7 +71,7 @@ Before doing any diagram work, check whether the existing set is already current
 # (see the `missing` bullet) — the `|| true` keeps a `set -e` block from
 # aborting on it. Branch on the stdout enum; the exit code carries no
 # information the enum does not.
-freshness="$($CLAUDE_PLUGIN_ROOT/scripts/commits.sh diagrams-fresh "$active_feature" 2>/dev/null || true)"
+freshness="$("$CLAUDE_PLUGIN_ROOT/scripts/commits.sh" diagrams-fresh "$active_feature" 2>/dev/null || true)"
 ```
 
 Branch on the output:
@@ -105,7 +105,7 @@ if [[ "${ft_mode:-0}" == "1" ]]; then
   # status reaches `if !` directly — no pipefail needed for this call.
   # $ft_range_out is reused by Step 2.2 below rather than calling this a
   # third time.
-  if ! ft_range_out="$($CLAUDE_PLUGIN_ROOT/scripts/commits.sh feature-test-range "$active_feature")"; then
+  if ! ft_range_out="$("$CLAUDE_PLUGIN_ROOT/scripts/commits.sh" feature-test-range "$active_feature")"; then
     exit 1
   fi
   req_pairs=()
@@ -132,7 +132,7 @@ if [[ "${ft_mode:-0}" == "1" ]]; then
       echo "error: $req_file not found for contributor $row_feat" >&2
       exit 1
     fi
-    req_id="$($CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get "$req_file" id)"
+    req_id="$("$CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh" get "$req_file" id)"
     req_pairs+=("$req_id"$'\t'"$req_file")
   done <<< "$ft_range_out"
   if [[ ${#req_pairs[@]} -eq 0 ]]; then
@@ -144,16 +144,16 @@ if [[ "${ft_mode:-0}" == "1" ]]; then
   requirements_file=""   # no single requirements.md for a feature-test entry; see requirements_paths
 else
   requirements_file="$data_root/workflow-stream/$active_feature/blueprints/current/requirements.md"
-  requirements_id="$($CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get "$requirements_file" id)"
+  requirements_id="$("$CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh" get "$requirements_file" id)"
   requirements_paths=""
 fi
-base_commit_sha="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get base-commit)"
+base_commit_sha="$("$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" get base-commit)"
 head_sha="$(git rev-parse HEAD)"
-diagram_rendering="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get diagram-rendering 2>/dev/null || echo 'never')"
+diagram_rendering="$("$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" get diagram-rendering 2>/dev/null || echo 'never')"
 summary_file="$dest_dir/../change-summary.md"
 blueprint_diagrams_dir="$data_root/workflow-stream/$active_feature/blueprints/current/diagrams"
 
-if $CLAUDE_PLUGIN_ROOT/scripts/commits.sh change-summary-fresh "$active_feature"; then
+if "$CLAUDE_PLUGIN_ROOT/scripts/commits.sh" change-summary-fresh "$active_feature"; then
   summary_state="fresh"
 else
   summary_state="stale-or-missing"
@@ -189,7 +189,7 @@ if [[ "$summary_state" == "stale-or-missing" ]]; then
   else
     requirements_field="!RAW!requirements-id: $requirements_id"
   fi
-  $CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh init change-summary \
+  "$CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh" init change-summary \
     "$summary_file" \
     "REQUIREMENTS_FIELD=$requirements_field" \
     "FEATURE=$active_feature" \
@@ -275,7 +275,7 @@ You are a fresh sub-agent invoked from `mi-generate-implementation-diagrams` (St
 - If `summary_state=stale-or-missing`, the file is pre-initialized with valid frontmatter by main. Fill the body via `Edit` per `templates/change-summary.md.tmpl`. Source the changed-file list from the helper:
 
   ```bash
-  $CLAUDE_PLUGIN_ROOT/scripts/commits.sh changed-files "<active_feature>"
+  "$CLAUDE_PLUGIN_ROOT/scripts/commits.sh" changed-files "<active_feature>"
   # Emits TSV rows: <status>\t<adds>\t<dels>\t<path>
   ```
 

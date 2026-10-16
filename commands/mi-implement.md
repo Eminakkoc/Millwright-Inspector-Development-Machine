@@ -15,6 +15,6 @@ Do these four things, in order:
 1. **Write the spec** for the approved design to `docs/superpowers/specs/` and commit it. Record any remaining design question in the spec's open-questions list rather than asking it.
 2. **Write the implementation plan** with the writing-plans skill and commit it, without waiting for an inspector review of the spec or the plan.
 3. **Implement with sub-agents** — choose subagent-driven development as the execution method and begin immediately.
-4. **Follow the end-of-chain rules.** Read `$CLAUDE_PLUGIN_ROOT/templates/auto-mode-chain-rules.md` now and follow it until the chain hands back with `/mi-continue`.
+4. **Follow the end-of-chain rules.** Read `"$CLAUDE_PLUGIN_ROOT/templates/auto-mode-chain-rules.md"` now and follow it until the chain hands back with `/mi-continue`.
 
 These instructions apply whether or not auto mode is on: `/mi-implement` always carries the end-of-chain rules, so turning auto mode on mid-chain still works.

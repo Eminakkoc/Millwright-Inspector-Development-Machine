@@ -27,13 +27,13 @@ Because stage 3 has several non-trivial side effects (todos → IMPLEMENTING, `b
 ### Step 1 — Determine the active feature and check for re-entry
 
 ```bash
-active_feature="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get-active)"
+active_feature="$("$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" get-active)"
 [[ -n "$active_feature" && "$active_feature" != "null" ]] || {
   echo "error: no active feature — run /mi-apply-impact first" >&2; exit 1; }
 
-current_stage="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get current-stage)"
-sub_flow="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get sub-flow)"
-base_commit_persisted="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get base-commit 2>/dev/null || echo 'null')"
+current_stage="$("$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" get current-stage)"
+sub_flow="$("$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" get sub-flow)"
+base_commit_persisted="$("$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" get base-commit 2>/dev/null || echo 'null')"
 ```
 
 **Re-entry guard (Item 3 of the v11 plan).** If `current-stage == 3` and `sub-flow` is `chain-in-progress` or `resuming`, this is a re-entry into stage 3 (the chain was previously launched and the inspector is re-running this command for recovery). Validate `primer.md` and the planning-mode persistence; do NOT re-capture `base-commit` or `history-baseline-version`.
@@ -44,8 +44,8 @@ if [[ "$current_stage" == "3" && ( "$sub_flow" == "chain-in-progress" || "$sub_f
   re_entry=1
   echo "Re-entry into stage 3 detected (sub-flow=$sub_flow). Validating primer.md; preserving base-commit and history-baseline-version."
   # primer.md validation happens in Step 3.5; if missing/incomplete, regenerate.
-  planning_mode_persisted="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get planning-mode 2>/dev/null || echo 'none')"
-  base_commit_for_check="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get base-commit 2>/dev/null || echo '')"
+  planning_mode_persisted="$("$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" get planning-mode 2>/dev/null || echo 'none')"
+  base_commit_for_check="$("$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" get base-commit 2>/dev/null || echo '')"
   commit_count_since_base=0
   if [[ -n "$base_commit_for_check" && "$base_commit_for_check" != "null" ]]; then
     commit_count_since_base="$(git rev-list --count "$base_commit_for_check..HEAD" 2>/dev/null || echo 0)"
@@ -70,8 +70,8 @@ fi
 **Pending catalog suggestions.** Skipped on stage-3 re-entry (`current-stage == 3`). Otherwise:
 
 ```bash
-active_feature="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get-active)"
-current_stage="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get current-stage)"
+active_feature="$("$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" get-active)"
+current_stage="$("$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" get current-stage)"
 if [[ "$current_stage" != "3" && -n "$("$CLAUDE_PLUGIN_ROOT/scripts/skills.sh" suggestions "$active_feature")" ]]; then
   echo "Catalog skills are still waiting to be installed — run /mi-continue to finish the stage-2 gate first." >&2
   exit 1
@@ -91,7 +91,7 @@ config_file="$data_root/workflow-stream/$active_feature/blueprints/current/confi
 Resolve the data root once so the command honors `userConfig.data_root` / `MI_DATA_ROOT` overrides:
 
 ```bash
-data_root="$($CLAUDE_PLUGIN_ROOT/scripts/data-root.sh)"
+data_root="$("$CLAUDE_PLUGIN_ROOT/scripts/data-root.sh")"
 ```
 
 **Extract the GIT BRANCH block.** Read lines from the `## GIT BRANCH` heading to the next `##` heading. Drop HTML comments (`<!-- ... -->`), drop blank lines, drop bullet points (`- ...`). Collect every remaining non-comment, non-empty line. Each such line is treated as a candidate branch name.
@@ -100,7 +100,7 @@ data_root="$($CLAUDE_PLUGIN_ROOT/scripts/data-root.sh)"
 
 - **Zero candidates** — the section is empty. Prompt the inspector in chat with both paths:
 
-  **Auto mode.** If `$CLAUDE_PLUGIN_ROOT/scripts/auto.sh is-on` succeeds, do not show the prompt below. Instead run `"$CLAUDE_PLUGIN_ROOT/scripts/auto.sh" create-branch "$active_feature" "$config_file"` and relay its output line. On exit 3 (uncommitted changes) relay the line and stop — the inspector commits or stashes, then types `/mi-continue`. On any other non-zero exit, relay the error and stop. On exit 0 the new branch is checked out and written to `config.md`; continue to validation below. Otherwise show the prompt below unchanged.
+  **Auto mode.** If `"$CLAUDE_PLUGIN_ROOT/scripts/auto.sh" is-on` succeeds, do not show the prompt below. Instead run `"$CLAUDE_PLUGIN_ROOT/scripts/auto.sh" create-branch "$active_feature" "$config_file"` and relay its output line. On exit 3 (uncommitted changes) relay the line and stop — the inspector commits or stashes, then types `/mi-continue`. On any other non-zero exit, relay the error and stop. On exit 0 the new branch is checked out and written to `config.md`; continue to validation below. Otherwise show the prompt below unchanged.
 
   > "`config.md`'s `## GIT BRANCH` section is empty. I can't advance to brainstorming without the feature branch. Two options:
   >
@@ -149,7 +149,7 @@ Surface these errors to the inspector as readable messages (not raw stderr) befo
 **Persist to `progress.md`:**
 
 ```bash
-$CLAUDE_PLUGIN_ROOT/scripts/progress.sh set "branch=$primary_branch"
+"$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" set "branch=$primary_branch"
 ```
 
 ### Step 3 — Transition todos and record base commit + history baseline
@@ -158,7 +158,7 @@ $CLAUDE_PLUGIN_ROOT/scripts/progress.sh set "branch=$primary_branch"
 
 ```bash
 if [[ "${re_entry:-0}" == "0" && "${legacy_partial_launch:-0}" == "0" ]]; then
-  $CLAUDE_PLUGIN_ROOT/scripts/todo.sh bulk-transition PENDING IMPLEMENTING --feature "$active_feature"
+  "$CLAUDE_PLUGIN_ROOT/scripts/todo.sh" bulk-transition PENDING IMPLEMENTING --feature "$active_feature"
   base_commit="$(git rev-parse HEAD)"
 
   # Capture history-baseline-version: the highest finalized v[N] index for this
@@ -167,7 +167,7 @@ if [[ "${re_entry:-0}" == "0" && "${legacy_partial_launch:-0}" == "0" ]]; then
   # "this cycle's drift fired but the marker write was lost." Capturing 0 when
   # no history exists is correct (the probe treats null/missing as "unknown",
   # which is a different state — see Item 1's back-compat guard).
-  data_root="$($CLAUDE_PLUGIN_ROOT/scripts/data-root.sh)"
+  data_root="$("$CLAUDE_PLUGIN_ROOT/scripts/data-root.sh")"
   history_dir="$data_root/workflow-stream/$active_feature/blueprints/history"
   baseline=0
   if compgen -G "$history_dir/v*" >/dev/null 2>&1; then
@@ -180,14 +180,14 @@ if [[ "${re_entry:-0}" == "0" && "${legacy_partial_launch:-0}" == "0" ]]; then
 
   # Atomic batched write: base-commit + sub-flow + history-baseline-version
   # land together (or none of them, if anything in the batch fails validation).
-  $CLAUDE_PLUGIN_ROOT/scripts/progress.sh set \
+  "$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" set \
     "base-commit=$base_commit" \
     "sub-flow=chain-in-progress" \
     "history-baseline-version=$baseline"
 fi
 
 if [[ "${re_entry:-0}" == "0" ]]; then
-  $CLAUDE_PLUGIN_ROOT/scripts/progress.sh advance 2
+  "$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" advance 2
 fi
 ```
 
@@ -198,9 +198,9 @@ Compose a compact context bundle for the brainstorming chain. The primer snapsho
 ```bash
 primer_dest="$data_root/workflow-stream/$active_feature/blueprints/current/primer.md"
 requirements_file="$data_root/workflow-stream/$active_feature/blueprints/current/requirements.md"
-requirements_id="$($CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get "$requirements_file" id)"
+requirements_id="$("$CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh" get "$requirements_file" id)"
 # frontmatter.sh init overwrites — safe to re-run on retry.
-$CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh init primer "$primer_dest" \
+"$CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh" init primer "$primer_dest" \
   "REQUIREMENTS_ID=$requirements_id" \
   "FEATURE=$active_feature" \
   "DATA_ROOT=$data_root"
@@ -209,20 +209,20 @@ $CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh init primer "$primer_dest" \
 Then fill the body via `Edit`. Resolve the values up front so they go into the file as literals (the template body has no token substitution beyond frontmatter):
 
 ```bash
-primer_branch="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get branch)"
-primer_base_commit="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get base-commit)"
-implementing_ids="$($CLAUDE_PLUGIN_ROOT/scripts/todo.sh list IMPLEMENTING --feature "$active_feature")"
+primer_branch="$("$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" get branch)"
+primer_base_commit="$("$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" get base-commit)"
+implementing_ids="$("$CLAUDE_PLUGIN_ROOT/scripts/todo.sh" list IMPLEMENTING --feature "$active_feature")"
 ```
 
 Then write each section per the template's guide:
 
-- **`## Active scope`** — `branch: <primer_branch>`, `base-commit: <primer_base_commit>`, and one bullet per id in `implementing_ids` (pull each item's description from the active cycle's `todo-list.md`'s matching line; resolve the path via `$CLAUDE_PLUGIN_ROOT/scripts/quest.sh dir`).
+- **`## Active scope`** — `branch: <primer_branch>`, `base-commit: <primer_base_commit>`, and one bullet per id in `implementing_ids` (pull each item's description from the active cycle's `todo-list.md`'s matching line; resolve the path via `"$CLAUDE_PLUGIN_ROOT/scripts/quest.sh" dir`).
 - **`## Goals (this cycle)`** — 5–20 line excerpt extracted from `requirements.md`'s `## Goals (this cycle)` section. Tighten — the chain reads the full file only if the primer is insufficient.
 - **`## Journal context (active feature)`** — 5–20 line digest from the active cycle's `summary.md`'s `## Feature: <active_feature>` section (resolve the path via `quest.sh dir`), plus any items from `## Cross-cutting constraints` that materially affect this feature.
 - **Skills** — replace the template's skills placeholder (the line beginning `<!-- skills:brief`) with the two `brief` blocks, verbatim and in this order; each brings its own heading, and an empty one adds nothing:
 
   ```bash
-  active_feature="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get-active)"
+  active_feature="$("$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" get-active)"
   skills_block="$("$CLAUDE_PLUGIN_ROOT/scripts/skills.sh" brief "$active_feature" implement)"
   review_block="$("$CLAUDE_PLUGIN_ROOT/scripts/skills.sh" brief "$active_feature" review)"
   ```
@@ -281,7 +281,7 @@ The `## On-demand canonical files` section is template-emitted and does not need
 
 Prompt the inspector:
 
-**Auto mode.** If `$CLAUDE_PLUGIN_ROOT/scripts/auto.sh is-on` succeeds, run `$CLAUDE_PLUGIN_ROOT/scripts/auto.sh answer "planning mode" "brainstorming" --cmd /mi-plan-implementation` and continue as if the inspector had replied `brainstorming` — do not show the prompt below. Otherwise show the prompt below unchanged.
+**Auto mode.** If `"$CLAUDE_PLUGIN_ROOT/scripts/auto.sh" is-on` succeeds, run `"$CLAUDE_PLUGIN_ROOT/scripts/auto.sh" answer "planning mode" "brainstorming" --cmd /mi-plan-implementation` and continue as if the inspector had replied `brainstorming` — do not show the prompt below. Otherwise show the prompt below unchanged.
 
 > "Stage 3 — pick a planning mode for `$active_feature`:
 >
@@ -293,7 +293,7 @@ Prompt the inspector:
 Wait for the reply. Persist the choice:
 
 ```bash
-$CLAUDE_PLUGIN_ROOT/scripts/progress.sh set "planning-mode=<choice>"
+"$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" set "planning-mode=<choice>"
 ```
 
 Then dispatch on the value:
@@ -327,10 +327,10 @@ Proceed with your normal brainstorming flow: clarifying questions → design sec
 **Skills.** primer.md's `## Skills for this work (from config.md)` and `## Skills for reviewing this work` sections list the skills chosen for this feature at stage 2 (either may be absent). Load the relevant ones with the `Skill` tool before proposing the design, and list them in the spec. In the plan, every task an entry covers carries `**Skills:** <name> (load: Skill <name> or Read <path>)` for its implementer and `**Review skills:** <name> (load: Skill <name> or Read <path>)` for its reviewer — a task brief passes only the task's own section, so these lines are how skills reach those sub-agents. Paste the primer's `## Skills for reviewing this work` section into the final whole-branch reviewer and re-review dispatches, and its `## Skills for this work (from config.md)` section into the fix dispatch.
 ```
 
-**Auto mode.** If `$CLAUDE_PLUGIN_ROOT/scripts/auto.sh is-on` succeeds, append this paragraph to the primer above before invoking the Skill (substitute the resolved plugin root):
+**Auto mode.** If `"$CLAUDE_PLUGIN_ROOT/scripts/auto.sh" is-on` succeeds, append this paragraph to the primer above before invoking the Skill (substitute the resolved plugin root):
 
 ```
-**End-of-chain rules.** Read `$CLAUDE_PLUGIN_ROOT/templates/auto-mode-chain-rules.md` and follow it for this whole chain. When the design Q&A is done, the inspector may type `/mi-implement` to approve the design and move straight to spec → plan → sub-agent implementation.
+**End-of-chain rules.** Read `"$CLAUDE_PLUGIN_ROOT/templates/auto-mode-chain-rules.md"` and follow it for this whole chain. When the design Q&A is done, the inspector may type `/mi-implement` to approve the design and move straight to spec → plan → sub-agent implementation.
 ```
 
 Substitute `<$active_feature>` with the actual feature name read from the queue.

@@ -17,7 +17,7 @@ The recommendations below include launcher commands (`/mi-apply-impact`, `/mi-pl
 Resolve the active cycle's todo-list path through the active-quest pointer (errors if no cycle has been started — handled below).
 
 ```bash
-active_quest_dir="$($CLAUDE_PLUGIN_ROOT/scripts/quest.sh dir 2>/dev/null || echo '')"
+active_quest_dir="$("$CLAUDE_PLUGIN_ROOT/scripts/quest.sh" dir 2>/dev/null || echo '')"
 todo_file="${active_quest_dir:+$active_quest_dir/todo-list.md}"
 
 # If there's no active cycle pointer at all, recommend /mi-run and stop.
@@ -26,14 +26,14 @@ if [[ -z "$active_quest_dir" ]]; then
   exit 0
 fi
 
-active_feature="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get-active)"
+active_feature="$("$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" get-active)"
 if [[ -z "$active_feature" || "$active_feature" == "null" ]]; then
-  remaining="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh queue-remaining 2>/dev/null || echo '')"
+  remaining="$("$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" queue-remaining 2>/dev/null || echo '')"
   marked_count=0
   todo_count=0
   if [[ -f "$todo_file" ]]; then
     marked_count="$(grep -cE '^\s*-\s+\[[xX]\]\s+(\([^)]+\)\s+)?TODO' "$todo_file" || true)"
-    todo_count="$($CLAUDE_PLUGIN_ROOT/scripts/todo.sh list TODO 2>/dev/null | sed '/^$/d' | wc -l | tr -d ' ')"
+    todo_count="$("$CLAUDE_PLUGIN_ROOT/scripts/todo.sh" list TODO 2>/dev/null | sed '/^$/d' | wc -l | tr -d ' ')"
   fi
   if [[ -z "$remaining" ]]; then
     if (( marked_count > 0 )); then
@@ -63,12 +63,12 @@ fi
 ### Step 2 — Read runtime state for the active feature
 
 ```bash
-stage="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get current-stage)"
-sub_flow="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get sub-flow)"
-impl_done="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get implementation-completed)"
-ov_done="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get inspector-review-completed)"
+stage="$("$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" get current-stage)"
+sub_flow="$("$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" get sub-flow)"
+impl_done="$("$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" get implementation-completed)"
+ov_done="$("$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" get inspector-review-completed)"
 
-if $CLAUDE_PLUGIN_ROOT/scripts/todo.sh is-feature-test "$active_feature"; then
+if "$CLAUDE_PLUGIN_ROOT/scripts/todo.sh" is-feature-test "$active_feature"; then
   ft_mode=1
 else
   ft_mode=0

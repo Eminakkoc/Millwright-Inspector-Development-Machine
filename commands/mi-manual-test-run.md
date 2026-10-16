@@ -72,9 +72,9 @@ Parse flags first, then dispatch to one of four branches. The runner picks exact
 Before any user-facing prompt or scenario render in Branches A, B, and D (Branch D resolves it as a read-only precondition, before its rotation):
 
 ```bash
-RUN_ROOT="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get worktree-path)"
+RUN_ROOT="$("$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" get worktree-path)"
 [[ -n "$RUN_ROOT" && "$RUN_ROOT" != "null" ]] || \
-  RUN_ROOT="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get git-worktree-dir)"
+  RUN_ROOT="$("$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" get git-worktree-dir)"
 [[ -n "$RUN_ROOT" && "$RUN_ROOT" != "null" ]] || {
   echo "error: cannot resolve worktree path from progress.md active block" >&2
   exit 1
@@ -86,9 +86,9 @@ RUN_ROOT="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get worktree-path)"
 **Worktree-drift guard.** Compare the resolved `RUN_ROOT` to the plan's frontmatter `generated-against-run-root`:
 
 ```bash
-plan_path="$($CLAUDE_PLUGIN_ROOT/scripts/blueprints.sh manual-test-plan-path "$active_feature")"
+plan_path="$("$CLAUDE_PLUGIN_ROOT/scripts/blueprints.sh" manual-test-plan-path "$active_feature")"
 [[ -f "$plan_path" ]] || { echo "error: $plan_path not found" >&2; exit 1; }
-plan_run_root="$($CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get "$plan_path" generated-against-run-root)"
+plan_run_root="$("$CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh" get "$plan_path" generated-against-run-root)"
 if [[ "$plan_run_root" != "$RUN_ROOT" ]]; then
   echo "error: worktree drift — plan generated against $plan_run_root but progress.md active worktree is $RUN_ROOT. Run /mi-manual-test-plan --force to regenerate against the current worktree." >&2
   exit 1
@@ -108,20 +108,20 @@ fi
 **Step 0 — Cross-activation auto-rotation (§4.1 fallback).** Before any other check, apply the triple-AND prior-activation guard from `docs/manual-testing-folder/plan.md` § 4.1 in case the runner was reached without `/mi-manual-test-plan` having fired first:
 
 ```bash
-plan_path="$($CLAUDE_PLUGIN_ROOT/scripts/blueprints.sh manual-test-plan-path "$active_feature")"
-results_path="$($CLAUDE_PLUGIN_ROOT/scripts/blueprints.sh manual-test-results-path "$active_feature")"
+plan_path="$("$CLAUDE_PLUGIN_ROOT/scripts/blueprints.sh" manual-test-plan-path "$active_feature")"
+results_path="$("$CLAUDE_PLUGIN_ROOT/scripts/blueprints.sh" manual-test-results-path "$active_feature")"
 if [[ -f "$plan_path" && -f "$results_path" ]]; then
-  plan_id="$($CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get "$plan_path" id)"
-  results_plan_id="$($CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get "$results_path" plan-id)"
-  current_activation="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get activation-id 2>/dev/null || echo "")"
-  results_activation="$($CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get "$results_path" generated-in-activation 2>/dev/null || echo "")"
+  plan_id="$("$CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh" get "$plan_path" id)"
+  results_plan_id="$("$CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh" get "$results_path" plan-id)"
+  current_activation="$("$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" get activation-id 2>/dev/null || echo "")"
+  results_activation="$("$CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh" get "$results_path" generated-in-activation 2>/dev/null || echo "")"
   # State-agnostic guard — both state: complete (prior cycle's
   # finalized run) and state: in-progress (prior cycle's paused or
   # aborted run) are rotated when activation differs.
   if [[ "$results_plan_id" == "$plan_id" \
         && -n "$current_activation" \
         && ( -z "$results_activation" || "$results_activation" != "$current_activation" ) ]]; then
-    $CLAUDE_PLUGIN_ROOT/scripts/blueprints.sh manual-test-results-rotate-only "$active_feature" >&2
+    "$CLAUDE_PLUGIN_ROOT/scripts/blueprints.sh" manual-test-results-rotate-only "$active_feature" >&2
   fi
 fi
 ```
@@ -172,7 +172,7 @@ Render from `templates/manual-test-results.md.tmpl` if absent. The template incl
 **Render through the helper — do not hand-write the frontmatter.** `frontmatter.sh init` runs the file through `mi_render_template`, which YAML-encodes every frontmatter substitution: the timestamp comes out quoted (unquoted, YAML would auto-type it as a datetime rather than the `type: string` the schema declares) and the file is schema-validated at write time. `TOTAL` takes the `!RAW!` sentinel because `total` is an integer and the default encoding would quote it into a string.
 
 ```bash
-$CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh init manual-test-results \
+"$CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh" init manual-test-results \
   "$results_file" \
   "FEATURE=$active_feature" \
   "PLAN_ID=$plan_id" \
@@ -193,10 +193,10 @@ Always first, even on resume — env may have decayed since the pause.
 # --interactive-env was passed, persist it FIRST so the choice survives a later
 # pause/resume (mi-continue re-fires this runner without flags).
 if [[ -n "$flag_env_mode" ]]; then           # "guided" | "autonomous" | "interactive" | ""
-  $CLAUDE_PLUGIN_ROOT/scripts/progress.sh set manual-test-env-mode="$flag_env_mode"
+  "$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" set manual-test-env-mode="$flag_env_mode"
 fi
 
-env_mode="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get manual-test-env-mode 2>/dev/null || echo interactive)"
+env_mode="$("$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" get manual-test-env-mode 2>/dev/null || echo interactive)"
 [[ -n "$env_mode" && "$env_mode" != "null" ]] || env_mode="interactive"
 ```
 
@@ -247,7 +247,7 @@ Background services the millwright starts here are its responsibility for the li
 ##### Step 2.9 — Resolve the defer offer (DTI-003 / DTI-008)
 
 ```bash
-if $CLAUDE_PLUGIN_ROOT/scripts/deferred-tests.sh offer-defer "$active_feature" >/dev/null 2>&1; then
+if "$CLAUDE_PLUGIN_ROOT/scripts/deferred-tests.sh" offer-defer "$active_feature" >/dev/null 2>&1; then
   offer_defer=1
 else
   offer_defer=0
@@ -428,8 +428,8 @@ Two guided-only behaviors on top of the interactive contract:
   # state from any other block, and this is the one non-vocabulary site where
   # ft_name is used for real effect (the upsert target), so it cannot rely on
   # Step 2.9 having run earlier in the same invocation.
-  ft_name="$($CLAUDE_PLUGIN_ROOT/scripts/todo.sh feature-test-status | head -1 | cut -f2)"
-  $CLAUDE_PLUGIN_ROOT/scripts/deferred-tests.sh upsert "$ft_name" \
+  ft_name="$("$CLAUDE_PLUGIN_ROOT/scripts/todo.sh" feature-test-status | head -1 | cut -f2)"
+  "$CLAUDE_PLUGIN_ROOT/scripts/deferred-tests.sh" upsert "$ft_name" \
     --feature "$active_feature" \
     --scenario "$THIS_ID" \
     --title "$scenario_title" \
@@ -488,7 +488,7 @@ scenarios stay **inside** `total`.
 
 If `failed > 0`, ask the inspector:
 
-**Auto mode.** If `$CLAUDE_PLUGIN_ROOT/scripts/auto.sh is-on` succeeds, run `$CLAUDE_PLUGIN_ROOT/scripts/auto.sh answer "auto-seed failures" "y" --cmd /mi-manual-test-run` and continue as if the inspector had replied `y` — do not show the prompt below. Otherwise show the prompt below unchanged. Only failed scenarios are seeded; passes with observations and skips are never seeded.
+**Auto mode.** If `"$CLAUDE_PLUGIN_ROOT/scripts/auto.sh" is-on` succeeds, run `"$CLAUDE_PLUGIN_ROOT/scripts/auto.sh" answer "auto-seed failures" "y" --cmd /mi-manual-test-run` and continue as if the inspector had replied `y` — do not show the prompt below. Otherwise show the prompt below unchanged. Only failed scenarios are seeded; passes with observations and skips are never seeded.
 
 ```
 Manual test complete: <passed>/<total> passed, <failed> failed, <skipped> skipped, <deferred> deferred.
@@ -525,7 +525,7 @@ Dispatch on three shapes:
 - **Family empty** (no base, no regressions): default helper call — `review.sh upsert-manual-test-failure ... <severity> <scope>`. Inserts a new base IR with chosen severity/scope.
 - **Base missing but family non-empty** (orphan regressions from a prior cycle whose review session deleted the base): run the orphan-regression default-interactive prompt:
 
-  **Auto mode.** If `$CLAUDE_PLUGIN_ROOT/scripts/auto.sh is-on` succeeds, pick `a` — seed into the existing regression family, which keeps the failure as an open finding — record it with `$CLAUDE_PLUGIN_ROOT/scripts/auto.sh answer "seed <scenario id>" "a" --cmd /mi-manual-test-run`, and do not show the prompt below. Otherwise show the prompt below unchanged.
+  **Auto mode.** If `"$CLAUDE_PLUGIN_ROOT/scripts/auto.sh" is-on` succeeds, pick `a` — seed into the existing regression family, which keeps the failure as an open finding — record it with `"$CLAUDE_PLUGIN_ROOT/scripts/auto.sh" answer "seed <scenario id>" "a" --cmd /mi-manual-test-run`, and do not show the prompt below. Otherwise show the prompt below unchanged.
 
   ```
   scenario <id>: base IR missing but regression family exists; latest family IR is <IR-NNN> (status=<status>)
@@ -544,7 +544,7 @@ Dispatch on three shapes:
 - **Base present, status=open:** default helper call. Helper's open-update path replaces details and preserves prior severity/scope unless `y --classify` reclassified them (in which case the runner passes `--reclassify`).
 - **Base present, status ∈ {fixed, wontfix}:** default helper call. Helper emits the closed-IR warning; runner surfaces the per-IR prompt:
 
-  **Auto mode.** If `$CLAUDE_PLUGIN_ROOT/scripts/auto.sh is-on` succeeds, pick `a` — reopen the IR with the new observation, which keeps the failure as an open finding — record it with `$CLAUDE_PLUGIN_ROOT/scripts/auto.sh answer "seed <IR-NNN>" "a" --cmd /mi-manual-test-run`, and do not show the prompt below. Otherwise show the prompt below unchanged.
+  **Auto mode.** If `"$CLAUDE_PLUGIN_ROOT/scripts/auto.sh" is-on` succeeds, pick `a` — reopen the IR with the new observation, which keeps the failure as an open finding — record it with `"$CLAUDE_PLUGIN_ROOT/scripts/auto.sh" answer "seed <IR-NNN>" "a" --cmd /mi-manual-test-run`, and do not show the prompt below. Otherwise show the prompt below unchanged.
 
   ```
   IR-<NNN> is fixed/wontfix; the manual test failed it again. Pick:
@@ -560,7 +560,7 @@ Use this exact pattern for every helper call that may emit a warning. Three cons
 ```bash
 stderr_tmp="$(mktemp)"
 
-if ! IR_ID="$(printf '%s\n' "$observation" | $CLAUDE_PLUGIN_ROOT/scripts/review.sh upsert-manual-test-failure \
+if ! IR_ID="$(printf '%s\n' "$observation" | "$CLAUDE_PLUGIN_ROOT/scripts/review.sh" upsert-manual-test-failure \
     "$active_feature" "$seed_family_id" "$scenario_id" "$severity" "$scope" \
     2> "$stderr_tmp")"; then
     err="$(cat "$stderr_tmp")"; rm -f "$stderr_tmp"
@@ -604,7 +604,7 @@ After the loop completes successfully:
 The LAST mutation:
 
 ```bash
-$CLAUDE_PLUGIN_ROOT/scripts/progress.sh set sub-flow=none manual-test-state=complete
+"$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" set sub-flow=none manual-test-state=complete
 ```
 
 A session break before this leaves `sub-flow=manual-testing` (re-enters cleanly via `/mi-continue`'s Manual-Test-Resume Handler).
@@ -615,7 +615,7 @@ A session break before this leaves `sub-flow=manual-testing` (re-enters cleanly 
 
 A hands-off run is a machine's opinion of the feature. The inspector may still want to see it with their own eyes — so after an autonomous run finalizes, **always offer the guided walkthrough**:
 
-**Auto mode.** If `$CLAUDE_PLUGIN_ROOT/scripts/auto.sh is-on` succeeds, run `$CLAUDE_PLUGIN_ROOT/scripts/auto.sh answer "guided re-run" "n" --cmd /mi-manual-test-run` and continue as if the inspector had replied `n` — do not show the prompt below. Otherwise show the prompt below unchanged.
+**Auto mode.** If `"$CLAUDE_PLUGIN_ROOT/scripts/auto.sh" is-on` succeeds, run `"$CLAUDE_PLUGIN_ROOT/scripts/auto.sh" answer "guided re-run" "n" --cmd /mi-manual-test-run` and continue as if the inspector had replied `n` — do not show the prompt below. Otherwise show the prompt below unchanged.
 
 ```
 Autonomous run finished: <passed>/<total> passed, <failed> failed, <skipped> skipped, <deferred> deferred.
@@ -638,7 +638,7 @@ record YOUR verdicts. Reply y or n.
 
 ##### 4.8 Hand-off message
 
-**Auto mode.** If `$CLAUDE_PLUGIN_ROOT/scripts/auto.sh is-on` succeeds, do not print the hand-off below. Instead run `"$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" set review-stop-shown=true`, list any rows of `"$CLAUDE_PLUGIN_ROOT/scripts/deferred-questions.sh" list-open "$active_feature"` as "Open deferred questions:", then print `auto: review stop for <feature> — check commits <base>..HEAD, diagrams and test results; add findings to inspector-review.md or leave it empty, then /mi-continue (No findings → it approves and completes.)` (with `<feature>` replaced by `$active_feature` and `<base>` by the short base commit) and stop. This stop never auto-continues. Otherwise continue below unchanged.
+**Auto mode.** If `"$CLAUDE_PLUGIN_ROOT/scripts/auto.sh" is-on` succeeds, do not print the hand-off below. Instead run `"$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" set review-stop-shown=true`, list any rows of `"$CLAUDE_PLUGIN_ROOT/scripts/deferred-questions.sh" list-open "$active_feature"` as "Open deferred questions:", then print `auto: review stop for <feature> — check commits <base>..HEAD, diagrams and test results; add findings to inspector-review.md or leave it empty, then /mi-continue (No findings → it approves and completes.)` (with `<feature>` replaced by `$active_feature` and `<base>` by the short base commit) and stop. This stop never auto-continues. Otherwise continue below unchanged.
 
 ```
 Manual test done. Review inspector-review.md (auto-seeded failures appear at the bottom as canonical
@@ -699,7 +699,7 @@ The runner computes `reclassify_existing=true` when either (a) first-time auto-s
 Finalize on every **valid exit**:
 
 ```bash
-$CLAUDE_PLUGIN_ROOT/scripts/progress.sh set sub-flow=none manual-test-state=complete
+"$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" set sub-flow=none manual-test-state=complete
 ```
 
 **Valid exits** (regardless of which `policy` shape Branch B was entered with):
@@ -788,7 +788,7 @@ Env-mode flags do not combine with `--rerun-guided` (it already implies `guided`
 2. **Rotate the finished results file into history** — filesystem mutation, before any `progress.md` write:
 
    ```bash
-   $CLAUDE_PLUGIN_ROOT/scripts/blueprints.sh manual-test-results-rotate-only "$active_feature"
+   "$CLAUDE_PLUGIN_ROOT/scripts/blueprints.sh" manual-test-results-rotate-only "$active_feature"
    ```
 
    The prior run's verdicts are preserved at `test/manual-test-results.history/<UTC-timestamp>/manual-test-results.md` — a guided re-run never destroys the autonomous record it is second-guessing. `manual-test-plan.md` is **not** rotated: the whole point is to re-run the *same* plan, so its `id`, `seed-family-id`, and `generated-in-activation` all survive.
@@ -797,7 +797,7 @@ Env-mode flags do not combine with `--rerun-guided` (it already implies `guided`
 3. **Reset the markers for a fresh guided run:**
 
    ```bash
-   $CLAUDE_PLUGIN_ROOT/scripts/progress.sh set sub-flow=manual-testing manual-test-state=running \
+   "$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" set sub-flow=manual-testing manual-test-state=running \
      manual-test-env-mode=guided manual-test-failure-policy=none
    ```
 

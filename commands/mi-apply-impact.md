@@ -45,11 +45,11 @@ command for such an entry; this guard closes the manual-invocation hole, where
 
 ```bash
 # Guard the queue-head on a fresh run, and the active feature on a re-entry.
-guard_candidate="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get-active 2>/dev/null || echo 'null')"
+guard_candidate="$("$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" get-active 2>/dev/null || echo 'null')"
 if [[ "$guard_candidate" == "null" || -z "$guard_candidate" ]]; then
-  guard_candidate="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh queue-remaining 2>/dev/null | sed '/^$/d' | head -1)"
+  guard_candidate="$("$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" queue-remaining 2>/dev/null | sed '/^$/d' | head -1)"
 fi
-if [[ -n "$guard_candidate" ]] && $CLAUDE_PLUGIN_ROOT/scripts/todo.sh is-feature-test "$guard_candidate"; then
+if [[ -n "$guard_candidate" ]] && "$CLAUDE_PLUGIN_ROOT/scripts/todo.sh" is-feature-test "$guard_candidate"; then
   echo "error: '$guard_candidate' is this cycle's feature-test entry. It has no blueprint stage, and this command would create the blueprints/ folder its design forbids." >&2
   echo "       Type /mi-continue instead — the dispatcher routes it into the abbreviated pipeline (diagrams → test plan → run → review → resolution)." >&2
   exit 1
@@ -61,7 +61,7 @@ No activation, no `ensure-current`, no state mutation — the guard refuses with
 command proceeds exactly as today.
 
 ```bash
-active_feature_pre="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get-active 2>/dev/null || echo 'null')"
+active_feature_pre="$("$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" get-active 2>/dev/null || echo 'null')"
 
 force_regen=0
 for arg in $ARGUMENTS; do
@@ -71,7 +71,7 @@ for arg in $ARGUMENTS; do
 done
 
 if [[ "$active_feature_pre" == "null" || -z "$active_feature_pre" ]]; then
-  active_feature="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh activate)"
+  active_feature="$("$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" activate)"
   echo "Starting workflow for feature: $active_feature"
 
   # Feature-folder lineage backstop — late safety net behind /mi-run's Step-3
@@ -80,7 +80,7 @@ if [[ "$active_feature_pre" == "null" || -z "$active_feature_pre" ]]; then
   # link it to this cycle, flipping every later check to same-cycle. Fresh
   # activation only — the re-entry branch below re-enters a folder this cycle
   # already owns.
-  if lineage_msg="$($CLAUDE_PLUGIN_ROOT/scripts/folder-id.sh feature-lineage-check "$active_feature")"; then
+  if lineage_msg="$("$CLAUDE_PLUGIN_ROOT/scripts/folder-id.sh" feature-lineage-check "$active_feature")"; then
     echo "$lineage_msg"
   else
     echo "warning: $lineage_msg" >&2
@@ -88,16 +88,16 @@ if [[ "$active_feature_pre" == "null" || -z "$active_feature_pre" ]]; then
     exit 78   # halt for inspector decision — see prose below
   fi
 
-  $CLAUDE_PLUGIN_ROOT/scripts/blueprints.sh ensure-current "$active_feature"
+  "$CLAUDE_PLUGIN_ROOT/scripts/blueprints.sh" ensure-current "$active_feature"
 else
-  current_stage="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get current-stage)"
+  current_stage="$("$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" get current-stage)"
   if [[ "$current_stage" != "2" ]]; then
     echo "error: feature '$active_feature_pre' is mid-flight at stage $current_stage. Run /mi-abort-workflow to clear before re-running /mi-apply-impact." >&2
     exit 1
   fi
   active_feature="$active_feature_pre"
   echo "Re-entering stage 2 for feature: $active_feature"
-  $CLAUDE_PLUGIN_ROOT/scripts/blueprints.sh ensure-current "$active_feature"
+  "$CLAUDE_PLUGIN_ROOT/scripts/blueprints.sh" ensure-current "$active_feature"
 
   # Inspect what's already there. check-current is in default mode (no
   # --require-primer): primer.md is not expected at stage 2.
@@ -123,7 +123,7 @@ else
         exit 1
       fi
       echo "--force passed; clearing partial current/ and regenerating."
-      data_root="$($CLAUDE_PLUGIN_ROOT/scripts/data-root.sh)"
+      data_root="$("$CLAUDE_PLUGIN_ROOT/scripts/data-root.sh")"
       curr="$data_root/workflow-stream/$active_feature/blueprints/current"
       shopt -s dotglob nullglob
       for entry in "$curr"/*; do rm -rf "$entry"; done
@@ -142,7 +142,7 @@ else
       # loop above changes — explicit remove keeps cleanup intent visible.
       curr_review_history="$data_root/workflow-stream/$active_feature/blueprints/current/review-history.md"
       [[ -e "$curr_review_history" ]] && rm -f "$curr_review_history"
-      $CLAUDE_PLUGIN_ROOT/scripts/blueprints.sh ensure-current "$active_feature"
+      "$CLAUDE_PLUGIN_ROOT/scripts/blueprints.sh" ensure-current "$active_feature"
       ;;
   esac
 fi
@@ -181,11 +181,11 @@ returns a resolved path unconditionally — it does not check existence — so
 the guard lives at this call site.
 
 ```bash
-data_root="$($CLAUDE_PLUGIN_ROOT/scripts/data-root.sh)"
-quest_dir="$($CLAUDE_PLUGIN_ROOT/scripts/quest.sh dir)"
+data_root="$("$CLAUDE_PLUGIN_ROOT/scripts/data-root.sh")"
+quest_dir="$("$CLAUDE_PLUGIN_ROOT/scripts/quest.sh" dir)"
 impl_dir="$data_root/workflow-stream/$active_feature/implementation"
 blueprint_lessons_path="$impl_dir/blueprint-lessons.md"
-lessons_path="$($CLAUDE_PLUGIN_ROOT/scripts/lessons.sh path)"
+lessons_path="$("$CLAUDE_PLUGIN_ROOT/scripts/lessons.sh" path)"
 
 if [[ ! -f "$lessons_path" ]]; then
   echo "info: lessons-learned.md not present; skipping blueprint-lessons injection"
@@ -269,7 +269,7 @@ The content flow — write `requirements.md`, write `config.md` (auto-block + GI
 
 ```bash
 # Scope: PENDING items (first-time generation at stage 2).
-active_item_ids="$($CLAUDE_PLUGIN_ROOT/scripts/todo.sh list PENDING --feature "$active_feature")"
+active_item_ids="$("$CLAUDE_PLUGIN_ROOT/scripts/todo.sh" list PENDING --feature "$active_feature")"
 ```
 
 Pass `$active_feature` and `$active_item_ids` through to the shared steps. The shared runbook handles: computing `$planned_ids`, initializing frontmatter, writing the three requirements body sections, filling the config auto-block from `skills.sh inventory` / `lookup`, pre-filling the GIT BRANCH section from HEAD, and rendering use-case/sequence/class diagrams with the PlantUML MCP.
@@ -380,12 +380,12 @@ review_status="auto-reviewed by <agent>; any remaining findings are inline as \`
 If the review rewrote `requirements.md`, surface any drift in the cycle's `summary.md` and `todo-list.md` as a heads-up to the inspector. The millwright does NOT auto-edit either file — `summary.md` is millwright-territory but auto-editing without consent feels surprising, and `todo-list.md` is strictly inspector-territory.
 
 ```bash
-quest_dir="$($CLAUDE_PLUGIN_ROOT/scripts/quest.sh dir)"
+quest_dir="$("$CLAUDE_PLUGIN_ROOT/scripts/quest.sh" dir)"
 summary_path="$quest_dir/summary.md"
 todo_path="$quest_dir/todo-list.md"
 requirements_path="$data_root/workflow-stream/$active_feature/blueprints/current/requirements.md"
 
-drift_report="$($CLAUDE_PLUGIN_ROOT/scripts/blueprint-review.sh diff-drift \
+drift_report="$("$CLAUDE_PLUGIN_ROOT/scripts/blueprint-review.sh" diff-drift \
   "$requirements_path" "$summary_path" "$todo_path" "$active_feature" 2>/dev/null || true)"
 
 if [[ -n "$drift_report" ]]; then
@@ -414,7 +414,7 @@ The suggestion is one-way (the millwright cannot read the current effort level),
 **Compute three signals** from artifacts already on disk:
 
 ```bash
-data_root="$($CLAUDE_PLUGIN_ROOT/scripts/data-root.sh)"
+data_root="$("$CLAUDE_PLUGIN_ROOT/scripts/data-root.sh")"
 grounding_report="$data_root/workflow-stream/$active_feature/implementation/grounding-report.md"
 requirements_path="$data_root/workflow-stream/$active_feature/blueprints/current/requirements.md"
 
@@ -430,7 +430,7 @@ fi
 # Signal 2: seam-classification = mixed (frontmatter, set by codebase-grounder).
 signal_mixed=0
 if [[ -f "$grounding_report" ]]; then
-  seam="$($CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get "$grounding_report" seam-classification 2>/dev/null || echo '')"
+  seam="$("$CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh" get "$grounding_report" seam-classification 2>/dev/null || echo '')"
   if [[ "$seam" == "mixed" ]]; then
     signal_mixed=1
   fi
@@ -510,7 +510,7 @@ Do NOT auto-advance to stage 3 without `/mi-continue` — this is the mandatory 
 Purely conversational — **no `progress.md` mutation, no stage change**; the feature stays at `current-stage=2` and the walkthrough is repeatable. Append one context-ledger row at the start:
 
 ```bash
-$CLAUDE_PLUGIN_ROOT/scripts/ledger.sh append \
+"$CLAUDE_PLUGIN_ROOT/scripts/ledger.sh" append \
   "2" "/mi-apply-impact" "requirements.md" "medium" "main" \
   "requirements walkthrough" || true
 ```

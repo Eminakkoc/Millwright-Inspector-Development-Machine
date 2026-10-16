@@ -50,7 +50,7 @@ done
 # 1.10.0: exit 69 = codex unavailable — handle exactly as /mi-blueprint-review
 # Step 1 "Codex unavailable" (ask: Claude or skip; save the choice).
 agent="$("$CLAUDE_PLUGIN_ROOT/scripts/blueprint-review.sh" resolve-agent "$agent")" || exit $?
-reviewer_cli="$($CLAUDE_PLUGIN_ROOT/scripts/blueprint-review.sh resolve-reviewer "$agent")" || exit 1
+reviewer_cli="$("$CLAUDE_PLUGIN_ROOT/scripts/blueprint-review.sh" resolve-reviewer "$agent")" || exit 1
 # Absolute path of scripts/codex-review.sh (headless `codex exec`, or `claude -p`
 # with --backend claude); see /mi-blueprint-review Step 1 "Reviewer transport".
 ```

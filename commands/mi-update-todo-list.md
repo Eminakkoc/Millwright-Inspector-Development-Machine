@@ -37,7 +37,7 @@ Parse `$ARGUMENTS` to extract the subcommand and its args, then dispatch to `tod
 ### `add <feature> <state> <assignee> <item-id> <description>`
 
 ```bash
-$CLAUDE_PLUGIN_ROOT/scripts/todo.sh add "<feature>" "<state>" "<assignee>" "<item-id>" "<description>"
+"$CLAUDE_PLUGIN_ROOT/scripts/todo.sh" add "<feature>" "<state>" "<assignee>" "<item-id>" "<description>"
 ```
 
 `todo.sh add` refuses `PENDING` / `IMPLEMENTED` and enforces item-id uniqueness. If the feature's `## <feature>` section doesn't exist yet, it's created at the end of the file.
@@ -45,7 +45,7 @@ $CLAUDE_PLUGIN_ROOT/scripts/todo.sh add "<feature>" "<state>" "<assignee>" "<ite
 ### `cancel <item-id>`
 
 ```bash
-$CLAUDE_PLUGIN_ROOT/scripts/todo.sh set-state "<item-id>" CANCELED
+"$CLAUDE_PLUGIN_ROOT/scripts/todo.sh" set-state "<item-id>" CANCELED
 ```
 
 Convenience alias for `set-state <id> CANCELED`. Does not rotate the blueprint â€” if the cancellation represents a scope change that should also update `requirements.md`, follow up with `/mi-update-blueprint <reason>`.
@@ -53,7 +53,7 @@ Convenience alias for `set-state <id> CANCELED`. Does not rotate the blueprint â
 ### `set-state <item-id> <state>`
 
 ```bash
-$CLAUDE_PLUGIN_ROOT/scripts/todo.sh set-state "<item-id>" "<state>"
+"$CLAUDE_PLUGIN_ROOT/scripts/todo.sh" set-state "<item-id>" "<state>"
 ```
 
 Before dispatching, validate `<state>` against the refused-states list above:

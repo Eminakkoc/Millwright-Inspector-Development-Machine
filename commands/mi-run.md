@@ -43,7 +43,7 @@ Use the workflow data root at `millwright-inspector/` (relative to project root)
 Before anything else, verify required dependencies are present:
 
 ```bash
-if ! $CLAUDE_PLUGIN_ROOT/scripts/doctor.sh --preflight; then
+if ! "$CLAUDE_PLUGIN_ROOT/scripts/doctor.sh" --preflight; then
   echo "Required dependencies missing. Running /mi-doctor to diagnose and install..."
   # Millwright: invoke /mi-doctor inline here, not a separate turn — the inspector
   # just typed /mi-run and expects a seamless flow. Run doctor,
@@ -83,10 +83,10 @@ error: no journal folders specified. Usage:
 Before doing any journal scanning or generation, verify there is no quest cycle in flight (or honor `--archive-active` to retire the existing one).
 
 ```bash
-data_root="$($CLAUDE_PLUGIN_ROOT/scripts/data-root.sh)"
-if existing_slug="$($CLAUDE_PLUGIN_ROOT/scripts/quest.sh current 2>/dev/null)"; then
+data_root="$("$CLAUDE_PLUGIN_ROOT/scripts/data-root.sh")"
+if existing_slug="$("$CLAUDE_PLUGIN_ROOT/scripts/quest.sh" current 2>/dev/null)"; then
   if [[ -n "${archive_active:-}" ]]; then
-    $CLAUDE_PLUGIN_ROOT/scripts/quest.sh end
+    "$CLAUDE_PLUGIN_ROOT/scripts/quest.sh" end
     echo "Archived previous cycle: $existing_slug (subfolder preserved under quest/$existing_slug/)"
   else
     cat >&2 <<EOF
@@ -208,7 +208,7 @@ If the un-ingested set is empty, proceed to the next paragraph. Otherwise run th
    >
    > The command runs in this session via my `Bash` tool — you'll see progress streamed. Nothing outside pipx's managed venv (or `~/.local/lib/python*/site-packages/`) is modified.
    >
-   > **How I use it afterwards** — I invoke docling only via `$CLAUDE_PLUGIN_ROOT/scripts/ingest.sh` (`--file <path>` mode). After install completes, I'll ingest the files you picked for docling and stub the rest.
+   > **How I use it afterwards** — I invoke docling only via `"$CLAUDE_PLUGIN_ROOT/scripts/ingest.sh"` (`--file <path>` mode). After install completes, I'll ingest the files you picked for docling and stub the rest.
    >
    > Options:
    >   y       — install docling and proceed
@@ -239,8 +239,8 @@ If the un-ingested set is empty, proceed to the next paragraph. Otherwise run th
    for path in "${files[@]}"; do
      mode="${resolved_mode[$path]}"   # "docling" or "stub"
      case "$mode" in
-       docling) $CLAUDE_PLUGIN_ROOT/scripts/ingest.sh --file "$path" || ingest_failed=1 ;;
-       stub)    $CLAUDE_PLUGIN_ROOT/scripts/ingest.sh --stub "$path" || ingest_failed=1 ;;
+       docling) "$CLAUDE_PLUGIN_ROOT/scripts/ingest.sh" --file "$path" || ingest_failed=1 ;;
+       stub)    "$CLAUDE_PLUGIN_ROOT/scripts/ingest.sh" --stub "$path" || ingest_failed=1 ;;
      esac
    done
    ```
@@ -340,9 +340,9 @@ When no folder hits the per-folder threshold AND no file hits the per-file thres
 Compute the slug for this cycle, create its subfolder under `quest/`, and point `quest/active.md` at it. After this step, every per-cycle file written in Steps 3–5 lands inside `quest/<slug>/` automatically (the helper scripts resolve paths through the active pointer).
 
 ```bash
-slug="$($CLAUDE_PLUGIN_ROOT/scripts/quest.sh slug "${journal_folders[@]}")"
-$CLAUDE_PLUGIN_ROOT/scripts/quest.sh start "$slug" "${journal_folders[@]}"
-quest_dir="$($CLAUDE_PLUGIN_ROOT/scripts/quest.sh dir)"
+slug="$("$CLAUDE_PLUGIN_ROOT/scripts/quest.sh" slug "${journal_folders[@]}")"
+"$CLAUDE_PLUGIN_ROOT/scripts/quest.sh" start "$slug" "${journal_folders[@]}"
+quest_dir="$("$CLAUDE_PLUGIN_ROOT/scripts/quest.sh" dir)"
 echo "Opened cycle subfolder: $quest_dir"
 ```
 
@@ -353,7 +353,7 @@ The slug format is `YYYY-MM-DD-<journal-slugs-joined-with-+>`, with a 3-char has
 Write the cycle's `reference.md`, which links this quest folder back to the `journal/` folders it was built from (and, later, forward to the `workflow-stream/` feature folders it produces). One call does everything — it mints an `id.md` in each journal folder if one doesn't exist yet, then writes `reference.md` with those IDs:
 
 ```bash
-$CLAUDE_PLUGIN_ROOT/scripts/folder-id.sh init-reference "${journal_folders[@]}"
+"$CLAUDE_PLUGIN_ROOT/scripts/folder-id.sh" init-reference "${journal_folders[@]}"
 ```
 
 This creates `$quest_dir/reference.md` with the `journal-refs` frontmatter array populated and `feature-refs` left empty — the feature links are appended automatically at stage 2, when each feature's blueprint folder is created (`blueprints.sh ensure-current` calls `folder-id.sh link-feature`). The `id.md` files identify the *folders*, so the links survive a folder being renamed or moved; resolve any ID back to its folder with `folder-id.sh resolve <id>`.
@@ -366,7 +366,7 @@ Create `$quest_dir/todo-list.md` using the template. Analyze **only the content 
 
 ```bash
 # For each candidate kebab-case feature name:
-if msg="$($CLAUDE_PLUGIN_ROOT/scripts/folder-id.sh feature-lineage-check "$candidate")"; then
+if msg="$("$CLAUDE_PLUGIN_ROOT/scripts/folder-id.sh" feature-lineage-check "$candidate")"; then
   echo "$msg"   # free / same-cycle / same-lineage — safe to use
 else
   echo "$msg"   # exit 3 = collision, exit 4 = unknown lineage — MUST rename (below)
@@ -384,7 +384,7 @@ The final (possibly renamed) names are the ones written everywhere downstream �
 **Feature-test entry (multi-feature cycles only).** When `count(ordinary features) >= 2` — evaluated **after** the uniqueness gate above has settled every rename, so the derived name is built from final names — this cycle also carries a terminal whole-feature test entry. Derive its name:
 
 ```bash
-ft_name="$($CLAUDE_PLUGIN_ROOT/scripts/folder-id.sh derive-feature-test-name "${final_features[@]}")"
+ft_name="$("$CLAUDE_PLUGIN_ROOT/scripts/folder-id.sh" derive-feature-test-name "${final_features[@]}")"
 ```
 
 `derive-feature-test-name` builds the base from **the cycle's journal folder(s)** — the same names the quest folder holding `todo-list.md` is itself named after — kebab-normalized and joined with `-`, then appends `-feature-test`. Journal folder `whole-feature-test-workflow` gives `whole-feature-test-workflow-feature-test`; a two-folder cycle gives `pricing-meeting-auth-rfc-feature-test`. It does **not** use the first ordinary feature: that name said nothing about the cycle and changed whenever the queue was reordered. The ordinary names are still passed in, because they are the uniqueness gate — the candidate runs the same second-pass check ordinary names get (differ from every ordinary name; pass `feature-lineage-check`), appending `-2`, `-3`, … until both pass. It prints a rename note on stderr when an ordinal was needed — Step 6 must surface it. A single-feature cycle never calls it: `count == 1` emits no feature-test section, no `## Feature:` section, no queue entry, and no folder, producing a byte-identical `todo-list.md` to today.
@@ -392,11 +392,11 @@ ft_name="$($CLAUDE_PLUGIN_ROOT/scripts/folder-id.sh derive-feature-test-name "${
 Pass `ft_name` **last** in `FEATURES`, then record it in frontmatter after `init`:
 
 ```bash
-$CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh init todo-list \
+"$CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh" init todo-list \
   "$quest_dir/todo-list.md" \
   "FEATURES=payments,audit-log,pricing-meeting-feature-test" \
   "DESCRIPTION=Add Stripe webhooks and a tamper-evident audit trail."
-$CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh set \
+"$CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh" set \
   "$quest_dir/todo-list.md" feature-test "$ft_name"
 ```
 
@@ -422,7 +422,7 @@ The item carries **no assignee** — stage 1.5 inherits one from whoever complet
 The block below is a **template** — substitute concrete values before running. `FEATURES` must be comma-separated kebab-case feature names matching what you found in the journal; `DESCRIPTION` is a one-line overall scope. Sample invocation:
 
 ```bash
-$CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh init todo-list \
+"$CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh" init todo-list \
   "$quest_dir/todo-list.md" \
   "FEATURES=payments,audit-log" \
   "DESCRIPTION=Add Stripe webhooks and a tamper-evident audit trail."
@@ -437,9 +437,9 @@ Then append the item blocks to the body of the file (replace the placeholder com
 The block below is a **template** — substitute concrete values before running. `FEATURES` must match the `related-features` array you wrote into `todo-list.md` in Step 3 (exact same kebab-case names, in any order — the body's `## Feature: <name>` headings will be cross-checked against this list). Sample invocation:
 
 ```bash
-todo_list_id="$($CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get \
+todo_list_id="$("$CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh" get \
   "$quest_dir/todo-list.md" id)"
-$CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh init summary \
+"$CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh" init summary \
   "$quest_dir/summary.md" \
   "TODO_LIST_ID=$todo_list_id" \
   "FEATURES=payments,audit-log" \
@@ -463,7 +463,7 @@ The `features:` frontmatter array and the body's `## Feature: <name>` headings m
 **Feature-test section (multi-feature cycles only).** When Step 3 emitted a feature-test entry, pass the same `ft_name` last in `FEATURES` and mirror the field:
 
 ```bash
-$CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh set \
+"$CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh" set \
   "$quest_dir/summary.md" feature-test "$ft_name"
 ```
 
@@ -472,7 +472,7 @@ Add `## Feature: <ft_name>` as the **last** `## Feature:` section (before `## So
 ### Step 5 — Scaffold the cycle's `progress.md`
 
 ```bash
-$CLAUDE_PLUGIN_ROOT/scripts/progress.sh init "$todo_list_id" <feature1> [<feature2> ...]
+"$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" init "$todo_list_id" <feature1> [<feature2> ...]
 ```
 
 When the `--auto` flag (or bare `auto` token) was given in Step 1, pass `--auto` first instead:
@@ -518,7 +518,7 @@ Do not advance past this point inside `mi-run` itself. `/mi-continue`'s Pre-flig
 
 ## Notes
 
-- Never generate UUIDs inline. Always use `$CLAUDE_PLUGIN_ROOT/scripts/uuid.sh`, or rely on `frontmatter.sh init` which auto-generates one.
+- Never generate UUIDs inline. Always use `"$CLAUDE_PLUGIN_ROOT/scripts/uuid.sh"`, or rely on `frontmatter.sh init` which auto-generates one.
 - Every write to a workflow file is validated by the PostToolUse hook. If the hook blocks, fix the frontmatter and retry.
 
 ## Delegation (optional)

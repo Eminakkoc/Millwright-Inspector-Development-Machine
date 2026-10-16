@@ -43,7 +43,7 @@ url="$ARGUMENTS"
 # parse-url exits non-zero on an unrecognized URL and prints one TAB-separated
 # line. owner/repo are slug-restricted, so the fields are read directly — no
 # eval — and a URL carrying shell metacharacters fails the pattern outright.
-parsed="$($CLAUDE_PLUGIN_ROOT/scripts/pr-review.sh parse-url "$url")" || exit 1
+parsed="$("$CLAUDE_PLUGIN_ROOT/scripts/pr-review.sh" parse-url "$url")" || exit 1
 IFS=$'\t' read -r owner repo pr kind ref_id <<< "$parsed"
 ```
 
@@ -89,7 +89,7 @@ recognized GitHub PR/comment URL.
 ### Step 3 — Create the session
 
 ```bash
-session="$($CLAUDE_PLUGIN_ROOT/scripts/pr-review.sh new-session "$owner" "$repo" "$pr")"
+session="$("$CLAUDE_PLUGIN_ROOT/scripts/pr-review.sh" new-session "$owner" "$repo" "$pr")"
 ```
 
 `new-session` refuses (non-zero exit) if an `awaiting-marks` or `partial` report
@@ -100,7 +100,7 @@ session directory.
 ### Step 4 — Fetch the comments
 
 ```bash
-fetch_out="$($CLAUDE_PLUGIN_ROOT/scripts/pr-review.sh fetch "$owner" "$repo" "$pr" "$kind" "$ref_id" "$session")"
+fetch_out="$("$CLAUDE_PLUGIN_ROOT/scripts/pr-review.sh" fetch "$owner" "$repo" "$pr" "$kind" "$ref_id" "$session")"
 head_ref="$(echo "$fetch_out" | sed -n 's/^head-ref=//p')"
 ```
 
@@ -113,7 +113,7 @@ analyze." and stop.
 
 ```bash
 report="$session/report.md"
-$CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh init pr-review-report "$report" \
+"$CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh" init pr-review-report "$report" \
   "PR_URL=$url" \
   "REPO=$owner/$repo" \
   "PR_NUMBER=!RAW!$pr" \
@@ -218,7 +218,7 @@ Do not narrate intermediate steps.
 After the analyst returns:
 
 ```bash
-$CLAUDE_PLUGIN_ROOT/scripts/pr-review.sh canonicalize "$report"
+"$CLAUDE_PLUGIN_ROOT/scripts/pr-review.sh" canonicalize "$report"
 ```
 
 `canonicalize` renumbers the `PR-NNN` ids in document order and validates every

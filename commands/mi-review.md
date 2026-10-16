@@ -32,12 +32,12 @@ There is no AI-driven review pass. Findings are authored by the inspector (durin
 ### Step 1 — Resolve inputs
 
 ```bash
-data_root="$($CLAUDE_PLUGIN_ROOT/scripts/data-root.sh)"
-active_feature="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get-active)"
+data_root="$("$CLAUDE_PLUGIN_ROOT/scripts/data-root.sh")"
+active_feature="$("$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" get-active)"
 ov_file="$data_root/workflow-stream/$active_feature/implementation/inspector-review.md"
 [[ -f "$ov_file" ]] || { echo "error: inspector-review.md not found at $ov_file" >&2; exit 1; }
 
-open_ids="$($CLAUDE_PLUGIN_ROOT/scripts/review.sh list-open "$active_feature")"
+open_ids="$("$CLAUDE_PLUGIN_ROOT/scripts/review.sh" list-open "$active_feature")"
 [[ -n "$open_ids" ]] || { echo "no open findings — nothing to review. Type /mi-continue to run the clean-review finalizer (advances to stage 7 and auto-fires /mi-complete-workflow)." >&2; exit 0; }
 ```
 
@@ -46,7 +46,7 @@ open_ids="$($CLAUDE_PLUGIN_ROOT/scripts/review.sh list-open "$active_feature")"
 Per `docs/clear-points/plan.md` §3.3 / §5.2, this step offers the inspector a `/clear` between stage-5 findings authoring and the stage-6 review session. The gate fires at most once per feature: on first entry it prints the recommendation and halts; on re-entry (whether the inspector cleared or skipped) it proceeds. It only arms while `current-stage` is still 5 — stage-6 re-launches of `/mi-review` (review-loop blueprint rotations, mid-review re-entry) and features activated before the gate shipped skip it silently.
 
 ```bash
-current_stage="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get current-stage)"
+current_stage="$("$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" get current-stage)"
 if (( current_stage != 5 )); then
   gate_state="not-armed"        # stage-6 re-launch — never prompt, no ledger rows
 elif "$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" has-clear-recommendation stage-5-to-6; then
@@ -66,7 +66,7 @@ Review the last several turns of the conversation. If they contain instructions,
 decisions_file="$data_root/workflow-stream/$active_feature/decisions.md"
 if [[ ! -f "$decisions_file" ]]; then
   # File doesn't exist yet — initialize it on first use.
-  $CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh init decisions "$decisions_file" \
+  "$CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh" init decisions "$decisions_file" \
     "FEATURE=$active_feature"
 fi
 # Then use Edit to append bullets to the `## Stage 5 — Findings canonicalization`
@@ -83,15 +83,15 @@ The write-check runs in every `gate_state` branch — late decisions caught betw
 **If `gate_state=first-entry` (print recommendation + halt):**
 
 ```bash
-$CLAUDE_PLUGIN_ROOT/scripts/progress.sh add-clear-recommendation stage-5-to-6
-$CLAUDE_PLUGIN_ROOT/scripts/ledger.sh append \
+"$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" add-clear-recommendation stage-5-to-6
+"$CLAUDE_PLUGIN_ROOT/scripts/ledger.sh" append \
   "5" "/mi-review" "clear-offer-recommendation" "small" "main" \
   "stage-5-to-6 clear offered" || true
 ```
 
 Then print the recommendation block to the inspector and **halt** — do NOT proceed to Step 2 in this branch (state stays at `current-stage=5`, `sub-flow` untouched):
 
-**Auto mode.** If `$CLAUDE_PLUGIN_ROOT/scripts/auto.sh is-on` succeeds, print `auto: clear gate stage-5-to-6 — type /clear, then /mi-continue` instead of the recommendation below, and stop (the `decisions.md` write-check above has already run). Otherwise continue below unchanged.
+**Auto mode.** If `"$CLAUDE_PLUGIN_ROOT/scripts/auto.sh" is-on` succeeds, print `auto: clear gate stage-5-to-6 — type /clear, then /mi-continue` instead of the recommendation below, and stop (the `decisions.md` write-check above has already run). Otherwise continue below unchanged.
 
 > "Open findings for `$active_feature` are recorded; the stage-6 review session is next. **Recommended:** type `/clear`, then `/mi-continue` to enter the review session with a fresh main context.
 >
@@ -110,7 +110,7 @@ Then exit. The inspector's next `/mi-continue` re-enters the Inspector Handler (
 **If `gate_state=already-fired` (re-entry — offer was already shown; proceed):**
 
 ```bash
-$CLAUDE_PLUGIN_ROOT/scripts/ledger.sh append \
+"$CLAUDE_PLUGIN_ROOT/scripts/ledger.sh" append \
   "5" "/mi-review" "post-offer-resume" "small" "main" \
   "stage-5-to-6 launcher resumed" || true
 
@@ -118,7 +118,7 @@ $CLAUDE_PLUGIN_ROOT/scripts/ledger.sh append \
 # review-context.md post-clear. The gate does NOT itself read these here;
 # the ledger row attributes the read class to the gate transition for
 # analytics.
-$CLAUDE_PLUGIN_ROOT/scripts/ledger.sh append \
+"$CLAUDE_PLUGIN_ROOT/scripts/ledger.sh" append \
   "5" "/mi-review" "progress.md, inspector-review.md, requirements.md, change-summary.md, manual-test-results.md, decisions.md" \
   "medium" "main" "stage-5-to-6 rehydration" || true
 ```
@@ -132,11 +132,11 @@ We **cannot** distinguish "took the clear" from "skipped the clear" — both pro
 ### Step 2 — Mark sub-flow
 
 ```bash
-$CLAUDE_PLUGIN_ROOT/scripts/progress.sh set "sub-flow=reviewing"
+"$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" set "sub-flow=reviewing"
 # Advance 5 → 6 if not already past.
-current_stage="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get current-stage)"
+current_stage="$("$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" get current-stage)"
 if (( current_stage == 5 )); then
-  $CLAUDE_PLUGIN_ROOT/scripts/progress.sh advance 5
+  "$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" advance 5
 fi
 ```
 
@@ -153,9 +153,9 @@ ctx_dest="$data_root/workflow-stream/$active_feature/implementation/review-conte
 # and the same oneOf gate `review.sh init` already established for
 # inspector-review.md — this reuses that resolution rather than
 # reimplementing the feature-test contributor walk a second time.
-requirements_field="$($CLAUDE_PLUGIN_ROOT/scripts/review.sh resolve-requirements-field "$active_feature")"
+requirements_field="$("$CLAUDE_PLUGIN_ROOT/scripts/review.sh" resolve-requirements-field "$active_feature")"
 # frontmatter.sh init overwrites — safe to re-run if /mi-review is invoked again.
-$CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh init review-context "$ctx_dest" \
+"$CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh" init review-context "$ctx_dest" \
   "REQUIREMENTS_FIELD=$requirements_field" \
   "FEATURE=$active_feature" \
   "DATA_ROOT=$data_root"
@@ -245,12 +245,12 @@ The `## On-demand canonical files` section is template-emitted and does not need
 Read the suggestion that stage 5 (`/mi-continue` Inspector Step 1.6) persisted to `progress.md`:
 
 ```bash
-suggestion="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get review-mode-suggestion 2>/dev/null || echo 'none')"
+suggestion="$("$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" get review-mode-suggestion 2>/dev/null || echo 'none')"
 ```
 
 Branch the prompt's default and rationale on the suggestion:
 
-**Auto mode.** If `$CLAUDE_PLUGIN_ROOT/scripts/auto.sh is-on` succeeds, run `$CLAUDE_PLUGIN_ROOT/scripts/auto.sh answer "review mode" "direct" --cmd /mi-review` and continue as if the inspector had replied `direct` — do not show the prompt below. Otherwise show the prompt below unchanged.
+**Auto mode.** If `"$CLAUDE_PLUGIN_ROOT/scripts/auto.sh" is-on` succeeds, run `"$CLAUDE_PLUGIN_ROOT/scripts/auto.sh" answer "review mode" "direct" --cmd /mi-review` and continue as if the inspector had replied `direct` — do not show the prompt below. Otherwise show the prompt below unchanged.
 
 **If `suggestion == "direct"`** (all open findings have `scope: fix` — stage 5 detected this when canonicalizing):
 
@@ -273,7 +273,7 @@ Branch the prompt's default and rationale on the suggestion:
 Wait for the reply. If the inspector presses Enter without typing (accept-default), use the suggestion-derived default (`direct` when suggestion was `direct`, `brainstorming` otherwise). Persist the actual choice:
 
 ```bash
-$CLAUDE_PLUGIN_ROOT/scripts/progress.sh set "review-mode=<choice>"
+"$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" set "review-mode=<choice>"
 ```
 
 Then dispatch on the value:
@@ -292,8 +292,8 @@ This caps per-iteration main-context growth at the sub-agent's return summary (~
 #### Step 3a.1 — Compute path constants
 
 ```bash
-data_root="$($CLAUDE_PLUGIN_ROOT/scripts/data-root.sh)"
-quest_slug="$($CLAUDE_PLUGIN_ROOT/scripts/quest.sh current)"
+data_root="$("$CLAUDE_PLUGIN_ROOT/scripts/data-root.sh")"
+quest_slug="$("$CLAUDE_PLUGIN_ROOT/scripts/quest.sh" current)"
 review_ctx="$data_root/workflow-stream/$active_feature/implementation/review-context.md"
 inspector_review="$data_root/workflow-stream/$active_feature/implementation/inspector-review.md"
 quest_summary="$data_root/quest/$quest_slug/summary.md"
@@ -309,7 +309,7 @@ The loop runs while open findings exist AND the inspector has not typed `approve
 ##### Step 3a.2.1 — Read open IR-IDs
 
 ```bash
-open_ids="$($CLAUDE_PLUGIN_ROOT/scripts/review.sh list-open "$active_feature")"
+open_ids="$("$CLAUDE_PLUGIN_ROOT/scripts/review.sh" list-open "$active_feature")"
 ```
 
 If `open_ids` is empty: this should not happen at iteration entry — Step 2 already short-circuits the no-findings case. If it does happen mid-loop (e.g., the inspector manually closed all findings), exit cleanly per Step 3a.2.6 `approve` branch.
@@ -321,7 +321,7 @@ On iteration 1, `review-context.md` is fresh from Step 2.5 — skip this step.
 On iterations 2+, the prior iteration may have committed code; the snapshot of `## Implemented surface` and `## Open findings (snapshot)` is stale. Refresh:
 
 ```bash
-$CLAUDE_PLUGIN_ROOT/scripts/review.sh sync-refs "$active_feature" --refresh-body
+"$CLAUDE_PLUGIN_ROOT/scripts/review.sh" sync-refs "$active_feature" --refresh-body
 ```
 
 `sync-refs --refresh-body` re-derives the two body sections from current git state and `review.sh list-open` output. The cache key `(requirements-id, base-commit, HEAD-at-iteration-start)` causes a no-op when nothing has moved — see `recommendations.md` § "Cache Key Specifications" → `review-context.md` body refresh.
@@ -366,7 +366,7 @@ Invoke `Agent` with `subagent_type: millwright-inspector-development-machine:rev
 Before composing the prompt, build the skills block (re-derive the feature in this block — each bash block runs in a fresh shell; substitute the literal feature slug if `active_feature` is not set):
 
 ```bash
-active_feature="${active_feature:-$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get-active 2>/dev/null || echo null)}"
+active_feature="${active_feature:-$("$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" get-active 2>/dev/null || echo null)}"
 skills_block="$("$CLAUDE_PLUGIN_ROOT/scripts/skills.sh" brief "$active_feature" implement)"
 ```
 
@@ -417,7 +417,7 @@ Process findings in descending order of impact: re-spec → re-plan → re-imple
 **For each finding addressed**, commit your changes and call:
 
 ```bash
-$CLAUDE_PLUGIN_ROOT/scripts/review.sh set-status "<active_feature>" <IR-NNN> fixed "<one-line fix-note>"
+"$CLAUDE_PLUGIN_ROOT/scripts/review.sh" set-status "<active_feature>" <IR-NNN> fixed "<one-line fix-note>"
 ```
 
 Use `wontfix` instead of `fixed` if a finding turns out to be invalid or already addressed. Do NOT mutate `progress.md` — that is mi-workflow's job, triggered later by the inspector's `/mi-continue`.
@@ -455,7 +455,7 @@ The fresh sub-agent returns one structured summary message (per the contract abo
 
 After the sub-agent returns, surface its summary to the inspector in chat. Then prompt:
 
-**Auto mode.** If `$CLAUDE_PLUGIN_ROOT/scripts/auto.sh is-on` succeeds, run `"$CLAUDE_PLUGIN_ROOT/scripts/auto.sh" approve-guard "$active_feature"`. If it exits 0, run `$CLAUDE_PLUGIN_ROOT/scripts/auto.sh answer "review approve" "approve" --cmd /mi-review`, treat the reply as `approve`, and then invoke `/mi-continue` yourself instead of telling the inspector to type it. If it exits 1, print its line (it names the findings that need the inspector — re-spec, re-plan, wontfix, still open) and then show the prompt below unchanged. Otherwise show the prompt below unchanged.
+**Auto mode.** If `"$CLAUDE_PLUGIN_ROOT/scripts/auto.sh" is-on` succeeds, run `"$CLAUDE_PLUGIN_ROOT/scripts/auto.sh" approve-guard "$active_feature"`. If it exits 0, run `"$CLAUDE_PLUGIN_ROOT/scripts/auto.sh" answer "review approve" "approve" --cmd /mi-review`, treat the reply as `approve`, and then invoke `/mi-continue` yourself instead of telling the inspector to type it. If it exits 1, print its line (it names the findings that need the inspector — re-spec, re-plan, wontfix, still open) and then show the prompt below unchanged. Otherwise show the prompt below unchanged.
 
 > "Iteration <N> complete. Resolved IR-IDs: `<list-from-summary>`. <Optional: surface 'Findings / risks' or 'Main should read' lines if non-empty.>
 >
@@ -472,7 +472,7 @@ Wait for the reply.
 - **On `go again`:** The inspector may have added free-form findings to `inspector-review.md`. Re-canonicalize:
   ```bash
   # Re-run canonicalization + classify any new free-form spans
-  $CLAUDE_PLUGIN_ROOT/scripts/review.sh canonicalize "$active_feature" || true
+  "$CLAUDE_PLUGIN_ROOT/scripts/review.sh" canonicalize "$active_feature" || true
   # If spans were found, classify and add them per the Step 1.5 recipe in commands/mi-continue.md.
   # Then re-compute review-mode-suggestion (Step 1.6 recipe) so subsequent iterations reflect the new scope mix.
   ```
@@ -499,7 +499,7 @@ The millwright (this session) addresses each finding directly — no Skill is in
    - **Direct mode caveat:** if a finding's scope is `re-plan` or `re-spec`, it likely needs the chain's design / plan gates that direct mode skips. Surface that to the inspector and ask if they want to switch to `brainstorming` for the rest of the session — re-set `review-mode=brainstorming` and proceed to Step 3a. Only stay in direct mode for `fix` / simple `re-implement` findings. In auto mode, do not ask — print `auto: warning — <IR-NNN> is <scope>; direct mode may skip the design/plan gates it needs` for each such finding and stay in direct mode; the approve guard stops the flow later if the finding ends up re-spec/re-plan or wontfix.
 3. **For each finding addressed**, commit the change and call:
    ```bash
-   $CLAUDE_PLUGIN_ROOT/scripts/review.sh set-status "$active_feature" <IR-NNN> fixed "<one-line fix-note>"
+   "$CLAUDE_PLUGIN_ROOT/scripts/review.sh" set-status "$active_feature" <IR-NNN> fixed "<one-line fix-note>"
    ```
    Use `wontfix` instead of `fixed` if the inspector agrees to skip it.
 4. **One-iteration discipline:** address ALL open findings before asking for approval — except a contradicting pair (below). Do not partially fix and ask.
@@ -508,7 +508,7 @@ The millwright (this session) addresses each finding directly — no Skill is in
    1. Read `inspector-review.md`; list `open` findings.
    2. Address them per the rules above; commit; mark each resolved.
 
-   **Auto mode.** If `$CLAUDE_PLUGIN_ROOT/scripts/auto.sh is-on` succeeds, run `"$CLAUDE_PLUGIN_ROOT/scripts/auto.sh" approve-guard "$active_feature"`. If it exits 0, run `$CLAUDE_PLUGIN_ROOT/scripts/auto.sh answer "review approve" "approve" --cmd /mi-review`, treat the reply as `approve`, and then invoke `/mi-continue` yourself instead of telling the inspector to type it. If it exits 1, print its line (it names the findings that need the inspector — re-spec, re-plan, wontfix, still open) and then show the prompt below unchanged. Otherwise show the prompt below unchanged.
+   **Auto mode.** If `"$CLAUDE_PLUGIN_ROOT/scripts/auto.sh" is-on` succeeds, run `"$CLAUDE_PLUGIN_ROOT/scripts/auto.sh" approve-guard "$active_feature"`. If it exits 0, run `"$CLAUDE_PLUGIN_ROOT/scripts/auto.sh" answer "review approve" "approve" --cmd /mi-review`, treat the reply as `approve`, and then invoke `/mi-continue` yourself instead of telling the inspector to type it. If it exits 1, print its line (it names the findings that need the inspector — re-spec, re-plan, wontfix, still open) and then show the prompt below unchanged. Otherwise show the prompt below unchanged.
 
    3. Tell the inspector: *"All open findings addressed (resolved: \<ids\>). Either: (a) reply `approve` to end the review session — then type `/mi-continue` to resume mi-workflow and finalize; (b) add new findings to `inspector-review.md` (plain sentences are fine — I'll canonicalize them) and reply `go again` so I re-read; (c) reply `abort` to invoke `/mi-abort-workflow`."*
    4. On `approve`: tell the inspector *"Review session approved. Type `/mi-continue` to resume the mi-workflow and finalize."* Then stop. Do NOT call `progress.sh` for completion — that's mi-workflow's job, triggered by `/mi-continue`.

@@ -382,7 +382,7 @@ else
 fi
 
 t="mi-continue.md stage-1.5 creation calls link-feature"
-if grep -q 'folder-id.sh link-feature' "$MI_CONTINUE"; then
+if grep -q 'folder-id.sh" link-feature\|folder-id.sh link-feature' "$MI_CONTINUE"; then
   ok "$t"
 else
   ng "$t" "link-feature is never called — derive-feature-test-name will rename the entry on a later cycle"

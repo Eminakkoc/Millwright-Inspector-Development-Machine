@@ -44,8 +44,8 @@ If `target` is not `implementation`, error out:
 Read the diagram-prompt setting and the skip marker:
 
 ```bash
-diagram_prompt="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get diagram-prompt 2>/dev/null || echo 'prompt')"
-skipped="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get implementation-diagrams-skipped 2>/dev/null || echo 'false')"
+diagram_prompt="$("$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" get diagram-prompt 2>/dev/null || echo 'prompt')"
+skipped="$("$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" get implementation-diagrams-skipped 2>/dev/null || echo 'false')"
 ```
 
 **Branch on `(diagram_prompt, skipped)`:**
@@ -55,7 +55,7 @@ skipped="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get implementation-diagrams-s
 
   **Recovery prompt** (Phase 3.4):
 
-  **Auto mode.** If `$CLAUDE_PLUGIN_ROOT/scripts/auto.sh is-on` succeeds, run `$CLAUDE_PLUGIN_ROOT/scripts/auto.sh answer "generate skipped diagrams" "y" --cmd /mi-draw-diagrams` and continue as if the inspector had replied `y` — do not show the prompt below. Otherwise show the prompt below unchanged.
+  **Auto mode.** If `"$CLAUDE_PLUGIN_ROOT/scripts/auto.sh" is-on` succeeds, run `"$CLAUDE_PLUGIN_ROOT/scripts/auto.sh" answer "generate skipped diagrams" "y" --cmd /mi-draw-diagrams` and continue as if the inspector had replied `y` — do not show the prompt below. Otherwise show the prompt below unchanged.
 
   > "Stage-4 diagrams were skipped earlier this cycle. Generate them now? Reply:
   >   - `y` — delegate to a fresh sub-agent now (~30s); covers the full `base-commit..HEAD` range and clears the skip marker so stage 8 archives the diagrams.
@@ -67,7 +67,7 @@ skipped="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get implementation-diagrams-s
 
   - **`y` (or `--force`)** — proceed to Step 2 (dispatch). After dispatch succeeds, clear the marker:
     ```bash
-    $CLAUDE_PLUGIN_ROOT/scripts/progress.sh set "implementation-diagrams-skipped=false"
+    "$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" set "implementation-diagrams-skipped=false"
     ```
   - **`n`** — exit 0 with no changes. The skip remains in place.
 
@@ -85,17 +85,17 @@ Wait for the reply. Branch on the answer:
 - **`y`** — proceed to Step 2 (dispatch). After the dispatch succeeds, clear the skip marker (in case it was set from an earlier skip): `progress.sh set implementation-diagrams-skipped=false`.
 - **`auto`** — persist the preference, then proceed to Step 2:
   ```bash
-  $CLAUDE_PLUGIN_ROOT/scripts/progress.sh set "diagram-prompt=auto"
+  "$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" set "diagram-prompt=auto"
   ```
   After the dispatch succeeds, also clear `implementation-diagrams-skipped=false`.
 - **`n`** — record the skip and clean any stale directory. **Order matters for crash safety**: remove the directory FIRST, then set the marker. If a session breaks between step 1 and step 2, the next `/mi-continue` sees `implementation-diagrams-skipped=false` (default) AND no `implementation/diagrams/` directory — `diagrams-fresh` (Phase 3.4) returns `missing`, which is safe in either reading: at Review-Resume Step 2.5 it surfaces the diagnostic prompt, and at the generator's Step 1.5 it simply regenerates the set that was just removed. The reverse order would leave a window where the marker says skipped but stale `.puml` files still exist, and stage 8's archival loop (`[[ -d ... ]] && mv -n ...`) would silently archive them.
 
   ```bash
-  data_root="$($CLAUDE_PLUGIN_ROOT/scripts/data-root.sh)"
-  active_feature="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get-active)"
+  data_root="$("$CLAUDE_PLUGIN_ROOT/scripts/data-root.sh")"
+  active_feature="$("$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" get-active)"
   impl_diagrams="$data_root/workflow-stream/$active_feature/implementation/diagrams"
   [[ -d "$impl_diagrams" ]] && rm -rf "$impl_diagrams"
-  $CLAUDE_PLUGIN_ROOT/scripts/progress.sh set "implementation-diagrams-skipped=true"
+  "$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" set "implementation-diagrams-skipped=true"
   ```
 
   Then exit cleanly:

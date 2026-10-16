@@ -50,18 +50,18 @@ Usage: /mi-sidequest [--quick | --standard | --deep] [--write] "<question>"
 Run the reads below in order. The slash command does not catch errors from these calls — if any of them prints an error and exits non-zero (worktree mismatch, missing active quest), the inspector sees that error and the side-quest does not spawn.
 
 ```bash
-data_root="$($CLAUDE_PLUGIN_ROOT/scripts/data-root.sh)"
-quest_slug="$($CLAUDE_PLUGIN_ROOT/scripts/quest.sh current)"      # exits non-zero if no active quest
+data_root="$("$CLAUDE_PLUGIN_ROOT/scripts/data-root.sh")"
+quest_slug="$("$CLAUDE_PLUGIN_ROOT/scripts/quest.sh" current)"      # exits non-zero if no active quest
 progress="$data_root/quest/$quest_slug/progress.md"
 
 # Worktree-fingerprint guard. Mandatory before any spawn, especially before --write.
 # Helper at scripts/internal/common.sh:308 (mi_verify_worktree). Exits 0 when active=null,
 # so safe to call unconditionally at cycle scope.
-$CLAUDE_PLUGIN_ROOT/scripts/progress.sh check-worktree
+"$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" check-worktree
 
-active_feature="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get-active)"
-current_stage="$($CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get "$progress" .active.current-stage 2>/dev/null || echo null)"
-sub_flow="$($CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get "$progress" .active.sub-flow 2>/dev/null || echo none)"
+active_feature="$("$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" get-active)"
+current_stage="$("$CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh" get "$progress" .active.current-stage 2>/dev/null || echo null)"
+sub_flow="$("$CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh" get "$progress" .active.sub-flow 2>/dev/null || echo none)"
 ```
 
 If `quest.sh current` exits non-zero (no active cycle), print and exit:

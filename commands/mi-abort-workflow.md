@@ -16,8 +16,8 @@ Use when a workflow needs to be cancelled mid-flight — session crash, mind cha
 ### Step 1 — Parse the drop-feature flag and validate
 
 ```bash
-active_feature="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get-active)"
-current_stage="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get current-stage)"
+active_feature="$("$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" get-active)"
+current_stage="$("$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" get current-stage)"
 drop_mode=""
 case "${1:-}" in
   --drop-feature=requeue)   drop_mode="requeue" ;;
@@ -41,7 +41,7 @@ esac
 ```
 
 ```bash
-if $CLAUDE_PLUGIN_ROOT/scripts/todo.sh is-feature-test "$active_feature"; then
+if "$CLAUDE_PLUGIN_ROOT/scripts/todo.sh" is-feature-test "$active_feature"; then
   ft_mode=1
 else
   ft_mode=0
@@ -104,13 +104,13 @@ Retry semantics for `test/`:
 Scope the revert to the active feature so other queued/in-flight features' todos aren't affected. (`bulk-transition` without `--feature` would touch every IMPLEMENTING line in the file — including any other feature mid-work, which is not what abort means.)
 
 ```bash
-$CLAUDE_PLUGIN_ROOT/scripts/todo.sh bulk-transition IMPLEMENTING PENDING --feature "$active_feature"
+"$CLAUDE_PLUGIN_ROOT/scripts/todo.sh" bulk-transition IMPLEMENTING PENDING --feature "$active_feature"
 ```
 
 ### Step 4 — Clear implementation
 
 ```bash
-data_root="$($CLAUDE_PLUGIN_ROOT/scripts/data-root.sh)"
+data_root="$("$CLAUDE_PLUGIN_ROOT/scripts/data-root.sh")"
 impl_dir="$data_root/workflow-stream/$active_feature/implementation"
 rm -rf "$impl_dir"/diagrams
 rm -f "$impl_dir"/inspector-review.md
@@ -127,11 +127,11 @@ rm -f "$impl_dir"/grounding-report.md
 case "$drop_mode" in
   requeue)
     # Feature did NOT ship — requeue appends to queue end and clears active.
-    $CLAUDE_PLUGIN_ROOT/scripts/progress.sh requeue >/dev/null
+    "$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" requeue >/dev/null
     ;;
   "")
     # Retry: keep active.feature and active.branch; reset stage to 2.
-    $CLAUDE_PLUGIN_ROOT/scripts/progress.sh reset
+    "$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" reset
     ;;
 esac
 ```

@@ -40,12 +40,12 @@ The reason summary is a one-line free-form description of why the blueprint is b
 ### Step 1 — Resolve active feature and guard
 
 ```bash
-active_feature="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get-active)"
+active_feature="$("$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" get-active)"
 [[ -n "$active_feature" && "$active_feature" != "null" ]] || {
   echo "error: no active feature — /mi-update-blueprint requires an in-flight workflow" >&2
   exit 1
 }
-base_commit="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get base-commit)"
+base_commit="$("$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" get base-commit)"
 [[ -n "$base_commit" && "$base_commit" != "null" ]] || {
   echo "error: active.base-commit is null — /mi-update-blueprint needs a stage-3+ workflow" >&2
   exit 1
@@ -102,7 +102,7 @@ reason_summary="${positional[*]:-}"
 This decision tree runs **before** Step 2's rotate so a partial state from a previously-interrupted run cannot get archived into history. The tree is unconditional on partial state: even with `--force-regen`, a partial `current/` is never silently rotated. In every sub-case, `blueprints.sh rotate` is NOT called on a partial `current/`.
 
 ```bash
-data_root="$($CLAUDE_PLUGIN_ROOT/scripts/data-root.sh)"
+data_root="$("$CLAUDE_PLUGIN_ROOT/scripts/data-root.sh")"
 hist="$data_root/workflow-stream/$active_feature/blueprints/history"
 curr="$data_root/workflow-stream/$active_feature/blueprints/current"
 
@@ -134,7 +134,7 @@ latest_kind() {
   local v
   v="$(latest_finalized)"
   [[ -n "$v" ]] || { echo ""; return; }
-  $CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get \
+  "$CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh" get \
     "$hist/v${v}/reason.md" kind 2>/dev/null || echo ""
 }
 
@@ -164,15 +164,15 @@ if [[ -n "$partial_dir" ]]; then
     echo "error: partial $partial_dir has no reason.md (old/unknown partial). No state was modified; manual cleanup required." >&2
     exit 1
   fi
-  partial_kind="$($CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get "$partial_dir/reason.md" kind 2>/dev/null || echo "")"
+  partial_kind="$("$CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh" get "$partial_dir/reason.md" kind 2>/dev/null || echo "")"
   if [[ "$partial_kind" != "$reason_kind" ]]; then
     echo "error: a $partial_kind blueprint rotation is already in progress at $partial_dir." >&2
     echo "Re-run the command that owns that reason kind, or inspect and repair the partial manually. No state was modified." >&2
     exit 1
   fi
   # Resume the partial, then proceed straight to Step 4 regeneration (skip Step 2 rotate).
-  version="$($CLAUDE_PLUGIN_ROOT/scripts/blueprints.sh resume-partial "$active_feature" --expected-kind "$reason_kind")"
-  $CLAUDE_PLUGIN_ROOT/scripts/blueprints.sh ensure-current "$active_feature"
+  version="$("$CLAUDE_PLUGIN_ROOT/scripts/blueprints.sh" resume-partial "$active_feature" --expected-kind "$reason_kind")"
+  "$CLAUDE_PLUGIN_ROOT/scripts/blueprints.sh" ensure-current "$active_feature"
   skip_rotate=1
   echo "Step 1.5: resumed partial → history/v${version}/; proceeding to Step 4 regeneration."
 fi
@@ -185,7 +185,7 @@ if [[ "$skip_rotate" != "1" ]]; then
 
   if [[ "$cc_status" == "1" && ( "$last_kind" == "manual" || "$last_kind" == "spec-update" ) ]]; then
     # Empty/scaffold-only current with a safe parent: resume regeneration without a fresh rotate.
-    $CLAUDE_PLUGIN_ROOT/scripts/blueprints.sh ensure-current "$active_feature"
+    "$CLAUDE_PLUGIN_ROOT/scripts/blueprints.sh" ensure-current "$active_feature"
     version="$latest_v"
     skip_rotate=1
     echo "Step 1.5: check-current=1 with safe parent (kind=$last_kind); resuming regeneration from history/v${version}/."
@@ -201,7 +201,7 @@ if [[ "$skip_rotate" != "1" ]]; then
           for entry in "$curr"/*; do rm -rf "$entry"; done
           shopt -u dotglob nullglob
         fi
-        $CLAUDE_PLUGIN_ROOT/scripts/blueprints.sh ensure-current "$active_feature"
+        "$CLAUDE_PLUGIN_ROOT/scripts/blueprints.sh" ensure-current "$active_feature"
         version="$latest_v"
         skip_rotate=1
       else
@@ -239,7 +239,7 @@ if [[ "$skip_rotate" != "1" ]]; then
       shopt -s dotglob nullglob
       for entry in "$curr"/*; do rm -rf "$entry"; done
       shopt -u dotglob nullglob
-      $CLAUDE_PLUGIN_ROOT/scripts/blueprints.sh ensure-current "$active_feature"
+      "$CLAUDE_PLUGIN_ROOT/scripts/blueprints.sh" ensure-current "$active_feature"
       version="$latest_v"
       skip_rotate=1
     else
@@ -257,7 +257,7 @@ fi
 
 ```bash
 if [[ "$skip_rotate" != "1" ]]; then
-  version="$($CLAUDE_PLUGIN_ROOT/scripts/blueprints.sh rotate "$active_feature" \
+  version="$("$CLAUDE_PLUGIN_ROOT/scripts/blueprints.sh" rotate "$active_feature" \
     --reason-kind "$reason_kind" \
     --reason-summary "$reason_summary")"
   echo "Previous blueprint archived into history/v${version} (kind=$reason_kind)"
@@ -272,7 +272,7 @@ After this step, `blueprints/current/` is empty and `blueprints/history/v[<versi
 
 ```bash
 if [[ "$skip_rotate" != "1" ]]; then
-  $CLAUDE_PLUGIN_ROOT/scripts/blueprints.sh ensure-current "$active_feature"
+  "$CLAUDE_PLUGIN_ROOT/scripts/blueprints.sh" ensure-current "$active_feature"
 fi
 ```
 
@@ -285,7 +285,7 @@ The previous blueprint is now at `history/v[<version>]/` and the implementation 
 Resolve the data root and the path to the just-rotated previous `requirements.md` up front. Both are needed by the change-summary regen path below (which uses `$prev_req` to read the previous `id`) and by Step 4b (which carries `todo-list-id` and `todo-item-ids` forward).
 
 ```bash
-data_root="$($CLAUDE_PLUGIN_ROOT/scripts/data-root.sh)"
+data_root="$("$CLAUDE_PLUGIN_ROOT/scripts/data-root.sh")"
 prev_req="$data_root/workflow-stream/$active_feature/blueprints/history/v${version}/requirements.md"
 ```
 
@@ -298,7 +298,7 @@ Read into working memory:
   Use `implementation/change-summary.md` as the source of truth for what the implementation delivers. The same artifact backs `mi-generate-implementation-diagrams` so the analysis runs once per `base-commit..HEAD` range. **Cache contract (load-bearing — do NOT bypass):** the `change-summary-fresh` check is the gate that prevents this command and `mi-generate-implementation-diagrams` from independently re-walking the codebase for the same `(base-commit, HEAD)` range. A future change that reads `change-summary.md` directly without the freshness gate would re-introduce the double-walk this cache exists to prevent.
 
   ```bash
-  if $CLAUDE_PLUGIN_ROOT/scripts/commits.sh change-summary-fresh "$active_feature"; then
+  if "$CLAUDE_PLUGIN_ROOT/scripts/commits.sh" change-summary-fresh "$active_feature"; then
     echo "change-summary.md is current — reading from cache"
   else
     echo "change-summary.md missing or stale — regenerating before reading"
@@ -314,19 +314,19 @@ Read into working memory:
   When regeneration is needed, follow the same recipe documented in `mi-generate-implementation-diagrams.md` Step 2.2 (main-side init) plus the implementation-analyst sub-agent's Phase 1 (body fill); the inlined block below is the equivalent main-side path used here:
 
   ```bash
-  base_commit_sha="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get base-commit)"
+  base_commit_sha="$("$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" get base-commit)"
   head_sha="$(git rev-parse HEAD)"
   # Note: requirements.md hasn't been written yet at this step in mi-update-blueprint,
   # so use the previous requirements.md's id for now. Step 5 (review.sh sync-refs)
   # re-points the requirements-id after the new requirements.md is written in 4b.
-  prev_req_id="$($CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get "$prev_req" id)"
-  $CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh init change-summary \
+  prev_req_id="$("$CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh" get "$prev_req" id)"
+  "$CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh" init change-summary \
     "$data_root/workflow-stream/$active_feature/implementation/change-summary.md" \
     "REQUIREMENTS_FIELD=!RAW!requirements-id: $prev_req_id" \
     "FEATURE=$active_feature" \
     "BASE_COMMIT=$base_commit_sha" \
     "HEAD=$head_sha"
-  $CLAUDE_PLUGIN_ROOT/scripts/commits.sh changed-files "$active_feature"
+  "$CLAUDE_PLUGIN_ROOT/scripts/commits.sh" changed-files "$active_feature"
   ```
 
   Then fill the body of `change-summary.md` per its template guide (`## Range`, `## Changed files`, `## Detected entrypoints`, `## Suspected flows`, `## Omitted from analysis`), applying the bounded context policy embedded in the implementation-analyst sub-agent prompt at `mi-generate-implementation-diagrams.md` Step 2.3 / Phase 1 (diff hunks first; ≤ 3 callers/callees per file; skip generated/vendor/lock; record skips).
@@ -345,17 +345,17 @@ new_req="$data_root/workflow-stream/$active_feature/blueprints/current/requireme
 
 # Carry these from prev — they identify which todo items initiated the cycle and
 # survive blueprint refreshes (todo state hasn't changed mid-cycle).
-prev_todo_list_id="$($CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get "$prev_req" todo-list-id)"
+prev_todo_list_id="$("$CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh" get "$prev_req" todo-list-id)"
 # `frontmatter.sh get todo-item-ids` returns a YAML array literal like
 # `[PAY-001, AUD-002]`. The requirements template has `todo-item-ids:
 # [{{TODO_ITEM_IDS}}]` (already wrapped in flow brackets), so strip the
 # outer `[ ]` from the captured value before substituting — otherwise the
 # template would produce `[[PAY-001, AUD-002]]`, a nested array that the
 # requirements schema rejects (items must be strings, not arrays).
-prev_todo_item_ids_csv="$($CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get "$prev_req" todo-item-ids \
+prev_todo_item_ids_csv="$("$CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh" get "$prev_req" todo-item-ids \
   | sed -E 's/^\[//; s/\]$//')"
 
-$CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh init requirements "$new_req" \
+"$CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh" init requirements "$new_req" \
   "TODO_LIST_ID=$prev_todo_list_id" \
   "TODO_ITEM_IDS=$prev_todo_item_ids_csv" \
   "FEATURE=$active_feature"
@@ -383,13 +383,13 @@ The frontmatter `commits` array stays empty — `mi-complete-workflow` populates
 
 ```bash
 new_cfg="$data_root/workflow-stream/$active_feature/blueprints/current/config.md"
-new_req_id="$($CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get "$new_req" id)"
+new_req_id="$("$CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh" get "$new_req" id)"
 # Resolve the cumulative lessons-learned file (see docs/blueprint-regeneration.md
 # Step B). The config template's `## Lessons learned` section needs this token —
 # omitting it would render a literal {{LESSONS_LEARNED_PATH}} placeholder.
-lessons_path="$($CLAUDE_PLUGIN_ROOT/scripts/lessons.sh path)"
+lessons_path="$("$CLAUDE_PLUGIN_ROOT/scripts/lessons.sh" path)"
 if [[ -f "$lessons_path" ]]; then lessons_token="$lessons_path"; else lessons_token="(none yet)"; fi
-$CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh init config "$new_cfg" \
+"$CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh" init config "$new_cfg" \
   "REQUIREMENTS_ID=$new_req_id" \
   "LESSONS_LEARNED_PATH=$lessons_token"
 ```
@@ -397,8 +397,8 @@ $CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh init config "$new_cfg" \
 Copy the previous `config.md`'s auto block **verbatim** — from the line beginning `<!-- auto:start` through `<!-- auto:end -->` — over the template's empty block. No reselection, no catalog suggestions, no installs. Run this in a fresh block; it re-derives its own variables (`$version` is the history version from Step 1.5 / Step 2 — substitute its literal value):
 
 ```bash
-data_root="$($CLAUDE_PLUGIN_ROOT/scripts/data-root.sh)"
-active_feature="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get-active)"
+data_root="$("$CLAUDE_PLUGIN_ROOT/scripts/data-root.sh")"
+active_feature="$("$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" get-active)"
 version=<the history version from Step 2>   # LLM substitutes the literal value
 prev_cfg="$data_root/workflow-stream/$active_feature/blueprints/history/v${version}/config.md"   # the just-rotated copy
 new_cfg="$data_root/workflow-stream/$active_feature/blueprints/current/config.md"
@@ -425,7 +425,7 @@ Leave `## GIT BRANCH` and `## Inspector Additions` empty / template-only here �
 #### Step 4d — Restore inspector-authored sections
 
 ```bash
-$CLAUDE_PLUGIN_ROOT/scripts/blueprints.sh preserve-inspector-sections "$active_feature" "$version"
+"$CLAUDE_PLUGIN_ROOT/scripts/blueprints.sh" preserve-inspector-sections "$active_feature" "$version"
 ```
 
 This reads `## GIT BRANCH` and `## Inspector Additions` bodies from `history/v[<version>]/config.md` and splices them into the matching headings in the new `current/config.md`. Headings stay; only the bodies are replaced. If those sections were empty in the previous file, the new file's matching sections are left as-is (template-empty).
@@ -479,7 +479,7 @@ Use the `plantuml` MCP to render each diagram; save the `.puml` source. Also wri
 
 ```bash
 diagrams_readme="$data_root/workflow-stream/$active_feature/blueprints/current/diagrams/README.md"
-new_drmd_id="$($CLAUDE_PLUGIN_ROOT/scripts/uuid.sh)"
+new_drmd_id="$("$CLAUDE_PLUGIN_ROOT/scripts/uuid.sh")"
 cat > "$diagrams_readme" <<EOF
 ---
 id: $new_drmd_id
@@ -490,7 +490,7 @@ requirements-id: $new_req_id
 
 (one-line description per .puml file in this folder)
 EOF
-$CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh validate "$diagrams_readme" diagrams-readme-blueprint >/dev/null
+"$CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh" validate "$diagrams_readme" diagrams-readme-blueprint >/dev/null
 ```
 
 This satisfies `blueprints.sh check-current`'s `diagrams-readme-blueprint` validation requirement (the README's `requirements-id` must match `requirements.md.id`). The `id:` field follows Rule 2 of the workflow spec (every canonical artifact carries a UUID).
@@ -503,8 +503,8 @@ The just-rotated history version carried its own primer; the regenerated `curren
 
 ```bash
 primer_dest="$data_root/workflow-stream/$active_feature/blueprints/current/primer.md"
-new_req_id="$($CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get "$new_req" id)"
-$CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh init primer "$primer_dest" \
+new_req_id="$("$CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh" get "$new_req" id)"
+"$CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh" init primer "$primer_dest" \
   "REQUIREMENTS_ID=$new_req_id" \
   "FEATURE=$active_feature" \
   "DATA_ROOT=$data_root"
@@ -513,9 +513,9 @@ $CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh init primer "$primer_dest" \
 Then fill the body via `Edit`. Resolve values up front (the body has no token substitution beyond frontmatter):
 
 ```bash
-primer_branch="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get branch)"
-primer_base_commit="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get base-commit)"
-implementing_ids="$($CLAUDE_PLUGIN_ROOT/scripts/todo.sh list IMPLEMENTING --feature "$active_feature")"
+primer_branch="$("$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" get branch)"
+primer_base_commit="$("$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" get base-commit)"
+implementing_ids="$("$CLAUDE_PLUGIN_ROOT/scripts/todo.sh" list IMPLEMENTING --feature "$active_feature")"
 ```
 
 Then write each section per the same guide as `mi-plan-implementation` Step 3.5:
@@ -526,7 +526,7 @@ Then write each section per the same guide as `mi-plan-implementation` Step 3.5:
 - **Skills** — replace the template's skills placeholder (the line beginning `<!-- skills:brief`) with the two `brief` blocks, verbatim and in this order; each brings its own heading, and an empty one adds nothing (the same rendering as `mi-plan-implementation` Step 3.5):
 
   ```bash
-  active_feature="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get-active)"
+  active_feature="$("$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" get-active)"
   skills_block="$("$CLAUDE_PLUGIN_ROOT/scripts/skills.sh" brief "$active_feature" implement)"
   review_block="$("$CLAUDE_PLUGIN_ROOT/scripts/skills.sh" brief "$active_feature" review)"
   ```
@@ -539,7 +539,7 @@ The `## On-demand canonical files` section is template-emitted and does not need
 ### Step 5 — Sync review files to new UUIDs
 
 ```bash
-$CLAUDE_PLUGIN_ROOT/scripts/review.sh sync-refs "$active_feature"
+"$CLAUDE_PLUGIN_ROOT/scripts/review.sh" sync-refs "$active_feature"
 ```
 
 This updates any existing `inspector-review.md` frontmatter to point at the newly-regenerated `requirements.md` id. Silently skips when the review file doesn't exist.
