@@ -52,26 +52,26 @@ shift
 case "$cmd" in
   inventory)
     [[ $# -eq 0 || ( $# -eq 1 && "$1" == "--installed" ) ]] || usage
-    python3 "$SKILLS_PY" inventory "$@"
+    mi_py "$SKILLS_PY" inventory "$@"
     ;;
   lookup)
     [[ $# -ge 1 ]] || usage
-    python3 "$SKILLS_PY" lookup "$@"
+    mi_py "$SKILLS_PY" lookup "$@"
     ;;
   brief|entries)
     [[ $# -eq 2 ]] || usage
     check_tag "$2"
     config="$(feature_config "$1")"
-    python3 "$SKILLS_PY" "$cmd" "$config" "$2"
+    mi_py "$SKILLS_PY" "$cmd" "$config" "$2"
     ;;
   suggestions)
     [[ $# -eq 1 ]] || usage
     config="$(feature_config "$1")"
-    python3 "$SKILLS_PY" suggestions "$config"
+    mi_py "$SKILLS_PY" suggestions "$config"
     ;;
   catalog-files)
     [[ $# -eq 0 ]] || usage
-    python3 "$SKILLS_PY" catalog-files
+    mi_py "$SKILLS_PY" catalog-files
     ;;
   apply-installs)
     [[ $# -ge 1 ]] || usage
@@ -84,7 +84,7 @@ case "$cmd" in
         --*) mi_die "unknown option: $arg" ;;
       esac
     done
-    python3 "$SKILLS_PY" apply-installs "$config" "$@"
+    mi_py "$SKILLS_PY" apply-installs "$config" "$@"
     ;;
   -h|--help|help) usage ;;
   *) mi_die "unknown subcommand: $cmd" ;;

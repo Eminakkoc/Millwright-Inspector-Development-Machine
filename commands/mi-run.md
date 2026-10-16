@@ -222,7 +222,7 @@ If the un-ingested set is empty, proceed to the next paragraph. Otherwise run th
    if command -v pipx >/dev/null 2>&1; then
      pipx install docling
    else
-     python3 -m pip install --user docling
+     "$CLAUDE_PLUGIN_ROOT/scripts/py.sh" -m pip install --user docling
    fi
    ```
 

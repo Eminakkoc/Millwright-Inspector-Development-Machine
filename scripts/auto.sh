@@ -119,7 +119,7 @@ case "$cmd" in
     top="$(git rev-parse --show-toplevel)"
     # Exclude the data root when it lives inside the work tree: stage 2 has
     # just written blueprints/current/* there, and those must not count.
-    rel="$(python3 -c 'import os,sys; r=os.path.relpath(os.path.realpath(sys.argv[1]), os.path.realpath(sys.argv[2])); print("" if r.startswith("..") else r)' "$(mi_data_root)" "$top")"
+    rel="$(mi_py -c 'import os,sys; r=os.path.relpath(os.path.realpath(sys.argv[1]), os.path.realpath(sys.argv[2])); print("" if r.startswith("..") else r)' "$(mi_data_root)" "$top")"
     if [[ -n "$rel" && "$rel" != "." ]]; then
       dirty="$(git -C "$top" status --porcelain --untracked-files=no -- . ":(exclude)$rel")"
     else
@@ -136,7 +136,7 @@ case "$cmd" in
       name="feat/$slug-$n"; n=$((n + 1))
     done
     git switch -q -c "$name"
-    python3 - "$config" "$name" <<'PYEOF'
+    mi_py - "$config" "$name" <<'PYEOF'
 import sys, re
 path, name = sys.argv[1], sys.argv[2]
 s = open(path).read()
@@ -166,7 +166,7 @@ PYEOF
     # Open deferred questions also need the inspector: the stage-6 approve
     # must never close a feature while one is still unanswered.
     open_dq="$("${MI_PLUGIN_ROOT}/scripts/deferred-questions.sh" list-open "$feature" | cut -f1)"
-    python3 - "$rf" "$open_dq" <<'PYEOF'
+    mi_py - "$rf" "$open_dq" <<'PYEOF'
 import re, sys
 content = open(sys.argv[1]).read()
 open_dq = [d for d in sys.argv[2].split('\n') if d]

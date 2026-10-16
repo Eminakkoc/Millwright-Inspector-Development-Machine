@@ -78,7 +78,7 @@ bad=""
 report "blueprint-batch-reviewer tools: is exactly [Bash] (no filesystem tools)" "$bad"
 
 bad=""
-git show HEAD:hooks/hooks.json | python3 -c '
+git show HEAD:hooks/hooks.json | scripts/py.sh -c '
 import json, sys
 hooks = json.load(sys.stdin)["hooks"].get("PreToolUse", [])
 ok = any(h.get("matcher") == "Bash" and any("guard-batch-reviewer.sh" in c.get("command", "") for c in h.get("hooks", [])) for h in hooks)
@@ -134,7 +134,7 @@ report "no delegating command missing from the DELEGATING_COMMANDS list" "$untra
 # sub-agent this command does not name" reads as forbidding them, and the run
 # stops before the inner command's delegation step. See §8.15 "Nested commands".
 nested_delegation_gaps() {
-python3 - <<'PYEOF'
+scripts/py.sh - <<'PYEOF'
 import os, re, glob
 agents = {os.path.basename(p)[:-3] for p in glob.glob("agents/*.md")}
 

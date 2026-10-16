@@ -457,7 +457,7 @@ while IFS=$'\t' read -r orig_feature orig_scenario merged title; do
   # "### $orig_feature/$orig_scenario — " — the same block-scoped idiom
   # deferred-tests.sh uses internally (its PARSING CONTRACT comment).
   act_file="$(mktemp)"; exp_file="$(mktemp)"
-  python3 - "$dt" "$orig_feature" "$orig_scenario" "$act_file" "$exp_file" <<'PYEOF'
+  "$CLAUDE_PLUGIN_ROOT/scripts/py.sh" - "$dt" "$orig_feature" "$orig_scenario" "$act_file" "$exp_file" <<'PYEOF'
 import re, sys
 path, feature, scenario, act_out, exp_out = sys.argv[1:6]
 with open(path) as f:

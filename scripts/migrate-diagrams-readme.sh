@@ -68,7 +68,7 @@ while IFS= read -r -d '' readme; do
   # Note: bash 3.2 chokes on heredocs inside $(...) so we run the command
   # directly and capture only the exit code via $?.
   set +e
-  python3 - "$readme" "$req" "$uuid_re" "$dry_run" "$MI_PLUGIN_ROOT" <<'PYEOF'
+  mi_py - "$readme" "$req" "$uuid_re" "$dry_run" "$MI_PLUGIN_ROOT" <<'PYEOF'
 import os, re, subprocess, sys, yaml, uuid
 
 readme, req, uuid_re, dry_run_str, plugin_root = sys.argv[1:6]

@@ -74,7 +74,7 @@ case "$cmd" in
     done
     file="$(todo_file)"
     [[ -f "$file" ]] || mi_die "todo-list.md not found"
-    python3 - "$file" "$item_id" "$new_state" "$assignee_override" <<'PYEOF'
+    mi_py - "$file" "$item_id" "$new_state" "$assignee_override" <<'PYEOF'
 import sys, re
 path, item_id, new_state, assignee_override = (
     sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
@@ -117,7 +117,7 @@ PYEOF
     done
     file="$(todo_file)"
     [[ -f "$file" ]] || mi_die "todo-list.md not found"
-    python3 - "$file" "$from_state" "$to_state" "$feature_filter" <<'PYEOF'
+    mi_py - "$file" "$from_state" "$to_state" "$feature_filter" <<'PYEOF'
 import sys, re
 path, from_state, to_state, feature_filter = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
 to_checkbox = '[ ]' if to_state == 'TODO' else '[x]'
@@ -174,7 +174,7 @@ PYEOF
     # the script exits 2 and lists the offending items without touching the file.
     file="$(todo_file)"
     [[ -f "$file" ]] || mi_die "todo-list.md not found"
-    python3 - "$file" <<'PYEOF'
+    mi_py - "$file" <<'PYEOF'
 import sys, re
 path = sys.argv[1]
 with open(path) as f:
@@ -229,7 +229,7 @@ PYEOF
     # Python implementation — portable across BSD/GNU sed, accepts the optional
     # (assignee) tag, and honors --feature with the same kebab-normalization as
     # bulk-transition so `--feature marketing-site` matches `## Marketing site`.
-    python3 - "$file" "$state" "$feature_filter" <<'PYEOF'
+    mi_py - "$file" "$state" "$feature_filter" <<'PYEOF'
 import sys, re
 path, state, feature_filter = sys.argv[1], sys.argv[2], sys.argv[3]
 
@@ -275,7 +275,7 @@ PYEOF
     esac
     file="$(todo_file)"
     [[ -f "$file" ]] || mi_die "todo-list.md not found"
-    python3 - "$file" "$feature" "$state" "$assignee" "$item_id" "$description" <<'PYEOF'
+    mi_py - "$file" "$feature" "$state" "$assignee" "$item_id" "$description" <<'PYEOF'
 import sys, re
 path, feature, state, assignee, item_id, description = sys.argv[1:]
 
@@ -342,7 +342,7 @@ PYEOF
   feature-test-status)
     file="$(todo_file)"
     [[ -f "$file" ]] || mi_die "todo-list.md not found"
-    python3 - "$file" <<'PYEOF'
+    mi_py - "$file" <<'PYEOF'
 import sys, re, yaml
 
 path = sys.argv[1]
@@ -428,7 +428,7 @@ PYEOF
     name="${1:?feature name required}"
     file="$(todo_file 2>/dev/null || true)"
     [[ -n "$file" && -f "$file" ]] || exit 1
-    python3 - "$file" "$name" <<'PYEOF'
+    mi_py - "$file" "$name" <<'PYEOF'
 import sys, re, yaml
 path, name = sys.argv[1], sys.argv[2]
 try:

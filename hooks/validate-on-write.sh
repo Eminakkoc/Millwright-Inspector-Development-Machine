@@ -9,11 +9,12 @@
 # doesn't interfere with normal editing elsewhere in the project.
 
 set -euo pipefail
+source "$(dirname "$0")/../scripts/internal/common.sh"
 
 # Parse tool input JSON from stdin; extract the file path field.
 # Claude Code passes either `tool_input.file_path` (Write/Edit) — we accept both.
 input="$(cat)"
-file_path="$(printf '%s' "$input" | python3 -c '
+file_path="$(printf '%s' "$input" | mi_py -c '
 import sys, json
 try:
     data = json.load(sys.stdin)
@@ -32,12 +33,7 @@ print(path)
 # hook only validates files that live under that segment so workflows in a
 # custom-named data folder still get validated, and files outside any data
 # folder are silently skipped.
-if [[ -f "${CLAUDE_PLUGIN_ROOT:-}/scripts/internal/common.sh" ]]; then
-  # Source common.sh in a subshell so its `set -euo pipefail` doesn't leak.
-  data_root_segment="$(bash -c "source '${CLAUDE_PLUGIN_ROOT}/scripts/internal/common.sh' && mi_data_root_segment")"
-else
-  data_root_segment="millwright-inspector"
-fi
+data_root_segment="$(mi_data_root_segment)"
 [[ "$file_path" == *"/${data_root_segment}/"* ]] || exit 0
 
 # Only check .md files.
@@ -97,7 +93,7 @@ EOF
 esac
 
 # Run the validator. If it fails, its stderr bubbles up and blocks the turn.
-if ! "${CLAUDE_PLUGIN_ROOT}/scripts/internal/validate-frontmatter.sh" "$file_path" "$schema" >&2; then
+if ! "${MI_PLUGIN_ROOT}/scripts/internal/validate-frontmatter.sh" "$file_path" "$schema" >&2; then
   # Emit a JSON response that blocks the stop and explains why.
   cat <<EOF
 {"decision": "block", "reason": "millwright-inspector-development-machine: frontmatter validation failed for $file_path (schema=$schema). Fix the frontmatter before continuing."}

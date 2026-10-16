@@ -190,7 +190,7 @@ ingest_document() {
 
   local rewritten="$tmpdir/__rewritten.md"
   if (( images_moved > 0 )); then
-    python3 - "$produced" "$rewritten" "$images_dir_basename" "${image_names[@]}" <<'PYEOF'
+    mi_py - "$produced" "$rewritten" "$images_dir_basename" "${image_names[@]}" <<'PYEOF'
 import re, sys
 src, dst, subfolder, *names = sys.argv[1:]
 with open(src, 'r', encoding='utf-8') as f:

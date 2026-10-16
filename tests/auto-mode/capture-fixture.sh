@@ -6,7 +6,7 @@ BASE=6ce0cba
 site="${1:?site}"; file="${2:?file}"; first="${3:?first-line literal}"; last="${4:?last-line literal}"
 root="$(cd "$(dirname "$0")/../.." && pwd)"
 out="$root/tests/auto-mode/fixtures/prompts-off/$site.txt"
-git -C "$root" show "$BASE:$file" | python3 -c '
+git -C "$root" show "$BASE:$file" | "$root/scripts/py.sh" -c '
 import sys
 first, last, out = sys.argv[1], sys.argv[2], sys.argv[3]
 lines = sys.stdin.read().split("\n")

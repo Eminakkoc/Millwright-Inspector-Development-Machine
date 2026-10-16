@@ -84,7 +84,7 @@ case "$cmd" in
     # Append BEFORE the `## Cycle summary` heading if it exists, otherwise at
     # the end of the file. The `## Events` table grows; the `## Cycle summary`
     # block is filled at stage 8 finalize.
-    python3 - "$dest" "$row" <<'PYEOF'
+    mi_py - "$dest" "$row" <<'PYEOF'
 import re, sys
 path, row = sys.argv[1], sys.argv[2]
 with open(path) as f:

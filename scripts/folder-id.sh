@@ -175,7 +175,7 @@ case "$cmd" in
       exit 0
     fi
 
-    python3 - "$ref" "$fid" "$feature" <<'PYEOF'
+    mi_py - "$ref" "$fid" "$feature" <<'PYEOF'
 import sys, re, yaml
 ref, fid, feature = sys.argv[1:]
 with open(ref) as f:
@@ -221,7 +221,7 @@ PYEOF
       echo "unknown: no active quest reference.md to compare lineage against"
       exit 4
     fi
-    python3 - "$(mi_quest_dir)" "$ref" "$fid" "$feature" "$(mi_journal_dir)" <<'PYEOF'
+    mi_py - "$(mi_quest_dir)" "$ref" "$fid" "$feature" "$(mi_journal_dir)" <<'PYEOF'
 import sys, os, re, glob, yaml
 
 quest_root, active_ref, fid, feature, journal_root = sys.argv[1:]

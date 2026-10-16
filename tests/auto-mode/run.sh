@@ -59,7 +59,7 @@ run_in() { local sb="$1"; shift; (cd "$sb" && MI_DATA_ROOT="$sb/millwright-inspe
 # assert_prompt_kept <site> <file>: fixture prompts-off/<site>.txt appears verbatim in <file>.
 assert_prompt_kept() {
   local site="$1" file="$2"
-  if python3 - "$FIX/prompts-off/$site.txt" "$REPO_ROOT/$file" <<'PYEOF'; then
+  if "$REPO_ROOT/scripts/py.sh" - "$FIX/prompts-off/$site.txt" "$REPO_ROOT/$file" <<'PYEOF'; then
 import sys
 fx = open(sys.argv[1]).read().rstrip('\n')
 body = open(sys.argv[2]).read()
@@ -75,7 +75,7 @@ PYEOF
 # block contain '**Auto mode.**', 'auto.sh is-on' and every needle.
 assert_auto_before() {
   local site="$1" file="$2"; shift 2
-  if python3 - "$FIX/prompts-off/$site.txt" "$REPO_ROOT/$file" "$@" <<'PYEOF'; then
+  if "$REPO_ROOT/scripts/py.sh" - "$FIX/prompts-off/$site.txt" "$REPO_ROOT/$file" "$@" <<'PYEOF'; then
 import sys
 fx = open(sys.argv[1]).read().rstrip('\n')
 body = open(sys.argv[2]).read()
@@ -316,7 +316,7 @@ run_in "$sb" "$A" create-branch alpha "$cfg" >/dev/null 2>&1
 t="create-branch replaces an existing candidate line in config"
 sb="$(make_sandbox --auto)"
 cfg="$(cfg_file "$sb")"
-python3 - "$cfg" <<'PYEOF'
+"$REPO_ROOT/scripts/py.sh" - "$cfg" <<'PYEOF'
 import sys; p=sys.argv[1]; s=open(p).read()
 open(p,'w').write(s.replace('<!-- one bare line -->\n', '<!-- one bare line -->\nfeat/old\n'))
 PYEOF
@@ -510,7 +510,7 @@ run_in "$sb" "$DQ" add alpha "TTL?" "60s" >/dev/null 2>&1
 run_in "$sb" "$DQ" answer alpha DQ-001 "300s" --needs-finding >/dev/null 2>&1
 rf="$sb/millwright-inspector/workflow-stream/alpha/implementation/inspector-review.md"
 printf -- '---\nfeature: alpha\n---\n\n## Implementation Review\n\n' > "$rf"
-snippet="$(python3 - "$REPO_ROOT/$MC" <<'PYEOF'
+snippet="$("$REPO_ROOT/scripts/py.sh" - "$REPO_ROOT/$MC" <<'PYEOF'
 import re, sys
 s = open(sys.argv[1]).read()
 m = re.search(r'```bash\n(# Deferred questions → findings.*?)```', s, re.S)
@@ -579,7 +579,7 @@ assert_prompt_kept gate-8-2 commands/mi-complete-workflow.md
 assert_auto_before gate-8-2 commands/mi-complete-workflow.md 'auto: clear gate stage-8-to-2 — type /clear, then /mi-continue'
 
 t="stacked-branch note prints only for an unmerged previous branch under this base"
-snippet="$(python3 - "$REPO_ROOT/commands/mi-complete-workflow.md" <<'PYEOF'
+snippet="$("$REPO_ROOT/scripts/py.sh" - "$REPO_ROOT/commands/mi-complete-workflow.md" <<'PYEOF'
 import re, sys
 s = open(sys.argv[1]).read()
 m = re.search(r'```bash\n(?:(?!```).)*?(# Stacked-branch note.*?)```', s, re.S)
@@ -605,7 +605,7 @@ else
 fi
 
 t="stacked note shares one continuous bash fence with the finished_branch/finished_base capture and the finish call (no re-query after finish)"
-check="$(python3 - "$REPO_ROOT/commands/mi-complete-workflow.md" <<'PYEOF'
+check="$("$REPO_ROOT/scripts/py.sh" - "$REPO_ROOT/commands/mi-complete-workflow.md" <<'PYEOF'
 import re, sys
 s = open(sys.argv[1]).read()
 result = "missing"
@@ -621,7 +621,7 @@ PYEOF
 [[ "$check" == "yes" ]] && ok "$t" || ng "$t" "check=$check"
 
 t="stacked note still prints on a Branch I resume (pair recovered from archived primer)"
-fence="$(python3 - "$REPO_ROOT/commands/mi-complete-workflow.md" <<'PYEOF'
+fence="$("$REPO_ROOT/scripts/py.sh" - "$REPO_ROOT/commands/mi-complete-workflow.md" <<'PYEOF'
 import re, sys
 s = open(sys.argv[1]).read()
 for fence in re.findall(r'```bash\n(.*?)```', s, re.S):
@@ -699,7 +699,7 @@ assert_contains "README deferred-questions wording: needs-finding conversion" RE
 
 # Item 7: Inspector Step 0.5 prints an 'Open deferred questions:' header only when rows exist.
 t="Step 0.5 prints 'Open deferred questions:' header only when open DQ rows exist"
-snippet="$(python3 - "$REPO_ROOT/$MC" <<'PYEOF'
+snippet="$("$REPO_ROOT/scripts/py.sh" - "$REPO_ROOT/$MC" <<'PYEOF'
 import re, sys
 s = open(sys.argv[1]).read()
 m = re.search(r'```bash\n(if "\$CLAUDE_PLUGIN_ROOT/scripts/auto\.sh" is-on.*?)```', s, re.S)

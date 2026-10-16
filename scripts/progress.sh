@@ -126,7 +126,7 @@ case "$cmd" in
     "${MI_PLUGIN_ROOT}/scripts/frontmatter.sh" init progress "$dest" \
       "TODO_LIST_ID=$todo_list_id"
     # Populate queue from args.
-    python3 - "$dest" "$init_auto" "$@" <<'PYEOF'
+    mi_py - "$dest" "$init_auto" "$@" <<'PYEOF'
 import sys, re, yaml
 path, init_auto, *features = sys.argv[1:]
 with open(path) as f:
@@ -158,7 +158,7 @@ PYEOF
     git_common_dir="$(cd "$(git rev-parse --git-common-dir)" && pwd)"
     git_worktree_dir="$(cd "$(git rev-parse --git-dir)" && pwd)"
     activation_id="$("${MI_PLUGIN_ROOT}/scripts/uuid.sh")"
-    python3 - "$dest" "$wt_path" "$git_common_dir" "$git_worktree_dir" "$activation_id" <<'PYEOF'
+    mi_py - "$dest" "$wt_path" "$git_common_dir" "$git_worktree_dir" "$activation_id" <<'PYEOF'
 import sys, re, yaml
 path, wt_path, git_common_dir, git_worktree_dir, activation_id = sys.argv[1:]
 with open(path) as f:
@@ -236,7 +236,7 @@ PYEOF
     require_file "$dest"
     require_active "$dest"
     mi_assert_worktree_match
-    python3 - "$dest" "${MI_PLUGIN_ROOT}/scripts/internal" "${set_args[@]:-}" <<'PYEOF'
+    mi_py - "$dest" "${MI_PLUGIN_ROOT}/scripts/internal" "${set_args[@]:-}" <<'PYEOF'
 import sys, re, yaml
 path = sys.argv[1]
 sys.path.insert(0, sys.argv[2])
@@ -273,7 +273,7 @@ PYEOF
     require_file "$dest"
     require_active "$dest"
     mi_assert_worktree_match
-    python3 - "$dest" <<'PYEOF'
+    mi_py - "$dest" <<'PYEOF'
 import sys, re, yaml
 path = sys.argv[1]
 with open(path) as f:
@@ -299,7 +299,7 @@ PYEOF
     require_active "$dest"
     mi_assert_worktree_match
     activation_id="$("${MI_PLUGIN_ROOT}/scripts/uuid.sh")"
-    python3 - "$dest" "$activation_id" <<'PYEOF'
+    mi_py - "$dest" "$activation_id" <<'PYEOF'
 import sys, re, yaml
 path, activation_id = sys.argv[1], sys.argv[2]
 with open(path) as f:
@@ -343,7 +343,7 @@ PYEOF
     [[ $# -gt 0 ]] || mi_die "at least one feature required"
     dest="$(progress_file)"
     require_file "$dest"
-    python3 - "$dest" "$@" <<'PYEOF'
+    mi_py - "$dest" "$@" <<'PYEOF'
 import sys, re, yaml
 path, *new_features = sys.argv[1:]
 with open(path) as f:
@@ -402,7 +402,7 @@ PYEOF
     [[ $# -gt 0 ]] || mi_die "at least one feature required"
     dest="$(progress_file)"
     require_file "$dest"
-    python3 - "$dest" "$@" <<'PYEOF'
+    mi_py - "$dest" "$@" <<'PYEOF'
 import sys, re, yaml
 path, *new_order = sys.argv[1:]
 with open(path) as f:
@@ -487,7 +487,7 @@ PYEOF
     mi_assert_worktree_match
     tmp="$(mktemp "$(dirname "$dest")/progress.md.XXXXXX")"
     trap 'rm -f "$tmp"' EXIT
-    if ! python3 - "$dest" "$tmp" "${MI_PLUGIN_ROOT}/scripts/internal" "$@" <<'PYEOF'; then
+    if ! mi_py - "$dest" "$tmp" "${MI_PLUGIN_ROOT}/scripts/internal" "$@" <<'PYEOF'; then
 import sys, re, yaml
 path, tmp = sys.argv[1], sys.argv[2]
 sys.path.insert(0, sys.argv[3])
@@ -538,7 +538,7 @@ PYEOF
     # and invalid-destination states from typo'd field names.
     tmp="$(mktemp "$(dirname "$dest")/progress.md.XXXXXX")"
     trap 'rm -f "$tmp"' EXIT
-    if ! python3 - "$dest" "$tmp" "$@" <<'PYEOF'; then
+    if ! mi_py - "$dest" "$tmp" "$@" <<'PYEOF'; then
 import sys, re, yaml
 path, tmp = sys.argv[1], sys.argv[2]
 kvs = sys.argv[3:]
@@ -614,7 +614,7 @@ PYEOF
     # atomic rename. The schema's enum on items rejects unknown ids.
     tmp="$(mktemp "$(dirname "$dest")/progress.md.XXXXXX")"
     trap 'rm -f "$tmp"' EXIT
-    if ! python3 - "$dest" "$tmp" "$id" <<'PYEOF'; then
+    if ! mi_py - "$dest" "$tmp" "$id" <<'PYEOF'; then
 import sys, re, yaml
 path, tmp, new_id = sys.argv[1], sys.argv[2], sys.argv[3]
 with open(path) as f:
@@ -658,7 +658,7 @@ PYEOF
     require_active "$dest"
     # Pure read — no worktree guard (matches `get`'s pattern; siblings are
     # allowed to read state).
-    python3 - "$dest" "$id" <<'PYEOF'
+    mi_py - "$dest" "$id" <<'PYEOF'
 import sys, re, yaml
 path, query_id = sys.argv[1], sys.argv[2]
 with open(path) as f:
@@ -685,7 +685,7 @@ PYEOF
       mi_die "stage mismatch: active.current-stage=$current, advance expected $expected"
     fi
     next=$((expected + 1))
-    python3 - "$dest" "$next" <<'PYEOF'
+    mi_py - "$dest" "$next" <<'PYEOF'
 import sys, re, yaml
 path, next_stage = sys.argv[1], int(sys.argv[2])
 with open(path) as f:
@@ -749,7 +749,7 @@ PYEOF
     if [[ ${#set_args[@]} -gt 0 ]]; then
       for kv in "${set_args[@]}"; do py_args[${#py_args[@]}]="$kv"; done
     fi
-    if ! python3 - "${py_args[@]}" <<'PYEOF'; then
+    if ! mi_py - "${py_args[@]}" <<'PYEOF'; then
 import sys, re, yaml
 path, tmp, expected_str, target_str = sys.argv[1:5]
 kvs = sys.argv[5:]

@@ -371,8 +371,8 @@ Record entry: `blueprint-review.sh ledger mark "$file" E running`.
 
 ```bash
 expanding_json="$("$CLAUDE_PLUGIN_ROOT/scripts/blueprint-review.sh" parse-findings "$file" \
-  | python3 -c 'import sys,json; print(json.dumps([f for f in json.load(sys.stdin) if f.get("scope-impact")=="expanding"]))')"
-expanding_count="$(python3 -c 'import sys,json; print(len(json.load(sys.stdin)))' <<<"$expanding_json")"
+  | "$CLAUDE_PLUGIN_ROOT/scripts/py.sh" -c 'import sys,json; print(json.dumps([f for f in json.load(sys.stdin) if f.get("scope-impact")=="expanding"]))')"
+expanding_count="$("$CLAUDE_PLUGIN_ROOT/scripts/py.sh" -c 'import sys,json; print(len(json.load(sys.stdin)))' <<<"$expanding_json")"
 ```
 
 If `expanding_count == 0`, there is nothing to gate — record the sanctioned skip and go to Step 6:

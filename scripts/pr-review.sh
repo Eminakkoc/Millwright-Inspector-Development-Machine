@@ -58,7 +58,7 @@ pr_reviews_dir() { echo "$(mi_data_root)/pr-reviews"; }
 # Slug for a PR session group: lowercased owner/repo, non-alnum collapsed to '-'.
 pr_slug() {
   local owner="$1" repo="$2" pr="$3"
-  python3 - "$owner" "$repo" "$pr" <<'PYEOF'
+  mi_py - "$owner" "$repo" "$pr" <<'PYEOF'
 import re, sys
 owner, repo, pr = sys.argv[1:4]
 def k(s): return re.sub(r'-+', '-', re.sub(r'[^a-z0-9]+', '-', s.lower())).strip('-')
@@ -83,7 +83,7 @@ case "$cmd" in
     # owner/repo are restricted to GitHub slug-safe characters so the fields
     # are safe to consume with `read` (no eval). A crafted URL with shell
     # metacharacters fails the pattern outright.
-    python3 - "$url" <<'PYEOF'
+    mi_py - "$url" <<'PYEOF'
 import re, sys
 url = sys.argv[1].strip()
 m = re.match(
@@ -187,7 +187,7 @@ PYEOF
     gh api "repos/$owner/$repo/issues/$pr/comments" --paginate --slurp > "$raw/issue-comments.json"
 
     # Normalize into one comments.json array the analyst consumes.
-    python3 - "$raw/review-threads.json" "$raw/reviews.json" "$raw/issue-comments.json" \
+    mi_py - "$raw/review-threads.json" "$raw/reviews.json" "$raw/issue-comments.json" \
               "$kind" "$ref_id" "$session/comments.json" <<'PYEOF'
 import json, sys
 threads_f, reviews_f, issues_f, kind, ref_id, dest = sys.argv[1:7]
@@ -352,7 +352,7 @@ PYEOF
   canonicalize)
     report="${1:?report.md required}"
     [[ -f "$report" ]] || mi_die "report not found: $report"
-    python3 - "$report" <<'PYEOF'
+    mi_py - "$report" <<'PYEOF'
 import re, sys
 path = sys.argv[1]
 with open(path) as f:
@@ -433,7 +433,7 @@ PYEOF
   count-marked)
     report="${1:?report.md required}"
     [[ -f "$report" ]] || mi_die "report not found: $report"
-    python3 - "$report" <<'PYEOF'
+    mi_py - "$report" <<'PYEOF'
 import re, sys
 with open(sys.argv[1]) as f:
     lines = f.readlines()
@@ -459,7 +459,7 @@ PYEOF
   normalize)
     report="${1:?report.md required}"
     [[ -f "$report" ]] || mi_die "report not found: $report"
-    python3 - "$report" <<'PYEOF'
+    mi_py - "$report" <<'PYEOF'
 import re, sys
 path = sys.argv[1]
 NON_TERMINAL = {'open', 'reply-failed', 'reply-declined', 'fix-failed', 'fix-blocked'}
@@ -518,7 +518,7 @@ PYEOF
   list-actionable)
     report="${1:?report.md required}"
     [[ -f "$report" ]] || mi_die "report not found: $report"
-    python3 - "$report" <<'PYEOF'
+    mi_py - "$report" <<'PYEOF'
 import re, sys
 path = sys.argv[1]
 NON_TERMINAL = {'open', 'reply-failed', 'reply-declined', 'fix-failed', 'fix-blocked'}
@@ -581,7 +581,7 @@ PYEOF
       open|applied|replied|skipped|reply-failed|reply-declined|fix-failed|fix-blocked) ;;
       *) mi_die "invalid block status: $new_status" ;;
     esac
-    python3 - "$report" "$block_id" "$new_status" <<'PYEOF'
+    mi_py - "$report" "$block_id" "$new_status" <<'PYEOF'
 import re, sys
 path, bid, new_status = sys.argv[1:4]
 with open(path) as f:
@@ -643,7 +643,7 @@ PYEOF
     # Extract the block's comment-kind, reply-target-id, comment-url and the
     # proposed-reply block scalar. Output: line1=kind, line2=target, line3=url,
     # rest=reply body.
-    block_meta="$(python3 - "$report" "$block_id" <<'PYEOF'
+    block_meta="$(mi_py - "$report" "$block_id" <<'PYEOF'
 import re, sys
 path, bid = sys.argv[1], sys.argv[2]
 with open(path) as f:
@@ -741,7 +741,7 @@ PYEOF
   report-status)
     report="${1:?report.md required}"
     [[ -f "$report" ]] || mi_die "report not found: $report"
-    new_status="$(python3 - "$report" <<'PYEOF'
+    new_status="$(mi_py - "$report" <<'PYEOF'
 import re, sys
 path = sys.argv[1]
 TERMINAL = {'applied', 'replied', 'skipped'}

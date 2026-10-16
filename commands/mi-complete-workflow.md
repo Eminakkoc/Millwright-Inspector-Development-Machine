@@ -93,7 +93,7 @@ fi
 ```bash
 if [[ "$active_feature" == "null" || -z "$active_feature" ]]; then
   completed_last="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh queue-remaining 2>/dev/null >/dev/null; \
-    python3 -c "
+    "$CLAUDE_PLUGIN_ROOT/scripts/py.sh" -c "
 import sys, re, yaml
 with open('$data_root/quest/active.md') as f:
     slug = yaml.safe_load(f.read().split('---')[1]).get('slug')

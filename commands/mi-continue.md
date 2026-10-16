@@ -38,19 +38,11 @@ elif [[ -f "$PWD/.claude-plugin/plugin.json" ]] \
   && [[ -x "$PWD/scripts/progress.sh" ]]; then
   resolved="$PWD"
 elif [[ -f "$HOME/.claude/plugins/installed_plugins.json" ]]; then
-  candidate="$(python3 - <<'PYEOF' 2>/dev/null
-import json, os
-try:
-    with open(os.path.expanduser('~/.claude/plugins/installed_plugins.json')) as f:
-        d = json.load(f)
-    for k, v in (d.get('plugins') or {}).items():
-        if k.startswith('millwright-inspector-development-machine@') and v:
-            print(v[0].get('installPath', ''))
-            break
-except Exception:
-    pass
-PYEOF
-)"
+  # No Python or yq here: /mi-doctor and /mi-init run this before any dependency
+  # is installed. The exact v1 key (never @millwright-inspector-v2), read with a
+  # sed range — Claude Code writes the file one key per line. JSON doubles each
+  # Windows backslash: C:\\Users\\… becomes C:/Users/….
+  candidate="$(sed -n '/"millwright-inspector-development-machine@millwright-inspector"[[:space:]]*:/,/]/s/^[[:space:]]*"installPath"[[:space:]]*:[[:space:]]*"\([^"]*\)".*$/\1/p' "$HOME/.claude/plugins/installed_plugins.json" | head -1 | sed 's/\\\\/\//g')"
   if [[ -n "$candidate" && -x "$candidate/scripts/progress.sh" ]]; then
     resolved="$candidate"
   fi
@@ -453,7 +445,7 @@ Reached when the inspector has just finished marking items (`[x] TODO` lines exi
    while IFS= read -r feat; do
      [[ -z "$feat" ]] && continue
      # Use python for robust section walking
-     hits="$(python3 - "$summary_file" "$feat" "$features_in_queue" <<'PYEOF'
+     hits="$("$CLAUDE_PLUGIN_ROOT/scripts/py.sh" - "$summary_file" "$feat" "$features_in_queue" <<'PYEOF'
 import re, sys
 path, target_feat, all_feats = sys.argv[1], sys.argv[2], sys.argv[3].split('\n')
 with open(path) as f:
@@ -1053,7 +1045,7 @@ if (( commit_count == 0 )); then
       # skips HTML comments (scripts/review.sh:246-253), so this comment will not
       # be misclassified as a free-form finding. Do NOT use plain "## No code
       # changes" prose here — that would trip canonicalize.
-      python3 - "$ov_file" "$direct_empty_reason" <<'PYEOF'
+      "$CLAUDE_PLUGIN_ROOT/scripts/py.sh" - "$ov_file" "$direct_empty_reason" <<'PYEOF'
 import re, sys
 path, reason = sys.argv[1], sys.argv[2] or "not provided"
 with open(path) as f:
@@ -1369,7 +1361,7 @@ plan_candidates="$(
 has_impl="$("$CLAUDE_PLUGIN_ROOT/scripts/skills.sh" entries "$active_feature" implement)"
 has_rev="$("$CLAUDE_PLUGIN_ROOT/scripts/skills.sh" entries "$active_feature" review)"
 if [[ -n "$plan_candidates" && ( -n "$has_impl" || -n "$has_rev" ) ]]; then
-  printf '%s\n' "$plan_candidates" | python3 -c '
+  printf '%s\n' "$plan_candidates" | "$CLAUDE_PLUGIN_ROOT/scripts/py.sh" -c '
 import re, sys
 total = no_skill = no_review = 0
 for path in filter(None, sys.stdin.read().split("\n")):
@@ -1596,7 +1588,7 @@ if [[ "$open_count" == "0" ]]; then
   suggestion="none"
 else
   # Walk inspector-review.md; flag if any open finding has scope != fix.
-  has_non_fix="$(python3 - "$ov_file" <<'PYEOF'
+  has_non_fix="$("$CLAUDE_PLUGIN_ROOT/scripts/py.sh" - "$ov_file" <<'PYEOF'
 import re, sys
 with open(sys.argv[1]) as f:
     content = f.read()

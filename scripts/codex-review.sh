@@ -25,6 +25,7 @@
 # model is $MI_REVIEW_CLAUDE_MODEL (default opus).
 
 set -euo pipefail
+source "$(dirname "$0")/internal/common.sh"
 
 usage() {
   sed -n '2,25p' "$0"
@@ -116,7 +117,7 @@ if [[ "$backend" == "claude" ]]; then
     exit 1
   fi
 
-  python3 - "$work/result.json" <<'PYEOF'
+  mi_py - "$work/result.json" <<'PYEOF'
 import json, sys
 
 try:
@@ -160,7 +161,7 @@ if [[ $rc -ne 0 ]]; then
   exit 1
 fi
 
-python3 - "$work/events.jsonl" "$work/last-message.txt" "$thread" <<'PYEOF'
+mi_py - "$work/events.jsonl" "$work/last-message.txt" "$thread" <<'PYEOF'
 import json, sys
 
 events_path, message_path, fallback_thread = sys.argv[1], sys.argv[2], sys.argv[3]

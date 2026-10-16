@@ -23,7 +23,7 @@ tmp_fm="$(mktemp).json"
 tmp_schema_json="$(mktemp).json"
 trap 'rm -f "$tmp_fm" "$tmp_schema_json"' EXIT
 
-python3 - "$file" "$tmp_fm" <<'PYEOF'
+mi_py - "$file" "$tmp_fm" <<'PYEOF'
 import sys, re, json, yaml, datetime
 src, dest = sys.argv[1], sys.argv[2]
 with open(src) as f:
@@ -70,7 +70,7 @@ with open(dest, 'w') as o:
     json.dump(fm, o)
 PYEOF
 
-python3 - "$schema" "$tmp_schema_json" <<'PYEOF'
+mi_py - "$schema" "$tmp_schema_json" <<'PYEOF'
 import sys, json, yaml
 src, dest = sys.argv[1], sys.argv[2]
 with open(src) as f:
@@ -92,8 +92,8 @@ if command -v ajv >/dev/null 2>&1; then
 fi
 
 # Fallback: Python jsonschema module if available.
-if python3 -c "import jsonschema" >/dev/null 2>&1; then
-  if python3 - "$tmp_schema_json" "$tmp_fm" <<'PYEOF' >&2
+if mi_py -c "import jsonschema" >/dev/null 2>&1; then
+  if mi_py - "$tmp_schema_json" "$tmp_fm" <<'PYEOF' >&2
 import sys, json, jsonschema
 schema = json.load(open(sys.argv[1]))
 data = json.load(open(sys.argv[2]))
@@ -114,7 +114,7 @@ fi
 
 # Last fallback: structural check — required fields present, no obvious type mismatches.
 mi_info "ajv and python3-jsonschema both unavailable; using structural fallback for $file"
-required_fields="$(python3 -c "
+required_fields="$(mi_py -c "
 import json, sys
 s = json.load(open('$tmp_schema_json'))
 print(' '.join(s.get('required', [])))

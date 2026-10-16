@@ -31,7 +31,7 @@ dq_init() {
 
 # dq_py <file> <op> [args...] — all parsing/mutation in one place.
 dq_py() {
-  python3 - "$@" <<'PYEOF'
+  mi_py - "$@" <<'PYEOF'
 import re, sys
 path, op, *args = sys.argv[1:]
 content = open(path).read()

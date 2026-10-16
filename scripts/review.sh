@@ -209,7 +209,7 @@ case "$cmd" in
     fi
 
     # Append the finding under the section heading.
-    python3 - "$dest" "$heading" "$finding_id" "$summary" "$severity" "$scope" "$source_field" "$seed_id_field" "$details" <<'PYEOF'
+    mi_py - "$dest" "$heading" "$finding_id" "$summary" "$severity" "$scope" "$source_field" "$seed_id_field" "$details" <<'PYEOF'
 import sys, re
 path, heading, fid, summary, severity, scope, source, seed_id, details = sys.argv[1:10]
 with open(path) as f:
@@ -257,7 +257,7 @@ PYEOF
     dest="$(review_file "$feature")"
     [[ -f "$dest" ]] || mi_die "review file not found: $dest"
     [[ "$new_status" =~ ^(open|fixed|wontfix)$ ]] || mi_die "status must be open|fixed|wontfix"
-    python3 - "$dest" "$finding_id" "$new_status" "$fix_note" <<'PYEOF'
+    mi_py - "$dest" "$finding_id" "$new_status" "$fix_note" <<'PYEOF'
 import sys, re
 path, fid, new_status, fix_note = sys.argv[1:5]
 with open(path) as f:
@@ -299,7 +299,7 @@ EOF
     feature="${1:?feature required}"
     dest="$(review_file "$feature")"
     [[ -f "$dest" ]] || mi_die "review file not found: $dest"
-    python3 - "$dest" <<'PYEOF'
+    mi_py - "$dest" <<'PYEOF'
 import sys, re
 path = sys.argv[1]
 with open(path) as f:
@@ -325,7 +325,7 @@ PYEOF
     feature="${1:?feature required}"
     dest="$(review_file "$feature")"
     [[ -f "$dest" ]] || mi_die "review file not found: $dest"
-    python3 - "$dest" <<'PYEOF'
+    mi_py - "$dest" <<'PYEOF'
 import sys, re
 path = sys.argv[1]
 with open(path) as f:
@@ -417,7 +417,7 @@ PYEOF
       # synced, or the body is about to be refreshed.
       if [[ -n "$new_requirements_id" || "$refresh_body" == "1" ]]; then
         ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-        python3 - "$ctx" "$ts" "$refresh_body" "$new_requirements_id" <<'PYEOF'
+        mi_py - "$ctx" "$ts" "$refresh_body" "$new_requirements_id" <<'PYEOF'
 import re, sys
 path, ts, refresh, req_id = sys.argv[1], sys.argv[2], sys.argv[3] == '1', sys.argv[4]
 with open(path) as f:
@@ -463,7 +463,7 @@ PYEOF
         ov_file="$(review_file "$feature")"
         impl_dir="$(mi_impl_dir "$feature")"
         diagrams_dir="$impl_dir/diagrams"
-        python3 - "$ctx" "$ov_file" "$base_commit" "$diagrams_dir" <<'PYEOF'
+        mi_py - "$ctx" "$ov_file" "$base_commit" "$diagrams_dir" <<'PYEOF'
 import re, sys, subprocess
 from pathlib import Path
 
@@ -585,7 +585,7 @@ PYEOF
     #     `- field:` / continuation lines until the next blank line or heading)
     #   - blank lines
     # Anything else under the review heading is "freeform".
-    python3 - "$dest" <<'PYEOF'
+    mi_py - "$dest" <<'PYEOF'
 import re, sys
 
 path = sys.argv[1]
@@ -679,7 +679,7 @@ PYEOF
     line_end="${3:?line-end required}"
     dest="$(review_file "$feature")"
     [[ -f "$dest" ]] || mi_die "review file not found: $dest"
-    python3 - "$dest" "$line_start" "$line_end" <<'PYEOF'
+    mi_py - "$dest" "$line_start" "$line_end" <<'PYEOF'
 import sys
 path, start, end = sys.argv[1], int(sys.argv[2]), int(sys.argv[3])
 with open(path) as f:
@@ -699,7 +699,7 @@ PYEOF
     seed_id="${2:?seed-id required}"
     dest="$(review_file "$feature")"
     [[ -f "$dest" ]] || mi_die "review file not found: $dest"
-    python3 - "$dest" "$seed_id" <<'PYEOF'
+    mi_py - "$dest" "$seed_id" <<'PYEOF'
 import sys, re
 path, target = sys.argv[1], sys.argv[2]
 with open(path) as f:
@@ -731,7 +731,7 @@ PYEOF
     base_seed_id="${2:?base-seed-id required}"
     dest="$(review_file "$feature")"
     [[ -f "$dest" ]] || mi_die "review file not found: $dest"
-    python3 - "$dest" "$base_seed_id" <<'PYEOF'
+    mi_py - "$dest" "$base_seed_id" <<'PYEOF'
 import sys, re
 path, base = sys.argv[1], sys.argv[2]
 with open(path) as f:
@@ -833,7 +833,7 @@ PYEOF
       observation="$(cat)"
     fi
 
-    python3 - \
+    mi_py - \
       "$dest" "$seed_family_id" "$scenario_id" "$severity" "$scope" \
       "$flag_reopen" "$flag_new_finding" "$flag_force_new_regression" "$flag_reclassify" \
       "$file_citation" "$observation" <<'PYEOF'

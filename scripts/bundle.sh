@@ -112,7 +112,7 @@ todo_list_md="$slug_dir/todo-list.md"
 # ISO-ish human-readable timestamp for the §5.18 footer.
 human_ts="$(date '+%Y-%m-%d %H:%M:%S %z')"
 
-python3 - \
+mi_py - \
   "$out" \
   "$feature" \
   "$stage" \

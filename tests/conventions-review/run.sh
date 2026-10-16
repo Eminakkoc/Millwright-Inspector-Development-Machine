@@ -459,7 +459,7 @@ if grep -qF 'Result: findings | clean | not-checkable' "$AG" && grep -qF 'More: 
 CMD="$REPO_ROOT/commands/mi-conventions-review.md"
 # extract_blocks <md> <dir> — writes each ```bash block to <dir>/block-N.sh.
 extract_blocks() {
-  python3 - "$1" "$2" <<'PYEOF'
+  "$REPO_ROOT/scripts/py.sh" - "$1" "$2" <<'PYEOF'
 import re, sys, os
 text = open(sys.argv[1]).read()
 for i, b in enumerate(re.findall(r'```bash\n(.*?)```', text, re.DOTALL), 1):
@@ -483,7 +483,7 @@ grep -q 'conventions review: nothing to check' <<<"$got" && grep -q '^model: son
 
 t="command: every block fails cleanly with no active feature"
 run_in "$sb" "$P" set "current-stage=5" >/dev/null 2>&1
-python3 - "$sb/millwright-inspector/quest/2026-10-05-demo/progress.md" <<'PYEOF'
+"$REPO_ROOT/scripts/py.sh" - "$sb/millwright-inspector/quest/2026-10-05-demo/progress.md" <<'PYEOF'
 import re, sys
 p = sys.argv[1]; s = open(p).read()
 s = re.sub(r'(?ms)^active:\n(?:  .*\n)+', 'active: null\n', s, count=1)
@@ -510,7 +510,7 @@ grep -q '^\*\*Delegation contract.\*\*.*conventions-reviewer' "$CMD" \
 
 MC="$REPO_ROOT/commands/mi-continue.md"
 t="mi-continue: Resume Step 6.5 sits between Step 6 and Step 7"
-python3 - "$MC" <<'PYEOF' && ok "$t" || ng "$t" "order wrong or step missing"
+"$REPO_ROOT/scripts/py.sh" - "$MC" <<'PYEOF' && ok "$t" || ng "$t" "order wrong or step missing"
 import sys
 s = open(sys.argv[1]).read()
 a, b, c = s.find('### Resume Step 6 '), s.find('### Resume Step 6.5'), s.find('### Resume Step 7')
@@ -552,7 +552,7 @@ if run_in "$sb" "$REPO_ROOT/scripts/auto.sh" approve-guard feat >/dev/null 2>&1;
 # ---- Task 8: release -------------------------------------------------------------
 
 t="release: plugin.json is 1.12.0 and the changelog leads with it"
-v="$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["version"])' "$REPO_ROOT/.claude-plugin/plugin.json")"
+v="$("$REPO_ROOT/scripts/py.sh" -c 'import json,sys;print(json.load(open(sys.argv[1]))["version"])' "$REPO_ROOT/.claude-plugin/plugin.json")"
 top="$(grep -m1 '^## ' "$REPO_ROOT/CHANGELOG.md")"
 [[ "$v" == "1.12.0" && "$top" == *"1.12.0"* ]] && ok "$t" || ng "$t" "version=$v top=$top"
 

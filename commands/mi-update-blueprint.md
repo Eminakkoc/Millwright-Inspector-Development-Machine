@@ -402,7 +402,7 @@ active_feature="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh get-active)"
 version=<the history version from Step 2>   # LLM substitutes the literal value
 prev_cfg="$data_root/workflow-stream/$active_feature/blueprints/history/v${version}/config.md"   # the just-rotated copy
 new_cfg="$data_root/workflow-stream/$active_feature/blueprints/current/config.md"
-python3 - "$prev_cfg" "$new_cfg" <<'PYEOF'
+"$CLAUDE_PLUGIN_ROOT/scripts/py.sh" - "$prev_cfg" "$new_cfg" <<'PYEOF'
 import sys
 def span(lines):
     s = next((i for i, l in enumerate(lines) if l.lstrip().startswith("<!-- auto:start")), None)
@@ -437,7 +437,7 @@ decisions_file="$data_root/workflow-stream/$active_feature/decisions.md"
 if [[ -f "$decisions_file" ]]; then
   # Same body extraction as mi-plan-implementation Step 3.5 — strips HTML-
   # comment placeholders, keeps only stage sections with real bullets.
-  decisions_body="$(python3 - "$decisions_file" <<'PYEOF'
+  decisions_body="$("$CLAUDE_PLUGIN_ROOT/scripts/py.sh" - "$decisions_file" <<'PYEOF'
 import sys, os, re
 path = sys.argv[1]
 if not os.path.isfile(path):

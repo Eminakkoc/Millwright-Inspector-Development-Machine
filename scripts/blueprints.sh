@@ -330,7 +330,7 @@ case "$cmd" in
     [[ -f "$src" ]]  || mi_die "history config.md not found: $src"
     [[ -f "$dest" ]] || mi_die "current config.md not found: $dest (regenerate before invoking preserve-inspector-sections)"
 
-    python3 - "$src" "$dest" <<'PYEOF'
+    mi_py - "$src" "$dest" <<'PYEOF'
 import sys, re
 src_path, dest_path = sys.argv[1:3]
 with open(src_path) as f:
@@ -386,7 +386,7 @@ PYEOF
     fi
     feature="${1:?feature required}"
     current="$(mi_blueprints_current "$feature")"
-    python3 - "$current" "$require_primer" "$MI_PLUGIN_ROOT" <<'PYEOF'
+    mi_py - "$current" "$require_primer" "$MI_PLUGIN_ROOT" <<'PYEOF'
 import os, re, glob, subprocess, sys, yaml
 
 current, require_primer_str, plugin_root = sys.argv[1], sys.argv[2], sys.argv[3]
@@ -508,7 +508,7 @@ PYEOF
       echo "unset"
       exit 0
     fi
-    python3 - "$cfg" <<'PYEOF'
+    mi_py - "$cfg" <<'PYEOF'
 import re, sys
 path = sys.argv[1]
 with open(path) as f:

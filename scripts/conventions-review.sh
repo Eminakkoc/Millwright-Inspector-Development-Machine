@@ -51,7 +51,7 @@ case "$cmd" in
     lines="$("$S/commits.sh" changed-lines "$feature" "$review_head")"
     skills="$("$S/skills.sh" entries "$feature" review)"
     CVR_LINES="$lines" CVR_SKILLS="$skills" \
-      python3 "$PY" prepare "$top" "$review_head" "$(mi_data_root)" "$feature"
+      mi_py "$PY" prepare "$top" "$review_head" "$(mi_data_root)" "$feature"
     ;;
   ingest)
     [[ $# -eq 1 && -n "$1" ]] || usage
@@ -65,7 +65,7 @@ case "$cmd" in
     shopt -u nullglob
     [[ ${#states[@]} -eq 1 ]] || mi_die "expected one run under tmp/conventions-review/, found ${#states[@]} — run prepare first"
     state="${states[0]}"
-    report="$(CVR_REVIEW_SH="$S/review.sh" python3 "$PY" ingest "$top" "$state" "$feature")"
+    report="$(CVR_REVIEW_SH="$S/review.sh" mi_py "$PY" ingest "$top" "$state" "$feature")"
     printf '%s\n' "$report"
     stage="$("$S/progress.sh" get current-stage 2>/dev/null || echo -)"
     "$S/ledger.sh" append "$stage" "/mi-conventions-review" "$(wc -l < "$state/entries.tsv" | tr -d ' ') reviewer replies" \

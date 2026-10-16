@@ -64,7 +64,7 @@ record() {
 
   # Produce a JSON object.
   local json
-  json=$(python3 - "$name" "$kind" "$required" "$present" "$version" "$hints" "$severity" <<'PYEOF'
+  json=$(mi_py - "$name" "$kind" "$required" "$present" "$version" "$hints" "$severity" <<'PYEOF'
 import sys, json
 name, kind, req, pres, version, hints_json, sev = sys.argv[1:]
 print(json.dumps({
@@ -95,12 +95,24 @@ check_cli() {
   fi
 }
 
+check_python() {
+  # The report keeps the name `python3` (so macOS/Linux fields are unchanged),
+  # but the check runs the resolved interpreter — python3, python or py -3
+  # (common.sh). Only reached when that interpreter exists; see
+  # no_python_report for the other case.
+  local -a py
+  read -r -a py <<< "$MI_PY_CMD"
+  local version
+  version="$("${py[@]}" --version </dev/null 2>&1 | head -1 | tr -d '\r' | tr '\n' ' ' | sed 's/"/\\"/g' || echo "unknown")"
+  record python3 cli true true "$version" "$(hints_python3)"
+}
+
 check_pymod() {
   # check_pymod <module> <required> <hints_json>
   local mod="$1" required="$2" hints="$3"
-  if python3 -c "import $mod" >/dev/null 2>&1; then
+  if mi_py -c "import $mod" >/dev/null 2>&1; then
     local version
-    version="$(python3 -c "import $mod; print(getattr($mod, '__version__', 'unknown'))" 2>/dev/null || echo "unknown")"
+    version="$(mi_py -c "import $mod; print(getattr($mod, '__version__', 'unknown'))" 2>/dev/null || echo "unknown")"
     record "$mod" pymod "$required" true "$version" "$hints"
   else
     record "$mod" pymod "$required" false "" "$hints"
@@ -339,11 +351,70 @@ hints_catalog() {
 JSON
 }
 
+# ---------- No usable Python ----------------------------------------------
+# record() and the report renderers run Python, so without an interpreter the
+# doctor prints a fixed report in its usual shape — Python, plus yq when that
+# is missing too — and exits 2 (WIN-04).
+no_python_report() {
+  local py_hints p alias_only=0
+  py_hints="$(hints_python3)"
+  if [[ "$MI_IS_WINDOWS" == 1 ]]; then
+    for p in "$(command -v python3 2>/dev/null || true)" "$(command -v python 2>/dev/null || true)"; do
+      case "$p" in *[Ww]indows[Aa]pps*) alias_only=1 ;; esac
+    done
+  fi
+  if (( alias_only )); then
+    py_hints="${py_hints%\}*}"
+    py_hints="${py_hints%$'\n'}"
+    py_hints="$(printf '%s,\n  "note": "%s"\n}' "$py_hints" \
+      "the only python found is the Microsoft Store alias — install Python, then turn off python.exe and python3.exe under Settings → Apps → Advanced app settings → App execution aliases")"
+  fi
+  local -a checks=()
+  checks+=("$(printf '{"name": "python3", "kind": "cli", "required": true, "present": false, "version": "", "install_hints": %s, "severity": "error"}' "$py_hints")")
+  if ! command -v yq >/dev/null 2>&1; then
+    checks+=("$(printf '{"name": "yq", "kind": "cli", "required": true, "present": false, "version": "", "install_hints": %s, "severity": "error"}' "$(hints_yq)")")
+  fi
+
+  if (( preflight )); then
+    echo "millwright-inspector-development-machine preflight: required dependencies missing. Run /mi-doctor for details." >&2
+    exit 1
+  fi
+  if [[ "$format" == "human" ]]; then
+    echo "millwright-inspector-development-machine dependency report (os=$os)"
+    echo "-----------------------------------"
+    echo "  ✗ python3  [required]"
+    if (( ${#checks[@]} > 1 )); then
+      echo "  ✗ yq  [required]"
+    fi
+    if (( alias_only )); then
+      echo "    (only the Microsoft Store alias was found — turn off python.exe and python3.exe under Settings → Apps → Advanced app settings → App execution aliases)"
+    fi
+    echo; echo "Required dependencies missing. See JSON output (--format=json) for install hints."
+  else
+    local i sep
+    printf '{\n  "os": "%s",\n  "status": "error",\n  "summary": "required dependencies missing",\n  "checks": [\n' "$os"
+    for i in "${!checks[@]}"; do
+      sep=","
+      if (( i + 1 == ${#checks[@]} )); then sep=""; fi
+      printf '    %s%s\n' "${checks[$i]}" "$sep"
+    done
+    printf '  ]\n}\n'
+  fi
+  exit 2
+}
+
+doctor_py_ok=0
+if [[ -n "$MI_PY_CMD" ]]; then
+  read -r -a doctor_py <<< "$MI_PY_CMD"
+  if command -v "${doctor_py[0]}" >/dev/null 2>&1; then doctor_py_ok=1; fi
+fi
+if (( ! doctor_py_ok )); then no_python_report; fi
+
 # ---------- Run checks ----------------------------------------------------
 
 # REQUIRED
 check_cli git true       "$(hints_git)"
-check_cli python3 true   "$(hints_python3)"
+check_python
 check_cli yq true        "$(hints_yq)"
 check_pymod yaml true    "$(hints_pyyaml)"
 check_cli plantuml-mcp-server true "$(hints_plantuml_mcp)"
@@ -456,7 +527,7 @@ if [[ "$format" == "human" ]]; then
   echo "millwright-inspector-development-machine dependency report (os=$os)"
   echo "-----------------------------------"
   for r in "${results[@]}"; do
-    python3 - "$r" <<'PYEOF'
+    mi_py - "$r" <<'PYEOF'
 import sys, json
 r = json.loads(sys.argv[1])
 sym = {"ok":"✓", "warn":"⚠", "error":"✗"}[r["severity"]]
@@ -471,7 +542,7 @@ PYEOF
     2) echo; echo "Required dependencies missing. See JSON output (--format=json) for install hints." ;;
   esac
 else
-  python3 - "$os" "$worst_severity" "${results[@]}" <<'PYEOF'
+  mi_py - "$os" "$worst_severity" "${results[@]}" <<'PYEOF'
 import sys, json
 os_name = sys.argv[1]
 severity = int(sys.argv[2])

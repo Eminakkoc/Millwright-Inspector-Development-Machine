@@ -59,7 +59,7 @@ case "$cmd" in
     [[ -n "${lesson_body//[[:space:]]/}" ]] || mi_die "append: lesson body (stdin) is empty"
 
     today="$(date -u +%Y-%m-%d)"
-    python3 - "$dest" "$title" "$today" "$source_ref" "$lesson_body" <<'PYEOF'
+    mi_py - "$dest" "$title" "$today" "$source_ref" "$lesson_body" <<'PYEOF'
 import re, sys
 path, title, today, source_ref, body = sys.argv[1:6]
 with open(path) as f:

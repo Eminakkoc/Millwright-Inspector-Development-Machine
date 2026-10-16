@@ -4,12 +4,12 @@
 
 set -euo pipefail
 
-# Prefer system uuidgen (BSD/macOS/Linux); fall back to Python.
+# Prefer system uuidgen (BSD/macOS/Linux); fall back to Python — Git Bash on
+# Windows ships no uuidgen. common.sh is sourced only on that path, so the
+# uuidgen path starts no extra process. Lowercase either way.
 if command -v uuidgen >/dev/null 2>&1; then
   uuidgen | tr '[:upper:]' '[:lower:]'
-elif command -v python3 >/dev/null 2>&1; then
-  python3 -c "import uuid; print(uuid.uuid4())"
 else
-  echo "error: need uuidgen or python3 to generate UUIDs" >&2
-  exit 2
+  source "$(dirname "$0")/internal/common.sh"
+  mi_py -c "import uuid; print(uuid.uuid4())"
 fi

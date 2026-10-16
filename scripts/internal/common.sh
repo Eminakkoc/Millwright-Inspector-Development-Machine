@@ -13,6 +13,57 @@ else
 fi
 export MI_PLUGIN_ROOT
 
+# Platform and Python resolver (1.13.0, WIN-04).
+#
+# MI_IS_WINDOWS is 1 under Git Bash / MSYS2 / Cygwin, else 0. It reads bash's
+# own $OSTYPE (msys / cygwin there — what `uname -s` reports as MINGW*, MSYS*,
+# CYGWIN*) so macOS and Linux pay no extra process per script call.
+#
+# MI_PY_CMD is the Python command as a string ("python3", "python" or "py -3";
+# bash cannot export arrays). An inherited value — from a parent script or the
+# status-line wrapper — is used as is. Otherwise macOS/Linux take python3 with
+# no probe, and Windows takes the first candidate that is Python 3.8+ (the
+# WindowsApps Store alias exits 9009, so it never qualifies). Exported, so
+# child scripts skip the probe. Empty when nothing qualifies: scripts that never
+# call Python still run, and the first mi_py call stops with a pointer to
+# /mi-doctor.
+case "${OSTYPE:-}" in
+  msys*|cygwin*) MI_IS_WINDOWS=1 ;;
+  *)             MI_IS_WINDOWS=0 ;;
+esac
+if [[ -z "${MI_PY_CMD:-}" ]]; then
+  if [[ "$MI_IS_WINDOWS" == 1 ]]; then
+    MI_PY_CMD=""
+    for _mi_py_cand in python3 python "py -3"; do
+      # Unquoted on purpose: "py -3" is two words.
+      if $_mi_py_cand -c 'import sys; sys.exit(sys.version_info < (3, 8))' >/dev/null 2>&1; then
+        MI_PY_CMD="$_mi_py_cand"
+        break
+      fi
+    done
+    unset _mi_py_cand
+  else
+    MI_PY_CMD="python3"
+  fi
+fi
+export MI_IS_WINDOWS MI_PY_CMD
+
+# Run Python through the resolver. Same arguments as `python`; always adds
+# `-X utf8` (UTF-8 for open() defaults and the standard streams, and unlike
+# PYTHONUTF8 it still applies under -I). On Windows, text-mode print() emits
+# \r\n, so stdout is piped through `tr -d '\r'` and the interpreter's own exit
+# code is returned.
+mi_py() {
+  [[ -n "${MI_PY_CMD:-}" ]] || mi_die "no Python 3.8+ found; run /mi-doctor"
+  local -a _mi_py_argv
+  read -r -a _mi_py_argv <<< "$MI_PY_CMD"
+  if [[ "$MI_IS_WINDOWS" == 1 ]]; then
+    "${_mi_py_argv[@]}" -X utf8 "$@" | tr -d '\r'
+    return "${PIPESTATUS[0]}"
+  fi
+  "${_mi_py_argv[@]}" -X utf8 "$@"
+}
+
 # Data root. Precedence (each step short-circuits if it produces a value):
 #
 # 1. $MI_DATA_ROOT — explicit per-invocation override. Set by command wrappers,
@@ -127,7 +178,7 @@ mi_quest_feature_test_base() {
   local pointer
   pointer="$(mi_quest_active_pointer)"
   [[ -f "$pointer" ]] || mi_die "mi_quest_feature_test_base: no active quest pointer at $pointer"
-  python3 - "$pointer" <<'PYEOF'
+  mi_py - "$pointer" <<'PYEOF'
 import re, sys, yaml
 with open(sys.argv[1]) as f:
     content = f.read()
@@ -153,7 +204,7 @@ PYEOF
 
 mi_quest_compute_slug() {
   [[ $# -gt 0 ]] || mi_die "mi_quest_compute_slug: at least one journal folder required"
-  python3 - "$(mi_quest_dir)" "$@" <<'PYEOF'
+  mi_py - "$(mi_quest_dir)" "$@" <<'PYEOF'
 import os, re, sys, hashlib, time
 quest_root, *folders = sys.argv[1:]
 def kebab(s):
@@ -221,7 +272,7 @@ mi_fm_set() {
   # Split frontmatter from body, edit frontmatter, restitch.
   awk 'BEGIN{c=0} /^---$/{c++; print; next} c==1{print > "/tmp/mi_fm_head"} c>1{print > "/tmp/mi_fm_body"}' "$file" >/dev/null 2>&1 || true
   # Simpler approach: use yq's frontmatter-aware mode via a pre/post split.
-  python3 - "$file" "$field" "$value" <<'PYEOF' > "$tmp"
+  mi_py - "$file" "$field" "$value" <<'PYEOF' > "$tmp"
 import sys, re, yaml
 path, field, value = sys.argv[1], sys.argv[2], sys.argv[3]
 with open(path) as f:
@@ -270,7 +321,7 @@ PYEOF
 mi_render_template() {
   local tmpl="$1" dest="$2"; shift 2
   mkdir -p "$(dirname "$dest")"
-  python3 - "$tmpl" "$dest" "$@" <<'PYEOF'
+  mi_py - "$tmpl" "$dest" "$@" <<'PYEOF'
 import re, sys, yaml
 tmpl_path, dest_path, *kvs = sys.argv[1:]
 with open(tmpl_path) as f:

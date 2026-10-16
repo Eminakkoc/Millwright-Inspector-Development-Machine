@@ -233,7 +233,7 @@ Then write each section per the template's guide:
 
   ```bash
   decisions_file="$data_root/workflow-stream/$active_feature/decisions.md"
-  decisions_body="$(python3 - "$decisions_file" <<'PYEOF'
+  decisions_body="$("$CLAUDE_PLUGIN_ROOT/scripts/py.sh" - "$decisions_file" <<'PYEOF'
 import sys, os, re
 path = sys.argv[1]
 if not os.path.isfile(path):

@@ -25,8 +25,15 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# A PATH with python3 and git but without the real catalog CLI.
-BASE_PATH="$(dirname "$(command -v python3)"):$(dirname "$(command -v git)"):/usr/bin:/bin"
+# A PATH with Python and git but without the real catalog CLI. On Windows the
+# interpreter's own folder: `python3` there may be missing or the Store alias.
+case "${OSTYPE:-}" in
+  msys*|cygwin*)
+    py_dir="$(cygpath -u "$("$REPO_ROOT/scripts/py.sh" -c 'import os, sys; print(os.path.dirname(sys.executable))')")" ;;
+  *)
+    py_dir="$(dirname "$(command -v python3)")" ;;
+esac
+BASE_PATH="$py_dir:$(dirname "$(command -v git)"):/usr/bin:/bin"
 
 # make_sandbox — git repo + data root + fake HOME + stub bin dir (empty).
 # Layout: $sb/repo (cwd for every command), $sb/home, $sb/bin, $sb/catalog-data.

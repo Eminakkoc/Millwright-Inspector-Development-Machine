@@ -2178,9 +2178,13 @@ being resolved. It is therefore an inline Bash pattern, canonical here, with
    `$PWD/.claude-plugin/plugin.json` names `millwright-inspector-development-machine`
    and `$PWD/scripts/progress.sh` is executable.
 3. **Marketplace install path** — read
-   `~/.claude/plugins/installed_plugins.json`, find the key starting with
-   `millwright-inspector-development-machine@`, and take its `installPath` (validated
-   the same way).
+   `~/.claude/plugins/installed_plugins.json`, find the exact key
+   `millwright-inspector-development-machine@millwright-inspector` (never the v2
+   marketplace's `@millwright-inspector-v2`), and take its `installPath` (validated
+   the same way). Since 1.13.0 this is a `sed` range, not Python: `/mi-doctor` and
+   `/mi-init` run the resolver before any dependency is known to exist. It relies on
+   Claude Code writing the file one key per line, and turns JSON's doubled Windows
+   backslashes (`C:\\Users\\…`) into `C:/Users/…`.
 
 If none resolve, **refuse with an environmental diagnostic** — do not fall through to
 state-shaped output that would send the inspector debugging their workflow instead of

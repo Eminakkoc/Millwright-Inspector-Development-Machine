@@ -88,7 +88,7 @@ case "$cmd" in
       echo 0
       exit 0
     fi
-    python3 - "$dest" <<'PYEOF'
+    mi_py - "$dest" <<'PYEOF'
 import re, sys
 with open(sys.argv[1]) as f:
     content = f.read()
@@ -109,7 +109,7 @@ PYEOF
     if [[ ! -f "$dest" ]]; then
       exit 0
     fi
-    python3 - "$dest" <<'PYEOF'
+    mi_py - "$dest" <<'PYEOF'
 import re, sys
 with open(sys.argv[1]) as f:
     content = f.read()
@@ -164,7 +164,7 @@ PYEOF
       deferred_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
     fi
     dest="$(dt_ensure "$ft")"
-    python3 - "$dest" "$feature" "$scenario" "$title" "$reason" "$action" "$expected" "$deferred_at" <<'PYEOF'
+    mi_py - "$dest" "$feature" "$scenario" "$title" "$reason" "$action" "$expected" "$deferred_at" <<'PYEOF'
 import re, sys
 path, feature, scenario, title, reason, action, expected, deferred_at = sys.argv[1:9]
 
@@ -240,7 +240,7 @@ PYEOF
     merged="${4:?merged scenario id required}"
     dest="$(dt_file "$ft")"
     [[ -f "$dest" ]] || mi_die "set-merged-as: $dest not found"
-    python3 - "$dest" "$feature" "$scenario" "$merged" <<'PYEOF'
+    mi_py - "$dest" "$feature" "$scenario" "$merged" <<'PYEOF'
 import re, sys
 path, feature, scenario, merged = sys.argv[1:5]
 with open(path) as f:
@@ -282,7 +282,7 @@ PYEOF
     scenario="${3:?originating scenario required}"
     dest="$(dt_file "$ft")"
     [[ -f "$dest" ]] || mi_die "remove: $dest not found"
-    python3 - "$dest" "$feature" "$scenario" <<'PYEOF'
+    mi_py - "$dest" "$feature" "$scenario" <<'PYEOF'
 import re, sys
 path, feature, scenario = sys.argv[1:4]
 with open(path) as f:
@@ -328,7 +328,7 @@ PYEOF
     if [[ ! -f "$dest" ]]; then
       exit 0
     fi
-    python3 - "$dest" "$results" <<'PYEOF'
+    mi_py - "$dest" "$results" <<'PYEOF'
 import os, re, sys
 dt_path, results_path = sys.argv[1], sys.argv[2]
 

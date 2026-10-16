@@ -1198,7 +1198,7 @@ rm -rf "$nocx_dir" "$ra_sb"
 
 # guard hook: returns the hook's exit code for (agent_type, command)
 guard() {
-  python3 -c 'import json,sys; print(json.dumps({"agent_type": sys.argv[1], "tool_name": "Bash", "tool_input": {"command": sys.argv[2]}}))' "$1" "$2" \
+  "$REPO_ROOT/scripts/py.sh" -c 'import json,sys; print(json.dumps({"agent_type": sys.argv[1], "tool_name": "Bash", "tool_input": {"command": sys.argv[2]}}))' "$1" "$2" \
     | CLAUDE_PLUGIN_ROOT="$REPO_ROOT" "$REPO_ROOT/hooks/guard-batch-reviewer.sh" >/dev/null 2>&1
   echo $?
 }
@@ -1236,7 +1236,7 @@ P")" == 2 ]] || bad+="foreign-wrapper "
 # guard_at <hook-plugin-root> <agent_type> <command>: the hook as loaded from a
 # different install than the wrapper path in the command (v1.8.1).
 guard_at() {
-  python3 -c 'import json,sys; print(json.dumps({"agent_type": sys.argv[1], "tool_name": "Bash", "tool_input": {"command": sys.argv[2]}}))' "$2" "$3" \
+  "$REPO_ROOT/scripts/py.sh" -c 'import json,sys; print(json.dumps({"agent_type": sys.argv[1], "tool_name": "Bash", "tool_input": {"command": sys.argv[2]}}))' "$2" "$3" \
     | CLAUDE_PLUGIN_ROOT="$1" "$REPO_ROOT/hooks/guard-batch-reviewer.sh" >/dev/null 2>&1
   echo $?
 }

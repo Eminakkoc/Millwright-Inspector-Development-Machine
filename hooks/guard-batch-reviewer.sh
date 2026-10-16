@@ -19,7 +19,9 @@ set -euo pipefail
 
 input="$(cat)"
 
-python3 - "$input" "${CLAUDE_PLUGIN_ROOT:-}" <<'PYEOF'
+source "$(dirname "$0")/../scripts/internal/common.sh"
+
+mi_py - "$input" "${CLAUDE_PLUGIN_ROOT:-}" <<'PYEOF'
 import json, os, re, sys
 
 raw, plugin_root = sys.argv[1], sys.argv[2]

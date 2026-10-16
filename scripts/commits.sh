@@ -132,7 +132,7 @@ case "$cmd" in
     range="$(get_range)"
     # Run git log inside Python so the heredoc-as-script doesn't shadow stdin —
     # the same pattern populate-requirements uses.
-    python3 - "$range" <<'PYEOF'
+    mi_py - "$range" <<'PYEOF'
 import sys, subprocess, yaml
 rng = sys.argv[1]
 log = subprocess.check_output(['git', 'log', '--pretty=format:%H\t%s', rng], text=True)
@@ -151,7 +151,7 @@ PYEOF
     requirements_file="$(mi_blueprints_current "$feature")/requirements.md"
     [[ -f "$requirements_file" ]] || mi_die "requirements.md not found"
     range="$(get_range)"
-    python3 - "$requirements_file" "$range" <<'PYEOF'
+    mi_py - "$requirements_file" "$range" <<'PYEOF'
 import sys, subprocess, re, yaml
 path, rng = sys.argv[1], sys.argv[2]
 log = subprocess.check_output(['git', 'log', '--pretty=format:%H\t%s', rng], text=True)
@@ -179,7 +179,7 @@ PYEOF
     feature="${1:?feature required}"
     range="$(get_range)"
     base="${range%..*}"
-    python3 - "$base" <<'PYEOF'
+    mi_py - "$base" <<'PYEOF'
 import re, sys, subprocess
 base = sys.argv[1]
 ns = subprocess.check_output(['git', 'diff', '--name-status', f'{base}..HEAD'], text=True)
@@ -246,7 +246,7 @@ PYEOF
     review_head="${2:?review-head required}"
     range="$(get_range)"
     base="${range%..*}"
-    python3 - "$base" "$review_head" <<'PYEOF'
+    mi_py - "$base" "$review_head" <<'PYEOF'
 import re, subprocess, sys
 base, head = sys.argv[1], sys.argv[2]
 diff = subprocess.check_output(
@@ -332,7 +332,7 @@ PYEOF
       echo "changed-files-only: $summary_file not found (run change-summary-fresh first to gate)" >&2
       exit 2
     fi
-    python3 - "$summary_file" <<'PYEOF'
+    mi_py - "$summary_file" <<'PYEOF'
 import re, sys
 path = sys.argv[1]
 with open(path) as f:
@@ -417,7 +417,7 @@ PYEOF
     # exit 4 = nothing contributed commits
     # exit 5 = bases diverged; no single earliest exists
     feature="${1:?feature required}"
-    python3 - "$(mi_data_root)" "$(mi_progress_file)" "$feature" <<'PYEOF'
+    mi_py - "$(mi_data_root)" "$(mi_progress_file)" "$feature" <<'PYEOF'
 import os, re, sys, subprocess, yaml
 
 data_root, progress_path, ft_feature = sys.argv[1], sys.argv[2], sys.argv[3]
@@ -523,7 +523,7 @@ PYEOF
     range_line="$("${MI_PLUGIN_ROOT}/scripts/commits.sh" feature-test-range "$feature" | head -1)" || exit $?
     union_base="$(printf '%s' "$range_line" | cut -f1)"
     union_head="$(printf '%s' "$range_line" | cut -f2)"
-    python3 - "$summary_file" "${union_base}..${union_head}" <<'PYEOF'
+    mi_py - "$summary_file" "${union_base}..${union_head}" <<'PYEOF'
 import sys, subprocess, re, yaml
 path, rng = sys.argv[1], sys.argv[2]
 log = subprocess.check_output(['git', 'log', '--pretty=format:%H\t%s', rng], text=True)

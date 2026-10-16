@@ -16,6 +16,7 @@
 #   ledger init|mark|render|path|meta <file> [...] # (v1.5.2 phase-run enforcement; meta added v1.6.10)
 
 set -euo pipefail
+source "$(dirname "$0")/internal/common.sh"
 
 usage() {
   sed -n '2,16p' "$0"
@@ -86,7 +87,7 @@ case "$cmd" in
     [[ -f "$file" ]] || { echo "error: file not found: $file" >&2; exit 1; }
     [[ -f "$items_path" ]] || { echo "error: items file not found: $items_path" >&2; exit 1; }
 
-    python3 - "$file" "$items_path" <<'PYEOF'
+    mi_py - "$file" "$items_path" <<'PYEOF'
 import sys, json, re
 
 file_path, items_path = sys.argv[1], sys.argv[2]
@@ -171,7 +172,7 @@ PYEOF
     # resolves findings while adding mechanism would look like a shrink.
     file="${1:-}"
     [[ -n "$file" && -f "$file" ]] || { echo "usage: $0 size-stat <file>" >&2; exit 64; }
-    python3 - "$file" <<'PYEOF'
+    mi_py - "$file" <<'PYEOF'
 import sys, re
 with open(sys.argv[1], encoding="utf-8", errors="replace") as f:
     text = f.read()
@@ -188,7 +189,7 @@ PYEOF
   parse-findings)
     file="${1:-}"
     [[ -n "$file" && -f "$file" ]] || { echo "usage: $0 parse-findings <file>" >&2; exit 64; }
-    python3 - "$file" <<'PYEOF'
+    mi_py - "$file" <<'PYEOF'
 import sys, re, json
 with open(sys.argv[1], encoding="utf-8", errors="replace") as f:
     text = f.read()
@@ -248,7 +249,7 @@ PYEOF
       esac
     done
 
-    python3 - "$history_file" "$phase" ${scope_ids[@]+"${scope_ids[@]}"} <<'PYEOF'
+    mi_py - "$history_file" "$phase" ${scope_ids[@]+"${scope_ids[@]}"} <<'PYEOF'
 import sys, re
 
 history_path = sys.argv[1]
@@ -398,7 +399,7 @@ PYEOF
     [[ -f "$history_file" && -w "$history_file" ]] || { echo "error: history file not found or not writable: $history_file" >&2; exit 1; }
     [[ -f "$input_json" ]] || { echo "error: input json not found: $input_json" >&2; exit 1; }
 
-    python3 - "$history_file" "$input_json" <<'PYEOF'
+    mi_py - "$history_file" "$input_json" <<'PYEOF'
 import sys, re, json, datetime as dt
 
 history_path, input_path = sys.argv[1], sys.argv[2]
@@ -545,7 +546,7 @@ PYEOF
     #
     # NOTE: this subcommand is state-mutating — it updates the file's frontmatter.
     # Callers should treat it as "allocate-and-commit", not a read-only query.
-    python3 - "$file" <<'PYEOF'
+    mi_py - "$file" <<'PYEOF'
 import sys, re
 path = sys.argv[1]
 with open(path, encoding="utf-8", errors="replace") as f:
@@ -599,7 +600,7 @@ PYEOF
       echo "usage: $0 diff-drift <requirements.md> <summary.md> <todo-list.md> <feature>" >&2
       exit 64
     }
-    python3 - "$requirements" "$summary" "$todo" "$feature" <<'PYEOF'
+    mi_py - "$requirements" "$summary" "$todo" "$feature" <<'PYEOF'
 import sys, re
 req, summary, todo, feature = sys.argv[1:]
 
@@ -649,7 +650,7 @@ PYEOF
     manifest="${2:-}"
     [[ -n "$target" && -n "$manifest" ]] || { echo "usage: $0 build-reference-block <target> <manifest>" >&2; exit 64; }
 
-    python3 - "$target" "$manifest" <<'PYEOF'
+    mi_py - "$target" "$manifest" <<'PYEOF'
 import sys, os, re, yaml
 
 target_arg, manifest_arg = sys.argv[1], sys.argv[2]
@@ -799,7 +800,7 @@ PYEOF
     }
     shift 2  # drop action + file; remaining args are action-specific
 
-    python3 - "$action" "$file" "$@" <<'PYEOF'
+    mi_py - "$action" "$file" "$@" <<'PYEOF'
 import sys, os, json, hashlib
 
 action = sys.argv[1]

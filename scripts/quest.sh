@@ -91,7 +91,7 @@ case "$cmd" in
     # auto-injects UUIDs).
     started="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
     folders_csv="$(printf '%s,' "$@" | sed 's/,$//')"
-    python3 - "${MI_PLUGIN_ROOT}/templates/active-quest.md.tmpl" "$pointer" \
+    mi_py - "${MI_PLUGIN_ROOT}/templates/active-quest.md.tmpl" "$pointer" \
       "${new_slug}" "${started}" "${folders_csv}" "active" <<'PYEOF'
 import sys
 tmpl, dest, slug, started, folders, status = sys.argv[1:]
@@ -134,7 +134,7 @@ PYEOF
     fi
     mkdir -p "$(mi_quest_dir)"
     started="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-    python3 - "${MI_PLUGIN_ROOT}/templates/active-quest.md.tmpl" "$pointer" \
+    mi_py - "${MI_PLUGIN_ROOT}/templates/active-quest.md.tmpl" "$pointer" \
       "null" "${started}" "" "none" <<'PYEOF'
 import sys
 tmpl, dest, slug, started, folders, status = sys.argv[1:]
@@ -203,7 +203,7 @@ PYEOF
     quest_dir="$(mi_quest_active_dir)" || mi_die "feature-section: no active quest"
     summary_file="$quest_dir/summary.md"
     [[ -f "$summary_file" ]] || mi_die "feature-section: $summary_file not found"
-    python3 - "$summary_file" "$feature" <<'PYEOF'
+    mi_py - "$summary_file" "$feature" <<'PYEOF'
 import re, sys
 path, target = sys.argv[1], sys.argv[2]
 with open(path) as f:
