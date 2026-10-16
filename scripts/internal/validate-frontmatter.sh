@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # validate-frontmatter.sh — validate a workflow .md file's frontmatter against a schema.
-# Tries ajv-cli for deep JSON Schema validation; falls back to yq-based structural checks.
+# Uses ajv-cli when it is on PATH, otherwise the Python jsonschema module
+# (required since 1.13.1). With neither, it stops: there is no partial check.
 #
 # Usage: validate-frontmatter.sh <file> <schema-name>
 #   <schema-name> is the basename of schemas/<schema-name>.schema.yaml (e.g., "progress").
@@ -91,7 +92,7 @@ if command -v ajv >/dev/null 2>&1; then
   fi
 fi
 
-# Fallback: Python jsonschema module if available.
+# Otherwise the Python jsonschema module.
 if mi_py -c "import jsonschema" >/dev/null 2>&1; then
   if mi_py - "$tmp_schema_json" "$tmp_fm" <<'PYEOF' >&2
 import sys, json, jsonschema
@@ -112,26 +113,9 @@ PYEOF
   fi
 fi
 
-# Last fallback: structural check — required fields present, no obvious type mismatches.
-mi_info "ajv and python3-jsonschema both unavailable; using structural fallback for $file"
-# The path goes in as an argument, never inside the Python source: Git Bash
-# rewrites /tmp/… only in arguments, and Windows Python reads a literal
-# /tmp/… as C:\tmp\… (WIN-08).
-required_fields="$(mi_py -c '
-import json, sys
-with open(sys.argv[1], encoding="utf-8") as f:
-    s = json.load(f)
-print(" ".join(s.get("required", [])))
-' "$tmp_schema_json")"
-missing=()
-for field in $required_fields; do
-  val="$(mi_fm_get "$file" "$field" 2>/dev/null || true)"
-  if [[ -z "$val" || "$val" == "null" ]]; then
-    missing+=("$field")
-  fi
-done
-if [[ ${#missing[@]} -gt 0 ]]; then
-  echo "error: $file missing required frontmatter fields: ${missing[*]}" >&2
-  exit 1
-fi
-mi_info "✓ $file frontmatter structurally valid (fallback, schema=$schema_name)"
+# Neither validator: refuse rather than pass the file unchecked. The structural
+# fallback this replaced (1.13.1) rejected valid files — `active: null` and
+# `queue: []` read as missing — and could never check types, patterns or
+# unknown keys.
+echo "error: cannot validate $file: neither ajv-cli nor the Python jsonschema module is available. Run /mi-doctor to install jsonschema." >&2
+exit 1

@@ -1,6 +1,7 @@
 # Runs every tests/*/run.sh under bash on Linux and on Windows (Git Bash).
-# The Windows job leaves out ajv and jsonschema, so frontmatter validation
-# takes the structural fallback there (WIN-08); the Linux job installs both.
+# Both jobs install the Python jsonschema module (required since 1.13.1); only
+# the Linux job adds ajv-cli, so Windows validates through jsonschema and
+# Linux through ajv.
 # tests/conventions-review/reviewer-checks.sh needs `claude -p` and is not
 # a run.sh, so it never runs here.
 name: tests
@@ -35,20 +36,18 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install yq and pyyaml
+      - name: Install yq, pyyaml and jsonschema
         run: |
           mkdir -p "$HOME/bin"
           exe=yq; [[ "${{ matrix.yq_asset }}" == *.exe ]] && exe=yq.exe
           curl -fsSL -o "$HOME/bin/$exe" "https://github.com/mikefarah/yq/releases/download/v4.53.2/${{ matrix.yq_asset }}"
           chmod +x "$HOME/bin/$exe"
           if command -v cygpath >/dev/null 2>&1; then cygpath -w "$HOME/bin"; else echo "$HOME/bin"; fi >> "$GITHUB_PATH"
-          python -m pip install pyyaml
+          python -m pip install pyyaml jsonschema
 
-      - name: Install ajv and jsonschema
+      - name: Install ajv
         if: matrix.validators == 'true'
-        run: |
-          npm install -g ajv-cli
-          python -m pip install jsonschema
+        run: npm install -g ajv-cli
 
       - name: Git identity for test sandboxes
         run: |

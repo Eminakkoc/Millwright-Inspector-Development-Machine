@@ -269,7 +269,7 @@ hints_ajv() {
 {
   "windows": "npm install -g ajv-cli",
   "any": "npm install -g ajv-cli",
-  "note": "optional — enables deep JSON Schema validation. Falls back to python3-jsonschema or yq if absent."
+  "note": "optional — validates workflow files with ajv instead of the Python jsonschema module."
 }
 JSON
 }
@@ -279,7 +279,7 @@ hints_jsonschema() {
 {
   "windows": "{PY} -m pip install --user jsonschema",
   "any": "python3 -m pip install --user jsonschema",
-  "note": "optional — secondary fallback for schema validation when ajv-cli is absent."
+  "note": "validates every workflow file the plugin writes (unless ajv-cli is installed). If pip is missing: `python3 -m ensurepip --user`"
 }
 JSON
 }
@@ -432,6 +432,7 @@ check_cli git true       "$(hints_git)"
 check_python
 check_cli yq true        "$(hints_yq)"
 check_pymod yaml true    "$(hints_pyyaml)"
+check_pymod jsonschema true "$(hints_jsonschema)"
 check_cli plantuml-mcp-server true "$(hints_plantuml_mcp)"
 check_env_git_repo
 
@@ -442,7 +443,6 @@ fi
 
 # OPTIONAL
 check_cli ajv false      "$(hints_ajv)"
-check_pymod jsonschema false "$(hints_jsonschema)"
 
 # OPTIONAL — gh (GitHub CLI) powers /mi-analyze-review (PR-review analysis).
 # Not needed for the core 8-stage workflow; safe to omit if you never analyze

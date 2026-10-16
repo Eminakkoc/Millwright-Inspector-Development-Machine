@@ -61,7 +61,7 @@ Print a short, condensed status (not the full per-dep table):
 Checking dependencies (os=darwin)...
 
   ✓ present:  git, python3, plantuml-mcp-server, git-repo, + 5 skills
-  ✗ missing:  yq, pyyaml  (Bash-installable)
+  ✗ missing:  yq, pyyaml, jsonschema  (Bash-installable)
               superpowers plugin (5 skills — slash command install)
 ```
 
@@ -76,6 +76,7 @@ Install these now?
 
   brew install yq
   python3 -m pip install --user pyyaml
+  python3 -m pip install --user jsonschema
 
 Proceed? (y/n)
 ```
@@ -87,6 +88,7 @@ Install these now?
 
   winget install -e --id MikeFarah.yq --accept-source-agreements --accept-package-agreements
   py -3 -m pip install --user pyyaml
+  py -3 -m pip install --user jsonschema
 
 Proceed? (y/n)
 ```

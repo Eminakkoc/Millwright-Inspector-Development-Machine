@@ -99,10 +99,10 @@ Required — present:
 Required — MISSING:
   ✗ yq
   ✗ pyyaml
+  ✗ jsonschema
 
 Optional — missing:
-  ⚠ ajv-cli (falls back to python jsonschema)
-  ⚠ python-jsonschema (falls back to yq structural check)
+  ⚠ ajv-cli (validates with the Python jsonschema module instead)
   ⚠ gh (GitHub CLI — required only for /mi-analyze-review PR-review analysis)
   ⚠ catalog (skills catalog CLI — optional; lets stage 2 suggest and install catalog skills)
 
@@ -161,6 +161,9 @@ Bash-runnable (with your approval):
   # pyyaml (required):
   python3 -m pip install --user pyyaml
 
+  # jsonschema (required):
+  python3 -m pip install --user jsonschema
+
 Slash commands — please run these yourself in this Claude Code session:
 
   # brainstorming, writing-plans, executing-plans, subagent-driven-development,
@@ -188,6 +191,9 @@ Bash-runnable (with your approval):
 
   # pyyaml (required):
   py -3 -m pip install --user pyyaml
+
+  # jsonschema (required):
+  py -3 -m pip install --user jsonschema
 ```
 
 If there are **only** plugin-kind missing deps and nothing Bash-runnable, skip the `(y/n/select)` prompt — there's nothing for the millwright to execute. Just display the slash-command block and ask the inspector to run them, then re-run `/mi-doctor`.
@@ -238,8 +244,7 @@ If required deps are satisfied but optional deps are missing, offer them as a se
 
 > "All required deps present. Some optional deps are missing:
 >
-> ⚠ ajv-cli — enables deep JSON Schema validation (falls back to python jsonschema / yq)
-> ⚠ python-jsonschema — secondary validation fallback
+> ⚠ ajv-cli — validates workflow files instead of the Python jsonschema module
 >
 > Install these too? (y/n)"
 

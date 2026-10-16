@@ -1859,7 +1859,9 @@ Coverage policy:
 ### 8.3 Schemas (`schemas/`)
 
 **26 JSON-Schema-as-YAML files**, one per artifact type, validated by `ajv-cli` (preferred)
-or a `yq`-based structural fallback:
+or the Python `jsonschema` module (required since 1.13.1). With neither, validation stops
+with a pointer to `/mi-doctor`; the `yq`-based structural fallback it replaced rejected valid
+files (`active: null`, `queue: []`) and could not check types, patterns or unknown keys:
 
 | Schema | Validates |
 | --- | --- |
@@ -2117,8 +2119,8 @@ Detected by `/mi-doctor` but never required — the workflow runs identically wi
   pages. Pulls ML dependencies (torch, transformers); first conversion downloads a few
   hundred MB of model weights. Skip it if the journal will only ever contain `.md`,
   `.txt`, short PDFs, and images — `Read` covers all of those natively.
-- **`ajv-cli`** — used for deep JSON Schema validation of workflow files; the hook falls
-  back to `yq`-based structural checks if it is absent.
+- **`ajv-cli`** — validates workflow files instead of the Python `jsonschema` module
+  (which is required) when it is on PATH.
 
 ### 8.12 Skill references
 
