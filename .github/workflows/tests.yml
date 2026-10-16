@@ -1,0 +1,72 @@
+# Runs every tests/*/run.sh under bash on Linux and on Windows (Git Bash).
+# The Windows job leaves out ajv and jsonschema, so frontmatter validation
+# takes the structural fallback there (WIN-08); the Linux job installs both.
+# tests/conventions-review/reviewer-checks.sh needs `claude -p` and is not
+# a run.sh, so it never runs here.
+name: tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  tests:
+    name: tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            yq_asset: yq_linux_amd64
+            validators: "true"
+          - os: windows-latest
+            yq_asset: yq_windows_amd64.exe
+            validators: "false"
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install yq and pyyaml
+        run: |
+          mkdir -p "$HOME/bin"
+          exe=yq; [[ "${{ matrix.yq_asset }}" == *.exe ]] && exe=yq.exe
+          curl -fsSL -o "$HOME/bin/$exe" "https://github.com/mikefarah/yq/releases/download/v4.53.2/${{ matrix.yq_asset }}"
+          chmod +x "$HOME/bin/$exe"
+          if command -v cygpath >/dev/null 2>&1; then cygpath -w "$HOME/bin"; else echo "$HOME/bin"; fi >> "$GITHUB_PATH"
+          python -m pip install pyyaml
+
+      - name: Install ajv and jsonschema
+        if: matrix.validators == 'true'
+        run: |
+          npm install -g ajv-cli
+          python -m pip install jsonschema
+
+      - name: Git identity for test sandboxes
+        run: |
+          git config --global user.email ci@example.com
+          git config --global user.name ci
+          git config --global init.defaultBranch main
+
+      - name: Run test suites
+        run: |
+          status=0
+          for suite in tests/*/run.sh; do
+            echo "::group::$suite"
+            if bash "$suite"; then
+              echo "PASS $suite"
+            else
+              echo "::error::FAIL $suite"
+              status=1
+            fi
+            echo "::endgroup::"
+          done
+          exit "$status"
