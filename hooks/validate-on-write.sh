@@ -25,6 +25,11 @@ path = ti.get("file_path") or ti.get("path") or ""
 print(path)
 ' 2>/dev/null || echo "")"
 
+# Windows hands the path over as C:\…\file.md (even under Git Bash): switch
+# to `/` so the data-root and case patterns below match, and drop a trailing \r.
+file_path="${file_path//\\//}"
+file_path="${file_path%$'\r'}"
+
 # No file path or not under workflow data root → skip silently.
 [[ -n "$file_path" ]] || exit 0
 

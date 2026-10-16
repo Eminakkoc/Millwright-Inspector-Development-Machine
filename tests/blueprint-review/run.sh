@@ -106,6 +106,22 @@ else
   ng "$t" "expected hook to skip non-data-root paths"
 fi
 
+# hook_json_for <path>: the hook event for a Write of <path>, JSON-escaped (a
+# backslash path is not valid inside a hand-written JSON string).
+hook_json_for() {
+  printf '%s' "$1" | "$REPO_ROOT/scripts/py.sh" -c 'import json,sys; print(json.dumps({"tool_input": {"file_path": sys.stdin.read()}}))'
+}
+
+t="hook: a backslash (Windows-style) path is normalized and still validated (1.13.0)"
+bs_bad="$(printf '%s' "$target" | tr '/' '\\')"
+good_dir="$tmp/good/millwright-inspector/workflow-stream/test-feat/blueprints/current"
+mkdir -p "$good_dir"
+cp "$FIXTURES/schema-good/review-history.md" "$good_dir/review-history.md"
+bs_good="$(printf '%s' "$good_dir/review-history.md" | tr '/' '\\')"
+rc_bad=0; hook_json_for "$bs_bad" | CLAUDE_PLUGIN_ROOT="$REPO_ROOT" bash "$REPO_ROOT/hooks/validate-on-write.sh" >/dev/null 2>&1 || rc_bad=$?
+rc_good=0; hook_json_for "$bs_good" | CLAUDE_PLUGIN_ROOT="$REPO_ROOT" bash "$REPO_ROOT/hooks/validate-on-write.sh" >/dev/null 2>&1 || rc_good=$?
+[[ "$rc_bad" == 2 && "$rc_good" == 0 ]] && ok "$t" || ng "$t" "bad file exit=$rc_bad (want 2), good file exit=$rc_good (want 0)"
+
 # ---- Task 5: build-summary ------------------------------------------------
 
 t="build-summary: empty history returns empty output"
@@ -1196,9 +1212,12 @@ bad_rc=0
 [[ "$saved" == claude && "$a" == claude && $bad_rc -ne 0 ]] && ok "$t" || ng "$t" "saved=$saved agent=$a schema-reject-rc=$bad_rc"
 rm -rf "$nocx_dir" "$ra_sb"
 
-# guard hook: returns the hook's exit code for (agent_type, command)
+# guard hook: returns the hook's exit code for (agent_type, command). The
+# command reaches the JSON builder on stdin: as an argument, Git Bash would
+# rewrite its /c/… paths and Windows would cap its length.
 guard() {
-  "$REPO_ROOT/scripts/py.sh" -c 'import json,sys; print(json.dumps({"agent_type": sys.argv[1], "tool_name": "Bash", "tool_input": {"command": sys.argv[2]}}))' "$1" "$2" \
+  printf '%s' "$2" \
+    | "$REPO_ROOT/scripts/py.sh" -c 'import json,sys; print(json.dumps({"agent_type": sys.argv[1], "tool_name": "Bash", "tool_input": {"command": sys.stdin.read()}}))' "$1" \
     | CLAUDE_PLUGIN_ROOT="$REPO_ROOT" "$REPO_ROOT/hooks/guard-batch-reviewer.sh" >/dev/null 2>&1
   echo $?
 }
@@ -1236,7 +1255,8 @@ P")" == 2 ]] || bad+="foreign-wrapper "
 # guard_at <hook-plugin-root> <agent_type> <command>: the hook as loaded from a
 # different install than the wrapper path in the command (v1.8.1).
 guard_at() {
-  "$REPO_ROOT/scripts/py.sh" -c 'import json,sys; print(json.dumps({"agent_type": sys.argv[1], "tool_name": "Bash", "tool_input": {"command": sys.argv[2]}}))' "$2" "$3" \
+  printf '%s' "$3" \
+    | "$REPO_ROOT/scripts/py.sh" -c 'import json,sys; print(json.dumps({"agent_type": sys.argv[1], "tool_name": "Bash", "tool_input": {"command": sys.stdin.read()}}))' "$2" \
     | CLAUDE_PLUGIN_ROOT="$1" "$REPO_ROOT/hooks/guard-batch-reviewer.sh" >/dev/null 2>&1
   echo $?
 }
@@ -1266,10 +1286,35 @@ done
 b
 P")" == 2 ]] || bad+="relative-path "
 [[ -z "$bad" ]] && ok "$t" || ng "$t" "not blocked: $bad"
+
+t="guard hook: a quoted wrapper path containing spaces is accepted (1.13.0)"
+mk_install "$gh_dir/with space" "millwright-inspector-development-machine"
+r="$(guard_at "$gh_dir/installed" "$BBR" "\"$gh_dir/with space/scripts/codex-review.sh\" open --effort high <<'P'
+b
+P")"
+[[ "$r" == 0 ]] && ok "$t" || ng "$t" "spaced wrapper path blocked (exit $r)"
 rm -rf "$gh_dir"
 
 t="guard hook: other callers pass through"
 [[ "$(guard "" "rm -rf build")$(guard "Explore" "ls")" == "00" ]] && ok "$t" || ng "$t" "main or other agent was blocked"
+
+t="guard hook: a batch-reviewer input over 40,000 characters is still evaluated (1.13.0)"
+big="$("$REPO_ROOT/scripts/py.sh" -c 'print("x" * 41000)')"
+r_ok="$(guard "$BBR" "$REPO_ROOT/scripts/codex-review.sh open --effort high <<'P'
+$big
+P")"
+r_bad="$(guard "$BBR" "$REPO_ROOT/scripts/codex-review.sh open --effort high <<'P'
+$big
+P
+touch pwned")"
+[[ "$r_ok$r_bad" == "02" ]] && ok "$t" || ng "$t" "allowed form exit=$r_ok (want 0), trailing command exit=$r_bad (want 2)"
+
+t="guard hook: a call without the reviewer's name exits 0 before Python starts (1.13.0)"
+# MI_PY_CMD names no interpreter: reaching Python would fail the hook.
+ev() { printf '{"agent_type": "%s", "tool_name": "Bash", "tool_input": {"command": "ls"}}' "$1"; }
+r_other="$(ev Explore | MI_PY_CMD=/nonexistent/python3 CLAUDE_PLUGIN_ROOT="$REPO_ROOT" "$REPO_ROOT/hooks/guard-batch-reviewer.sh" >/dev/null 2>&1; echo $?)"
+r_bbr="$(ev "$BBR" | MI_PY_CMD=/nonexistent/python3 CLAUDE_PLUGIN_ROOT="$REPO_ROOT" "$REPO_ROOT/hooks/guard-batch-reviewer.sh" >/dev/null 2>&1; echo $?)"
+[[ "$r_other" == 0 && "$r_bbr" != 0 ]] && ok "$t" || ng "$t" "other agent exit=$r_other (want 0), reviewer exit=$r_bbr (want non-zero: Python reached)"
 
 rm -rf "$cx_dir"
 
