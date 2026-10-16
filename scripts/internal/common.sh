@@ -51,8 +51,10 @@ export MI_IS_WINDOWS MI_PY_CMD
 # The bash that Python uses to start the plugin's .sh scripts (WIN-07):
 # Windows Python cannot run a shebang script, and a bare "bash" there can
 # resolve to WSL's System32\bash.exe, which runs the script inside WSL.
+# Without cygpath on PATH (Git Bash always ships it) $BASH is used as is, so
+# sourcing never aborts here.
 if [[ -z "${MI_BASH:-}" ]]; then
-  if [[ "$MI_IS_WINDOWS" == 1 ]]; then
+  if [[ "$MI_IS_WINDOWS" == 1 ]] && command -v cygpath >/dev/null 2>&1; then
     MI_BASH="$(cygpath -m "$BASH")"
   else
     MI_BASH="$BASH"

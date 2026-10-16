@@ -64,6 +64,27 @@ else
   ng "$t" "CR found in: $cr_files"
 fi
 
+# Simulated Windows with no cygpath on PATH (IR-001..003): sourcing common.sh
+# must not abort, and MI_BASH falls back to $BASH. Skipped on real Windows,
+# where Git Bash always ships cygpath and `ln -s` copies instead of linking.
+t="common.sh sources on simulated Windows without cygpath"
+case "${OSTYPE:-}" in
+  msys*|cygwin*) ok "$t (skipped on Windows)" ;;
+  *)
+    fb="$sb/fakebin"; mkdir -p "$fb"
+    for c in dirname tr sed cat; do ln -s "$(command -v "$c")" "$fb/$c"; done
+    printf '#!/bin/sh\nexit 0\n' > "$fb/python3"; chmod +x "$fb/python3"
+    got="$(env -u MI_PY_CMD -u MI_BASH PATH="$fb" CLAUDE_PLUGIN_ROOT="$REPO_ROOT" "$BASH" -c \
+      'OSTYPE=msys; source "$1/scripts/internal/common.sh"; printf "%s|%s|%s\n" "$MI_IS_WINDOWS" "$MI_PY_CMD" "$MI_BASH"' \
+      _ "$REPO_ROOT" 2>&1)"
+    if [[ "$got" == "1|python3|$BASH" ]]; then
+      ok "$t"
+    else
+      ng "$t" "got '$got' (want '1|python3|$BASH')"
+    fi
+    ;;
+esac
+
 printf "\n%d passed, %d failed\n" "$pass" "$fail"
 if (( fail > 0 )); then
   printf "Failed: %s\n" "${fail_names[*]}" >&2
