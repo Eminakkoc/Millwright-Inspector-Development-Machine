@@ -18,6 +18,12 @@
 #     the single python3 call below)
 # Python is invoked with `-S -I` to skip site initialization and isolate
 # from user-site packages, which shaves ~35ms off cold-start vs vanilla.
+# `-X utf8` keeps the `·`/`…` output UTF-8 on Windows (where -I would ignore
+# PYTHONUTF8). The interpreter is $MI_PY_CMD, which /mi-init-status-bar writes
+# into the wrapper (python3, python or py -3 — unquoted below on purpose, it
+# may be two words); wrappers written before 1.13.0 do not set it and get
+# python3, as before. The status line runs outside any session, so it cannot
+# inherit the value from common.sh.
 #
 # Wired at install time by /mi-init-status-bar via a generated wrapper at
 # .claude/mi-stage-info-bar.sh that exec's this script. Do NOT wire
@@ -29,7 +35,7 @@
 
 set -euo pipefail
 
-exec python3 -S -I -c '
+exec ${MI_PY_CMD:-python3} -X utf8 -S -I -c '
 import json, os, re, sys
 
 STAGE_NAMES = {

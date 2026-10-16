@@ -31,30 +31,19 @@ Capture the plugin's filesystem path at install time. Try in order:
 
 1. **`$CLAUDE_PLUGIN_ROOT`** — set by Claude Code while a slash command is running. This is the high-confidence path; the docs' "no expansion in `statusLine.command`" limitation applies only to status-line invocation, not to slash commands.
 2. **`--plugin-root <abs>`** — if the inspector passed this flag, use it verbatim (after verifying `<abs>/scripts/info-bar.sh` exists).
-3. **Fallback scan of `~/.claude/plugins/`**:
+3. **`installPath` from `~/.claude/plugins/installed_plugins.json`** — the same tool-free lookup as `mi-continue.md` Step 1a: the exact v1 key (never the `@millwright-inspector-v2` marketplace), no Python or yq.
 
    ```bash
-   plugin_root="$(python3 -S -I - <<'PYEOF'
-   import glob, json, os
-   root = os.path.expanduser("~/.claude/plugins")
-   best = None  # (mtime, plugin_root)
-   for p in glob.iglob(os.path.join(root, "**", ".claude-plugin", "plugin.json"), recursive=True):
-       try:
-           if json.load(open(p)).get("name") != "millwright-inspector-development-machine":
-               continue
-           pr = os.path.dirname(os.path.dirname(p))
-           if not os.access(os.path.join(pr, "scripts", "info-bar.sh"), os.X_OK):
-               continue
-           m = os.path.getmtime(p)
-           if best is None or m > best[0]:
-               best = (m, pr)
-       except Exception:
-           continue
-   if best:
-       print(best[1])
-   PYEOF
-   )"
+   plugin_root="$(sed -n '/"millwright-inspector-development-machine@millwright-inspector"[[:space:]]*:/,/]/s/^[[:space:]]*"installPath"[[:space:]]*:[[:space:]]*"\([^"]*\)".*$/\1/p' "$HOME/.claude/plugins/installed_plugins.json" 2>/dev/null | head -1 | sed 's/\\\\/\//g')"
    ```
+
+Whichever source answered, normalize the result on Git Bash (Windows spells it `/c/…`, `C:/…` or `C:\…`) before it is baked into the wrapper:
+
+```bash
+if [[ -n "$plugin_root" ]] && command -v cygpath >/dev/null 2>&1; then
+  plugin_root="$(cygpath -m "$plugin_root")"
+fi
+```
 
 If all three fail, print:
 
@@ -67,6 +56,14 @@ If all three fail, print:
 …and exit. Do not write anything.
 
 Verify `${plugin_root}/scripts/info-bar.sh` exists and is executable; if not, error out the same way.
+
+Then capture the Python the plugin resolves on this machine (`python3`, or on Windows `python` / `py -3`). The status line runs outside any Claude Code session, so the wrapper has to carry it:
+
+```bash
+py_cmd="$("$plugin_root/scripts/py.sh" -c 'import os; print(os.environ["MI_PY_CMD"])')"
+```
+
+If this fails (no Python 3.8+), stop and point the inspector at `/mi-doctor`.
 
 ### Step 3 — Pick wrapper and settings paths
 
@@ -99,7 +96,7 @@ If the answer is anything other than `y`/`Y`, exit without writing.
 
 ### Step 4 — Write the wrapper script
 
-Render this template, with `<plugin_root>` replaced by the absolute path resolved in Step 2:
+Render this template, with `<plugin_root>` replaced by the absolute path resolved in Step 2 and `<py_cmd>` by the Python command captured there:
 
 ```bash
 #!/usr/bin/env bash
@@ -109,8 +106,8 @@ Render this template, with `<plugin_root>` replaced by the absolute path resolve
 # Wraps the mi-workflow status-line renderer with an absolute plugin
 # path (Claude Code does not expand $CLAUDE_PLUGIN_ROOT in
 # statusLine.command). If the captured plugin path no longer exists
-# (marketplace upgrade moved the plugin), the wrapper falls back to
-# scanning ~/.claude/plugins/ for the most recently modified install.
+# (marketplace upgrade moved the plugin), the wrapper falls back to the
+# current install recorded in ~/.claude/plugins/installed_plugins.json.
 # Silent on miss — Claude Code prints the script's output verbatim, so
 # leaking a diagnostic into the status line is worse than printing
 # nothing.
@@ -119,32 +116,17 @@ set -euo pipefail
 
 plugin_root="<plugin_root>"
 
+# The Python this machine resolved at install time (python3, python or
+# py -3). info-bar.sh runs it; the status line has no session to inherit it from.
+export MI_PY_CMD="<py_cmd>"
+
 # Fast path: captured root still valid.
 if [[ -x "$plugin_root/scripts/info-bar.sh" ]]; then
   exec "$plugin_root/scripts/info-bar.sh"
 fi
 
-# Fallback: scan user-cache plugin tree for a current install.
-resolved="$(python3 -S -I - "$HOME/.claude/plugins" <<'PY' 2>/dev/null || true
-import glob, json, os, sys
-root = sys.argv[1]
-best = None
-for p in glob.iglob(os.path.join(root, "**", ".claude-plugin", "plugin.json"), recursive=True):
-    try:
-        if json.load(open(p)).get("name") != "millwright-inspector-development-machine":
-            continue
-        pr = os.path.dirname(os.path.dirname(p))
-        if not os.access(os.path.join(pr, "scripts", "info-bar.sh"), os.X_OK):
-            continue
-        m = os.path.getmtime(p)
-        if best is None or m > best[0]:
-            best = (m, pr)
-    except Exception:
-        continue
-if best:
-    print(best[1])
-PY
-)"
+# Fallback: the current v1 install (exact key, never the v2 marketplace).
+resolved="$(sed -n '/"millwright-inspector-development-machine@millwright-inspector"[[:space:]]*:/,/]/s/^[[:space:]]*"installPath"[[:space:]]*:[[:space:]]*"\([^"]*\)".*$/\1/p' "$HOME/.claude/plugins/installed_plugins.json" 2>/dev/null | head -1 | sed 's/\\\\/\//g' || true)"
 
 if [[ -n "$resolved" && -x "$resolved/scripts/info-bar.sh" ]]; then
   exec "$resolved/scripts/info-bar.sh"
@@ -166,9 +148,10 @@ mv "$tmp" "${wrapper_dir}/mi-stage-info-bar.sh"
 
 ### Step 5 — Update the settings file
 
-Read the chosen `settings_file` (treat as `{}` if absent). Inspect the existing `statusLine` field:
+Read the chosen `settings_file` (treat as `{}` if absent) and inspect its `statusLine` field. The command written since 1.13.0 is `bash "<absolute path to wrapper>"`: Windows cannot start a bare `.sh` path, and a path with spaces needs the quotes. Every earlier install wrote the bare wrapper path. Paths compare the way `mi_path_eq` does — on Windows, `/c/…`, `C:/…` and `C:\…` match, ignoring case.
 
-- **`statusLine.command` already equals our wrapper's absolute path** → print `✓ status line already wired` and skip the write.
+- **`statusLine.command` is already `bash "<wrapper>"`** → print `✓ status line already wired` and skip the write.
+- **`statusLine.command` is the bare wrapper path** (written before 1.13.0) → rewrite it to the `bash "<wrapper>"` form without asking — it is this command's own entry — and print `✓ status line updated to the bash "<wrapper>" form`.
 - **`statusLine` exists but points elsewhere** → show the existing value and ask:
 
   ```
@@ -184,7 +167,7 @@ Read the chosen `settings_file` (treat as `{}` if absent). Inspect the existing 
   Choice [k]:
   ```
 
-  - `o` → overwrite.
+  - `o` → overwrite (re-run the block below with a third argument, `overwrite`).
   - `k` → exit without writing.
   - `p` → print the JSON snippet for manual merging:
 
@@ -192,7 +175,7 @@ Read the chosen `settings_file` (treat as `{}` if absent). Inspect the existing 
     {
       "statusLine": {
         "type": "command",
-        "command": "<absolute path to wrapper>"
+        "command": "bash \"<absolute path to wrapper>\""
       }
     }
     ```
@@ -200,14 +183,14 @@ Read the chosen `settings_file` (treat as `{}` if absent). Inspect the existing 
     …and exit.
 - **`statusLine` is absent** → write the block.
 
-When writing, use a single `python3` invocation so the rest of `settings.json` is preserved untouched:
+One `py.sh` call decides and writes, so the rest of `settings.json` is preserved and non-ASCII text in it survives (UTF-8 on every OS). It prints `already-wired`, `updated-bare`, or `wrote`, or — exit 3 — `other` followed by the existing `type` and `command` lines for the prompt above:
 
 ```bash
-python3 -S -I - "$settings_file" "$wrapper_path" <<'PYEOF'
-import json, os, sys, tempfile
-settings_file, wrapper_path = sys.argv[1], sys.argv[2]
+"$CLAUDE_PLUGIN_ROOT/scripts/py.sh" -S -I - "$settings_file" "$wrapper_path" "${settings_mode:-auto}" <<'PYEOF'
+import json, os, re, sys, tempfile
+settings_file, wrapper_path, mode = sys.argv[1], sys.argv[2], sys.argv[3]
 try:
-    with open(settings_file) as f:
+    with open(settings_file, encoding="utf-8") as f:
         data = json.load(f)
 except FileNotFoundError:
     data = {}
@@ -217,17 +200,48 @@ except json.JSONDecodeError as e:
 if not isinstance(data, dict):
     sys.stderr.write("settings file root is not a JSON object\n")
     sys.exit(1)
-data["statusLine"] = {"type": "command", "command": wrapper_path}
+
+def norm(p):
+    # mi_path_eq semantics: `/` separators everywhere; on Windows /c/x == C:/x
+    # and case is ignored.
+    p = p.strip().replace("\\", "/")
+    if os.name == "nt":
+        m = re.match(r"^/([A-Za-z])(/.*)?$", p)
+        if m:
+            p = m.group(1) + ":" + (m.group(2) or "/")
+        p = p.lower()
+    return p
+
+line = data.get("statusLine")
+cmd = line.get("command") if isinstance(line, dict) else None
+cmd = cmd if isinstance(cmd, str) else None
+quoted = re.fullmatch(r'\s*bash\s+"([^"]+)"\s*', cmd or "")
+if mode != "overwrite":
+    if quoted and norm(quoted.group(1)) == norm(wrapper_path):
+        print("already-wired")
+        sys.exit(0)
+    bare = cmd is not None and norm(cmd) == norm(wrapper_path)
+    if line is not None and not bare:
+        print("other")
+        print("type:    %s" % (line.get("type") if isinstance(line, dict) else line))
+        print("command: %s" % cmd)
+        sys.exit(3)
+    result = "updated-bare" if bare else "wrote"
+else:
+    result = "wrote"
+
+data["statusLine"] = {"type": "command", "command": 'bash "%s"' % wrapper_path}
 parent = os.path.dirname(os.path.abspath(settings_file))
 fd, tmp = tempfile.mkstemp(prefix=".mi-settings.", dir=parent)
 try:
-    with os.fdopen(fd, "w") as f:
+    with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as f:
         json.dump(data, f, indent=2)
         f.write("\n")
     os.replace(tmp, settings_file)
 except Exception:
     os.unlink(tmp)
     raise
+print(result)
 PYEOF
 ```
 
