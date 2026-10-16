@@ -332,7 +332,7 @@ t="ingest: a finding citing a changed and an old line keeps only the changed lin
 grep -q 'file: src/a.ts:3$' "$RMD" && ok "$t" || ng "$t" "$(grep -n 'file:' "$RMD")"
 
 t="ingest: findings carry source conventions-review and the conventions seed-id"
-sha="$(printf '%s' 'Use tabs for indentation in every file.' | shasum -a 1 | cut -c1-8)"
+sha="$(printf '%s' 'Use tabs for indentation in every file.' | "$REPO_ROOT/scripts/py.sh" -c 'import hashlib, sys; print(hashlib.sha1(sys.stdin.read().encode("utf-8")).hexdigest()[:8])')"
 grep -q "seed-id: conventions:style:src/a.ts:$sha" "$RMD" && grep -q 'source: conventions-review' "$RMD" \
   && ok "$t" || ng "$t" "seed-id or source missing"
 

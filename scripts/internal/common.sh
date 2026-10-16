@@ -48,6 +48,18 @@ if [[ -z "${MI_PY_CMD:-}" ]]; then
 fi
 export MI_IS_WINDOWS MI_PY_CMD
 
+# The bash that Python uses to start the plugin's .sh scripts (WIN-07):
+# Windows Python cannot run a shebang script, and a bare "bash" there can
+# resolve to WSL's System32\bash.exe, which runs the script inside WSL.
+if [[ -z "${MI_BASH:-}" ]]; then
+  if [[ "$MI_IS_WINDOWS" == 1 ]]; then
+    MI_BASH="$(cygpath -m "$BASH")"
+  else
+    MI_BASH="$BASH"
+  fi
+fi
+export MI_BASH
+
 # Run Python through the resolver. Same arguments as `python`; always adds
 # `-X utf8` (UTF-8 for open() defaults and the standard streams, and unlike
 # PYTHONUTF8 it still applies under -I). On Windows, text-mode print() emits

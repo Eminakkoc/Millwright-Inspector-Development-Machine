@@ -69,9 +69,12 @@ while IFS= read -r -d '' readme; do
   # directly and capture only the exit code via $?.
   set +e
   mi_py - "$readme" "$req" "$uuid_re" "$dry_run" "$MI_PLUGIN_ROOT" <<'PYEOF'
-import os, re, subprocess, sys, yaml, uuid
+import os, re, shutil, subprocess, sys, yaml, uuid
 
 readme, req, uuid_re, dry_run_str, plugin_root = sys.argv[1:6]
+# Shell scripts run through the bash that started us (common.sh's MI_BASH):
+# Windows Python cannot run a shebang script, and a bare "bash" can be WSL's.
+BASH = os.environ.get("MI_BASH") or shutil.which("bash")
 dry_run = dry_run_str == "1"
 uuid_pat = re.compile(uuid_re)
 
@@ -130,10 +133,10 @@ else:
     # Generate new v4 uuid via the project's uuid.sh helper for consistency.
     try:
         new_id = subprocess.run(
-            [f"{plugin_root}/scripts/uuid.sh"],
+            [BASH, f"{plugin_root}/scripts/uuid.sh"],
             check=True, capture_output=True, text=True
         ).stdout.strip()
-    except subprocess.CalledProcessError:
+    except (subprocess.CalledProcessError, OSError):
         new_id = str(uuid.uuid4())
     id_changed = True
 
@@ -157,7 +160,7 @@ with open(tmp, "w", encoding="utf-8", newline="\n") as f:
     f.write(new_content)
 
 result = subprocess.run(
-    [f"{plugin_root}/scripts/internal/validate-frontmatter.sh", tmp, "diagrams-readme-blueprint"],
+    [BASH, f"{plugin_root}/scripts/internal/validate-frontmatter.sh", tmp, "diagrams-readme-blueprint"],
     capture_output=True
 )
 if result.returncode != 0:

@@ -62,7 +62,7 @@ if command -v cygpath >/dev/null 2>&1; then
 fi
 
 export CLAUDE_PLUGIN_ROOT="$resolved"
-mi_root_tag="$(printf '%s' "$PWD" | shasum -a 256 | cut -c1-16)"
+mi_root_tag="$(printf '%s' "$PWD" | git hash-object --stdin | cut -c1-16)"
 printf 'export CLAUDE_PLUGIN_ROOT=%q\n' "$resolved" \
   > "${TMPDIR:-/tmp}/mi-plugin-root.${mi_root_tag}.sh"
 
@@ -74,7 +74,7 @@ If the resolver fails, **stop**. Do not fall through to Step 1b, do not delegate
 **Per-block recovery (applies to every subsequent Bash invocation in this command).** Each Bash tool call is a fresh subshell that does NOT inherit the export from Step 1a. Prepend this one-liner to every subsequent Bash block in this command so the env var is restored from the tempfile written above:
 
 ```bash
-[[ -z "${CLAUDE_PLUGIN_ROOT:-}" ]] && source "${TMPDIR:-/tmp}/mi-plugin-root.$(printf '%s' "$PWD" | shasum -a 256 | cut -c1-16).sh" 2>/dev/null || true
+[[ -z "${CLAUDE_PLUGIN_ROOT:-}" ]] && source "${TMPDIR:-/tmp}/mi-plugin-root.$(printf '%s' "$PWD" | git hash-object --stdin | cut -c1-16).sh" 2>/dev/null || true
 ```
 
 If the tempfile is missing (e.g. someone jumped to a later step without running Step 1a first), the source is a no-op and the original symptom — `$CLAUDE_PLUGIN_ROOT/...` expanding to `/...` — reappears. That's intentional: Step 1a is the only entry point that's expected to produce the tempfile, and a missing tempfile means Step 1a was skipped.
@@ -493,7 +493,7 @@ PYEOF
      cached_scan_mode="$($CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get "$qr_file" scan-mode 2>/dev/null || echo 'journal-only')"
      cached_summary_hash="$($CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get "$qr_file" summary-md-hash 2>/dev/null || echo '')"
      cached_head="$($CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh get "$qr_file" head-when-scanned 2>/dev/null || echo '')"
-     current_summary_hash="$(shasum -a 256 "$summary_file" | awk '{print $1}' | cut -c1-16)"
+     current_summary_hash="$(git hash-object "$summary_file" | cut -c1-16)"
      current_head="$(git rev-parse HEAD 2>/dev/null || echo '')"
      if [[ "$cached_scan_mode" == "code-aware" \
         && "$cached_summary_hash" == "$current_summary_hash" \
@@ -650,7 +650,7 @@ fi
 
    ```bash
    if [[ "$step_2a_scan_mode" == "code-aware" ]]; then
-     summary_md_hash="$(shasum -a 256 "$summary_file" | awk '{print $1}' | cut -c1-16)"
+     summary_md_hash="$(git hash-object "$summary_file" | cut -c1-16)"
      head_when_scanned="$(git rev-parse HEAD 2>/dev/null || echo '')"
      $CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh set "$qr_file" scan-mode code-aware
      $CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh set "$qr_file" summary-md-hash "$summary_md_hash"

@@ -2191,12 +2191,12 @@ state-shaped output that would send the inspector debugging their workflow inste
 the runtime.
 
 On success, `export CLAUDE_PLUGIN_ROOT="$resolved"` AND persist it to a per-cwd
-tempfile (`${TMPDIR:-/tmp}/mi-plugin-root.<sha256(PWD)[:16]>.sh`), because each Bash
+tempfile (`${TMPDIR:-/tmp}/mi-plugin-root.<tag>.sh`, the tag being the first 16 hex digits of `git hash-object` over `$PWD`), because each Bash
 tool call is a fresh subshell that does not inherit exports (anthropics/claude-code#2508).
 Subsequent Bash blocks re-source it with:
 
 ```bash
-[[ -z "${CLAUDE_PLUGIN_ROOT:-}" ]] && source "${TMPDIR:-/tmp}/mi-plugin-root.$(printf '%s' "$PWD" | shasum -a 256 | cut -c1-16).sh" 2>/dev/null || true
+[[ -z "${CLAUDE_PLUGIN_ROOT:-}" ]] && source "${TMPDIR:-/tmp}/mi-plugin-root.$(printf '%s' "$PWD" | git hash-object --stdin | cut -c1-16).sh" 2>/dev/null || true
 ```
 
 Every command that uses `$CLAUDE_PLUGIN_ROOT` cites this section in its **Runtime

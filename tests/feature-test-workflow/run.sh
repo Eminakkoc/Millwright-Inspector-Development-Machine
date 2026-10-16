@@ -117,9 +117,9 @@ if [[ -z "$out" ]]; then ok "$t"; else ng "$t" "expected no output, got '$out'";
 
 t="is-feature-test: writes no files"
 sandbox="$(make_quest)"; seed_todo "$sandbox"
-before="$(shasum -a 256 "$(quest_dir "$sandbox")/todo-list.md" | cut -d' ' -f1)"
+before="$(git hash-object --no-filters "$(quest_dir "$sandbox")/todo-list.md")"
 is_ft "$sandbox" payments-feature-test
-after="$(shasum -a 256 "$(quest_dir "$sandbox")/todo-list.md" | cut -d' ' -f1)"
+after="$(git hash-object --no-filters "$(quest_dir "$sandbox")/todo-list.md")"
 if [[ "$before" == "$after" ]]; then ok "$t"; else ng "$t" "read-only predicate modified todo-list.md"; fi
 
 # ---- Task 2: advance-to 2->5 ----------------------------------------------
@@ -409,9 +409,9 @@ repo="$(make_git_repo)"; sandbox="$(make_quest)"; seed_todo "$sandbox"
 c1="$(sha_of "$repo" c1)"; c2="$(sha_of "$repo" c2)"
 seed_history "$sandbox" payments "$c1" "$c2"
 seed_completed "$sandbox" payments
-before="$(shasum -a 256 "$(quest_dir "$sandbox")/progress.md" | cut -d' ' -f1)"
+before="$(git hash-object --no-filters "$(quest_dir "$sandbox")/progress.md")"
 ft_range "$sandbox" "$repo" >/dev/null 2>&1
-after="$(shasum -a 256 "$(quest_dir "$sandbox")/progress.md" | cut -d' ' -f1)"
+after="$(git hash-object --no-filters "$(quest_dir "$sandbox")/progress.md")"
 if [[ "$before" == "$after" ]]; then ok "$t"; else ng "$t" "progress.md was modified"; fi
 
 # ---- Task 5: populate-feature-test ----------------------------------------

@@ -526,9 +526,9 @@ fi
 
 t="feature-test-status: writes no files"
 sandbox="$(make_quest)"; seed_todo "$sandbox"
-before="$(shasum -a 256 "$(quest_dir "$sandbox")/todo-list.md" | cut -d' ' -f1)"
+before="$(git hash-object --no-filters "$(quest_dir "$sandbox")/todo-list.md")"
 ft_status "$sandbox" >/dev/null
-after="$(shasum -a 256 "$(quest_dir "$sandbox")/todo-list.md" | cut -d' ' -f1)"
+after="$(git hash-object --no-filters "$(quest_dir "$sandbox")/todo-list.md")"
 if [[ "$before" == "$after" ]]; then
   ok "$t"
 else

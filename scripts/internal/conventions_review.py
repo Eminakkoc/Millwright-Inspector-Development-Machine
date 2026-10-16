@@ -299,8 +299,14 @@ def validate(top, snap, kind, boundary, ranges, f):
     return rel, keep, quote, source
 
 
+def shell():
+    # Windows Python cannot run a shebang script, and a bare "bash" can be
+    # WSL's; common.sh exports the bash that started us as MI_BASH.
+    return os.environ.get("MI_BASH") or shutil.which("bash")
+
+
 def family(review_sh, feature, seed):
-    out = subprocess.run([review_sh, "find-by-seed-id-family", feature, seed],
+    out = subprocess.run([shell(), review_sh, "find-by-seed-id-family", feature, seed],
                          capture_output=True, text=True, check=True).stdout
     return [r.split("\t") for r in out.splitlines() if r.count("\t") == 2]
 
@@ -368,7 +374,7 @@ def cmd_ingest(top, state, feature):
                 continue
             details = "%s\n\nquote: \"%s\"\nsource: %s\nfile: %s:%s\n" % (
                 f["details"], quote, os.path.relpath(source, top).replace(os.sep, "/"), rel, ",".join(map(str, keep)))
-            subprocess.run([review_sh, "add", feature, f["severity"], f["scope"],
+            subprocess.run([shell(), review_sh, "add", feature, f["severity"], f["scope"],
                             "%s: %s" % (name, f["summary"]),
                             "--source", "conventions-review", "--seed-id", seed],
                            input=details, text=True, check=True, stdout=subprocess.DEVNULL)
