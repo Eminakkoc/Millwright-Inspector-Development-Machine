@@ -191,9 +191,9 @@ if [[ ! -f "$lessons_path" ]]; then
   echo "info: lessons-learned.md not present; skipping blueprint-lessons injection"
 else
   mkdir -p "$impl_dir"
-  lessons_mtime="$(stat -f %m "$lessons_path" 2>/dev/null \
-                   || stat -c %Y "$lessons_path" 2>/dev/null \
-                   || echo 0)"
+  # `date -r <file>` prints the mtime on BSD/macOS and GNU (Linux, Git Bash)
+  # alike; GNU `stat -f` means filesystem status, not a format flag.
+  lessons_mtime="$(date -r "$lessons_path" +%s 2>/dev/null || echo 0)"
   # Integer-valued fields use the !RAW! sentinel from
   # scripts/internal/common.sh so the renderer interpolates them verbatim
   # rather than wrapping them as YAML strings — required because the
@@ -285,7 +285,7 @@ review_history="$data_root/workflow-stream/$active_feature/blueprints/current/re
 if [[ ! -f "$review_history" ]]; then
   req_id="$("$CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh" get "$requirements_path" id 2>/dev/null)"
   "$CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh" init review-history "$review_history" \
-    ID="$(uuidgen | tr 'A-Z' 'a-z')" \
+    ID="$("$CLAUDE_PLUGIN_ROOT/scripts/uuid.sh")" \
     FEATURE="$active_feature" \
     REQUIREMENTS_ID="${req_id:-null}" \
     LAST_FINDING_ID=F-000 \

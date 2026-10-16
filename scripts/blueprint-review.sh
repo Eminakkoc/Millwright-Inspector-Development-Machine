@@ -801,7 +801,7 @@ PYEOF
     shift 2  # drop action + file; remaining args are action-specific
 
     mi_py - "$action" "$file" "$@" <<'PYEOF'
-import sys, os, json, hashlib
+import sys, os, json, hashlib, tempfile
 
 action = sys.argv[1]
 file_arg = sys.argv[2]
@@ -809,7 +809,11 @@ rest = sys.argv[3:]
 
 abs_file = os.path.realpath(file_arg)
 digest = hashlib.sha256(abs_file.encode("utf-8")).hexdigest()[:16]
-tmpdir = os.environ.get("TMPDIR", "/tmp").rstrip("/") or "/tmp"
+if os.name == "nt":
+    # Windows Python reads "/tmp" as C:\tmp, which rarely exists (WIN-13).
+    tmpdir = tempfile.gettempdir()
+else:
+    tmpdir = os.environ.get("TMPDIR", "/tmp").rstrip("/") or "/tmp"
 ledger_path = os.path.join(tmpdir, f"mi-br-ledger-{digest}.json")
 
 # Canonical phase order + labels. Order here IS the table row order.

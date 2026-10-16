@@ -161,7 +161,7 @@ if [[ "$file_dir" == */blueprints/current ]]; then
     feature="$(basename "$(cd "$file_dir/../.." && pwd)")"
     req_id="$("$CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh" get "$file" id 2>/dev/null || echo null)"
     "$CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh" init review-history "$review_history" \
-      ID="$(uuidgen | tr 'A-Z' 'a-z')" \
+      ID="$("$CLAUDE_PLUGIN_ROOT/scripts/uuid.sh")" \
       FEATURE="$feature" \
       REQUIREMENTS_ID="${req_id:-null}" \
       LAST_FINDING_ID=F-000 \

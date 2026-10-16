@@ -48,9 +48,9 @@ t="template: init produces a schema-valid file"
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 if "$REPO_ROOT/scripts/frontmatter.sh" init review-history "$tmp/review-history.md" \
-   ID=$(uuidgen | tr 'A-Z' 'a-z') \
+   ID=$("$REPO_ROOT/scripts/uuid.sh") \
    FEATURE=test-feat \
-   REQUIREMENTS_ID=$(uuidgen | tr 'A-Z' 'a-z') \
+   REQUIREMENTS_ID=$("$REPO_ROOT/scripts/uuid.sh") \
    LAST_FINDING_ID=F-000 \
    FINDING_COUNT_TOTAL='!RAW!0' \
    FINDING_COUNT_UNRESOLVED='!RAW!0' \

@@ -93,17 +93,17 @@ fi
 ```bash
 if [[ "$active_feature" == "null" || -z "$active_feature" ]]; then
   completed_last="$($CLAUDE_PLUGIN_ROOT/scripts/progress.sh queue-remaining 2>/dev/null >/dev/null; \
-    "$CLAUDE_PLUGIN_ROOT/scripts/py.sh" -c "
-import sys, re, yaml
-with open('$data_root/quest/active.md', encoding='utf-8') as f:
-    slug = yaml.safe_load(f.read().split('---')[1]).get('slug')
-import os
-prog = '$data_root/quest/' + slug + '/progress.md'
-with open(prog, encoding='utf-8') as f:
-    fm = yaml.safe_load(f.read().split('---')[1])
-completed = fm.get('completed') or []
-print(completed[-1] if completed else '')
-")"
+    "$CLAUDE_PLUGIN_ROOT/scripts/py.sh" -c '
+import os, sys, yaml
+data_root = sys.argv[1]
+with open(os.path.join(data_root, "quest", "active.md"), encoding="utf-8") as f:
+    slug = yaml.safe_load(f.read().split("---")[1]).get("slug")
+prog = os.path.join(data_root, "quest", slug, "progress.md")
+with open(prog, encoding="utf-8") as f:
+    fm = yaml.safe_load(f.read().split("---")[1])
+completed = fm.get("completed") or []
+print(completed[-1] if completed else "")
+' "$data_root")"
   if [[ -n "$completed_last" ]]; then
     last_kind="$(latest_reason_kind "$completed_last")"
     if [[ "$last_kind" == "completion" ]]; then

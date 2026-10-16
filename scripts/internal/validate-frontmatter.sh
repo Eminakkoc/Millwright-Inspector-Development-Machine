@@ -114,11 +114,15 @@ fi
 
 # Last fallback: structural check — required fields present, no obvious type mismatches.
 mi_info "ajv and python3-jsonschema both unavailable; using structural fallback for $file"
-required_fields="$(mi_py -c "
+# The path goes in as an argument, never inside the Python source: Git Bash
+# rewrites /tmp/… only in arguments, and Windows Python reads a literal
+# /tmp/… as C:\tmp\… (WIN-08).
+required_fields="$(mi_py -c '
 import json, sys
-s = json.load(open('$tmp_schema_json', encoding='utf-8'))
-print(' '.join(s.get('required', [])))
-")"
+with open(sys.argv[1], encoding="utf-8") as f:
+    s = json.load(f)
+print(" ".join(s.get("required", [])))
+' "$tmp_schema_json")"
 missing=()
 for field in $required_fields; do
   val="$(mi_fm_get "$file" "$field" 2>/dev/null || true)"

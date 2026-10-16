@@ -260,7 +260,7 @@ seed_history() {
   mkdir -p "$dir"
   cat > "$dir/change-summary.md" <<EOF
 ---
-id: $(uuidgen | tr 'A-F' 'a-f')
+id: $("$REPO_ROOT/scripts/uuid.sh")
 requirements-id: 22222222-2222-4222-8222-222222222222
 feature: $2
 base-commit: $3
