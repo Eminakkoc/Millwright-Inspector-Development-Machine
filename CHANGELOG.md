@@ -1,5 +1,25 @@
 # Changelog
 
+## 1.13.0 — Windows support
+
+The plugin runs on native Windows through Git for Windows (Git Bash), and on WSL with the project inside the Linux file system. A quest folder written on Windows reads the same on a Mac and the other way round. macOS and Linux behave as before.
+
+**Windows users upgrading from an earlier version: remove and re-add the marketplace** (`/plugin marketplace remove millwright-inspector`, then `/plugin marketplace add Eminakkoc/Millwright-Inspector-Development-Machine` and `/plugin install millwright-inspector-development-machine@millwright-inspector`). A pull does not rewrite files it leaves unchanged, so an older clone keeps Windows line endings in its scripts (`env: 'bash\r'`); `/mi-doctor` checks for this.
+
+- New `.gitattributes` (`* text=auto eol=lf`, binary lines for images and the `/mi-ingest` formats): a Windows clone checks every script out with LF. `/mi-init` adds the same file to the data root when it has none.
+- One Python resolver: `common.sh` finds `python3`, `python` or `py -3` (3.8+, the Microsoft Store alias never qualifies), and every call goes through `mi_py` (scripts, hooks) or the new `scripts/py.sh` (command blocks), which add `-X utf8` and strip `\r` on Windows. macOS/Linux use `python3` with no probe.
+- Every file the plugin writes is UTF-8 with LF; frontmatter readers accept CRLF.
+- New `mi_path_norm` / `mi_path_eq`: saved and compared paths (the worktree fingerprint, auto mode's data-root exclusion, conventions-review paths and seed ids, the resolved plugin root) no longer differ between `/c/…`, `C:/…` and `C:\…`.
+- Hooks: backslash file paths are validated; the batch-reviewer guard reads its input on stdin (new `hooks/guard_batch_reviewer.py`) and skips Python for every call that is not the batch reviewer's; both hooks are registered as `bash "${CLAUDE_PLUGIN_ROOT}/hooks/…"` with `"shell": "bash"`.
+- Main-path fixes: Python gets paths as arguments (the structural validator fallback and `/mi-complete-workflow` Branch I), `scripts/uuid.sh` replaces `uuidgen`, `date -r` replaces `stat -f` (also wrong on Linux), and the blueprint-review ledger uses the system temp folder on Windows.
+- Python starts the plugin's `.sh` files through `MI_BASH` (never WSL's `bash.exe`); `git hash-object` replaces `shasum` (the per-cwd plugin-root tempfile name changes once; old `summary-md-hash` cache entries miss once).
+- Status line: `/mi-init-status-bar` writes `bash "<wrapper>"`, rewrites an existing bare-path entry without asking, finds the plugin by its exact marketplace key and carries the resolved Python in the wrapper. Existing wrappers keep working.
+- Every `$CLAUDE_PLUGIN_ROOT` in `commands/` is quoted, so a profile folder with a space works; new `tests/fence-lint` runs `bash -n` on every command fence and checks the quoting.
+- `/mi-doctor` and `/mi-init`: Windows install hints (winget, `{PY} -m pip`), a UAC notice, restart-and-rerun after installs, a stop with instructions when only PowerShell is available (Git Bash required, or WSL), a stale-CRLF check and a WSL `/mnt/<drive>/` warning. With no usable Python, `doctor.sh` still prints its JSON report (exit 2).
+- Step 1a resolves the installed plugin with a `sed` lookup of the exact key `millwright-inspector-development-machine@millwright-inspector` — no Python before dependencies exist, and never an installed v2.
+- Smaller items: `C:/…` data roots count as absolute; bundle test fixtures have shorter paths; a dead `/tmp` write in `mi_fm_set` is gone.
+- First CI (`.github/workflows/tests.yml`): every `tests/*/run.sh` on `windows-latest` and `ubuntu-latest`; new `tests/smoke` end-to-end test.
+
 ## 1.12.0 — Conventions review after implementation
 
 After implementation, the project's own rules and conventions are checked against the code that was written, and anything that breaks them lands in the review findings. Features already in flight when you upgrade run Step 6.5 at their next stage 3 → 5 transition.
