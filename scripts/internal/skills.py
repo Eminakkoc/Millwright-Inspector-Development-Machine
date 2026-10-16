@@ -30,6 +30,24 @@ def repo_root():
         return os.getcwd()
 
 
+def fwd(path):
+    """`/` separators: output paths read the same on every OS (Windows Python
+    joins with `\\`, and git and the Read tool both take `C:/…`)."""
+    return path.replace("\\", "/") if os.sep == "\\" else path
+
+
+def on_path(name):
+    """Path of `name` on PATH, or None. On Windows also an extensionless file,
+    which is what a Git Bash script is and what shutil.which skips."""
+    found = shutil.which(name)
+    if found or os.environ.get("MI_IS_WINDOWS") != "1":
+        return found
+    for d in os.environ.get("PATH", "").split(os.pathsep):
+        if d and os.path.isfile(os.path.join(d, name)):
+            return os.path.join(d, name)
+    return None
+
+
 def load_json(path):
     try:
         with open(path, encoding="utf-8") as f:
@@ -74,13 +92,21 @@ def skill_description(skill_md):
 
 def run_catalog(args):
     """Return (ok, parsed-json). ok=None when catalog is not on PATH."""
-    if shutil.which("catalog") is None:
+    exe = on_path("catalog")
+    if exe is None:
         return None, None
+    cmd = [exe]
+    # The catalog CLI is a bash script. Windows Python cannot start one, and a
+    # bare "bash" there may be WSL's, so it goes through MI_BASH (Git Bash),
+    # like the plugin's own .sh files.
+    if os.environ.get("MI_IS_WINDOWS") == "1" and \
+            os.path.splitext(exe)[1].lower() not in (".exe", ".com", ".cmd", ".bat"):
+        cmd = [os.environ.get("MI_BASH") or "bash", fwd(exe)]
     try:
-        out = subprocess.run(["catalog"] + args, capture_output=True,
+        out = subprocess.run(cmd + args, capture_output=True,
                              text=True, check=True)
         return True, json.loads(out.stdout)
-    except (subprocess.CalledProcessError, ValueError):
+    except (subprocess.CalledProcessError, ValueError, OSError):
         return False, None
 
 
@@ -184,7 +210,7 @@ def stage_entries(config, tag):
             continue
         path = f["path"]
         if not os.path.isabs(path):
-            path = os.path.join(root, path)
+            path = fwd(os.path.join(root, path))
         out.append((f["skill"], e["reason"], path))
     return out
 
@@ -296,7 +322,7 @@ def project_skills(root):
     for md in sorted(glob.glob(os.path.join(root, ".claude", "skills", "*", "SKILL.md"))):
         name = os.path.basename(os.path.dirname(md))
         rows.append((name, "skill", "project", flat(skill_description(md), 200),
-                     os.path.relpath(md, root), "-"))
+                     fwd(os.path.relpath(md, root)), "-"))
     return rows
 
 
@@ -334,7 +360,7 @@ def plugin_skills(root):
         for md in sorted(glob.glob(os.path.join(install, "skills", "*", "SKILL.md"))):
             skill = os.path.basename(os.path.dirname(md))
             rows.append(("%s:%s" % (plugin, skill), "skill", "plugin:%s" % plugin,
-                         flat(skill_description(md), 200), md, "-"))
+                         flat(skill_description(md), 200), fwd(md), "-"))
     return rows
 
 
@@ -368,7 +394,7 @@ def missing_needs(row, cat, root):
         if kind == "skill":
             continue
         if kind == "tool":
-            if shutil.which(dep.get("bin") or req) is None:
+            if on_path(dep.get("bin") or req) is None:
                 missing.append(req)
         elif req not in project_lock and req not in user_lock:
             missing.append(req)
@@ -430,7 +456,7 @@ def cmd_lookup(names):
 
 def cmd_catalog_files():
     root = repo_root()
-    lock_rel = os.path.join(".claude", "catalog.lock.json")
+    lock_rel = ".claude/catalog.lock.json"  # as git status prints it
     if not os.path.exists(os.path.join(root, lock_rel)):
         return
     try:

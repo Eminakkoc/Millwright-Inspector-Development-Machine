@@ -35,6 +35,16 @@ case "${OSTYPE:-}" in
 esac
 BASE_PATH="$py_dir:$(dirname "$(command -v git)"):/usr/bin:/bin"
 
+# nat <path> — a sandbox path as Windows Python sees it (C:/…) on Git Bash,
+# unchanged elsewhere. Needed for paths inside files (JSON) and for expected
+# output, which bash's /c/… spelling would never match.
+nat() {
+  case "${OSTYPE:-}" in
+    msys*|cygwin*) cygpath -m "$1" ;;
+    *)             printf '%s' "$1" ;;
+  esac
+}
+
 # make_sandbox — git repo + data root + fake HOME + stub bin dir (empty).
 # Layout: $sb/repo (cwd for every command), $sb/home, $sb/bin, $sb/catalog-data.
 make_sandbox() {
@@ -66,8 +76,9 @@ EOF
 # run_in <sb> <cmd...> — cwd = repo, isolated HOME/PATH, data root in the repo.
 run_in() {
   local sb="$1"; shift
-  (cd "$sb/repo" && env -u CLAUDE_PLUGIN_ROOT HOME="$sb/home" PATH="$sb/bin:$BASE_PATH" \
-     MI_DATA_ROOT="$sb/repo/millwright-inspector" "$@")
+  # USERPROFILE too: Windows Python expands ~ from it, not from HOME.
+  (cd "$sb/repo" && env -u CLAUDE_PLUGIN_ROOT HOME="$sb/home" USERPROFILE="$(nat "$sb/home")" \
+     PATH="$sb/bin:$BASE_PATH" MI_DATA_ROOT="$sb/repo/millwright-inspector" "$@")
 }
 
 write_skill() { # <dir> <description>
@@ -104,9 +115,9 @@ EOF
   mkdir -p "$sb/home/.claude/plugins"
   cat > "$sb/home/.claude/plugins/installed_plugins.json" <<EOF
 {"version": 2, "plugins": {
-  "plug@m": [{"scope": "user", "installPath": "$sb/plugins/plug-old"},
-             {"scope": "project", "projectPath": "$sb/repo", "installPath": "$sb/plugins/plug-new"}],
-  "plug2@m": [{"scope": "user", "installPath": "$sb/plugins/plug2"}]
+  "plug@m": [{"scope": "user", "installPath": "$(nat "$sb/plugins/plug-old")"},
+             {"scope": "project", "projectPath": "$(nat "$sb/repo")", "installPath": "$(nat "$sb/plugins/plug-new")"}],
+  "plug2@m": [{"scope": "user", "installPath": "$(nat "$sb/plugins/plug2")"}]
 }}
 EOF
   cat > "$sb/repo/.claude/catalog.lock.json" <<'EOF'
@@ -138,7 +149,7 @@ t="inventory never lists personal ~/.claude/skills"
 if [[ -z "$(row_for "$out" personal-one)" ]]; then ok "$t"; else ng "$t" "personal skill listed"; fi
 
 t="inventory lists enabled plugin skills from this project's install record"
-if [[ "$(row_for "$out" plug:x)" == "$(printf 'plug:x\tskill\tplugin:plug\tPlugin skill x\t%s\t-' "$sb/plugins/plug-new/skills/x/SKILL.md")" ]]; then ok "$t"
+if [[ "$(row_for "$out" plug:x)" == "$(printf 'plug:x\tskill\tplugin:plug\tPlugin skill x\t%s\t-' "$(nat "$sb/plugins/plug-new/skills/x/SKILL.md")")" ]]; then ok "$t"
 else ng "$t" "got [$(row_for "$out" plug:x)]"; fi
 
 t="inventory honours enabledPlugins precedence (project-local false wins)"
@@ -235,12 +246,12 @@ sb="$(feature_sandbox brief-config.md)"
 
 t="brief implement lists only Skills entries tagged implement, with absolute paths"
 got="$(run_in "$sb" "$S" brief feat implement)"
-exp="$(printf '## Skills for this work (from config.md)\n\nLoad each skill with the `Skill` tool (`Skill <name>`); if that fails, Read the file at its path.\n\n- vercel:nextjs — App Router pages — /opt/plugins/vercel/skills/nextjs/SKILL.md\n- web-images — image pipeline — %s/repo/.claude/skills/web-images/SKILL.md' "$sb")"
+exp="$(printf '## Skills for this work (from config.md)\n\nLoad each skill with the `Skill` tool (`Skill <name>`); if that fails, Read the file at its path.\n\n- vercel:nextjs — App Router pages — /opt/plugins/vercel/skills/nextjs/SKILL.md\n- web-images — image pipeline — %s/repo/.claude/skills/web-images/SKILL.md' "$(nat "$sb")")"
 if [[ "$got" == "$exp" ]]; then ok "$t"; else ng "$t" "got [$got]"; fi
 
 t="brief review uses the review heading and the review-tagged entries"
 got="$(run_in "$sb" "$S" brief feat review)"
-exp="$(printf '## Skills for reviewing this work\n\nLoad each skill with the `Skill` tool (`Skill <name>`); if that fails, Read the file at its path.\n\n- vercel:nextjs — App Router pages — /opt/plugins/vercel/skills/nextjs/SKILL.md\n- a11y-review — accessibility checks — %s/repo/.claude/skills/a11y-review/SKILL.md' "$sb")"
+exp="$(printf '## Skills for reviewing this work\n\nLoad each skill with the `Skill` tool (`Skill <name>`); if that fails, Read the file at its path.\n\n- vercel:nextjs — App Router pages — /opt/plugins/vercel/skills/nextjs/SKILL.md\n- a11y-review — accessibility checks — %s/repo/.claude/skills/a11y-review/SKILL.md' "$(nat "$sb")")"
 if [[ "$got" == "$exp" ]]; then ok "$t"; else ng "$t" "got [$got]"; fi
 
 t="entries matches brief entry for entry (name TAB abs-path)"

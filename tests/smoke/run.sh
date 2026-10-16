@@ -57,7 +57,19 @@ else
 fi
 
 t="no file under the data root holds a CR byte"
-cr_files="$(grep -rl $'\r' "$dr" 2>/dev/null || true)"
+# Bytes, read by Python: grep's view of line endings differs under Git Bash.
+# Each hit names the file and the line up to its first CR.
+cr_files="$("$REPO_ROOT/scripts/py.sh" - "$dr" <<'PY'
+import os, sys
+for base, _, names in os.walk(sys.argv[1]):
+    for name in sorted(names):
+        path = os.path.join(base, name)
+        with open(path, "rb") as f:
+            data = f.read()
+        if b"\r" in data:
+            print("%s: %r" % (path, data[:data.index(b"\r") + 1].split(b"\n")[-1]))
+PY
+)"
 if [[ -z "$cr_files" ]]; then
   ok "$t"
 else

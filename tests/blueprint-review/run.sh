@@ -380,11 +380,14 @@ t="brb-6: absolute path in references resolves as-is"
 d="$brf/t6"; mkdir -p "$d"
 abs_ref="$brf/t6-abs-ref.md"
 echo "ABSOLUTE_CONTENT" > "$abs_ref"
+# Inside a file the path must be spelled the way Windows Python reads it
+# (C:/…): Git Bash translates paths in arguments, never in file contents.
+case "${OSTYPE:-}" in msys*|cygwin*) abs_ref_text="$(cygpath -m "$abs_ref")" ;; *) abs_ref_text="$abs_ref" ;; esac
 cat > "$d/manifest.md" <<EOF
 ---
 type: blueprint-review-context
 references:
-  - $abs_ref
+  - $abs_ref_text
 ---
 
 body
@@ -1260,7 +1263,9 @@ guard_at() {
     | CLAUDE_PLUGIN_ROOT="$1" "$REPO_ROOT/hooks/guard-batch-reviewer.sh" >/dev/null 2>&1
   echo $?
 }
-gh_dir="$(mktemp -d)"
+# cd + pwd -P: Git Bash spells the folder /c/…, which the guard maps to C:/…;
+# a bare mktemp gives /tmp/…, which no Windows program can resolve.
+gh_dir="$(cd "$(mktemp -d)" && pwd -P)"
 mk_install() {  # mk_install <dir> <plugin-name|""> — fake install with a wrapper
   mkdir -p "$1/scripts" "$1/.claude-plugin"
   printf '#!/usr/bin/env bash\n' > "$1/scripts/codex-review.sh"
