@@ -645,7 +645,7 @@ out="$(run_in "$sb" env CLAUDE_PLUGIN_ROOT="$REPO_ROOT" data_root="$dr" active_f
 # ---- Task 12: never-auto audit --------------------------------------------------------
 t="never-auto rules match the audited list"
 cur="$(cd "$REPO_ROOT" && grep -rniE 'never auto|do not auto|Do NOT auto-fire|Wait for the' commands docs \
-       | grep -v '^docs/superpowers/' | sed -E 's/:[0-9]+:/:/' | sort)"
+       | grep -v '^docs/superpowers/' | sed -E 's/:[0-9]+:/:/' | LC_ALL=C sort)"
 if [[ "$cur" == "$(cat "$FIX/never-auto-expected.txt")" ]]; then ok "$t"; else
   ng "$t" "diff: $(diff <(printf '%s\n' "$cur") "$FIX/never-auto-expected.txt" | head -5)"
 fi

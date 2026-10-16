@@ -20,9 +20,9 @@ active:
   manual-test-state: none
   manual-test-failure-policy: none
   base-commit: {{HEAD_SHA}}
-  worktree-path: {{WORKTREE_PATH}}
+  worktree-path: {{WORKTREE_PATH}}/other-worktree
   git-common-dir: {{GIT_COMMON_DIR}}
-  git-worktree-dir: {{GIT_WORKTREE_DIR}}
+  git-worktree-dir: {{WORKTREE_PATH}}/other-worktree/.git
 ---
 
 # Workflow progress
