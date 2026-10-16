@@ -136,9 +136,11 @@ mi_data_root() {
 }
 
 # Resolve a possibly-relative data root to an absolute path. Internal helper.
+# A drive letter followed by / or \ (C:/data, C:\data) is absolute too; a
+# drive-relative value such as c:foo is not (WIN-19).
 _mi_data_root_resolve() {
   local val="$1"
-  if [[ "$val" = /* ]]; then
+  if [[ "$val" = /* || "$val" = [A-Za-z]:/* || "$val" = [A-Za-z]:\\* ]]; then
     echo "$val"
   else
     echo "${PWD}/${val}"
@@ -312,8 +314,6 @@ mi_fm_set() {
   local tmp
   tmp="$(mktemp)"
   # Split frontmatter from body, edit frontmatter, restitch.
-  awk 'BEGIN{c=0} /^---$/{c++; print; next} c==1{print > "/tmp/mi_fm_head"} c>1{print > "/tmp/mi_fm_body"}' "$file" >/dev/null 2>&1 || true
-  # Simpler approach: use yq's frontmatter-aware mode via a pre/post split.
   mi_py - "$file" "$field" "$value" <<'PYEOF' > "$tmp"
 import sys, re, yaml
 path, field, value = sys.argv[1], sys.argv[2], sys.argv[3]

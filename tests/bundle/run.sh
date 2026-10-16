@@ -5,14 +5,15 @@
 # flavors:
 #
 #   Success fixture:
-#     input/                — snapshot of millwright-inspector/ data tree
+#     data/                 — snapshot of the millwright-inspector/ data root,
+#                             copied to <sandbox>/millwright-inspector/
 #     expected.md           — bundle output, byte-equal after timestamp norm
 #     [expected-stdout.txt] — optional, defaults to "<scrubbed>" check
 #     [invoke-from]         — optional, override cwd; supports
 #                             {{SANDBOX}} and {{REPO_ROOT}}
 #
 #   Refusal fixture:
-#     input/                — snapshot (or empty for refusal-no-cycle)
+#     data/                 — snapshot (absent for refusal-no-cycle)
 #     expected-exit.txt     — expected non-zero exit code, e.g. "2"
 #     expected-stderr.txt   — expected stderr contents (substring-match)
 #     [invoke-from]         — optional, as above
@@ -66,15 +67,19 @@ normalize() {
 run_fixture() {
   local name="$1"
   local dir="$FIXTURES/$name"
-  local input="$dir/input"
+  # data/ holds the data root's contents directly: with an
+  # input/millwright-inspector/ level the deepest fixture paths passed 130
+  # characters, which a Windows plugin cache root pushes toward MAX_PATH.
+  local data="$dir/data"
 
   local sandbox
   sandbox="$(mktemp -d)"
   # shellcheck disable=SC2064
   trap "rm -rf '$sandbox'" RETURN
 
-  if [[ -d "$input" ]]; then
-    cp -R "$input/." "$sandbox/"
+  if [[ -d "$data" ]]; then
+    mkdir -p "$sandbox/millwright-inspector"
+    cp -R "$data/." "$sandbox/millwright-inspector/"
   fi
 
   # Seed git so check-worktree and git rev-parse HEAD work. If the input has
