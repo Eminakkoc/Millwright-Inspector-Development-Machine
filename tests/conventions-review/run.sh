@@ -28,6 +28,16 @@ cleanup() {
 }
 trap cleanup EXIT
 
+# nat <path> — a path as Windows programs read it (C:/…) on Git Bash, unchanged
+# elsewhere. For paths inside files and expected output: Git Bash translates
+# /c/… only in arguments.
+nat() {
+  case "${OSTYPE:-}" in
+    msys*|cygwin*) cygpath -m "$1" ;;
+    *)             printf '%s' "$1" ;;
+  esac
+}
+
 # run_in <sb> <cmd...> — cwd = repo, data root inside it, installed plugin hidden.
 run_in() {
   local sb="$1"; shift
@@ -221,7 +231,7 @@ printf -- '---\nid: %s\nrequirements-id: %s\n---\n\n<!-- auto:start -->\n\n## Sk
   "33333333-3333-4333-8333-333333333333" "$UUID2" > "$cur/config.md"
 out="$(run_in "$sbs" "$CR" prepare feat 2>&1)"; state="$(state_of "$out")"
 got="$(awk -F'\t' '{print $2"|"$3"|"$5}' "$state/entries.tsv")"
-[[ "$got" == "react-forms|skill|$sbs/.claude/skills/react-forms" ]] && ok "$t" || ng "$t" "got: $got
+[[ "$got" == "react-forms|skill|$(nat "$sbs")/.claude/skills/react-forms" ]] && ok "$t" || ng "$t" "got: $got
 out: $out"
 
 t="prepare: snapshot is the committed blob — uncommitted edits do not leak in"
@@ -298,9 +308,9 @@ reply() {
   } > "$f"
 }
 
-blk() { # file sev scope quote source summary
+blk() { # file sev scope quote source summary — source as the reviewer writes it
   printf -- '- file: %s\n- severity: %s\n- scope: %s\n- quote: %s\n- source: %s\n- summary: %s\n- details: |\n    why it matters\n' \
-    "$1" "$2" "$3" "$4" "$5" "$6"
+    "$1" "$2" "$3" "$4" "$(nat "$5")" "$6"
 }
 
 sb="$(ingest_sandbox)"; STYLE="$sb/.claude/rules/style.md"; FORMS="$sb/.claude/skills/forms/SKILL.md"

@@ -19,6 +19,12 @@ def die(msg):
     sys.exit(1)
 
 
+def fwd(path):
+    """`/` separators for paths this script writes or prints: Windows Python
+    joins with `\\`, while git and Claude's tools read `C:/…` on every OS."""
+    return path.replace("\\", "/") if os.sep == "\\" else path
+
+
 # ---- rule selection -----------------------------------------------------------
 
 def find_rules(rules_dir):
@@ -160,7 +166,7 @@ def cmd_prepare(top, head, data_root, feature):
         print("conventions review: nothing to check")
         return
 
-    snap = os.path.join(run_root, head)
+    snap = fwd(os.path.join(run_root, head))
     for f in covered:
         blob = subprocess.check_output(["git", "-C", top, "cat-file", "blob", "%s:%s" % (head, f)])
         dest = os.path.join(snap, f)
@@ -172,7 +178,7 @@ def cmd_prepare(top, head, data_root, feature):
     os.makedirs(state)
     with open(os.path.join(state, "entries.tsv"), "w", encoding="utf-8", newline="\n") as tsv:
         for idx, (name, kind, path, boundary, files) in enumerate(entries, 1):
-            tsv.write("%d\t%s\t%s\t%s\t%s\n" % (idx, name, kind, path, boundary))
+            tsv.write("%d\t%s\t%s\t%s\t%s\n" % (idx, name, kind, fwd(path), fwd(boundary)))
             with open(os.path.join(state, "entry-%d.ranges" % idx), "w", encoding="utf-8", newline="\n") as rf:
                 for f in files:
                     for rng in ranges[f]:
