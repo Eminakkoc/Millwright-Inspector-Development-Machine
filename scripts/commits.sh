@@ -160,12 +160,12 @@ for line in log.splitlines():
     if not line.strip(): continue
     sha, msg = line.split('\t', 1)
     commits.append({'sha': sha, 'msg': msg})
-with open(path) as f:
+with open(path, encoding='utf-8') as f:
     content = f.read()
 m = re.match(r'^---\n(.*?)\n---\n(.*)$', content, re.DOTALL)
 fm = yaml.safe_load(m.group(1)) or {}
 fm['commits'] = commits
-with open(path, 'w') as f:
+with open(path, 'w', encoding='utf-8', newline='\n') as f:
     f.write('---\n')
     f.write(yaml.safe_dump(fm, default_flow_style=False, sort_keys=False))
     f.write('---\n')
@@ -335,7 +335,7 @@ PYEOF
     mi_py - "$summary_file" <<'PYEOF'
 import re, sys
 path = sys.argv[1]
-with open(path) as f:
+with open(path, encoding='utf-8') as f:
     content = f.read()
 m = re.search(r'(?:^|\n)## Changed files\s*\n(.*?)(?=\n## |\Z)', content, re.DOTALL)
 if not m:
@@ -424,7 +424,7 @@ data_root, progress_path, ft_feature = sys.argv[1], sys.argv[2], sys.argv[3]
 
 def frontmatter(path):
     try:
-        with open(path) as f:
+        with open(path, encoding='utf-8') as f:
             text = f.read()
     except OSError:
         return None
@@ -533,12 +533,12 @@ for line in log.splitlines():
         continue
     sha, msg = line.split('\t', 1)
     commits.append({'sha': sha, 'msg': msg})
-with open(path) as f:
+with open(path, encoding='utf-8') as f:
     content = f.read()
 m = re.match(r'^---\n(.*?)\n---\n(.*)$', content, re.DOTALL)
 fm = yaml.safe_load(m.group(1)) or {}
 fm['commits'] = commits
-with open(path, 'w') as f:
+with open(path, 'w', encoding='utf-8', newline='\n') as f:
     f.write('---\n')
     f.write(yaml.safe_dump(fm, default_flow_style=False, sort_keys=False))
     f.write('---\n')

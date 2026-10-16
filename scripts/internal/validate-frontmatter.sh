@@ -26,7 +26,7 @@ trap 'rm -f "$tmp_fm" "$tmp_schema_json"' EXIT
 mi_py - "$file" "$tmp_fm" <<'PYEOF'
 import sys, re, json, yaml, datetime
 src, dest = sys.argv[1], sys.argv[2]
-with open(src) as f:
+with open(src, encoding='utf-8') as f:
     content = f.read()
 m = re.match(r'^---\n(.*?)\n---', content, re.DOTALL)
 if not m:
@@ -66,16 +66,16 @@ if drifted:
         f"the write site.",
         file=sys.stderr,
     )
-with open(dest, 'w') as o:
+with open(dest, 'w', encoding='utf-8', newline='\n') as o:
     json.dump(fm, o)
 PYEOF
 
 mi_py - "$schema" "$tmp_schema_json" <<'PYEOF'
 import sys, json, yaml
 src, dest = sys.argv[1], sys.argv[2]
-with open(src) as f:
+with open(src, encoding='utf-8') as f:
     s = yaml.safe_load(f)
-with open(dest, 'w') as o:
+with open(dest, 'w', encoding='utf-8', newline='\n') as o:
     json.dump(s, o)
 PYEOF
 
@@ -95,8 +95,8 @@ fi
 if mi_py -c "import jsonschema" >/dev/null 2>&1; then
   if mi_py - "$tmp_schema_json" "$tmp_fm" <<'PYEOF' >&2
 import sys, json, jsonschema
-schema = json.load(open(sys.argv[1]))
-data = json.load(open(sys.argv[2]))
+schema = json.load(open(sys.argv[1], encoding='utf-8'))
+data = json.load(open(sys.argv[2], encoding='utf-8'))
 try:
     jsonschema.validate(data, schema)
 except jsonschema.ValidationError as e:
@@ -116,7 +116,7 @@ fi
 mi_info "ajv and python3-jsonschema both unavailable; using structural fallback for $file"
 required_fields="$(mi_py -c "
 import json, sys
-s = json.load(open('$tmp_schema_json'))
+s = json.load(open('$tmp_schema_json', encoding='utf-8'))
 print(' '.join(s.get('required', [])))
 ")"
 missing=()

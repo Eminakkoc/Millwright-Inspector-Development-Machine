@@ -180,7 +180,7 @@ mi_quest_feature_test_base() {
   [[ -f "$pointer" ]] || mi_die "mi_quest_feature_test_base: no active quest pointer at $pointer"
   mi_py - "$pointer" <<'PYEOF'
 import re, sys, yaml
-with open(sys.argv[1]) as f:
+with open(sys.argv[1], encoding='utf-8') as f:
     content = f.read()
 m = re.match(r'^---\n(.*?)\n---\n', content, re.DOTALL)
 fm = (yaml.safe_load(m.group(1)) or {}) if m else {}
@@ -257,8 +257,10 @@ mi_fm_get() {
   # dot if present so we never produce a "..<path>" that yq would reject
   # as "invalid input text".
   [[ "$field" == .* ]] && field="${field#.}"
-  # Extract the frontmatter block, then yq the field.
-  awk '/^---$/{c++; next} c==1' "$file" | yq eval ".${field}" -
+  # Extract the frontmatter block, then yq the field. A trailing \r is dropped
+  # from each line first, so a CRLF file (a Windows checkout with
+  # core.autocrlf=true) reads the same fields as its LF twin.
+  awk '{sub(/\r$/, "")} /^---$/{c++; next} c==1' "$file" | yq eval ".${field}" -
 }
 
 # Set a frontmatter field in-place.
@@ -275,7 +277,7 @@ mi_fm_set() {
   mi_py - "$file" "$field" "$value" <<'PYEOF' > "$tmp"
 import sys, re, yaml
 path, field, value = sys.argv[1], sys.argv[2], sys.argv[3]
-with open(path) as f:
+with open(path, encoding='utf-8') as f:
     content = f.read()
 m = re.match(r'^---\n(.*?)\n---\n(.*)$', content, re.DOTALL)
 if not m:
@@ -324,7 +326,7 @@ mi_render_template() {
   mi_py - "$tmpl" "$dest" "$@" <<'PYEOF'
 import re, sys, yaml
 tmpl_path, dest_path, *kvs = sys.argv[1:]
-with open(tmpl_path) as f:
+with open(tmpl_path, encoding='utf-8') as f:
     content = f.read()
 
 # Split frontmatter from body so we only YAML-escape inside frontmatter.
@@ -399,7 +401,7 @@ if leftover:
     )
     sys.exit(1)
 
-with open(dest_path, 'w') as f:
+with open(dest_path, 'w', encoding='utf-8', newline='\n') as f:
     f.write(fm + body)
 PYEOF
 }

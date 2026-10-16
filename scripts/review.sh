@@ -212,7 +212,7 @@ case "$cmd" in
     mi_py - "$dest" "$heading" "$finding_id" "$summary" "$severity" "$scope" "$source_field" "$seed_id_field" "$details" <<'PYEOF'
 import sys, re
 path, heading, fid, summary, severity, scope, source, seed_id, details = sys.argv[1:10]
-with open(path) as f:
+with open(path, encoding='utf-8') as f:
     content = f.read()
 block_lines = [f'### {fid} — {summary}']
 block_lines.append(f'- severity: {severity}')
@@ -243,7 +243,7 @@ if not m:
 next_heading = re.search(r'^## ', content[m.end():], re.MULTILINE)
 insert_at = m.end() + next_heading.start() if next_heading else len(content)
 new_content = content[:insert_at].rstrip() + '\n\n' + block + content[insert_at:]
-with open(path, 'w') as f:
+with open(path, 'w', encoding='utf-8', newline='\n') as f:
     f.write(new_content)
 print(fid)
 PYEOF
@@ -260,7 +260,7 @@ PYEOF
     mi_py - "$dest" "$finding_id" "$new_status" "$fix_note" <<'PYEOF'
 import sys, re
 path, fid, new_status, fix_note = sys.argv[1:5]
-with open(path) as f:
+with open(path, encoding='utf-8') as f:
     content = f.read()
 # Locate the finding block.
 block_re = re.compile(rf'(### {re.escape(fid)} — .*?\n)(.*?)(?=\n### |\n## |\Z)', re.DOTALL)
@@ -274,7 +274,7 @@ if fix_note:
     block = re.sub(r'- fix-note:.*', f'- fix-note: |', block)
     block += ''.join(f'    {line}\n' for line in fix_note.splitlines())
 new_content = content[:m.start(2)] + block + content[m.end(2):]
-with open(path, 'w') as f:
+with open(path, 'w', encoding='utf-8', newline='\n') as f:
     f.write(new_content)
 print(f'mi: {fid} → {new_status}', file=sys.stderr)
 PYEOF
@@ -302,7 +302,7 @@ EOF
     mi_py - "$dest" <<'PYEOF'
 import sys, re
 path = sys.argv[1]
-with open(path) as f:
+with open(path, encoding='utf-8') as f:
     content = f.read()
 for m in re.finditer(r'### (IR-\d{3}) — .*?\n(.*?)(?=\n### |\n## |\Z)', content, re.DOTALL):
     fid, block = m.group(1), m.group(2)
@@ -328,7 +328,7 @@ PYEOF
     mi_py - "$dest" <<'PYEOF'
 import sys, re
 path = sys.argv[1]
-with open(path) as f:
+with open(path, encoding='utf-8') as f:
     content = f.read()
 for m in re.finditer(r'### (IR-\d{3}) — (.+?)\n(.*?)(?=\n### |\n## |\Z)', content, re.DOTALL):
     fid, summary, block = m.group(1), m.group(2).strip(), m.group(3)
@@ -420,7 +420,7 @@ PYEOF
         mi_py - "$ctx" "$ts" "$refresh_body" "$new_requirements_id" <<'PYEOF'
 import re, sys
 path, ts, refresh, req_id = sys.argv[1], sys.argv[2], sys.argv[3] == '1', sys.argv[4]
-with open(path) as f:
+with open(path, encoding='utf-8') as f:
     body = f.read()
 if refresh and req_id:
     marker_text = (
@@ -451,7 +451,7 @@ pat = re.compile(
 m = pat.search(body)
 if m:
     body = body[:m.end(1)] + marker_text + body[m.end():]
-    with open(path, 'w') as f:
+    with open(path, 'w', encoding='utf-8', newline='\n') as f:
         f.write(body)
 PYEOF
       fi
@@ -475,7 +475,7 @@ diagrams_dir = Path(sys.argv[4])
 # --- Build new "Open findings (snapshot)" body ---
 findings_lines = []
 if Path(ov_path).is_file():
-    with open(ov_path) as f:
+    with open(ov_path, encoding='utf-8') as f:
         ov = f.read()
     for m in re.finditer(
         r'### (IR-\d{3}) — (.+?)\n(.*?)(?=\n### |\n## |\Z)',
@@ -533,7 +533,7 @@ else:
 surface_body = '\n'.join(surface_lines)
 
 # --- Replace the two sections in the ctx file ---
-with open(ctx_path) as f:
+with open(ctx_path, encoding='utf-8') as f:
     ctx = f.read()
 
 def replace_section(text, heading, new_body):
@@ -549,7 +549,7 @@ def replace_section(text, heading, new_body):
 ctx = replace_section(ctx, 'Implemented surface', surface_body)
 ctx = replace_section(ctx, 'Open findings (snapshot)', findings_body)
 
-with open(ctx_path, 'w') as f:
+with open(ctx_path, 'w', encoding='utf-8', newline='\n') as f:
     f.write(ctx)
 PYEOF
         if [[ -n "$new_requirements_id" ]]; then
@@ -589,7 +589,7 @@ PYEOF
 import re, sys
 
 path = sys.argv[1]
-with open(path) as f:
+with open(path, encoding='utf-8') as f:
     lines = f.readlines()
 
 REVIEW_RE   = re.compile(r'^## Implementation Review\s*$')
@@ -682,13 +682,13 @@ PYEOF
     mi_py - "$dest" "$line_start" "$line_end" <<'PYEOF'
 import sys
 path, start, end = sys.argv[1], int(sys.argv[2]), int(sys.argv[3])
-with open(path) as f:
+with open(path, encoding='utf-8') as f:
     lines = f.readlines()
 if start < 1 or end > len(lines) or start > end:
     sys.stderr.write(f"error: invalid line range {start}-{end} (file has {len(lines)} lines)\n")
     sys.exit(1)
 del lines[start - 1:end]
-with open(path, 'w') as f:
+with open(path, 'w', encoding='utf-8', newline='\n') as f:
     f.writelines(lines)
 print(f"mi: stripped lines {start}-{end} from {path}", file=sys.stderr)
 PYEOF
@@ -702,7 +702,7 @@ PYEOF
     mi_py - "$dest" "$seed_id" <<'PYEOF'
 import sys, re
 path, target = sys.argv[1], sys.argv[2]
-with open(path) as f:
+with open(path, encoding='utf-8') as f:
     lines = f.readlines()
 IR_HEAD_RE = re.compile(r'^### (IR-\d{3}) —')
 SEED_RE    = re.compile(r'^- seed-id:\s*(.*?)\s*$')
@@ -734,7 +734,7 @@ PYEOF
     mi_py - "$dest" "$base_seed_id" <<'PYEOF'
 import sys, re
 path, base = sys.argv[1], sys.argv[2]
-with open(path) as f:
+with open(path, encoding='utf-8') as f:
     lines = f.readlines()
 
 IR_HEAD_RE = re.compile(r'^### (IR-\d{3}) —')
@@ -864,7 +864,7 @@ if opt_force_new and not opt_new:
 base_seed_id = f"manual-test:{seed_family_id}:{scenario_id}"
 HEADING = "## Implementation Review"
 
-with open(path) as f:
+with open(path, encoding='utf-8') as f:
     content = f.read()
 
 # Locate the Implementation Review section (insertion point for new blocks).
@@ -1018,7 +1018,7 @@ def write_file(new_lines):
     new_content = '\n'.join(new_lines)
     if not new_content.endswith('\n'):
         new_content += '\n'
-    with open(path, 'w') as f:
+    with open(path, 'w', encoding='utf-8', newline='\n') as f:
         f.write(new_content)
 
 def replace_block(b, new_text):

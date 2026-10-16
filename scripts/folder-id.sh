@@ -178,7 +178,7 @@ case "$cmd" in
     mi_py - "$ref" "$fid" "$feature" <<'PYEOF'
 import sys, re, yaml
 ref, fid, feature = sys.argv[1:]
-with open(ref) as f:
+with open(ref, encoding='utf-8') as f:
     content = f.read()
 m = re.match(r'^---\n(.*?)\n---\n(.*)$', content, re.DOTALL)
 if not m:
@@ -197,7 +197,7 @@ body = body.rstrip() + f"\n- {fid} — workflow-stream/{feature}\n"
 new = ("---\n"
        + yaml.safe_dump(fm, default_flow_style=False, sort_keys=False, allow_unicode=True).rstrip()
        + "\n---\n" + body)
-with open(ref, 'w') as f:
+with open(ref, 'w', encoding='utf-8', newline='\n') as f:
     f.write(new)
 PYEOF
     mi_info "linked feature '$feature' (id=$fid) into $ref"
@@ -228,7 +228,7 @@ quest_root, active_ref, fid, feature, journal_root = sys.argv[1:]
 
 def frontmatter(path):
     try:
-        with open(path) as f:
+        with open(path, encoding='utf-8') as f:
             content = f.read()
     except OSError:
         return {}

@@ -129,14 +129,14 @@ case "$cmd" in
     mi_py - "$dest" "$init_auto" "$@" <<'PYEOF'
 import sys, re, yaml
 path, init_auto, *features = sys.argv[1:]
-with open(path) as f:
+with open(path, encoding='utf-8') as f:
     content = f.read()
 m = re.match(r'^---\n(.*?)\n---\n(.*)$', content, re.DOTALL)
 fm = yaml.safe_load(m.group(1)) or {}
 fm['queue'] = list(features)
 if init_auto == '1':
     fm['auto-mode'] = True
-with open(path, 'w') as f:
+with open(path, 'w', encoding='utf-8', newline='\n') as f:
     f.write('---\n')
     f.write(yaml.safe_dump(fm, default_flow_style=False, sort_keys=False))
     f.write('---\n')
@@ -161,7 +161,7 @@ PYEOF
     mi_py - "$dest" "$wt_path" "$git_common_dir" "$git_worktree_dir" "$activation_id" <<'PYEOF'
 import sys, re, yaml
 path, wt_path, git_common_dir, git_worktree_dir, activation_id = sys.argv[1:]
-with open(path) as f:
+with open(path, encoding='utf-8') as f:
     content = f.read()
 m = re.match(r'^---\n(.*?)\n---\n(.*)$', content, re.DOTALL)
 fm = yaml.safe_load(m.group(1)) or {}
@@ -194,7 +194,7 @@ fm['active'] = {
     'git-worktree-dir': git_worktree_dir,
     'activation-id': activation_id,
 }
-with open(path, 'w') as f:
+with open(path, 'w', encoding='utf-8', newline='\n') as f:
     f.write('---\n')
     f.write(yaml.safe_dump(fm, default_flow_style=False, sort_keys=False))
     f.write('---\n')
@@ -242,7 +242,7 @@ path = sys.argv[1]
 sys.path.insert(0, sys.argv[2])
 from progress_top import apply_top_sets
 extra_sets = sys.argv[3:]
-with open(path) as f:
+with open(path, encoding='utf-8') as f:
     content = f.read()
 m = re.match(r'^---\n(.*?)\n---\n(.*)$', content, re.DOTALL)
 fm = yaml.safe_load(m.group(1)) or {}
@@ -258,7 +258,7 @@ fm['active'] = None
 # Apply any --set field=value pairs to top-level fields — same rules as
 # set-top (shared helper): active.* and protected fields are refused.
 apply_top_sets(fm, [kv for kv in extra_sets if kv], 'finish --set')
-with open(path, 'w') as f:
+with open(path, 'w', encoding='utf-8', newline='\n') as f:
     f.write('---\n')
     f.write(yaml.safe_dump(fm, default_flow_style=False, sort_keys=False))
     f.write('---\n')
@@ -276,14 +276,14 @@ PYEOF
     mi_py - "$dest" <<'PYEOF'
 import sys, re, yaml
 path = sys.argv[1]
-with open(path) as f:
+with open(path, encoding='utf-8') as f:
     content = f.read()
 m = re.match(r'^---\n(.*?)\n---\n(.*)$', content, re.DOTALL)
 fm = yaml.safe_load(m.group(1)) or {}
 active = fm['active']
 fm.setdefault('queue', []).append(active['feature'])
 fm['active'] = None
-with open(path, 'w') as f:
+with open(path, 'w', encoding='utf-8', newline='\n') as f:
     f.write('---\n')
     f.write(yaml.safe_dump(fm, default_flow_style=False, sort_keys=False))
     f.write('---\n')
@@ -302,7 +302,7 @@ PYEOF
     mi_py - "$dest" "$activation_id" <<'PYEOF'
 import sys, re, yaml
 path, activation_id = sys.argv[1], sys.argv[2]
-with open(path) as f:
+with open(path, encoding='utf-8') as f:
     content = f.read()
 m = re.match(r'^---\n(.*?)\n---\n(.*)$', content, re.DOTALL)
 fm = yaml.safe_load(m.group(1)) or {}
@@ -329,7 +329,7 @@ fm['active'] = {
     'git-worktree-dir': old.get('git-worktree-dir'),
     'activation-id': activation_id,
 }
-with open(path, 'w') as f:
+with open(path, 'w', encoding='utf-8', newline='\n') as f:
     f.write('---\n')
     f.write(yaml.safe_dump(fm, default_flow_style=False, sort_keys=False))
     f.write('---\n')
@@ -346,7 +346,7 @@ PYEOF
     mi_py - "$dest" "$@" <<'PYEOF'
 import sys, re, yaml
 path, *new_features = sys.argv[1:]
-with open(path) as f:
+with open(path, encoding='utf-8') as f:
     content = f.read()
 m = re.match(r'^---\n(.*?)\n---\n(.*)$', content, re.DOTALL)
 fm = yaml.safe_load(m.group(1)) or {}
@@ -388,7 +388,7 @@ if collisions:
     )
     sys.exit(1)
 fm['queue'] = existing_queue + new_list
-with open(path, 'w') as f:
+with open(path, 'w', encoding='utf-8', newline='\n') as f:
     f.write('---\n')
     f.write(yaml.safe_dump(fm, default_flow_style=False, sort_keys=False))
     f.write('---\n')
@@ -405,7 +405,7 @@ PYEOF
     mi_py - "$dest" "$@" <<'PYEOF'
 import sys, re, yaml
 path, *new_order = sys.argv[1:]
-with open(path) as f:
+with open(path, encoding='utf-8') as f:
     content = f.read()
 m = re.match(r'^---\n(.*?)\n---\n(.*)$', content, re.DOTALL)
 fm = yaml.safe_load(m.group(1)) or {}
@@ -451,7 +451,7 @@ if existing == new_list:
     sys.stderr.write("mi: reorder is a no-op (queue order unchanged)\n")
     sys.exit(0)
 fm['queue'] = new_list
-with open(path, 'w') as f:
+with open(path, 'w', encoding='utf-8', newline='\n') as f:
     f.write('---\n')
     f.write(yaml.safe_dump(fm, default_flow_style=False, sort_keys=False))
     f.write('---\n')
@@ -493,7 +493,7 @@ path, tmp = sys.argv[1], sys.argv[2]
 sys.path.insert(0, sys.argv[3])
 from progress_top import apply_top_sets
 kvs = sys.argv[4:]
-with open(path) as f:
+with open(path, encoding='utf-8') as f:
     content = f.read()
 m = re.match(r'^---\n(.*?)\n---\n(.*)$', content, re.DOTALL)
 if not m:
@@ -501,7 +501,7 @@ if not m:
     sys.exit(1)
 fm = yaml.safe_load(m.group(1)) or {}
 apply_top_sets(fm, kvs, 'set-top')
-with open(tmp, 'w') as f:
+with open(tmp, 'w', encoding='utf-8', newline='\n') as f:
     f.write('---\n')
     f.write(yaml.safe_dump(fm, default_flow_style=False, sort_keys=False))
     f.write('---\n')
@@ -550,7 +550,7 @@ IMMUTABLE = {'worktree-path', 'git-common-dir', 'git-worktree-dir'}
 CONDITIONALLY_IMMUTABLE = {'activation-id'}
 
 # Read existing state first so the conditional-immutability check can see it.
-with open(path) as f:
+with open(path, encoding='utf-8') as f:
     content = f.read()
 m = re.match(r'^---\n(.*?)\n---\n(.*)$', content, re.DOTALL)
 if not m:
@@ -588,7 +588,7 @@ for kv in kvs:
 
 for field, parsed_value in parsed_kvs:
     fm['active'][field] = parsed_value
-with open(tmp, 'w') as f:
+with open(tmp, 'w', encoding='utf-8', newline='\n') as f:
     f.write('---\n')
     f.write(yaml.safe_dump(fm, default_flow_style=False, sort_keys=False))
     f.write('---\n')
@@ -617,7 +617,7 @@ PYEOF
     if ! mi_py - "$dest" "$tmp" "$id" <<'PYEOF'; then
 import sys, re, yaml
 path, tmp, new_id = sys.argv[1], sys.argv[2], sys.argv[3]
-with open(path) as f:
+with open(path, encoding='utf-8') as f:
     content = f.read()
 m = re.match(r'^---\n(.*?)\n---\n(.*)$', content, re.DOTALL)
 if not m:
@@ -636,7 +636,7 @@ if new_id in arr:
 else:
     arr.append(new_id)
     fm['active']['clear-recommendations'] = arr
-with open(tmp, 'w') as f:
+with open(tmp, 'w', encoding='utf-8', newline='\n') as f:
     f.write('---\n')
     f.write(yaml.safe_dump(fm, default_flow_style=False, sort_keys=False))
     f.write('---\n')
@@ -661,7 +661,7 @@ PYEOF
     mi_py - "$dest" "$id" <<'PYEOF'
 import sys, re, yaml
 path, query_id = sys.argv[1], sys.argv[2]
-with open(path) as f:
+with open(path, encoding='utf-8') as f:
     content = f.read()
 m = re.match(r'^---\n(.*?)\n---\n(.*)$', content, re.DOTALL)
 if not m:
@@ -688,12 +688,12 @@ PYEOF
     mi_py - "$dest" "$next" <<'PYEOF'
 import sys, re, yaml
 path, next_stage = sys.argv[1], int(sys.argv[2])
-with open(path) as f:
+with open(path, encoding='utf-8') as f:
     content = f.read()
 m = re.match(r'^---\n(.*?)\n---\n(.*)$', content, re.DOTALL)
 fm = yaml.safe_load(m.group(1)) or {}
 fm['active']['current-stage'] = next_stage
-with open(path, 'w') as f:
+with open(path, 'w', encoding='utf-8', newline='\n') as f:
     f.write('---\n')
     f.write(yaml.safe_dump(fm, default_flow_style=False, sort_keys=False))
     f.write('---\n')
@@ -759,7 +759,7 @@ target = int(target_str)
 IMMUTABLE = {'worktree-path', 'git-common-dir', 'git-worktree-dir'}
 CONDITIONALLY_IMMUTABLE = {'activation-id'}
 
-with open(path) as f:
+with open(path, encoding='utf-8') as f:
     content = f.read()
 m = re.match(r'^---\n(.*?)\n---\n(.*)$', content, re.DOTALL)
 if not m:
@@ -805,7 +805,7 @@ if current != expected:
 fm['active']['current-stage'] = target
 for field, parsed_value in parsed_kvs:
     fm['active'][field] = parsed_value
-with open(tmp, 'w') as f:
+with open(tmp, 'w', encoding='utf-8', newline='\n') as f:
     f.write('---\n')
     f.write(yaml.safe_dump(fm, default_flow_style=False, sort_keys=False))
     f.write('---\n')

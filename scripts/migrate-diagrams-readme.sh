@@ -82,7 +82,7 @@ def fail(msg, code=2):
 def fm_field(path, field):
     if not os.path.isfile(path):
         return None
-    with open(path) as f:
+    with open(path, encoding='utf-8') as f:
         content = f.read()
     m = re.match(r'^---\n(.*?)\n---\n', content, re.DOTALL)
     if not m:
@@ -101,7 +101,7 @@ if not req_id or not uuid_pat.match(str(req_id)):
     fail(f"skip {readme}: sibling requirements.md has missing or unreadable `id`")
 
 # Read README current state.
-with open(readme) as f:
+with open(readme, encoding='utf-8') as f:
     content = f.read()
 m = re.match(r'^(---\n)(.*?)(\n---\n)(.*)$', content, re.DOTALL)
 if m:
@@ -153,7 +153,7 @@ new_content = "---\n" + yaml.safe_dump(new_fm, default_flow_style=False, sort_ke
 
 # Write to a same-directory temp, validate, atomic rename.
 tmp = readme + ".migrate.tmp"
-with open(tmp, "w") as f:
+with open(tmp, "w", encoding="utf-8", newline="\n") as f:
     f.write(new_content)
 
 result = subprocess.run(

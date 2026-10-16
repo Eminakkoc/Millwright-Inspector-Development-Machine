@@ -95,12 +95,12 @@ with open(file_path, "rb") as f:
     raw = f.read()
 
 # Strip leading YAML frontmatter (--- ... ---) from the body so offsets are
-# 0-indexed into the body, not the file.
-m = re.match(rb'^---\n.*?\n---\n', raw, re.DOTALL)
+# 0-indexed into the body, not the file. \r?\n: a CRLF checkout still parses.
+m = re.match(rb'^---\r?\n.*?\r?\n---\r?\n', raw, re.DOTALL)
 body_start = m.end() if m else 0
 body = raw[body_start:]
 
-with open(items_path) as f:
+with open(items_path, encoding='utf-8') as f:
     items = json.load(f)
 
 # Pre-scan: for each unique anchor_line, list every byte offset where it occurs
@@ -532,7 +532,7 @@ fm_body = set_field(fm_body, "finding-count-unresolved", str(unresolved))
 fm_body = set_field(fm_body, "last-review-at", f'"{now_iso}"')
 
 new_raw = fm_open + fm_body + fm_close + body
-with open(history_path, "w", encoding="utf-8") as f:
+with open(history_path, "w", encoding="utf-8", newline="\n") as f:
     f.write(new_raw)
 PYEOF
     ;;
@@ -585,7 +585,7 @@ else:
     new_fm_body = fm_body.rstrip("\n") + f"\nlast-finding-id: F-{next_n:03d}"
 
 new_raw = fm_open + new_fm_body + fm_close + body
-with open(path, "w", encoding="utf-8") as f:
+with open(path, "w", encoding="utf-8", newline="\n") as f:
     f.write(new_raw)
 print(f"F-{next_n:03d}")
 PYEOF
@@ -855,7 +855,7 @@ def load():
 
 
 def save(data):
-    with open(ledger_path, "w", encoding="utf-8") as f:
+    with open(ledger_path, "w", encoding="utf-8", newline="\n") as f:
         json.dump(data, f, indent=2)
 
 

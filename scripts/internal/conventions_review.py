@@ -116,7 +116,7 @@ def clean_run_root(root):
             shutil.rmtree(p)
         else:
             os.remove(p)
-    with open(os.path.join(root, ".gitignore"), "w") as f:
+    with open(os.path.join(root, ".gitignore"), "w", encoding="utf-8", newline="\n") as f:
         f.write(GITIGNORE)
 
 
@@ -169,14 +169,14 @@ def cmd_prepare(top, head, data_root, feature):
 
     state = snap + ".state"
     os.makedirs(state)
-    with open(os.path.join(state, "entries.tsv"), "w") as tsv:
+    with open(os.path.join(state, "entries.tsv"), "w", encoding="utf-8", newline="\n") as tsv:
         for idx, (name, kind, path, boundary, files) in enumerate(entries, 1):
             tsv.write("%d\t%s\t%s\t%s\t%s\n" % (idx, name, kind, path, boundary))
-            with open(os.path.join(state, "entry-%d.ranges" % idx), "w") as rf:
+            with open(os.path.join(state, "entry-%d.ranges" % idx), "w", encoding="utf-8", newline="\n") as rf:
                 for f in files:
                     for rng in ranges[f]:
                         rf.write("%s\t%s\n" % (f, rng))
-    with open(os.path.join(state, "meta"), "w") as meta:
+    with open(os.path.join(state, "meta"), "w", encoding="utf-8", newline="\n") as meta:
         meta.write("feature=%s\nreview-head=%s\nsnapshot=%s\n" % (feature, head, snap))
 
     print("conventions review: %d reviewers (%s)" % (len(entries), ", ".join(e[0] for e in entries)))
@@ -240,7 +240,7 @@ def parse_reply(text):
 
 def load_ranges(path):
     out = {}
-    with open(path) as f:
+    with open(path, encoding="utf-8") as f:
         for row in f:
             row = row.rstrip("\n")
             if "\t" not in row:
@@ -320,11 +320,11 @@ def next_seed(seed, rows):
 
 def cmd_ingest(top, state, feature):
     review_sh = os.environ["CVR_REVIEW_SH"]
-    meta = dict(l.rstrip("\n").split("=", 1) for l in open(os.path.join(state, "meta")) if "=" in l)
+    meta = dict(l.rstrip("\n").split("=", 1) for l in open(os.path.join(state, "meta"), encoding="utf-8") if "=" in l)
     if meta.get("feature") != feature:
         die("run belongs to %s, not %s" % (meta.get("feature"), feature))
     snap = meta["snapshot"]
-    entries = [l.rstrip("\n").split("\t") for l in open(os.path.join(state, "entries.tsv")) if l.strip()]
+    entries = [l.rstrip("\n").split("\t") for l in open(os.path.join(state, "entries.tsv"), encoding="utf-8") if l.strip()]
 
     # Pass 1 — parse every reply; write nothing on any failure.
     parsed = []

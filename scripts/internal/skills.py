@@ -32,7 +32,7 @@ def repo_root():
 
 def load_json(path):
     try:
-        with open(path) as f:
+        with open(path, encoding="utf-8") as f:
             return json.load(f)
     except (OSError, ValueError):
         return None
@@ -46,7 +46,7 @@ def flat(text, limit=None):
 def skill_description(skill_md):
     """description: from SKILL.md frontmatter (single line or folded block)."""
     try:
-        with open(skill_md) as f:
+        with open(skill_md, encoding="utf-8") as f:
             lines = f.read().split("\n")
     except OSError:
         return ""
@@ -159,7 +159,7 @@ def parse_sections(lines, start, end):
 
 def read_config(path):
     try:
-        with open(path) as f:
+        with open(path, encoding="utf-8") as f:
             text = f.read()
     except OSError:
         return None, None, None, None
@@ -285,7 +285,7 @@ def cmd_apply_installs(config, installed, declined, failed, stop):
             continue
         block.append(line)
     out = out[:start] + block + out[end + 1:]
-    with open(config, "w") as f:
+    with open(config, "w", encoding="utf-8", newline="\n") as f:
         f.write("\n".join(out))
 
 

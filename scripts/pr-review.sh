@@ -197,7 +197,7 @@ def load_required(path, label):
     empty result, so the workflow can never claim to have processed every
     comment off a payload it could not read."""
     try:
-        with open(path) as f:
+        with open(path, encoding='utf-8') as f:
             return json.load(f)
     except Exception as e:
         sys.stderr.write(f"error: failed to parse {label} ({path}): {e}\n")
@@ -337,7 +337,7 @@ for ic in issues_raw:
         'body': ib,
     })
 
-with open(dest, 'w') as f:
+with open(dest, 'w', encoding='utf-8', newline='\n') as f:
     json.dump({'head_ref': head_ref, 'comments': out}, f, indent=2)
 
 kinds = {}
@@ -355,7 +355,7 @@ PYEOF
     mi_py - "$report" <<'PYEOF'
 import re, sys
 path = sys.argv[1]
-with open(path) as f:
+with open(path, encoding='utf-8') as f:
     lines = f.readlines()
 
 HEAD_RE = re.compile(r'^### PR-\d{3} — \[[ xX]\] .+$')
@@ -417,7 +417,7 @@ while i < n:
                       f"(expected `### PR-NNN — [ ] <summary>`)")
     i += 1
 
-with open(path, 'w') as f:
+with open(path, 'w', encoding='utf-8', newline='\n') as f:
     f.writelines(lines)
 
 if errors:
@@ -435,7 +435,7 @@ PYEOF
     [[ -f "$report" ]] || mi_die "report not found: $report"
     mi_py - "$report" <<'PYEOF'
 import re, sys
-with open(sys.argv[1]) as f:
+with open(sys.argv[1], encoding='utf-8') as f:
     lines = f.readlines()
 HEAD_RE = re.compile(r'^### PR-\d{3} — \[[xX]\] ')
 in_comment = False
@@ -463,7 +463,7 @@ PYEOF
 import re, sys
 path = sys.argv[1]
 NON_TERMINAL = {'open', 'reply-failed', 'reply-declined', 'fix-failed', 'fix-blocked'}
-with open(path) as f:
+with open(path, encoding='utf-8') as f:
     lines = f.readlines()
 HEAD_RE = re.compile(r'^### PR-\d{3} — \[([ xX])\] ')
 ANY_H3  = re.compile(r'^### ')
@@ -508,7 +508,7 @@ while i < n:
         i = j
         continue
     i += 1
-with open(path, 'w') as f:
+with open(path, 'w', encoding='utf-8', newline='\n') as f:
     f.writelines(lines)
 print(f"mi: normalized {changed} unmarked non-terminal block(s) to skipped", file=sys.stderr)
 PYEOF
@@ -522,7 +522,7 @@ PYEOF
 import re, sys
 path = sys.argv[1]
 NON_TERMINAL = {'open', 'reply-failed', 'reply-declined', 'fix-failed', 'fix-blocked'}
-with open(path) as f:
+with open(path, encoding='utf-8') as f:
     lines = f.readlines()
 HEAD_RE = re.compile(r'^### (PR-\d{3}) — \[([ xX])\] ')
 ANY_H3  = re.compile(r'^### ')
@@ -584,7 +584,7 @@ PYEOF
     mi_py - "$report" "$block_id" "$new_status" <<'PYEOF'
 import re, sys
 path, bid, new_status = sys.argv[1:4]
-with open(path) as f:
+with open(path, encoding='utf-8') as f:
     lines = f.readlines()
 HEAD_RE = re.compile(rf'^### {re.escape(bid)} — \[[ xX]\] ')
 ANY_H3  = re.compile(r'^### ')
@@ -624,7 +624,7 @@ while i < n and not done:
 if not done:
     sys.stderr.write(f"error: block {bid} (or its status line) not found in {path}\n")
     sys.exit(1)
-with open(path, 'w') as f:
+with open(path, 'w', encoding='utf-8', newline='\n') as f:
     f.writelines(lines)
 print(f"mi: {bid} → {new_status}", file=sys.stderr)
 PYEOF
@@ -646,7 +646,7 @@ PYEOF
     block_meta="$(mi_py - "$report" "$block_id" <<'PYEOF'
 import re, sys
 path, bid = sys.argv[1], sys.argv[2]
-with open(path) as f:
+with open(path, encoding='utf-8') as f:
     lines = f.readlines()
 HEAD_RE = re.compile(rf'^### {re.escape(bid)} — \[[ xX]\] ')
 ANY_H3  = re.compile(r'^### ')
@@ -745,7 +745,7 @@ PYEOF
 import re, sys
 path = sys.argv[1]
 TERMINAL = {'applied', 'replied', 'skipped'}
-with open(path) as f:
+with open(path, encoding='utf-8') as f:
     lines = f.readlines()
 HEAD_RE = re.compile(r'^### PR-\d{3} — \[[ xX]\] ')
 ANY_H3  = re.compile(r'^### ')

@@ -80,7 +80,7 @@ path, item_id, new_state, assignee_override = (
     sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
 )
 checkbox = '[ ]' if new_state == 'TODO' else '[x]'
-with open(path) as f:
+with open(path, encoding='utf-8') as f:
     lines = f.readlines()
 # Capture optional (assignee) between checkbox and state word.
 pattern = re.compile(
@@ -97,7 +97,7 @@ for i, line in enumerate(lines):
 if updated == 0:
     print(f'error: item {item_id} not found in {path}', file=sys.stderr)
     sys.exit(1)
-with open(path, 'w') as f:
+with open(path, 'w', encoding='utf-8', newline='\n') as f:
     f.writelines(lines)
 print(f'mi: set {item_id} to {new_state}', file=sys.stderr)
 PYEOF
@@ -137,7 +137,7 @@ item_pat = re.compile(
     rf'^(\s*-\s+)\[[ xX]\]\s+(?:\(([^)]+)\)\s+)?{re.escape(from_state)}\s+—'
 )
 
-with open(path) as f:
+with open(path, encoding='utf-8') as f:
     lines = f.readlines()
 
 current_section = None
@@ -157,7 +157,7 @@ for i, line in enumerate(lines):
         lines[i] = item_pat.sub(f'{prefix}{to_checkbox} {tag}{to_state} —', stripped, count=1) + '\n'
         count += 1
 
-with open(path, 'w') as f:
+with open(path, 'w', encoding='utf-8', newline='\n') as f:
     f.writelines(lines)
 
 scope = f' under ## {feature_filter}' if feature_filter else ''
@@ -177,7 +177,7 @@ PYEOF
     mi_py - "$file" <<'PYEOF'
 import sys, re
 path = sys.argv[1]
-with open(path) as f:
+with open(path, encoding='utf-8') as f:
     content = f.read()
 # Match any [xX] TODO line; capture optional assignee for validation.
 pattern = re.compile(
@@ -205,7 +205,7 @@ def _sub(m):
     promoted.append((rest.split(':', 1)[0].strip(), assignee))
     return f'{prefix}[x] ({assignee}) PENDING — {rest}'
 new_content, count = pattern.subn(_sub, content)
-with open(path, 'w') as f:
+with open(path, 'w', encoding='utf-8', newline='\n') as f:
     f.write(new_content)
 for item_id, assignee in promoted:
     print(f'{item_id}\t{assignee}')
@@ -247,7 +247,7 @@ item_pat = re.compile(
 )
 
 current_section = None
-with open(path) as f:
+with open(path, encoding='utf-8') as f:
     for line in f:
         stripped = line.rstrip('\n')
         if stripped.startswith('## '):
@@ -290,7 +290,7 @@ target_section = kebab(feature)
 checkbox = '[ ]' if state == 'TODO' else '[x]'
 new_line = f'- {checkbox} ({assignee}) {state} — {item_id}: {description}\n'
 
-with open(path) as f:
+with open(path, encoding='utf-8') as f:
     lines = f.readlines()
 
 # Uniqueness check: item-id must not already exist in any item line.
@@ -332,7 +332,7 @@ else:
         insert_at -= 1
     lines.insert(insert_at, new_line)
 
-with open(path, 'w') as f:
+with open(path, 'w', encoding='utf-8', newline='\n') as f:
     f.writelines(lines)
 
 print(f'mi: added {item_id} as [{state}] under ## {target_section}', file=sys.stderr)
@@ -346,7 +346,7 @@ PYEOF
 import sys, re, yaml
 
 path = sys.argv[1]
-with open(path) as f:
+with open(path, encoding='utf-8') as f:
     content = f.read()
 
 m = re.match(r'^---\n(.*?)\n---\n(.*)$', content, re.DOTALL)
@@ -432,7 +432,7 @@ PYEOF
 import sys, re, yaml
 path, name = sys.argv[1], sys.argv[2]
 try:
-    with open(path) as f:
+    with open(path, encoding='utf-8') as f:
         content = f.read()
 except OSError:
     sys.exit(1)

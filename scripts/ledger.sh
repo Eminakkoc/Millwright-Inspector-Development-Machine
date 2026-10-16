@@ -87,14 +87,14 @@ case "$cmd" in
     mi_py - "$dest" "$row" <<'PYEOF'
 import re, sys
 path, row = sys.argv[1], sys.argv[2]
-with open(path) as f:
+with open(path, encoding='utf-8') as f:
     body = f.read()
 marker = '## Cycle summary'
 if marker in body:
     new_body = body.replace(marker, row + '\n\n' + marker, 1)
 else:
     new_body = body.rstrip() + '\n' + row + '\n'
-with open(path, 'w') as f:
+with open(path, 'w', encoding='utf-8', newline='\n') as f:
     f.write(new_body)
 PYEOF
     ;;

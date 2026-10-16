@@ -139,7 +139,7 @@ case "$cmd" in
     mi_py - "$config" "$name" <<'PYEOF'
 import sys, re
 path, name = sys.argv[1], sys.argv[2]
-s = open(path).read()
+s = open(path, encoding='utf-8').read()
 m = re.search(r'(?m)^## GIT BRANCH[ \t]*\n', s)
 if not m:
     sys.stderr.write("error: create-branch: no '## GIT BRANCH' heading in config.md\n"); sys.exit(1)
@@ -150,7 +150,7 @@ body = s[start:end]
 # Keep HTML comments only; drop every other non-blank line (old candidates).
 comments = re.findall(r'<!--.*?-->', body, re.DOTALL)
 new_body = '\n' + ''.join(c + '\n\n' for c in comments) + name + '\n\n'
-open(path, 'w').write(s[:start] + new_body + s[end:])
+open(path, 'w', encoding='utf-8', newline='\n').write(s[:start] + new_body + s[end:])
 PYEOF
     echo "auto: created branch $name from $base"
     ledger_row "/mi-plan-implementation" "auto-answer" "feature branch → $name (from $base)"
@@ -168,7 +168,7 @@ PYEOF
     open_dq="$("${MI_PLUGIN_ROOT}/scripts/deferred-questions.sh" list-open "$feature" | cut -f1)"
     mi_py - "$rf" "$open_dq" <<'PYEOF'
 import re, sys
-content = open(sys.argv[1]).read()
+content = open(sys.argv[1], encoding='utf-8').read()
 open_dq = [d for d in sys.argv[2].split('\n') if d]
 bad = []
 for m in re.finditer(r'(?ms)^### (IR-\d{3}) —.*?(?=^### |^## |\Z)', content):

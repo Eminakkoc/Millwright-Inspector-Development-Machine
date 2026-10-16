@@ -34,7 +34,7 @@ dq_py() {
   mi_py - "$@" <<'PYEOF'
 import re, sys
 path, op, *args = sys.argv[1:]
-content = open(path).read()
+content = open(path, encoding='utf-8').read()
 ENTRY = re.compile(r'(?ms)^## (DQ-\d{3})[ \t]*\n(.*?)(?=^## |\Z)')
 def one(s): return ' '.join(str(s).split())
 def fields(body):
@@ -48,7 +48,7 @@ def set_fields(dq, updates):
             for k, v in updates.items():
                 body = re.sub(rf'(?m)^- {k}:.*$', lambda _: f'- {k}: {v}'.rstrip(), body)
             content = content[:m.start(2)] + body + content[m.end(2):]
-            open(path, 'w').write(content)
+            open(path, 'w', encoding='utf-8', newline='\n').write(content)
             return
     sys.stderr.write(f"error: {dq} not found\n"); sys.exit(1)
 if op == 'add':
@@ -57,7 +57,7 @@ if op == 'add':
     dq = f"DQ-{n:03d}"
     block = (f"\n## {dq}\n- question: {q}\n- assumed: {a}\n- status: open\n"
              f"- answer:\n- needs-finding: false\n- follow-up:\n")
-    open(path, 'w').write(content.rstrip('\n') + '\n' + block)
+    open(path, 'w', encoding='utf-8', newline='\n').write(content.rstrip('\n') + '\n' + block)
     print(dq)
 elif op == 'answer':
     dq, ans, nf = args[0], one(args[1]), args[2]

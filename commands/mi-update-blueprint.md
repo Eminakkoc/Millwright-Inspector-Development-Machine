@@ -408,13 +408,13 @@ def span(lines):
     s = next((i for i, l in enumerate(lines) if l.lstrip().startswith("<!-- auto:start")), None)
     e = next((i for i, l in enumerate(lines) if s is not None and i > s and l.strip() == "<!-- auto:end -->"), None)
     return s, e
-prev = open(sys.argv[1]).read().split("\n")
-new = open(sys.argv[2]).read().split("\n")
+prev = open(sys.argv[1], encoding='utf-8').read().split("\n")
+new = open(sys.argv[2], encoding='utf-8').read().split("\n")
 ps, pe = span(prev)
 ns, ne = span(new)
 if ps is None or pe is None or ns is None or ne is None:
     sys.exit(0)  # hand-edited previous block: keep the template's empty block
-open(sys.argv[2], "w").write("\n".join(new[:ns] + prev[ps:pe + 1] + new[ne + 1:]))
+open(sys.argv[2], "w", encoding="utf-8", newline="\n").write("\n".join(new[:ns] + prev[ps:pe + 1] + new[ne + 1:]))
 PYEOF
 ```
 
@@ -442,7 +442,7 @@ import sys, os, re
 path = sys.argv[1]
 if not os.path.isfile(path):
     sys.exit(0)
-with open(path) as f:
+with open(path, encoding='utf-8') as f:
     content = f.read()
 m = re.match(r'^---\n.*?\n---\n(.*)$', content, re.DOTALL)
 if not m:

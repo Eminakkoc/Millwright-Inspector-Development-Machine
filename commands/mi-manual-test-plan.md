@@ -460,7 +460,7 @@ while IFS=$'\t' read -r orig_feature orig_scenario merged title; do
   "$CLAUDE_PLUGIN_ROOT/scripts/py.sh" - "$dt" "$orig_feature" "$orig_scenario" "$act_file" "$exp_file" <<'PYEOF'
 import re, sys
 path, feature, scenario, act_out, exp_out = sys.argv[1:6]
-with open(path) as f:
+with open(path, encoding='utf-8') as f:
     content = f.read()
 sec = re.search(r'(?m)^## Deferred scenarios[ \t]*$', content)
 rest = content[sec.end():]
@@ -476,9 +476,9 @@ def field(name):
     body = fm.group(1) if fm else ''
     lines = [l[4:] if l.startswith('    ') else l for l in body.rstrip('\n').split('\n')]
     return '\n'.join(lines)
-with open(act_out, 'w') as f:
+with open(act_out, 'w', encoding='utf-8', newline='\n') as f:
     f.write(field('Action'))
-with open(exp_out, 'w') as f:
+with open(exp_out, 'w', encoding='utf-8', newline='\n') as f:
     f.write(field('Expected'))
 PYEOF
   scenario_action="$(cat "$act_file")"

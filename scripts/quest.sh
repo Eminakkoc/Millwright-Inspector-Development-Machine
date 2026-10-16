@@ -95,7 +95,7 @@ case "$cmd" in
       "${new_slug}" "${started}" "${folders_csv}" "active" <<'PYEOF'
 import sys
 tmpl, dest, slug, started, folders, status = sys.argv[1:]
-with open(tmpl) as f:
+with open(tmpl, encoding='utf-8') as f:
     content = f.read()
 # Render journal-folders as YAML flow array tokens (kebab-strings, no quotes).
 folder_tokens = ', '.join(f for f in folders.split(',') if f)
@@ -104,7 +104,7 @@ content = (content
     .replace('{{STARTED}}', started)
     .replace('{{JOURNAL_FOLDERS}}', folder_tokens)
     .replace('{{STATUS}}', status))
-with open(dest, 'w') as f:
+with open(dest, 'w', encoding='utf-8', newline='\n') as f:
     f.write(content)
 PYEOF
 
@@ -138,7 +138,7 @@ PYEOF
       "null" "${started}" "" "none" <<'PYEOF'
 import sys
 tmpl, dest, slug, started, folders, status = sys.argv[1:]
-with open(tmpl) as f:
+with open(tmpl, encoding='utf-8') as f:
     content = f.read()
 folder_tokens = ', '.join(f for f in folders.split(',') if f)
 content = (content
@@ -146,7 +146,7 @@ content = (content
     .replace('{{STARTED}}', started)
     .replace('{{JOURNAL_FOLDERS}}', folder_tokens)
     .replace('{{STATUS}}', status))
-with open(dest, 'w') as f:
+with open(dest, 'w', encoding='utf-8', newline='\n') as f:
     f.write(content)
 PYEOF
     "${MI_PLUGIN_ROOT}/scripts/frontmatter.sh" validate "$pointer" active-quest >/dev/null
@@ -206,7 +206,7 @@ PYEOF
     mi_py - "$summary_file" "$feature" <<'PYEOF'
 import re, sys
 path, target = sys.argv[1], sys.argv[2]
-with open(path) as f:
+with open(path, encoding='utf-8') as f:
     content = f.read()
 # Extract `## Cross-cutting constraints` (always emit if present).
 cc = re.search(r'(^## Cross-cutting constraints\s*\n.*?)(?=^## |\Z)', content, re.MULTILINE | re.DOTALL)

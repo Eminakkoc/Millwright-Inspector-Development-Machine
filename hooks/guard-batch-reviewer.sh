@@ -72,7 +72,7 @@ def is_plugin_wrapper(p):
         return False
     manifest = os.path.join(os.path.dirname(scripts_dir), ".claude-plugin", "plugin.json")
     try:
-        with open(manifest) as fh:
+        with open(manifest, encoding='utf-8') as fh:
             return json.load(fh).get("name") == PLUGIN_NAME
     except (OSError, ValueError, AttributeError):
         return False

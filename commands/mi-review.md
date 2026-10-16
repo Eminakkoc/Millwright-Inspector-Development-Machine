@@ -214,7 +214,7 @@ import sys, os, re
 path = sys.argv[1]
 if not os.path.isfile(path):
     sys.exit(0)
-with open(path) as f:
+with open(path, encoding='utf-8') as f:
     content = f.read()
 m = re.match(r'^---\n.*?\n---\n(.*)$', content, re.DOTALL)
 if not m:

@@ -333,9 +333,9 @@ case "$cmd" in
     mi_py - "$src" "$dest" <<'PYEOF'
 import sys, re
 src_path, dest_path = sys.argv[1:3]
-with open(src_path) as f:
+with open(src_path, encoding='utf-8') as f:
     src = f.read()
-with open(dest_path) as f:
+with open(dest_path, encoding='utf-8') as f:
     dest = f.read()
 
 def extract_section(text, heading):
@@ -372,7 +372,7 @@ for heading in ('## GIT BRANCH', '## Inspector Additions'):
         preserved.append(heading)
         dest = new_dest
 
-with open(dest_path, 'w') as f:
+with open(dest_path, 'w', encoding='utf-8', newline='\n') as f:
     f.write(dest)
 sys.stderr.write(f"preserved {len(preserved)} section(s) from {src_path} → {dest_path}: {', '.join(preserved) or 'none'}\n")
 PYEOF
@@ -396,7 +396,7 @@ def fm_field(path, field):
     if not os.path.isfile(path):
         return None
     try:
-        with open(path) as f:
+        with open(path, encoding='utf-8') as f:
             content = f.read()
     except OSError:
         return None
@@ -413,7 +413,7 @@ def has_non_placeholder_body(path):
     """A body has substance if at least one line is non-blank, not an HTML
     comment, and not a frontmatter delimiter."""
     try:
-        with open(path) as f:
+        with open(path, encoding='utf-8') as f:
             content = f.read()
     except OSError:
         return False
@@ -511,7 +511,7 @@ PYEOF
     mi_py - "$cfg" <<'PYEOF'
 import re, sys
 path = sys.argv[1]
-with open(path) as f:
+with open(path, encoding='utf-8') as f:
     content = f.read()
 # Find the ## GIT BRANCH section body (everything from heading to next ## or EOF).
 m = re.search(r'^## GIT BRANCH[ \t]*\n(.*?)(?=^## |\Z)', content, re.DOTALL | re.MULTILINE)

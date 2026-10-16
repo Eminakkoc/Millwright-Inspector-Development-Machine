@@ -201,7 +201,7 @@ for name in names:
         name=re.escape(name),
     )
     body = re.sub(pattern, f']({subfolder}/{name})', body)
-with open(dst, 'w', encoding='utf-8') as f:
+with open(dst, 'w', encoding='utf-8', newline='\n') as f:
     f.write(body)
 PYEOF
   else

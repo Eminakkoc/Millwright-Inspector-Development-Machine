@@ -90,7 +90,7 @@ case "$cmd" in
     fi
     mi_py - "$dest" <<'PYEOF'
 import re, sys
-with open(sys.argv[1]) as f:
+with open(sys.argv[1], encoding='utf-8') as f:
     content = f.read()
 sec = re.search(r'(?m)^## Deferred scenarios[ \t]*$', content)
 if not sec:
@@ -111,7 +111,7 @@ PYEOF
     fi
     mi_py - "$dest" <<'PYEOF'
 import re, sys
-with open(sys.argv[1]) as f:
+with open(sys.argv[1], encoding='utf-8') as f:
     content = f.read()
 sec = re.search(r'(?m)^## Deferred scenarios[ \t]*$', content)
 if not sec:
@@ -168,7 +168,7 @@ PYEOF
 import re, sys
 path, feature, scenario, title, reason, action, expected, deferred_at = sys.argv[1:9]
 
-with open(path) as f:
+with open(path, encoding='utf-8') as f:
     content = f.read()
 
 key_head = f"### {feature}/{scenario} — "
@@ -226,7 +226,7 @@ else:
     # Append at the end of the `## Deferred scenarios` section.
     content = content[:sec_end].rstrip('\n') + '\n\n' + block + content[sec_end:]
 
-with open(path, 'w') as f:
+with open(path, 'w', encoding='utf-8', newline='\n') as f:
     f.write(content)
 PYEOF
     dt_validate "$dest"
@@ -243,7 +243,7 @@ PYEOF
     mi_py - "$dest" "$feature" "$scenario" "$merged" <<'PYEOF'
 import re, sys
 path, feature, scenario, merged = sys.argv[1:5]
-with open(path) as f:
+with open(path, encoding='utf-8') as f:
     content = f.read()
 # Scope to the `## Deferred scenarios` section — see the PARSING CONTRACT note.
 sec = re.search(r'(?m)^## Deferred scenarios[ \t]*$', content)
@@ -270,7 +270,7 @@ new_block, n = re.subn(r'(?m)^- \*\*Merged as:\*\*[ \t]*.*$',
 if n == 0:
     sys.stderr.write(f"error: entry {feature}/{scenario} has no 'Merged as:' line\n")
     sys.exit(3)
-with open(path, 'w') as f:
+with open(path, 'w', encoding='utf-8', newline='\n') as f:
     f.write(content[:start] + new_block + content[end:])
 PYEOF
     dt_validate "$dest"
@@ -285,7 +285,7 @@ PYEOF
     mi_py - "$dest" "$feature" "$scenario" <<'PYEOF'
 import re, sys
 path, feature, scenario = sys.argv[1:4]
-with open(path) as f:
+with open(path, encoding='utf-8') as f:
     content = f.read()
 # Scope to the `## Deferred scenarios` section — see the PARSING CONTRACT note.
 sec = re.search(r'(?m)^## Deferred scenarios[ \t]*$', content)
@@ -306,7 +306,7 @@ start = sec_start + m.start()
 tail = window[m.end():]
 nb = re.search(r'(?m)^(###|##) ', tail)
 end = sec_start + m.end() + (nb.start() if nb else len(tail))
-with open(path, 'w') as f:
+with open(path, 'w', encoding='utf-8', newline='\n') as f:
     f.write(content[:start] + content[end:])
 PYEOF
     dt_validate "$dest"
@@ -334,7 +334,7 @@ dt_path, results_path = sys.argv[1], sys.argv[2]
 
 verdicts = set()
 if os.path.isfile(results_path):
-    with open(results_path) as f:
+    with open(results_path, encoding='utf-8') as f:
         rc = f.read()
     # Scope to `## Per-scenario verdicts` — `## Inspector-added checks` blocks
     # are not verdicts and must never resolve a deferred entry.
@@ -358,7 +358,7 @@ if os.path.isfile(results_path):
             if vm and vm.group(1) in ('pass', 'fail', 'skip'):
                 verdicts.add(scenario_id)
 
-with open(dt_path) as f:
+with open(dt_path, encoding='utf-8') as f:
     dc = f.read()
 # Scope to the `## Deferred scenarios` section — see the PARSING CONTRACT note.
 dsec = re.search(r'(?m)^## Deferred scenarios[ \t]*$', dc)

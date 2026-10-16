@@ -956,7 +956,7 @@ sections.append(emit_sources_footer(FEATURE, STAGE, HUMAN_TS))               # Â
 
 bundle = "\n".join(s for s in sections if s).strip("\n") + "\n"
 
-with open(OUT_PATH, "w", encoding="utf-8") as f:
+with open(OUT_PATH, "w", encoding="utf-8", newline="\n") as f:
     f.write(bundle)
 PYEOF
 

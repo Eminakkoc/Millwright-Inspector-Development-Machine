@@ -448,7 +448,7 @@ Reached when the inspector has just finished marking items (`[x] TODO` lines exi
      hits="$("$CLAUDE_PLUGIN_ROOT/scripts/py.sh" - "$summary_file" "$feat" "$features_in_queue" <<'PYEOF'
 import re, sys
 path, target_feat, all_feats = sys.argv[1], sys.argv[2], sys.argv[3].split('\n')
-with open(path) as f:
+with open(path, encoding='utf-8') as f:
     content = f.read()
 # Find each ## Feature: <name> section
 for m in re.finditer(r'^## Feature:\s+(\S+)\s*\n(.*?)(?=^## |\Z)', content, re.MULTILINE | re.DOTALL):
@@ -1048,7 +1048,7 @@ if (( commit_count == 0 )); then
       "$CLAUDE_PLUGIN_ROOT/scripts/py.sh" - "$ov_file" "$direct_empty_reason" <<'PYEOF'
 import re, sys
 path, reason = sys.argv[1], sys.argv[2] or "not provided"
-with open(path) as f:
+with open(path, encoding='utf-8') as f:
     content = f.read()
 marker = "<!-- direct-empty cycle"
 if marker in content:
@@ -1064,7 +1064,7 @@ note = (
     f"     Approve with no findings to advance, or write findings under\n"
     f"     \"## Implementation Review\" if you disagree. -->\n"
 )
-with open(path, 'w') as f:
+with open(path, 'w', encoding='utf-8', newline='\n') as f:
     f.write(fm_block + note + body)
 PYEOF
 
@@ -1366,7 +1366,7 @@ import re, sys
 total = no_skill = no_review = 0
 for path in filter(None, sys.stdin.read().split("\n")):
     try:
-        text = open(path).read()
+        text = open(path, encoding="utf-8").read()
     except OSError:
         continue
     for task in re.split(r"(?m)^(?=### Task \d+)", text)[1:]:
@@ -1590,7 +1590,7 @@ else
   # Walk inspector-review.md; flag if any open finding has scope != fix.
   has_non_fix="$("$CLAUDE_PLUGIN_ROOT/scripts/py.sh" - "$ov_file" <<'PYEOF'
 import re, sys
-with open(sys.argv[1]) as f:
+with open(sys.argv[1], encoding='utf-8') as f:
     content = f.read()
 for m in re.finditer(r'### (IR-\d{3}) —.*?\n(.*?)(?=\n### |\n## |\Z)', content, re.DOTALL):
     block = m.group(2)

@@ -13,7 +13,7 @@ What it does:
 1. Checks every dependency (CLI tools, Python modules, MCP server, skills).
 2. If anything is missing, asks **one** y/n to install all Bash-runnable deps in a single batch.
 3. For plugin-kind deps that can't be auto-installed (e.g. superpowers), prints the slash commands and asks the inspector to run them, then re-run `/mi-init`.
-4. Scaffolds the workflow data folders (`journal/`, `quest/`, `workflow-stream/`) under the data root if absent, and seeds an empty `quest/active.md` pointer with `status: none` so future cycles can attach without scaffolding races.
+4. Scaffolds the workflow data folders (`journal/`, `quest/`, `workflow-stream/`) under the data root if absent, and seeds an empty `quest/active.md` pointer with `status: none` so future cycles can attach without scaffolding races. Adds a `.gitattributes` to the data root when it has none, so the shared workflow files stay LF on every OS.
 5. Prints the exact next command to run.
 
 For per-dep prompts, `select` mode, detailed JSON output, and sudo handling — use `/mi-doctor` instead.
@@ -96,9 +96,17 @@ mkdir -p "$data_root/journal" "$data_root/quest" "$data_root/workflow-stream"
 # Seed the empty active-quest pointer (idempotent — won't overwrite an
 # existing pointer or any per-cycle subfolder).
 $CLAUDE_PLUGIN_ROOT/scripts/quest.sh init-pointer
+
+# Line endings for the shared workflow files: the plugin's own .gitattributes
+# (LF for text, binaries untouched). Written whenever it is missing — even on
+# an already-initialized data root — and never overwritten.
+if [[ ! -f "$data_root/.gitattributes" ]]; then
+  cp "$CLAUDE_PLUGIN_ROOT/.gitattributes" "$data_root/.gitattributes"
+  echo "wrote $data_root/.gitattributes"
+fi
 ```
 
-If the folder already exists with content, do **not** touch anything inside it — just report "already initialized". `quest.sh init-pointer` is idempotent: it only writes `quest/active.md` when that file is absent, so existing per-cycle subfolders and an in-flight active pointer are preserved untouched.
+If the folder already exists with content, do **not** touch anything else inside it — just report "already initialized" (plus the `.gitattributes` line, if it was just written). `quest.sh init-pointer` is idempotent: it only writes `quest/active.md` when that file is absent, so existing per-cycle subfolders and an in-flight active pointer are preserved untouched. `.gitattributes` is the one file `/mi-init` adds to an initialized data root: a Windows teammate's git (`core.autocrlf=true`) would otherwise check the shared quest files out with CRLF.
 
 ### Step 5.5 — Offer to wire the status line
 
@@ -242,4 +250,4 @@ Status line (opt-in, per-machine):
 
 - Idempotent — safe to run any time.
 - Does not replace `/mi-doctor`. Doctor remains the detailed diagnostic command and is auto-invoked by `/mi-run`'s preflight.
-- `/mi-init` only creates folders; it never writes files inside the data root. Journal content is always inspector-authored.
+- `/mi-init` only creates folders, the empty `quest/active.md` pointer and `.gitattributes`; it never writes anything else inside the data root. Journal content is always inspector-authored.

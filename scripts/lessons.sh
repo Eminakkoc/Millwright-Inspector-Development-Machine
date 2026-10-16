@@ -62,7 +62,7 @@ case "$cmd" in
     mi_py - "$dest" "$title" "$today" "$source_ref" "$lesson_body" <<'PYEOF'
 import re, sys
 path, title, today, source_ref, body = sys.argv[1:6]
-with open(path) as f:
+with open(path, encoding='utf-8') as f:
     content = f.read()
 # Scan for the last L-NNN, ignoring the worked example inside the template's
 # HTML comment block (which would otherwise be counted as L-001).
@@ -81,7 +81,7 @@ for ln in body.splitlines():
     block_lines.append(f"    {ln}")
 block = "\n".join(block_lines) + "\n"
 content = content.rstrip() + "\n\n" + block
-with open(path, 'w') as f:
+with open(path, 'w', encoding='utf-8', newline='\n') as f:
     f.write(content)
 print(lid)
 PYEOF
