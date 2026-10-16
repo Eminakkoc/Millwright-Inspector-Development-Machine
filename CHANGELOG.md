@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.13.1 — jsonschema required; Windows fixes from the first Windows CI run
+
+The first CI run of 1.13.0 on `windows-latest` failed. Most failures were not Windows-specific: the Windows job ran without a JSON Schema validator, and the plugin's last-resort validator was broken on every OS.
+
+- **The Python `jsonschema` module is now required.** Without `ajv-cli` or `jsonschema`, a structural fallback checked workflow files, and it rejected valid ones: `active: null` between features and empty lists such as `queue: []` read as missing fields, so starting a cycle failed (broken since at least 1.12.0). The fallback is gone. With neither validator, validation stops and points at `/mi-doctor`, which now lists `jsonschema` as required: `python3 -m pip install --user jsonschema` (Windows: `py -3 -m pip install --user jsonschema`). `ajv-cli` stays optional.
+- `skills.sh` on Windows: paths print with `/` (`inventory`, `brief`, `entries`), `catalog-files` finds the catalog lock file, and the `catalog` CLI and tools installed as Git Bash scripts are found and run through Git Bash.
+- CI installs `jsonschema` on both jobs and `ajv-cli` only on Linux, so Windows checks through `jsonschema` and Linux through `ajv`.
+- Tests that wrote Git Bash paths (`/c/…`, `/tmp/…`) into files or expected output now use the `C:/…` form Windows programs read, set `USERPROFILE` next to `HOME` (Windows Python expands `~` from it), and the smoke test reads bytes to find CRs.
+
 ## 1.13.0 — Windows support
 
 The plugin runs on native Windows through Git for Windows (Git Bash), and on WSL with the project inside the Linux file system. A quest folder written on Windows reads the same on a Mac and the other way round. macOS and Linux behave as before.
