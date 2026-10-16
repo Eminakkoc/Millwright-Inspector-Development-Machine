@@ -282,7 +282,7 @@ PYEOF
 # replacement of yq with another YAML tool is a single-file change.
 mi_require_yq() {
   if ! command -v yq >/dev/null 2>&1; then
-    echo "error: yq is required (install via 'brew install yq' or equivalent)" >&2
+    echo "error: yq is required — run /mi-doctor for the install command on this system" >&2
     exit 2
   fi
 }

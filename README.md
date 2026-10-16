@@ -48,11 +48,24 @@ On first run, the plugin creates a `millwright-inspector/` folder at your projec
 ## Requirements
 
 - **Claude Code** ≥ 2.1.110 (required for plugin dependency resolution).
-- **`yq`** on your PATH — used by scripts to read/write YAML frontmatter. Install via `brew install yq` or equivalent.
-- **`plantuml-mcp-server`** on your PATH — used to render diagrams. The plugin auto-configures it as an MCP server on enable, but you must install the binary yourself (e.g., `npm install -g plantuml-mcp-server`).
+- **Python 3.8+** with **`pyyaml`** — the scripts run Python through one resolver (`python3`, or on Windows `python` / `py -3`). Install pyyaml via `python3 -m pip install --user pyyaml` (Windows: `py -3 -m pip install --user pyyaml`).
+- **`yq`** on your PATH — used by scripts to read/write YAML frontmatter. Install via `brew install yq` or equivalent (Windows: `winget install -e --id MikeFarah.yq`).
+- **`plantuml-mcp-server`** on your PATH — used to render diagrams. The plugin auto-configures it as an MCP server on enable, but you must install the binary yourself (e.g., `npm install -g plantuml-mcp-server`; it needs Node.js and a Java runtime — on Windows `winget install -e --id OpenJS.NodeJS.LTS` and `winget install -e --id EclipseAdoptium.Temurin.21.JRE`).
 - **`codex`** CLI (optional) — the blueprint reviewer. The plugin runs it headless through `codex exec` (`scripts/codex-review.sh`); install it and run `codex login` once. No MCP server is needed: codex-cli 0.154.0 removed `codex mcp-server`, and since v1.8.0 the plugin no longer registers one. Without codex, `/mi-run` asks whether to run this cycle's blueprint reviews on Claude instead (headless `claude -p`, read-only, model `$MI_REVIEW_CLAUDE_MODEL`, default `opus`); the review commands ask the same if codex disappears mid-cycle. Claude reviewing a Claude-written blueprint is not an independent second opinion, so codex stays the default.
 - **`ajv-cli`** (optional) — used for deep JSON Schema validation of workflow files. Falls back to `yq`-based structural checks if absent. Install via `npm install -g ajv-cli`.
 - **Superpowers plugin** (or local skill equivalents) — provides the `brainstorming`, `writing-plans`, `executing-plans`, `subagent-driven-development`, and `finishing-a-development-branch` skills that stage 3 hands control to. **Deliberately NOT declared as a Claude Code plugin dependency** — Claude Code's `dependencies` field is a hard load-time gate, and declaring it would prevent `millwright-inspector-development-machine` from loading before `/mi-init` could guide the install. `/mi-init` detects missing superpowers skills and prints the `/plugin marketplace add` + `/plugin install` commands for you to run (these cannot be auto-run from Bash). You can also satisfy the skills by dropping local `SKILL.md` files under `.claude/skills/<name>/` for each of the five skills.
+
+### Windows
+
+The plugin runs on native Windows through **Git for Windows** (Git Bash), and on **WSL**.
+
+- **Native Windows needs Git for Windows.** With it, Claude Code's Bash tool, the plugin's hooks and the status line all run in Git Bash. Without it they fall back to PowerShell, and nothing in the plugin runs — `/mi-doctor` and `/mi-init` stop and say so. Install with `winget install -e --id Git.Git`, then restart Claude Code. The scripts are bash; there is no PowerShell port.
+- **Python 3.8+.** The python.org installer (or `winget install -e --id Python.Python.3.13`) gives you `python` and `py`; the plugin finds either. If `python` opens the Microsoft Store, turn off `python.exe` and `python3.exe` under Settings → Apps → Advanced app settings → App execution aliases.
+- **Installs go through winget.** `/mi-doctor` and `/mi-init` run `winget install -e --id <ID>` from Git Bash. Approve the administrator (UAC) prompt on your desktop if one appears. Windows does not refresh `PATH` for a running program, so restart Claude Code and run the command again afterwards.
+- **If your company blocks `bash.exe`,** ask IT for an exception for Git for Windows, or use WSL. The plugin does not try to work around the block.
+- **WSL:** clone the project inside the Linux file system (for example `~/code/<project>`), start `claude` there, and install the dependencies inside WSL with `apt`. A project under `/mnt/c/…` works but is very slow, and Windows-side (winget) tools are not used.
+- **Upgrading from 1.12.0 or earlier on Windows:** remove and re-add the marketplace (`/plugin marketplace remove millwright-inspector`, then the `/plugin marketplace add` and `/plugin install` lines above). Older clones keep scripts with Windows line endings, which fail with `env: 'bash\r'`; `/mi-doctor` checks for this.
+- **Shared quest folders** read the same on every OS: the plugin writes UTF-8 with LF, accepts CRLF when it reads, and `/mi-init` adds a `.gitattributes` to the data root.
 
 ### Optional companions (token-reduction)
 

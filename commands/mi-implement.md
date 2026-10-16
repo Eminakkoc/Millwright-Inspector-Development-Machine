@@ -4,7 +4,7 @@ description: End the brainstorming design Q&A and hand the chain straight to imp
 
 # mi-implement
 
-**Runtime bootstrap.** Resolve `$CLAUDE_PLUGIN_ROOT` per `docs/millwright-inspector-project.md` §8.14 (reference implementation: `mi-continue.md` Step 1a) before running any Bash block.
+**Runtime bootstrap.** Resolve `$CLAUDE_PLUGIN_ROOT` per `docs/millwright-inspector-project.md` §8.14 (reference implementation: `mi-continue.md` Step 1a) before running any Bash block. Run every block with the Bash tool, never PowerShell.
 
 Typed by the inspector while the stage-3 brainstorming chain is asking design questions. **Typing it counts as design approval** for the design discussed so far — do not ask for approval again.
 

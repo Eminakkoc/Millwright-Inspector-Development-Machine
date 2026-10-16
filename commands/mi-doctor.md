@@ -4,13 +4,46 @@ description: Check all millwright-inspector-development-machine dependencies (CL
 
 # mi-doctor
 
-**Runtime bootstrap.** Every `$CLAUDE_PLUGIN_ROOT` reference in this command's Bash blocks assumes a resolved plugin root; Claude Code does not inject the env var into Bash subshells. If it is empty in your shell, apply the canonical resolver (`docs/millwright-inspector-project.md` §8.14; reference implementation: `mi-continue.md` Step 1a) before the first Bash block: (1) inherited env var when it points at a working install, (2) `$PWD` when it is this plugin's source repo, (3) the `installPath` from `~/.claude/plugins/installed_plugins.json` — then export it, persist it to the per-cwd tempfile, and prepend the recovery one-liner to every subsequent Bash block. Refuse with an environmental diagnostic if none resolve.
+**Runtime bootstrap.** Every `$CLAUDE_PLUGIN_ROOT` reference in this command's Bash blocks assumes a resolved plugin root; Claude Code does not inject the env var into Bash subshells. If it is empty in your shell, apply the canonical resolver (`docs/millwright-inspector-project.md` §8.14; reference implementation: `mi-continue.md` Step 1a) before the first Bash block: (1) inherited env var when it points at a working install, (2) `$PWD` when it is this plugin's source repo, (3) the `installPath` from `~/.claude/plugins/installed_plugins.json` — then export it, persist it to the per-cwd tempfile, and prepend the recovery one-liner to every subsequent Bash block. Refuse with an environmental diagnostic if none resolve. Run every block with the Bash tool, never PowerShell.
 
 **Run this first, before any other `/mi-*` command.** Verifies that every dependency the workflow needs is present on the inspector's machine. If something is missing, the millwright proposes install commands and runs them only after explicit approval.
 
 ## Execution
 
+### Step 0 — Git Bash on Windows
+
+If this session has no Bash tool — only PowerShell — the machine is Windows without Git for Windows, and nothing in the plugin can run (its scripts, hooks and status line all need Git Bash). Stop and print:
+
+```
+This plugin needs Git Bash on Windows. Install Git for Windows:
+
+  winget install -e --id Git.Git
+
+then restart Claude Code and run /mi-doctor again.
+
+If your company blocks bash.exe: ask IT for an exception for Git for Windows,
+or use WSL with the project inside the Linux file system (for example
+~/code/<project>), start claude there, and install the dependencies inside WSL.
+```
+
+Do not try to work around a block, and do not run anything through PowerShell.
+
 ### Step 1 — Run the detection script
+
+First check the plugin's own files. A copy cloned on Windows before 1.13.0 can hold Windows line endings, which break every script — `doctor.sh` included — with `env: 'bash\r'`. And under WSL, a project on the Windows drive (`/mnt/<drive>/…`) works but very slowly:
+
+```bash
+if grep -rlI $'\r' "$CLAUDE_PLUGIN_ROOT/scripts" "$CLAUDE_PLUGIN_ROOT/hooks" >/dev/null 2>&1; then
+  echo "stale-crlf"
+fi
+if [[ -n "${WSL_DISTRO_NAME:-}" && "$PWD" == /mnt/[a-zA-Z]/* ]]; then
+  echo "wsl-mnt"
+fi
+```
+
+- **`stale-crlf`** — stop and tell the inspector to reinstall the plugin: `/plugin marketplace remove millwright-inspector`, then `/plugin marketplace add Eminakkoc/Millwright-Inspector-Development-Machine` and `/plugin install millwright-inspector-development-machine@millwright-inspector`, then restart Claude Code and run `/mi-doctor` again. A pull does not rewrite the files; the fresh clone does.
+- **`wsl-mnt`** — warn, then continue: "This project is on the Windows drive. Under WSL that is very slow — clone it inside the Linux file system (for example `~/code/<project>`), start `claude` there, and install the dependencies inside WSL with `apt` (Windows-side tools installed with winget are not used)."
+- No output — continue.
 
 ```bash
 "$CLAUDE_PLUGIN_ROOT/scripts/doctor.sh" --format=json
@@ -141,6 +174,20 @@ Shall I run the Bash block now? (y / n / select)
   select  — pick which Bash commands to run interactively
 ```
 
+On Windows (`os=windows`) the same block holds the `windows` hints, for example:
+
+```
+Proposed install commands (os=windows):
+
+Bash-runnable (with your approval):
+
+  # yq (required):
+  winget install -e --id MikeFarah.yq --accept-source-agreements --accept-package-agreements
+
+  # pyyaml (required):
+  py -3 -m pip install --user pyyaml
+```
+
 If there are **only** plugin-kind missing deps and nothing Bash-runnable, skip the `(y/n/select)` prompt — there's nothing for the millwright to execute. Just display the slash-command block and ask the inspector to run them, then re-run `/mi-doctor`.
 
 ### Step 5 — Run approved installs
@@ -155,7 +202,17 @@ When running commands that use `sudo`, surface this explicitly to the inspector 
 
 > "This command requires sudo: `sudo apt install yq`. Proceed? (y/n)"
 
-After all approved Bash installs complete, re-run doctor to confirm:
+**On Windows** the hints run `winget install -e --id <ID> --accept-source-agreements --accept-package-agreements` from Git Bash. In place of the sudo confirmation, say once before the first winget command:
+
+> "This may show a Windows administrator (UAC) prompt on your desktop; approve it there."
+
+Run each winget command with the Bash tool's longest timeout (600000 ms) — installers can take minutes. When winget exits non-zero but its output says the package is already installed (or that no newer version is available), count it as a success. Windows does not refresh `PATH` for a program that is already running, so do **not** re-run doctor in this session: when the installs are done, tell the inspector
+
+> "Installs finished. Restart Claude Code so it sees the new programs, then run /mi-doctor again."
+
+and stop.
+
+After all approved Bash installs complete (macOS and Linux), re-run doctor to confirm:
 
 ```bash
 "$CLAUDE_PLUGIN_ROOT/scripts/doctor.sh" --format=json

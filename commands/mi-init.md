@@ -4,7 +4,7 @@ description: First-run wizard — checks dependencies, offers a single y/n to in
 
 # mi-init
 
-**Runtime bootstrap.** Every `$CLAUDE_PLUGIN_ROOT` reference in this command's Bash blocks assumes a resolved plugin root; Claude Code does not inject the env var into Bash subshells. If it is empty in your shell, apply the canonical resolver (`docs/millwright-inspector-project.md` §8.14; reference implementation: `mi-continue.md` Step 1a) before the first Bash block: (1) inherited env var when it points at a working install, (2) `$PWD` when it is this plugin's source repo, (3) the `installPath` from `~/.claude/plugins/installed_plugins.json` — then export it, persist it to the per-cwd tempfile, and prepend the recovery one-liner to every subsequent Bash block. Refuse with an environmental diagnostic if none resolve.
+**Runtime bootstrap.** Every `$CLAUDE_PLUGIN_ROOT` reference in this command's Bash blocks assumes a resolved plugin root; Claude Code does not inject the env var into Bash subshells. If it is empty in your shell, apply the canonical resolver (`docs/millwright-inspector-project.md` §8.14; reference implementation: `mi-continue.md` Step 1a) before the first Bash block: (1) inherited env var when it points at a working install, (2) `$PWD` when it is this plugin's source repo, (3) the `installPath` from `~/.claude/plugins/installed_plugins.json` — then export it, persist it to the per-cwd tempfile, and prepend the recovery one-liner to every subsequent Bash block. Refuse with an environmental diagnostic if none resolve. Run every block with the Bash tool, never PowerShell.
 
 Run this once per workspace when setting up the plugin for the first time. Reuses the same detection backend as `/mi-doctor`, but exposes a one-prompt interaction instead of per-dep prompts.
 
@@ -19,6 +19,24 @@ What it does:
 For per-dep prompts, `select` mode, detailed JSON output, and sudo handling — use `/mi-doctor` instead.
 
 ## Execution
+
+### Step 0 — Git Bash on Windows
+
+If this session has no Bash tool — only PowerShell — the machine is Windows without Git for Windows, and nothing in the plugin can run (its scripts, hooks and status line all need Git Bash). Stop and print:
+
+```
+This plugin needs Git Bash on Windows. Install Git for Windows:
+
+  winget install -e --id Git.Git
+
+then restart Claude Code and run /mi-init again.
+
+If your company blocks bash.exe: ask IT for an exception for Git for Windows,
+or use WSL with the project inside the Linux file system (for example
+~/code/<project>), start claude there, and install the dependencies inside WSL.
+```
+
+Do not try to work around a block, and do not run anything through PowerShell.
 
 ### Step 1 — Run the detection script
 
@@ -60,6 +78,17 @@ Install these now?
 Proceed? (y/n)
 ```
 
+On Windows (`os=windows`) the batch holds the `windows` hints:
+
+```
+Install these now?
+
+  winget install -e --id MikeFarah.yq --accept-source-agreements --accept-package-agreements
+  py -3 -m pip install --user pyyaml
+
+Proceed? (y/n)
+```
+
 - **`y`** — run every command in the batch via `Bash`, in order. Print `✓` or `✗` per command inline; continue on failure (don't abort the batch).
 - **`n`** — skip; print "Install manually, then re-run /mi-init." and exit.
 
@@ -67,7 +96,9 @@ If a command needs `sudo`, call it out with a single extra confirmation before r
 
 > "`sudo apt install yq` needs your password. Proceed? (y/n)"
 
-When the batch finishes, re-run `doctor.sh --format=json` to refresh state before Step 4.
+**On Windows**, say once before the first `winget` command: "This may show a Windows administrator (UAC) prompt on your desktop; approve it there." Run each with the Bash tool's longest timeout (600000 ms), and count a non-zero winget exit whose output says the package is already installed (or that no newer version is available) as a success. Windows does not refresh `PATH` for a program that is already running, so when the batch finishes, do **not** re-check or continue to scaffolding: tell the inspector "Installs finished. Restart Claude Code so it sees the new programs, then run /mi-init again." and stop.
+
+When the batch finishes (macOS and Linux), re-run `doctor.sh --format=json` to refresh state before Step 4.
 
 ### Step 4 — Plugin-kind deps (can't auto-install)
 

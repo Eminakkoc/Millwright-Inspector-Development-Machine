@@ -6,7 +6,7 @@ description: Check the active feature's changed code against its review-tagged s
 
 **Delegation contract.** This command REQUIRES the sub-agents listed below; §8.13's main-read budget forbids main from doing their work itself. **Invoking `/mi-conventions-review` (directly, or through `/mi-continue` Resume Step 6.5) IS the user requesting them** — Claude Code's default "do not call the Agent tool unless the user requested it" (and any stricter house rule layered on it) does not reach a sub-agent this command names at the step that names it, so spawn them without asking for extra confirmation. The default still holds everywhere else: never spawn a sub-agent this command does not name, and never invent fan-out beyond the waves below. If a named delegation genuinely cannot run (type unavailable, harness refusal), say so and stop — never silently do its work in main. Sub-agents: `conventions-reviewer` (Step 2 — one per skill or rule entry, at most 3 per wave). Canonical rule: `docs/millwright-inspector-project.md` §8.15.
 
-**Runtime bootstrap.** Resolve `$CLAUDE_PLUGIN_ROOT` per `docs/millwright-inspector-project.md` §8.14 (reference implementation: `mi-continue.md` Step 1a) before running any Bash block.
+**Runtime bootstrap.** Resolve `$CLAUDE_PLUGIN_ROOT` per `docs/millwright-inspector-project.md` §8.14 (reference implementation: `mi-continue.md` Step 1a) before running any Bash block. Run every block with the Bash tool, never PowerShell.
 
 No arguments. Runs at stage 3 inside `/mi-continue`'s Resume Handler (`sub-flow=resuming`), or at stage 5 or 6. Main never reads the diff, `config.md`, or a rule body — `scripts/conventions-review.sh` selects entries and validates findings.
 

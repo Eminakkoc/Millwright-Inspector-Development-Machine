@@ -64,16 +64,19 @@ record() {
 
   # Produce a JSON object.
   local json
-  json=$(mi_py - "$name" "$kind" "$required" "$present" "$version" "$hints" "$severity" <<'PYEOF'
+  json=$(mi_py - "$name" "$kind" "$required" "$present" "$version" "$hints" "$severity" "$MI_PY_CMD" <<'PYEOF'
 import sys, json
-name, kind, req, pres, version, hints_json, sev = sys.argv[1:]
+name, kind, req, pres, version, hints_json, sev, py_cmd = sys.argv[1:]
+hints = json.loads(hints_json) if hints_json.strip() else {}
+# Pip-based Windows hints name the interpreter as {PY}: python or py -3 there.
+hints = {k: v.replace("{PY}", py_cmd) if isinstance(v, str) else v for k, v in hints.items()}
 print(json.dumps({
     "name": name,
     "kind": kind,
     "required": req == "true",
     "present": pres == "true",
     "version": version,
-    "install_hints": json.loads(hints_json) if hints_json.strip() else {},
+    "install_hints": hints,
     "severity": {0:"ok",1:"warn",2:"error"}[int(sev)],
 }))
 PYEOF
@@ -222,7 +225,7 @@ hints_yq() {
   "linux-dnf": "sudo dnf install yq  # or: go install github.com/mikefarah/yq/v4@latest",
   "linux-apk": "sudo apk add yq",
   "linux-generic": "go install github.com/mikefarah/yq/v4@latest",
-  "windows": "winget install MikeFarah.yq",
+  "windows": "winget install -e --id MikeFarah.yq --accept-source-agreements --accept-package-agreements",
   "any": "curl -L https://github.com/mikefarah/yq/releases/latest/download/yq_$(uname -s | tr A-Z a-z)_amd64 -o /usr/local/bin/yq && chmod +x /usr/local/bin/yq"
 }
 JSON
@@ -231,6 +234,7 @@ JSON
 hints_plantuml_mcp() {
   cat <<'JSON'
 {
+  "windows": "npm install -g plantuml-mcp-server  # needs Node.js and Java first: winget install -e --id OpenJS.NodeJS.LTS --accept-source-agreements --accept-package-agreements and winget install -e --id EclipseAdoptium.Temurin.21.JRE --accept-source-agreements --accept-package-agreements, then restart Claude Code",
   "any": "npm install -g plantuml-mcp-server",
   "note": "requires Node.js and a Java runtime (PlantUML dep). On macOS: `brew install node openjdk`. On Debian/Ubuntu: `sudo apt install nodejs npm default-jre`."
 }
@@ -244,6 +248,7 @@ hints_python3() {
   "linux-apt": "sudo apt install python3",
   "linux-pacman": "sudo pacman -S python",
   "linux-dnf": "sudo dnf install python3",
+  "windows": "winget install -e --id Python.Python.3.13 --accept-source-agreements --accept-package-agreements  # then turn off python.exe and python3.exe under Settings → Apps → Advanced app settings → App execution aliases",
   "any": "install Python 3.8+ from https://www.python.org/downloads/"
 }
 JSON
@@ -252,6 +257,7 @@ JSON
 hints_pyyaml() {
   cat <<'JSON'
 {
+  "windows": "{PY} -m pip install --user pyyaml",
   "any": "python3 -m pip install --user pyyaml",
   "note": "if pip is missing: `python3 -m ensurepip --user`"
 }
@@ -261,6 +267,7 @@ JSON
 hints_ajv() {
   cat <<'JSON'
 {
+  "windows": "npm install -g ajv-cli",
   "any": "npm install -g ajv-cli",
   "note": "optional — enables deep JSON Schema validation. Falls back to python3-jsonschema or yq if absent."
 }
@@ -270,6 +277,7 @@ JSON
 hints_jsonschema() {
   cat <<'JSON'
 {
+  "windows": "{PY} -m pip install --user jsonschema",
   "any": "python3 -m pip install --user jsonschema",
   "note": "optional — secondary fallback for schema validation when ajv-cli is absent."
 }
@@ -280,6 +288,7 @@ hints_rtk() {
   cat <<'JSON'
 {
   "darwin": "brew install rtk && rtk init -g",
+  "windows": "download rtk-x86_64-pc-windows-msvc.zip from https://github.com/rtk-ai/rtk/releases, put rtk.exe on PATH, then run `rtk init -g` (its hooks work best under WSL)",
   "any": "https://github.com/rtk-ai/rtk  (install binary, then run `rtk init -g` to register the Claude Code pre-tool-use hook)",
   "note": "optional — filters verbose shell output (git diff, test runs, etc.) before Claude sees it. Large token savings in /mi-review, /mi-generate-implementation-diagrams, and the brainstorming chain."
 }
@@ -293,6 +302,7 @@ hints_docling() {
   "linux-apt": "pipx install docling  # or: python3 -m pip install --user docling  (may need `sudo apt install pipx` first)",
   "linux-pacman": "pipx install docling  # or: python3 -m pip install --user docling",
   "linux-dnf": "pipx install docling  # or: python3 -m pip install --user docling",
+  "windows": "{PY} -m pip install --user pipx && {PY} -m pipx ensurepath  # then, after restarting Claude Code: pipx install docling — or instead: {PY} -m pip install --user docling",
   "any": "pipx install docling  # or: python3 -m pip install --user docling",
   "note": "optional — enables /mi-ingest, which converts non-text journal files (.pdf, .docx, .pptx, .xlsx, images) into sibling .md so /mi-run can consume them. Skip if your journal folder will only ever contain .md and .txt. Pulls ML dependencies (torch, transformers); the first `docling <file>` may download a few hundred MB of models."
 }
@@ -306,6 +316,7 @@ hints_git() {
   "linux-apt": "sudo apt install git",
   "linux-pacman": "sudo pacman -S git",
   "linux-dnf": "sudo dnf install git",
+  "windows": "winget install -e --id Git.Git --accept-source-agreements --accept-package-agreements",
   "any": "https://git-scm.com/downloads"
 }
 JSON
@@ -318,6 +329,7 @@ hints_gh() {
   "linux-apt": "sudo apt install gh",
   "linux-pacman": "sudo pacman -S github-cli",
   "linux-dnf": "sudo dnf install gh",
+  "windows": "winget install -e --id GitHub.cli --accept-source-agreements --accept-package-agreements",
   "any": "https://cli.github.com/  — then run `gh auth login`",
   "note": "optional — required only for /mi-analyze-review (PR-review analysis). After installing, authenticate with `gh auth login`."
 }
@@ -328,7 +340,8 @@ hints_codex() {
   cat <<'JSON'
 {
   "darwin": "brew install codex",
-  "linux": "see https://github.com/openai/codex"
+  "linux": "see https://github.com/openai/codex",
+  "windows": "npm install -g @openai/codex"
 }
 JSON
 }
@@ -336,6 +349,7 @@ JSON
 hints_claude() {
   cat <<'JSON'
 {
+  "windows": "winget install -e --id Anthropic.ClaudeCode --accept-source-agreements --accept-package-agreements",
   "any": "curl -fsSL https://claude.ai/install.sh | bash",
   "note": "optional — the blueprint-review fallback when codex is unavailable (headless `claude -p`). The desktop app alone does not put `claude` on PATH."
 }
@@ -345,6 +359,7 @@ JSON
 hints_catalog() {
   cat <<'JSON'
 {
+  "windows": "curl -fsSL https://raw.githubusercontent.com/Eminakkoc/skills/main/catalog.sh | bash -s -- setup  # untested on Windows",
   "any": "curl -fsSL https://raw.githubusercontent.com/Eminakkoc/skills/main/catalog.sh | bash -s -- setup",
   "note": "optional — lets stage 2 suggest and install catalog skills (github.com/Eminakkoc/skills). Without it, catalog suggestions are skipped."
 }

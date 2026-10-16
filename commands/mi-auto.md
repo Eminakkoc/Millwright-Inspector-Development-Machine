@@ -5,7 +5,7 @@ argument-hint: "[on | off]"
 
 # mi-auto
 
-**Runtime bootstrap.** Every `$CLAUDE_PLUGIN_ROOT` reference below assumes a resolved plugin root; apply the canonical resolver (`docs/millwright-inspector-project.md` §8.14; reference implementation: `mi-continue.md` Step 1a) before the first Bash block if it is empty.
+**Runtime bootstrap.** Every `$CLAUDE_PLUGIN_ROOT` reference below assumes a resolved plugin root; apply the canonical resolver (`docs/millwright-inspector-project.md` §8.14; reference implementation: `mi-continue.md` Step 1a) before the first Bash block if it is empty. Run every block with the Bash tool, never PowerShell.
 
 Toggles the cycle-wide `auto-mode` flag stored at the top level of the active cycle's `progress.md`. Works between features (no active feature needed); refuses when there is no active quest cycle.
 
