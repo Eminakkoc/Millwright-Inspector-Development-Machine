@@ -119,7 +119,8 @@ case "$cmd" in
     top="$(git rev-parse --show-toplevel)"
     # Exclude the data root when it lives inside the work tree: stage 2 has
     # just written blueprints/current/* there, and those must not count.
-    rel="$(mi_py -c 'import os,sys; r=os.path.relpath(os.path.realpath(sys.argv[1]), os.path.realpath(sys.argv[2])); print("" if r.startswith("..") else r)' "$(mi_data_root)" "$top")"
+    # `/`-separated for git's pathspec (Windows' relpath uses `\`).
+    rel="$(mi_py -c 'import os,sys; r=os.path.relpath(os.path.realpath(sys.argv[1]), os.path.realpath(sys.argv[2])); print("" if r.startswith("..") else r.replace(os.sep, "/"))' "$(mi_data_root)" "$top")"
     if [[ -n "$rel" && "$rel" != "." ]]; then
       dirty="$(git -C "$top" status --porcelain --untracked-files=no -- . ":(exclude)$rel")"
     else

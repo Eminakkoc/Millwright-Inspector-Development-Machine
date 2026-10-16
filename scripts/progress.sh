@@ -154,9 +154,11 @@ PYEOF
     # on a match via mi_assert_worktree_match (common.sh).
     git rev-parse --is-inside-work-tree >/dev/null 2>&1 \
       || mi_die "progress.sh activate must run inside a git working tree (current dir: $PWD)"
-    wt_path="$PWD"
-    git_common_dir="$(cd "$(git rev-parse --git-common-dir)" && pwd)"
-    git_worktree_dir="$(cd "$(git rev-parse --git-dir)" && pwd)"
+    # Normalized (C:/… on Windows, unchanged elsewhere) so the recorded and
+    # fresh values compare equal however bash or Python spelled them.
+    wt_path="$(mi_path_norm "$PWD")"
+    git_common_dir="$(mi_path_norm "$(cd "$(git rev-parse --git-common-dir)" && pwd)")"
+    git_worktree_dir="$(mi_path_norm "$(cd "$(git rev-parse --git-dir)" && pwd)")"
     activation_id="$("${MI_PLUGIN_ROOT}/scripts/uuid.sh")"
     mi_py - "$dest" "$wt_path" "$git_common_dir" "$git_worktree_dir" "$activation_id" <<'PYEOF'
 import sys, re, yaml

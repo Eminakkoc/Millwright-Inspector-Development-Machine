@@ -124,7 +124,8 @@ def cmd_prepare(top, head, data_root, feature):
     run_root = os.path.join(top, "tmp", "conventions-review")
     clean_run_root(run_root)
 
-    dr = os.path.relpath(os.path.realpath(data_root), os.path.realpath(top))
+    # Paths compared with git output or saved (seed ids) use `/` on every OS.
+    dr = os.path.relpath(os.path.realpath(data_root), os.path.realpath(top)).replace(os.sep, "/")
     inside = not dr.startswith("..")
     ranges = {}
     for row in os.environ.get("CVR_LINES", "").splitlines():
@@ -152,7 +153,7 @@ def cmd_prepare(top, head, data_root, feature):
                 pats = rule_patterns(rule)
                 files = covered if pats is None else [f for f in covered if matches(pats, f)]
                 if files:
-                    name = os.path.relpath(rule, rules_dir)[:-3]
+                    name = os.path.relpath(rule, rules_dir)[:-3].replace(os.sep, "/")
                     entries.append((name, "rule", rule, rule, files))
 
     if not entries:
@@ -284,7 +285,7 @@ def validate(top, snap, kind, boundary, ranges, f):
     m = re.match(r"^(.+?):(\d+(?:\s*,\s*\d+)*)$", f["file"].strip().strip("`").strip())
     if not m:
         return None
-    rel = m.group(1)
+    rel = m.group(1).replace(os.sep, "/")
     rel = rel[2:] if rel.startswith("./") else rel
     if rel not in ranges:
         return None
@@ -366,7 +367,7 @@ def cmd_ingest(top, state, feature):
             if seed is None:
                 continue
             details = "%s\n\nquote: \"%s\"\nsource: %s\nfile: %s:%s\n" % (
-                f["details"], quote, os.path.relpath(source, top), rel, ",".join(map(str, keep)))
+                f["details"], quote, os.path.relpath(source, top).replace(os.sep, "/"), rel, ",".join(map(str, keep)))
             subprocess.run([review_sh, "add", feature, f["severity"], f["scope"],
                             "%s: %s" % (name, f["summary"]),
                             "--source", "conventions-review", "--seed-id", seed],

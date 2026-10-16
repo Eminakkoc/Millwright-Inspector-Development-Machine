@@ -64,6 +64,34 @@ mi_py() {
   "${_mi_py_argv[@]}" -X utf8 "$@"
 }
 
+# Path helpers (1.13.0, WIN-03/WIN-15). Windows spells one folder three ways
+# (/c/Users/me, C:/Users/me, c:\users\me), and MSYS2 rewrites /c/… into C:/…
+# whenever bash hands it to a Windows program such as python.exe.
+#
+# mi_path_norm <path> — the spelling to save: `cygpath -m` on Windows
+# (forward slashes, C:/…, original case kept); unchanged elsewhere.
+mi_path_norm() {
+  if [[ "$MI_IS_WINDOWS" == 1 ]]; then
+    cygpath -m "$1"
+  else
+    printf '%s\n' "$1"
+  fi
+}
+
+# mi_path_eq <a> <b> — exit 0 when both name the same path: normalized and
+# case-insensitive on Windows, a plain string comparison elsewhere (no extra
+# process on macOS/Linux).
+mi_path_eq() {
+  if [[ "$MI_IS_WINDOWS" != 1 ]]; then
+    [[ "$1" == "$2" ]]
+    return
+  fi
+  local a b
+  a="$(cygpath -m "$1" | tr '[:upper:]' '[:lower:]')"
+  b="$(cygpath -m "$2" | tr '[:upper:]' '[:lower:]')"
+  [[ "$a" == "$b" ]]
+}
+
 # Data root. Precedence (each step short-circuits if it produces a value):
 #
 # 1. $MI_DATA_ROOT — explicit per-invocation override. Set by command wrappers,
@@ -453,9 +481,12 @@ mi_assert_worktree_match() {
   local feature
   feature="$(mi_fm_get "$progress" .active.feature 2>/dev/null || echo "?")"
 
+  # Comparisons go through mi_path_eq: on Windows the recorded values are
+  # C:/… (normalized at activate) while fresh ones are /c/….
+  #
   # Strongest signal: git worktree dir mismatch. This catches sibling
   # `git worktree add` checkouts of the same repo.
-  if [[ -n "$current_wtdir" && "$recorded_wtdir" != "null" && "$current_wtdir" != "$recorded_wtdir" ]]; then
+  if [[ -n "$current_wtdir" && "$recorded_wtdir" != "null" ]] && ! mi_path_eq "$current_wtdir" "$recorded_wtdir"; then
     mi_die "worktree mismatch: active feature '${feature}' was activated from
        worktree:   ${recorded_path}
        git-dir:    ${recorded_wtdir}
@@ -469,7 +500,7 @@ mi_assert_worktree_match() {
   fi
 
   # Different repository entirely.
-  if [[ -n "$current_common" && "$recorded_common" != "null" && "$current_common" != "$recorded_common" ]]; then
+  if [[ -n "$current_common" && "$recorded_common" != "null" ]] && ! mi_path_eq "$current_common" "$recorded_common"; then
     mi_die "repository mismatch: active feature '${feature}' belongs to
        repo:       ${recorded_common}
   but this command is running in
@@ -480,7 +511,7 @@ mi_assert_worktree_match() {
   fi
 
   # Path-only fallback when git wasn't usable for the comparison.
-  if [[ -z "$current_wtdir" && "$recorded_path" != "null" && "$PWD" != "$recorded_path" ]]; then
+  if [[ -z "$current_wtdir" && "$recorded_path" != "null" ]] && ! mi_path_eq "$PWD" "$recorded_path"; then
     mi_die "worktree mismatch: active feature '${feature}' was activated from ${recorded_path}, but this command is running from ${PWD}."
   fi
 }

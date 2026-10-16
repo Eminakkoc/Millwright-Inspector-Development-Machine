@@ -55,6 +55,12 @@ if [[ -z "$resolved" ]]; then
   exit 1
 fi
 
+# Git Bash on Windows: one spelling (C:/…, forward slashes) whichever source
+# answered — /c/…, C:/… and C:\… all occur.
+if command -v cygpath >/dev/null 2>&1; then
+  resolved="$(cygpath -m "$resolved")"
+fi
+
 export CLAUDE_PLUGIN_ROOT="$resolved"
 mi_root_tag="$(printf '%s' "$PWD" | shasum -a 256 | cut -c1-16)"
 printf 'export CLAUDE_PLUGIN_ROOT=%q\n' "$resolved" \
