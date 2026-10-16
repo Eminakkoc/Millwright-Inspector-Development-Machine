@@ -4,7 +4,9 @@ description: Generate blueprints/current/ for the active feature — requirement
 
 # mi-apply-impact
 
-**Runtime bootstrap.** Every `$CLAUDE_PLUGIN_ROOT` reference in this command's Bash blocks assumes a resolved plugin root; Claude Code does not inject the env var into Bash subshells. If it is empty in your shell, apply the canonical resolver (`docs/millwright-inspector-project.md` §8.14; reference implementation: `mi-continue.md` Step 1a) before the first Bash block: (1) inherited env var when it points at a working install, (2) `$PWD` when it is this plugin's source repo, (3) the `installPath` from `~/.claude/plugins/installed_plugins.json` — then export it, persist it to the per-cwd tempfile, and prepend the recovery one-liner to every subsequent Bash block. Refuse with an environmental diagnostic if none resolve. Run every block with the Bash tool, never PowerShell.
+**Runtime bootstrap.** Every `$CLAUDE_PLUGIN_ROOT` reference in this command's Bash blocks assumes a resolved plugin root; Claude Code does not inject the env var into Bash subshells. If it is empty in your shell, apply the canonical resolver (`docs/millwright-inspector-project.md` §8.14; reference implementation: `mi-continue.md` Step 1a) before the first Bash block: (1) inherited env var when it points at a working install, (2) `$PWD` when it is this plugin's source repo, (3) the `installPath` from `~/.claude/plugins/installed_plugins.json` — then export it, persist it to the per-cwd tempfile, and prepend the recovery one-liner to every subsequent Bash block. Refuse with an environmental diagnostic if none resolve.
+
+**Running blocks.** Run each fenced `bash` block with the Bash tool (never the PowerShell tool), as written, in one call. Don't wrap a block in `bash -c`, `sh -c`, `zsh -c` or `eval`: Claude Code can't check a wrapped script, so it may stop for permission, and an unattended session denies it. The blocks run the same in bash and zsh; if one fails on shell syntax, stop and report it as a plugin bug instead of working around it.
 
 **Delegation contract.** This command REQUIRES the sub-agents listed below; §8.13's main-read budget forbids main from doing their work itself. **Invoking `/mi-apply-impact` IS the user requesting them** — Claude Code's default "do not call the Agent tool unless the user requested it" (and any stricter house rule layered on it) does not reach a sub-agent this command names at the step that names it, so spawn them without asking for extra confirmation. The default still holds everywhere else: never spawn a sub-agent that neither this command nor an `mi-*` command it auto-fires names, and never invent fan-out to parallelize a step main is supposed to run. If a named delegation genuinely cannot run (type unavailable, harness refusal), say so and stop — never silently do its work in main. Sub-agents: `lessons-filter` (Step 1.5 Pre-Step A), `codebase-grounder` (Phase 2.1 — writes `grounding-report.md`), `blueprint-diagrammer` (Step C — writes the `.puml` sources), and — through the `/mi-blueprint-review` this command auto-fires at Step B.5 — `blueprint-batch-reviewer` (its Phase C, one per batch, in parallel) and `blueprint-consistency-reviewer` (its Phase D, exactly one). An auto-fired `mi-*` command runs under its own delegation contract as well as this one. Canonical rule: `docs/millwright-inspector-project.md` §8.15.
 
@@ -123,25 +125,14 @@ else
         exit 1
       fi
       echo "--force passed; clearing partial current/ and regenerating."
-      data_root="$("$CLAUDE_PLUGIN_ROOT/scripts/data-root.sh")"
-      curr="$data_root/workflow-stream/$active_feature/blueprints/current"
-      shopt -s dotglob nullglob
-      for entry in "$curr"/*; do rm -rf "$entry"; done
-      shopt -u dotglob nullglob
-      # Stage-2 also owns two artifacts under implementation/. Allowlisted
-      # cleanup so later-stage artifacts (inspector-review.md, review-context.md,
+      # Empties current/, hidden files and the v1.5 review-history.md included.
+      "$CLAUDE_PLUGIN_ROOT/scripts/blueprints.sh" clear-current "$active_feature" || exit 1
+      # Stage 2 also owns two artifacts under implementation/. Only those two go,
+      # so later-stage artifacts (inspector-review.md, review-context.md,
       # change-summary.md, diagrams/) are preserved if the inspector happens to
       # be combining --force with a stale implementation/ from a prior aborted
       # run. See docs/superpowers/specs/2026-05-22-blueprint-lessons-injection-design.md §8.1.
-      impl_dir="$data_root/workflow-stream/$active_feature/implementation"
-      for stage2_artifact in grounding-report.md blueprint-lessons.md; do
-        [[ -e "$impl_dir/$stage2_artifact" ]] && rm -f "$impl_dir/$stage2_artifact"
-      done
-      # v1.5: review-history.md sibling lives under blueprints/current/ and gets
-      # cleared with the rest of current/ above, but be defensive in case the
-      # loop above changes — explicit remove keeps cleanup intent visible.
-      curr_review_history="$data_root/workflow-stream/$active_feature/blueprints/current/review-history.md"
-      [[ -e "$curr_review_history" ]] && rm -f "$curr_review_history"
+      "$CLAUDE_PLUGIN_ROOT/scripts/blueprints.sh" clear-implementation "$active_feature" grounding-report.md blueprint-lessons.md || exit 1
       "$CLAUDE_PLUGIN_ROOT/scripts/blueprints.sh" ensure-current "$active_feature"
       ;;
   esac

@@ -5,7 +5,9 @@ argument-hint: "[on | off]"
 
 # mi-auto
 
-**Runtime bootstrap.** Every `$CLAUDE_PLUGIN_ROOT` reference below assumes a resolved plugin root; apply the canonical resolver (`docs/millwright-inspector-project.md` §8.14; reference implementation: `mi-continue.md` Step 1a) before the first Bash block if it is empty. Run every block with the Bash tool, never PowerShell.
+**Runtime bootstrap.** Every `$CLAUDE_PLUGIN_ROOT` reference below assumes a resolved plugin root; apply the canonical resolver (`docs/millwright-inspector-project.md` §8.14; reference implementation: `mi-continue.md` Step 1a) before the first Bash block if it is empty.
+
+**Running blocks.** Run each fenced `bash` block with the Bash tool (never the PowerShell tool), as written, in one call. Don't wrap a block in `bash -c`, `sh -c`, `zsh -c` or `eval`: Claude Code can't check a wrapped script, so it may stop for permission, and an unattended session denies it. The blocks run the same in bash and zsh; if one fails on shell syntax, stop and report it as a plugin bug instead of working around it.
 
 Toggles the cycle-wide `auto-mode` flag stored at the top level of the active cycle's `progress.md`. Works between features (no active feature needed); refuses when there is no active quest cycle.
 

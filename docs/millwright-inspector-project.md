@@ -2203,6 +2203,31 @@ Every command that uses `$CLAUDE_PLUGIN_ROOT` cites this section in its **Runtim
 bootstrap** note; the full copy-pasteable resolver block lives in `mi-continue.md`
 Step 1a.
 
+#### Running blocks in any shell (1.13.0)
+
+Claude Code's Bash tool runs the user's shell: zsh on a default Mac, usually bash on
+Linux, Git Bash on Windows. So every fenced `bash` block in `commands/*.md` and
+`agents/*.md` must run unchanged in bash 3.2 (macOS `/bin/bash`), bash 5 and zsh:
+
+- no word splitting of an unquoted variable (zsh doesn't split): pass a list on stdin,
+  one item per line, as `/mi-run` Step 2.5 does when it pipes its per-file sizes into `awk`
+- no 0-based arrays (zsh arrays start at 1): parse arguments with `set --` and a
+  `while [[ $# -gt 0 ]]; case "$1" …; shift` loop
+- no bash-only syntax: `shopt`, `${!x}`, `declare -A`, `mapfile`, `readarray`, `read -a`
+- `printf '%s\n'`, not `echo`, for data that may hold backslashes (zsh's `echo` expands
+  `\n`)
+- no unbalanced quote or parenthesis (an apostrophe in a comment, a `(` in a regex
+  character class) in a heredoc body that sits inside `$( … )`: bash 3.2 cannot parse
+  it. Write such a program to a file first, or keep the heredoc outside `$( … )`
+- no recursive `rm`: `blueprints.sh clear-current` and `clear-implementation` own the
+  plugin's folder deletes
+
+Each command carries a **Running blocks** note telling Claude to run blocks as written,
+with the Bash tool and never inside `bash -c`. When a block broke in zsh, Claude wrapped
+it in `bash -c`; Claude Code's removal check cannot always read a wrapped script, and in
+an unattended session that prompt times out and the command is denied.
+`tests/shell-portability/run.sh` enforces these rules.
+
 ---
 
 ### 8.15 Delegation is part of the command contract (v1.6.12)

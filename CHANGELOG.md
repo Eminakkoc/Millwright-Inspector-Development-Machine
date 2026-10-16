@@ -14,11 +14,20 @@ The plugin runs on native Windows through Git for Windows (Git Bash), and on WSL
 - Main-path fixes: Python gets paths as arguments (the structural validator fallback and `/mi-complete-workflow` Branch I), `scripts/uuid.sh` replaces `uuidgen`, `date -r` replaces `stat -f` (also wrong on Linux), and the blueprint-review ledger uses the system temp folder on Windows.
 - Python starts the plugin's `.sh` files through `MI_BASH` (never WSL's `bash.exe`); `git hash-object` replaces `shasum` (the per-cwd plugin-root tempfile name changes once; old `summary-md-hash` cache entries miss once).
 - Status line: `/mi-init-status-bar` writes `bash "<wrapper>"`, rewrites an existing bare-path entry without asking, finds the plugin by its exact marketplace key and carries the resolved Python in the wrapper. Existing wrappers keep working.
-- Every `$CLAUDE_PLUGIN_ROOT` in `commands/` is quoted, so a profile folder with a space works; new `tests/fence-lint` runs `bash -n` on every command fence and checks the quoting.
+- Every `$CLAUDE_PLUGIN_ROOT` in `commands/` is quoted, so a profile folder with a space works; `tests/shell-portability` (below) checks the quoting.
 - `/mi-doctor` and `/mi-init`: Windows install hints (winget, `{PY} -m pip`), a UAC notice, restart-and-rerun after installs, a stop with instructions when only PowerShell is available (Git Bash required, or WSL), a stale-CRLF check and a WSL `/mnt/<drive>/` warning. With no usable Python, `doctor.sh` still prints its JSON report (exit 2).
 - Step 1a resolves the installed plugin with a `sed` lookup of the exact key `millwright-inspector-development-machine@millwright-inspector` — no Python before dependencies exist, and never an installed v2.
 - Smaller items: `C:/…` data roots count as absolute; bundle test fixtures have shorter paths; a dead `/tmp` write in `mi_fm_set` is gone.
 - First CI (`.github/workflows/tests.yml`): every `tests/*/run.sh` on `windows-latest` and `ubuntu-latest`; new `tests/smoke` end-to-end test.
+
+**Command blocks run the same in zsh and bash** (from MIDM 2.0.1). Claude Code's Bash tool runs your own shell, which is zsh on a default Mac. A few command blocks only worked in bash. When one broke, Claude re-ran it inside `bash -c`, and Claude Code's removal check could stop that call for permission; in an unattended session it was denied. Every command and agent block now runs the same in bash 3.2, bash 5 and zsh.
+
+- `/mi-update-blueprint`, `/mi-blueprint-review`, `/mi-blueprint-review-item` and `/mi-blueprint-review-consistency` parse their arguments with loops that work in both shells. A value flag given without a value now stops with `<flag> requires a value`.
+- `/mi-blueprint-review` Phase F pipes the findings JSON to `blueprint-review.sh persist-findings <history> -` instead of writing it to a `/tmp` file with `echo`, whose zsh version turned `\n` escapes into raw line breaks. The Phase G `rm -f /tmp/mi-*.$$.*` line is gone; it could never match a file.
+- `/mi-run` Step 2.5 tallies files and bytes per journal folder with `awk` (macOS bash 3.2 has no `declare -A`) and sums the total itself (`du -cb` fails on macOS).
+- New `blueprints.sh clear-current` and `clear-implementation` own the folder deletes in `/mi-apply-impact --force`, `/mi-update-blueprint --force-regen`, `/mi-abort-workflow` and `/mi-draw-diagrams` (answer `n`). `clear-implementation` accepts only a fixed list of names and checks them all before removing anything.
+- Every command carries a **Running blocks** note: run each block as written, with the Bash tool, never inside `bash -c`; a block that fails on shell syntax is reported as a plugin bug.
+- New `tests/shell-portability/run.sh` lints every command and agent block (bash-only syntax, word-splitting reliance, recursive `rm`, shell wrappers, unquoted `$CLAUDE_PLUGIN_ROOT`, `bash -n` and `zsh -n`) and runs the rewritten blocks in bash and in zsh. It replaces `tests/fence-lint`.
 
 ## 1.12.0 — Conventions review after implementation
 

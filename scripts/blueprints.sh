@@ -5,6 +5,29 @@
 #   blueprints.sh ensure-current <feature>       # create blueprints/current/ + diagrams/,
 #                                                # mint the feature folder's id.md, and link
 #                                                # it into the active quest's reference.md
+#   blueprints.sh clear-current <feature>        # 1.13.0: empty blueprints/current/ —
+#                                                # every entry, hidden files and
+#                                                # review-history.md included — for a
+#                                                # --force / --force-regen regeneration.
+#                                                # Does not re-create the scaffolding;
+#                                                # callers run ensure-current next. A
+#                                                # missing current/ is nothing to clear.
+#   blueprints.sh clear-implementation <feature> <name>...
+#                                                # 1.13.0: remove the named entries from
+#                                                # implementation/. Names come from a fixed
+#                                                # list (diagrams, inspector-review.md,
+#                                                # review-context.md, change-summary.md,
+#                                                # grounding-report.md, blueprint-lessons.md);
+#                                                # any other name is refused before anything
+#                                                # is removed, so a caller can never widen
+#                                                # the delete. Everything else under
+#                                                # implementation/ — and the feature's
+#                                                # test/ folder — is kept. A missing
+#                                                # implementation/ is nothing to clear.
+#                                                # These two own the plugin's recursive
+#                                                # deletes so command blocks never run
+#                                                # `rm -rf`, which Claude Code's removal
+#                                                # check may stop for permission.
 #   blueprints.sh rotate <feature> \
 #     --reason-kind <kind> \
 #     --reason-summary <text>                    # move current/ into history/v[N+1]/;
@@ -76,7 +99,54 @@ source "$(dirname "$0")/internal/common.sh"
 
 cmd="${1:-}"; shift || true
 
+# The clear-* targets are built from the feature name, so refuse any name that
+# could point outside workflow-stream/<feature>/.
+check_feature_name() {
+  case "$1" in
+    ""|.|..|*/*) mi_die "invalid feature name: '$1'" ;;
+  esac
+}
+
 case "$cmd" in
+  clear-current)
+    feature="${1:-}"
+    check_feature_name "$feature"
+    current="$(mi_blueprints_current "$feature")"
+    if [[ ! -d "$current" ]]; then
+      mi_info "nothing to clear: $current does not exist"
+      exit 0
+    fi
+    find "$current" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+    mi_info "cleared $current"
+    ;;
+
+  clear-implementation)
+    feature="${1:-}"
+    check_feature_name "$feature"
+    shift
+    [[ $# -gt 0 ]] || mi_die "clear-implementation: name at least one entry to remove"
+    # Stage 2 owns grounding-report.md and blueprint-lessons.md; the rest belong
+    # to stages 4-6. Each caller names only what it owns, so a --force at stage 2
+    # keeps a prior run's later-stage artifacts.
+    for name in "$@"; do
+      case "$name" in
+        diagrams|inspector-review.md|review-context.md|change-summary.md|grounding-report.md|blueprint-lessons.md) ;;
+        *) mi_die "clear-implementation: '$name' is not a removable implementation/ entry (allowed: diagrams, inspector-review.md, review-context.md, change-summary.md, grounding-report.md, blueprint-lessons.md)" ;;
+      esac
+    done
+    impl="$(mi_impl_dir "$feature")"
+    if [[ ! -d "$impl" ]]; then
+      mi_info "nothing to clear: $impl does not exist"
+      exit 0
+    fi
+    for name in "$@"; do
+      if [[ -e "$impl/$name" || -L "$impl/$name" ]]; then
+        rm -rf "${impl:?}/$name"
+        mi_info "cleared $impl/$name"
+      fi
+    done
+    ;;
+
   ensure-current)
     feature="${1:?feature required}"
     current="$(mi_blueprints_current "$feature")"
@@ -611,7 +681,7 @@ PYEOF
     ;;
 
   *)
-    echo "usage: blueprints.sh {ensure-current|rotate|resume-partial|preserve-inspector-sections|check-current|branch-status|manual-test-plan-path|manual-test-results-path|deferred-tests-path|manual-test-plan-rotate|manual-test-results-rotate-only} ..." >&2
+    echo "usage: blueprints.sh {clear-current|clear-implementation|ensure-current|rotate|resume-partial|preserve-inspector-sections|check-current|branch-status|manual-test-plan-path|manual-test-results-path|deferred-tests-path|manual-test-plan-rotate|manual-test-results-rotate-only} ..." >&2
     exit 2
     ;;
 esac

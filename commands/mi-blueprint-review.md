@@ -4,7 +4,9 @@ description: Orchestrate a token-reduced blueprint review (v1.5) — Phase A (pr
 
 # /mi-blueprint-review
 
-**Runtime bootstrap.** Every `$CLAUDE_PLUGIN_ROOT` reference in this command's Bash blocks assumes a resolved plugin root; Claude Code does not inject the env var into Bash subshells. If it is empty in your shell, apply the canonical resolver (`docs/millwright-inspector-project.md` §8.14; reference implementation: `mi-continue.md` Step 1a) before the first Bash block: (1) inherited env var when it points at a working install, (2) `$PWD` when it is this plugin's source repo, (3) the `installPath` from `~/.claude/plugins/installed_plugins.json` — then export it, persist it to the per-cwd tempfile, and prepend the recovery one-liner to every subsequent Bash block. Refuse with an environmental diagnostic if none resolve. Run every block with the Bash tool, never PowerShell.
+**Runtime bootstrap.** Every `$CLAUDE_PLUGIN_ROOT` reference in this command's Bash blocks assumes a resolved plugin root; Claude Code does not inject the env var into Bash subshells. If it is empty in your shell, apply the canonical resolver (`docs/millwright-inspector-project.md` §8.14; reference implementation: `mi-continue.md` Step 1a) before the first Bash block: (1) inherited env var when it points at a working install, (2) `$PWD` when it is this plugin's source repo, (3) the `installPath` from `~/.claude/plugins/installed_plugins.json` — then export it, persist it to the per-cwd tempfile, and prepend the recovery one-liner to every subsequent Bash block. Refuse with an environmental diagnostic if none resolve.
+
+**Running blocks.** Run each fenced `bash` block with the Bash tool (never the PowerShell tool), as written, in one call. Don't wrap a block in `bash -c`, `sh -c`, `zsh -c` or `eval`: Claude Code can't check a wrapped script, so it may stop for permission, and an unattended session denies it. The blocks run the same in bash and zsh; if one fails on shell syntax, stop and report it as a plugin bug instead of working around it.
 
 **Delegation contract.** This command REQUIRES the sub-agents listed below; §8.13's main-read budget forbids main from doing their work itself. **Invoking `/mi-blueprint-review` IS the user requesting them** — whether typed directly or auto-fired by another `mi-*` command (e.g. `/mi-apply-impact` Step B.5) — Claude Code's default "do not call the Agent tool unless the user requested it" (and any stricter house rule layered on it) does not reach a sub-agent this command names at the step that names it, so spawn them without asking for extra confirmation. The default still holds everywhere else: never spawn a sub-agent that neither this command nor an `mi-*` command it auto-fires names, and never invent fan-out to parallelize a step main is supposed to run. If a named delegation genuinely cannot run (type unavailable, harness refusal), say so and stop — never silently do its work in main. Sub-agents: `blueprint-batch-reviewer` (Phase C — one per batch, dispatched in parallel), `blueprint-consistency-reviewer` (Phase D — exactly one). Canonical rule: `docs/millwright-inspector-project.md` §8.15.
 
@@ -92,26 +94,25 @@ reasoning_effort="medium"
 concurrency=3
 max_items=35
 reference_file=""
-i=3
-while [[ $i -le $# ]]; do
-  arg="${!i}"
-  case "$arg" in
-    --auto-iter=*)        auto_iter="${arg#--auto-iter=}" ;;
-    --auto-iter)          ((i++)); auto_iter="${!i}" ;;
-    --batch-size=*)       batch_size="${arg#--batch-size=}" ;;
-    --batch-size)         ((i++)); batch_size="${!i}" ;;
-    --scope=*)            scope="${arg#--scope=}" ;;
-    --scope)              ((i++)); scope="${!i}" ;;
-    --reasoning-effort=*) reasoning_effort="${arg#--reasoning-effort=}" ;;
-    --reasoning-effort)   ((i++)); reasoning_effort="${!i}" ;;
-    --concurrency=*)      concurrency="${arg#--concurrency=}" ;;
-    --concurrency)        ((i++)); concurrency="${!i}" ;;
-    --max-items=*)        max_items="${arg#--max-items=}" ;;
-    --max-items)          ((i++)); max_items="${!i}" ;;
-    --reference-file=*)   reference_file="${arg#--reference-file=}" ;;
-    --reference-file)     ((i++)); reference_file="${!i}" ;;
+shift "$(( $# < 2 ? $# : 2 ))"
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --auto-iter=*)        auto_iter="${1#--auto-iter=}" ;;
+    --auto-iter)          auto_iter="${2:?--auto-iter requires a value}"; shift ;;
+    --batch-size=*)       batch_size="${1#--batch-size=}" ;;
+    --batch-size)         batch_size="${2:?--batch-size requires a value}"; shift ;;
+    --scope=*)            scope="${1#--scope=}" ;;
+    --scope)              scope="${2:?--scope requires a value}"; shift ;;
+    --reasoning-effort=*) reasoning_effort="${1#--reasoning-effort=}" ;;
+    --reasoning-effort)   reasoning_effort="${2:?--reasoning-effort requires a value}"; shift ;;
+    --concurrency=*)      concurrency="${1#--concurrency=}" ;;
+    --concurrency)        concurrency="${2:?--concurrency requires a value}"; shift ;;
+    --max-items=*)        max_items="${1#--max-items=}" ;;
+    --max-items)          max_items="${2:?--max-items requires a value}"; shift ;;
+    --reference-file=*)   reference_file="${1#--reference-file=}" ;;
+    --reference-file)     reference_file="${2:?--reference-file requires a value}"; shift ;;
   esac
-  ((i++))
+  shift
 done
 
 [[ -n "$agent" && -n "$file" ]] || {
@@ -443,9 +444,8 @@ Collect every `<!-- REVIEW-FINDING -->` block currently in the file via `scripts
 Pipe the JSON array to `scripts/blueprint-review.sh persist-findings`:
 
 ```bash
-echo "$findings_json" > "/tmp/mi-persist-input.$$.json"
-"$CLAUDE_PLUGIN_ROOT/scripts/blueprint-review.sh" persist-findings "$review_history" "/tmp/mi-persist-input.$$.json"
-rm -f "/tmp/mi-persist-input.$$.json"
+# printf, not echo: zsh's echo turns the \n escapes inside the JSON into real line breaks.
+printf '%s\n' "$findings_json" | "$CLAUDE_PLUGIN_ROOT/scripts/blueprint-review.sh" persist-findings "$review_history" -
 "$CLAUDE_PLUGIN_ROOT/scripts/blueprint-review.sh" ledger mark "$file" F done \
   --findings "$persisted_count" --note "persisted to $(basename "$review_history")"
 ```
@@ -492,11 +492,10 @@ Render as `"Spec size: <lines_before> → <lines_after> lines (<±N>), <items_be
 
 This line is the feedback loop that makes creeping growth visible run over run. If lines grew by more than ~15% while Phase E applied nothing, say so plainly: `"Note: the spec grew <N>% from clarifying fixes alone — worth checking that the review is sharpening the requirements rather than padding them."`
 
-**G.3 — Mark Phase G done + cleanup:**
+**G.3 — Mark Phase G done:**
 
 ```bash
 "$CLAUDE_PLUGIN_ROOT/scripts/blueprint-review.sh" ledger mark "$file" G done --note "report rendered"
-rm -f /tmp/mi-*.$$.*
 ```
 
 The ledger file itself lives under `$TMPDIR` keyed by the reviewed file's path; it is left in place (harmless) and reset by the next run's `ledger init`.

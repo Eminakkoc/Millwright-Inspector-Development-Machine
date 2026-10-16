@@ -4,7 +4,9 @@ description: End the brainstorming design Q&A and hand the chain straight to imp
 
 # mi-implement
 
-**Runtime bootstrap.** Resolve `$CLAUDE_PLUGIN_ROOT` per `docs/millwright-inspector-project.md` §8.14 (reference implementation: `mi-continue.md` Step 1a) before running any Bash block. Run every block with the Bash tool, never PowerShell.
+**Runtime bootstrap.** Resolve `$CLAUDE_PLUGIN_ROOT` per `docs/millwright-inspector-project.md` §8.14 (reference implementation: `mi-continue.md` Step 1a) before running any Bash block.
+
+**Running blocks.** Run each fenced `bash` block with the Bash tool (never the PowerShell tool), as written, in one call. Don't wrap a block in `bash -c`, `sh -c`, `zsh -c` or `eval`: Claude Code can't check a wrapped script, so it may stop for permission, and an unattended session denies it. The blocks run the same in bash and zsh; if one fails on shell syntax, stop and report it as a plugin bug instead of working around it.
 
 Typed by the inspector while the stage-3 brainstorming chain is asking design questions. **Typing it counts as design approval** for the design discussed so far — do not ask for approval again.
 

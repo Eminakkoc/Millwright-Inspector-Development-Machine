@@ -5,7 +5,9 @@ argument-hint: "[--reason-kind <manual|spec-update>] [--force-regen] <reason sum
 
 # mi-update-blueprint
 
-**Runtime bootstrap.** Every `$CLAUDE_PLUGIN_ROOT` reference in this command's Bash blocks assumes a resolved plugin root; Claude Code does not inject the env var into Bash subshells. If it is empty in your shell, apply the canonical resolver (`docs/millwright-inspector-project.md` §8.14; reference implementation: `mi-continue.md` Step 1a) before the first Bash block: (1) inherited env var when it points at a working install, (2) `$PWD` when it is this plugin's source repo, (3) the `installPath` from `~/.claude/plugins/installed_plugins.json` — then export it, persist it to the per-cwd tempfile, and prepend the recovery one-liner to every subsequent Bash block. Refuse with an environmental diagnostic if none resolve. Run every block with the Bash tool, never PowerShell.
+**Runtime bootstrap.** Every `$CLAUDE_PLUGIN_ROOT` reference in this command's Bash blocks assumes a resolved plugin root; Claude Code does not inject the env var into Bash subshells. If it is empty in your shell, apply the canonical resolver (`docs/millwright-inspector-project.md` §8.14; reference implementation: `mi-continue.md` Step 1a) before the first Bash block: (1) inherited env var when it points at a working install, (2) `$PWD` when it is this plugin's source repo, (3) the `installPath` from `~/.claude/plugins/installed_plugins.json` — then export it, persist it to the per-cwd tempfile, and prepend the recovery one-liner to every subsequent Bash block. Refuse with an environmental diagnostic if none resolve.
+
+**Running blocks.** Run each fenced `bash` block with the Bash tool (never the PowerShell tool), as written, in one call. Don't wrap a block in `bash -c`, `sh -c`, `zsh -c` or `eval`: Claude Code can't check a wrapped script, so it may stop for permission, and an unattended session denies it. The blocks run the same in bash and zsh; if one fails on shell syntax, stop and report it as a plugin bug instead of working around it.
 
 Manual inspector-triggered blueprint refresh. Rotates the current blueprint into history with a `reason.md`, then regenerates `requirements.md`, `config.md`, `diagrams/`, and `primer.md` from:
 
@@ -57,27 +59,27 @@ Parse `$ARGUMENTS` for the optional flags and the required reason summary:
 ```bash
 reason_kind="manual"
 force_regen=0
-positional=()
-# shellcheck disable=SC2206
-args=($ARGUMENTS)
-i=0
-while [[ $i -lt ${#args[@]} ]]; do
-  case "${args[$i]}" in
+reason_summary=""
+# Positional parameters and a shift loop run the same in bash and zsh; an
+# array read from index 0 does not (zsh arrays start at 1).
+set -- $ARGUMENTS
+while [[ $# -gt 0 ]]; do
+  case "$1" in
     --reason-kind)
-      i=$((i + 1))
-      reason_kind="${args[$i]:?--reason-kind requires a value (manual|spec-update)}"
+      reason_kind="${2:?--reason-kind requires a value (manual|spec-update)}"
+      shift
       ;;
     --reason-kind=*)
-      reason_kind="${args[$i]#--reason-kind=}"
+      reason_kind="${1#--reason-kind=}"
       ;;
     --force-regen)
       force_regen=1
       ;;
     *)
-      positional[${#positional[@]}]="${args[$i]}"
+      reason_summary="${reason_summary:+$reason_summary }$1"
       ;;
   esac
-  i=$((i + 1))
+  shift
 done
 
 case "$reason_kind" in
@@ -88,7 +90,6 @@ case "$reason_kind" in
     ;;
 esac
 
-reason_summary="${positional[*]:-}"
 [[ -n "$reason_summary" ]] || {
   echo "error: reason summary required. Usage: /mi-update-blueprint [--reason-kind <kind>] [--force-regen] <reason summary>" >&2
   exit 1
@@ -196,11 +197,7 @@ if [[ "$skip_rotate" != "1" ]]; then
       if [[ "$last_kind" == "manual" || "$last_kind" == "spec-update" ]]; then
         echo "Step 1.5: --force-regen on partial state (check-current=2). Discarding current/ and regenerating from history/v${latest_v}/ (kind=$last_kind)."
         # Empty current/ then ensure-current scaffolding.
-        if [[ -d "$curr" ]]; then
-          shopt -s dotglob nullglob
-          for entry in "$curr"/*; do rm -rf "$entry"; done
-          shopt -u dotglob nullglob
-        fi
+        "$CLAUDE_PLUGIN_ROOT/scripts/blueprints.sh" clear-current "$active_feature" || exit 1
         "$CLAUDE_PLUGIN_ROOT/scripts/blueprints.sh" ensure-current "$active_feature"
         version="$latest_v"
         skip_rotate=1
@@ -208,7 +205,7 @@ if [[ "$skip_rotate" != "1" ]]; then
         echo "error: current/ has partial regenerated content (check-current=2) AND no manual/spec-update history version exists to restore from. Latest history is '$last_kind'." >&2
         echo "Manual cleanup required:" >&2
         echo "  - Inspect current/, edit it into a structurally valid state, and re-run /mi-update-blueprint <reason> normally." >&2
-        echo "  - OR rm -rf current/* and re-run /mi-apply-impact (if you want to regenerate from scratch via stage 2)." >&2
+        echo "  - OR empty current/ (blueprints.sh clear-current $active_feature) and re-run /mi-apply-impact (if you want to regenerate from scratch via stage 2)." >&2
         echo "No state was modified." >&2
         exit 1
       fi
@@ -236,9 +233,7 @@ if [[ "$skip_rotate" != "1" ]]; then
     # Complete current/ + --force-regen: intentional override of "blueprints already complete".
     if [[ "$last_kind" == "manual" || "$last_kind" == "spec-update" ]]; then
       echo "Step 1.5: --force-regen on complete state. Discarding current/ and regenerating from history/v${latest_v}/ (kind=$last_kind)."
-      shopt -s dotglob nullglob
-      for entry in "$curr"/*; do rm -rf "$entry"; done
-      shopt -u dotglob nullglob
+      "$CLAUDE_PLUGIN_ROOT/scripts/blueprints.sh" clear-current "$active_feature" || exit 1
       "$CLAUDE_PLUGIN_ROOT/scripts/blueprints.sh" ensure-current "$active_feature"
       version="$latest_v"
       skip_rotate=1

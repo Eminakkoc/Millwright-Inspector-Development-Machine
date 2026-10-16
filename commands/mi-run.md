@@ -5,7 +5,9 @@ argument-hint: "<journal-folder> [<journal-folder>...] [--archive-active] [--aut
 
 # mi-run
 
-**Runtime bootstrap.** Every `$CLAUDE_PLUGIN_ROOT` reference in this command's Bash blocks assumes a resolved plugin root; Claude Code does not inject the env var into Bash subshells. If it is empty in your shell, apply the canonical resolver (`docs/millwright-inspector-project.md` §8.14; reference implementation: `mi-continue.md` Step 1a) before the first Bash block: (1) inherited env var when it points at a working install, (2) `$PWD` when it is this plugin's source repo, (3) the `installPath` from `~/.claude/plugins/installed_plugins.json` — then export it, persist it to the per-cwd tempfile, and prepend the recovery one-liner to every subsequent Bash block. Refuse with an environmental diagnostic if none resolve. Run every block with the Bash tool, never PowerShell.
+**Runtime bootstrap.** Every `$CLAUDE_PLUGIN_ROOT` reference in this command's Bash blocks assumes a resolved plugin root; Claude Code does not inject the env var into Bash subshells. If it is empty in your shell, apply the canonical resolver (`docs/millwright-inspector-project.md` §8.14; reference implementation: `mi-continue.md` Step 1a) before the first Bash block: (1) inherited env var when it points at a working install, (2) `$PWD` when it is this plugin's source repo, (3) the `installPath` from `~/.claude/plugins/installed_plugins.json` — then export it, persist it to the per-cwd tempfile, and prepend the recovery one-liner to every subsequent Bash block. Refuse with an environmental diagnostic if none resolve.
+
+**Running blocks.** Run each fenced `bash` block with the Bash tool (never the PowerShell tool), as written, in one call. Don't wrap a block in `bash -c`, `sh -c`, `zsh -c` or `eval`: Claude Code can't check a wrapped script, so it may stop for permission, and an unattended session denies it. The blocks run the same in bash and zsh; if one fails on shell syntax, stop and report it as a plugin bug instead of working around it.
 
 **Delegation contract.** This command REQUIRES the sub-agents listed below; §8.13's main-read budget forbids main from doing their work itself. **Invoking `/mi-run` IS the user requesting them** — Claude Code's default "do not call the Agent tool unless the user requested it" (and any stricter house rule layered on it) does not reach a sub-agent this command names at the step that names it, so spawn them without asking for extra confirmation. The default still holds everywhere else: never spawn a sub-agent that neither this command nor an `mi-*` command it auto-fires names, and never invent fan-out to parallelize a step main is supposed to run. If a named delegation genuinely cannot run (type unavailable, harness refusal), say so and stop — never silently do its work in main. Sub-agents: `journal-file-digester` (Step 2.5 Tier 1 — one oversized journal file each), `journal-folder-digester` (Step 2.5 Tier 2 — one many-small-files folder each). Canonical rule: `docs/millwright-inspector-project.md` §8.15.
 
@@ -262,11 +264,12 @@ Record the selected folder list for use in the summary frontmatter (Step 4).
 Before reading the bodies of the enumerated files, build a per-file size manifest so the inspector (and the millwright) know up front whether a single transcript or extracted PDF is going to dominate context. Print the manifest to the chat:
 
 ```bash
+total_bytes=0
 for f in "${files[@]}"; do
   bytes="$(wc -c <"$f" | tr -d ' ')"
   printf '  %8s B  %s\n' "$bytes" "$f"
+  total_bytes=$((total_bytes + bytes))
 done
-total_bytes="$(du -cb "${files[@]}" 2>/dev/null | tail -1 | awk '{print $1}')"
 echo "  total: $total_bytes B across ${#files[@]} file(s)"
 ```
 
@@ -285,21 +288,16 @@ On `proceed`, follow the per-file summarization plan: spawn one fresh sub-agent 
 **Tier 2 — Per-folder summarization (Phase 5.2 of the context-optimization plan).** Even when no single file exceeds the per-file threshold, a journal folder containing **>5 files AND >40 KB total** is worth delegating: reading 20 small notes individually accumulates the same context as one large file, but is invisible to the per-file check. Compute per-folder counts:
 
 ```bash
-declare -A folder_count folder_bytes
-for f in "${files[@]}"; do
-  rel="${f#$data_root/journal/}"
-  folder="${rel%%/*}"
-  folder_count[$folder]=$(( ${folder_count[$folder]:-0} + 1 ))
-  bytes="$(wc -c <"$f" | tr -d ' ')"
-  folder_bytes[$folder]=$(( ${folder_bytes[$folder]:-0} + bytes ))
-done
-
-oversize_folders=()
-for folder in "${!folder_count[@]}"; do
-  if (( folder_count[$folder] > 5 && folder_bytes[$folder] > 40000 )); then
-    oversize_folders+=("$folder")
-  fi
-done
+# awk does the per-folder tally: bash 3.2 (macOS) has no associative arrays,
+# and zsh spells their keys differently.
+oversize_folders="$(
+  for f in "${files[@]}"; do
+    rel="${f#"$data_root"/journal/}"
+    printf '%s\t%s\n' "${rel%%/*}" "$(wc -c <"$f" | tr -d ' ')"
+  done | awk -F'\t' '{ n[$1]++; b[$1] += $2 }
+    END { for (d in n) if (n[d] > 5 && b[d] > 40000) print d }' | sort
+)"
+printf '%s\n' "$oversize_folders"
 ```
 
 For each `oversize_folder`, spawn one fresh sub-agent for the folder (NOT one per file). Invoke `Agent` with `subagent_type: millwright-inspector-development-machine:journal-folder-digester`. Sub-agent prompt:

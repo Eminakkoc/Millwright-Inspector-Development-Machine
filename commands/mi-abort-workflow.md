@@ -5,7 +5,9 @@ argument-hint: "[--drop-feature=requeue]"
 
 # mi-abort-workflow
 
-**Runtime bootstrap.** Every `$CLAUDE_PLUGIN_ROOT` reference in this command's Bash blocks assumes a resolved plugin root; Claude Code does not inject the env var into Bash subshells. If it is empty in your shell, apply the canonical resolver (`docs/millwright-inspector-project.md` §8.14; reference implementation: `mi-continue.md` Step 1a) before the first Bash block: (1) inherited env var when it points at a working install, (2) `$PWD` when it is this plugin's source repo, (3) the `installPath` from `~/.claude/plugins/installed_plugins.json` — then export it, persist it to the per-cwd tempfile, and prepend the recovery one-liner to every subsequent Bash block. Refuse with an environmental diagnostic if none resolve. Run every block with the Bash tool, never PowerShell.
+**Runtime bootstrap.** Every `$CLAUDE_PLUGIN_ROOT` reference in this command's Bash blocks assumes a resolved plugin root; Claude Code does not inject the env var into Bash subshells. If it is empty in your shell, apply the canonical resolver (`docs/millwright-inspector-project.md` §8.14; reference implementation: `mi-continue.md` Step 1a) before the first Bash block: (1) inherited env var when it points at a working install, (2) `$PWD` when it is this plugin's source repo, (3) the `installPath` from `~/.claude/plugins/installed_plugins.json` — then export it, persist it to the per-cwd tempfile, and prepend the recovery one-liner to every subsequent Bash block. Refuse with an environmental diagnostic if none resolve.
+
+**Running blocks.** Run each fenced `bash` block with the Bash tool (never the PowerShell tool), as written, in one call. Don't wrap a block in `bash -c`, `sh -c`, `zsh -c` or `eval`: Claude Code can't check a wrapped script, so it may stop for permission, and an unattended session denies it. The blocks run the same in bash and zsh; if one fails on shell syntax, stop and report it as a plugin bug instead of working around it.
 
 Use when a workflow needs to be cancelled mid-flight — session crash, mind change, merge conflict, corrupted state.
 
@@ -110,13 +112,8 @@ Scope the revert to the active feature so other queued/in-flight features' todos
 ### Step 4 — Clear implementation
 
 ```bash
-data_root="$("$CLAUDE_PLUGIN_ROOT/scripts/data-root.sh")"
-impl_dir="$data_root/workflow-stream/$active_feature/implementation"
-rm -rf "$impl_dir"/diagrams
-rm -f "$impl_dir"/inspector-review.md
-rm -f "$impl_dir"/review-context.md
-rm -f "$impl_dir"/change-summary.md
-rm -f "$impl_dir"/grounding-report.md
+"$CLAUDE_PLUGIN_ROOT/scripts/blueprints.sh" clear-implementation "$active_feature" \
+  diagrams inspector-review.md review-context.md change-summary.md grounding-report.md
 ```
 
 **`test/` is intentionally NOT deleted.** `workflow-stream/$active_feature/test/` (manual-test-plan.md, manual-test-results.md, manual-test-plan.history/, manual-test-results.history/, deferred-tests.md) is feature-permanent per `docs/manual-testing-folder/plan.md`. The next cycle on the same feature inherits the prior plan and runs the §4.1 cross-activation results auto-rotation on the next `/mi-manual-test-plan` invocation — that's the abort-retry-without-new-commits safety path, and it depends on the `test/` folder surviving abort.

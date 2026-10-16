@@ -14,12 +14,13 @@
 #   diff-drift <req> <sum> <todo> <feature>  # (added in Task 5.2)
 #   build-reference-block <target> <manifest>  # (added in v1.6 — --reference-file)
 #   ledger init|mark|render|path|meta <file> [...] # (v1.5.2 phase-run enforcement; meta added v1.6.10)
+#   persist-findings <history> <input.json|->      # '-' reads the JSON from stdin (1.13.0)
 
 set -euo pipefail
 source "$(dirname "$0")/internal/common.sh"
 
 usage() {
-  sed -n '2,16p' "$0"
+  sed -n '2,17p' "$0"
 }
 
 cmd="${1:-}"
@@ -395,8 +396,15 @@ PYEOF
   persist-findings)
     history_file="${1:-}"
     input_json="${2:-}"
-    [[ -n "$history_file" && -n "$input_json" ]] || { echo "usage: $0 persist-findings <history-file> <input.json>" >&2; exit 64; }
+    [[ -n "$history_file" && -n "$input_json" ]] || { echo "usage: $0 persist-findings <history-file> <input.json|->" >&2; exit 64; }
     [[ -f "$history_file" && -w "$history_file" ]] || { echo "error: history file not found or not writable: $history_file" >&2; exit 1; }
+    if [[ "$input_json" == "-" ]]; then
+      # stdin carries the JSON (the command block pipes it in with printf, which,
+      # unlike zsh's echo, leaves \n escapes alone). The temp file lives and dies here.
+      input_json="$(mktemp)"
+      trap 'rm -f "$input_json"' EXIT
+      cat > "$input_json"
+    fi
     [[ -f "$input_json" ]] || { echo "error: input json not found: $input_json" >&2; exit 1; }
 
     mi_py - "$history_file" "$input_json" <<'PYEOF'
