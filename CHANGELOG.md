@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.14.0 — Auto mode asks for the planning mode
+
+Auto mode used to answer stage 3's planning-mode prompt with `brainstorming` every time. Now you choose.
+
+- Turning auto mode on asks which planning mode it should use: `brainstorming` (design questions first, then spec → plan → sub-agents) or `direct` (the millwright implements straight from the blueprint). `/mi-run … --auto=direct` and `/mi-auto on direct` name it up front; a bare `--auto` or `/mi-auto on` asks. `auto.sh switch on` refuses without it and stores it as the new top-level `auto-planning-mode` field.
+- `/mi-run --auto` turns auto mode on with `auto.sh switch on <planning-mode>` right after `init`, instead of `progress.sh init --auto`, so the mode is always recorded.
+- At each feature's stage-2 blueprint stop, right after the diagrams, the hand-off message names the planning mode stage 3 will use. Reply `brainstorming` or `direct` to change it for that feature; `/mi-continue` still approves the blueprint.
+- New `auto.sh planning-mode` prints the mode stage 3 uses: the feature's own pick, then the auto-mode choice, then `brainstorming` for a cycle that stored none. `/mi-auto` with no argument shows it.
+- In auto mode, `direct` follows the same end-of-chain rules as the brainstorming chain (`templates/auto-mode-chain-rules.md`): blocking questions are deferred, open points are walked through at the end, and the workflow carries on with `/mi-continue` by itself. The "switch to brainstorming?" question becomes an `auto: warning` line.
+
 ## 1.13.1 — jsonschema required; Windows fixes from the first Windows CI run
 
 The first CI run of 1.13.0 on `windows-latest` failed. Most failures were not Windows-specific: the Windows job ran without a JSON Schema validator, and the plugin's last-resort validator was broken on every OS.
