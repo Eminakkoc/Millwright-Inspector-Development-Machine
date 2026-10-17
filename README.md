@@ -155,6 +155,8 @@ A cycle-wide switch that lets the millwright answer most stage 1.5–8 prompts i
 
 **Turning it on.** `/mi-run <folder1> [<folder2> ...] --auto` starts the cycle with auto mode already on. Mid-cycle, `/mi-auto on` / `/mi-auto off` flips it; `/mi-auto` with no argument prints the current state. Turning it on while a prompt is already waiting lets the inspector answer that one prompt — auto mode takes over from the next.
 
+**Planning mode.** Every time you turn auto mode on, it asks which planning mode to use at stage 3: `brainstorming` (design questions first, then spec → plan → sub-agents) or `direct` (the millwright implements straight from the blueprint). Skip the question by naming it: `/mi-run … --auto=direct` or `/mi-auto on direct`. At each feature's stage-2 blueprint stop, the hand-off message names the mode stage 3 will use; reply `brainstorming` or `direct` there to change it for that feature only. In `direct` mode, auto mode follows the same end-of-chain rules as the brainstorming chain: blocking questions are deferred, open points are walked through at the end, and the workflow carries on with `/mi-continue` by itself.
+
 **What you'll see.** Every auto-answered prompt prints one line, `auto: <prompt> → <answer>`, and appends a row to the audit ledger, then the workflow continues exactly as if you'd typed that reply yourself.
 
 **What always stays manual.** These never auto-answer, in any mode: which todo items get selected, approving the blueprint at stage 2, the blueprint-review scope gate inside `/mi-apply-impact`, the stage-3 launcher's never-auto-fire rule, the stage-2 review gate, the brainstorming design Q&A, picking a branch when `config.md` lists two or more candidates, the stage-5 review stop, DTI Gate 1, and the three `/clear` gates. Anything you type yourself always wins over an auto answer.
@@ -205,7 +207,7 @@ See `docs/millwright-inspector-project.md` for the full stage-by-stage reference
 | `/mi-update-blueprint`       | inspector   | Manually rotate + regenerate `blueprints/current/` with a reason.           |
 | `/mi-update-todo-list`       | inspector   | Add / cancel / change state on todo items (state-machine safe).            |
 | `/mi-sidequest`              | inspector   | Mid-workflow Q&A or small fix via an isolated side-quest sub-agent; `--write` for source edits. |
-| `/mi-auto [on\|off]`         | inspector   | Turn auto mode on/off for the active cycle, or show its state (no argument). |
+| `/mi-auto [on [brainstorming\|direct] \| off]` | inspector   | Turn auto mode on/off for the active cycle, or show its state (no argument). `on` asks for the stage-3 planning mode unless you name it. |
 | `/mi-implement`              | inspector   | Ends the stage-3 brainstorming design Q&A and hands off to spec → plan → sub-agent implementation under the auto-mode end-of-chain rules. |
 
 **Blueprint review (v1.5.0+ token-reduction refit):**

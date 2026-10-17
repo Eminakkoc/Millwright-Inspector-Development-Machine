@@ -283,7 +283,7 @@ The `## On-demand canonical files` section is template-emitted and does not need
 
 Prompt the inspector:
 
-**Auto mode.** If `"$CLAUDE_PLUGIN_ROOT/scripts/auto.sh" is-on` succeeds, run `"$CLAUDE_PLUGIN_ROOT/scripts/auto.sh" answer "planning mode" "brainstorming" --cmd /mi-plan-implementation` and continue as if the inspector had replied `brainstorming` — do not show the prompt below. Otherwise show the prompt below unchanged.
+**Auto mode.** If `"$CLAUDE_PLUGIN_ROOT/scripts/auto.sh" is-on` succeeds, run `"$CLAUDE_PLUGIN_ROOT/scripts/auto.sh" planning-mode` — it prints `brainstorming` or `direct`: the mode the inspector picked for this feature at the stage-2 blueprint stop, or else the one they chose when turning auto mode on. Then run `"$CLAUDE_PLUGIN_ROOT/scripts/auto.sh" answer "planning mode" "<mode>" --cmd /mi-plan-implementation` with that value and continue as if the inspector had replied it — do not show the prompt below. Otherwise show the prompt below unchanged.
 
 > "Stage 3 — pick a planning mode for `$active_feature`:
 >
@@ -341,6 +341,8 @@ Substitute `<$active_feature>` with the actual feature name read from the queue.
 
 The millwright (this session) owns the implementation directly — no Skill is invoked. Read the layered primer, implement, commit.
 
+**Auto mode.** If `"$CLAUDE_PLUGIN_ROOT/scripts/auto.sh" is-on` succeeds, read `"$CLAUDE_PLUGIN_ROOT/templates/auto-mode-chain-rules.md"` now and follow it for the whole implementation: blocking questions are deferred, the open ones are walked through at the end, and its hand-back rule replaces the message in step 5. Its finishing rule does not apply — direct mode has no finishing step.
+
 1. **Read `primer.md`.** Required first read.
 1.5. **Load the skills** in `## Skills for this work (from config.md)` before editing the files they cover.
 2. **Escalate to canonical files only as needed:**
@@ -356,7 +358,7 @@ The millwright (this session) owns the implementation directly — no Skill is i
 
    The Resume Handler in `/mi-continue` (current-stage = 3) treats brainstorming and direct modes identically — it only verifies that `git log base-commit..HEAD` is non-empty before generating diagrams. The inspector reviews the result the same way.
 
-**Direct mode caveats.** Direct mode trades the chain's design-questions / spec-approval / plan-approval gates for speed. If, while reading the primer, you realize the feature is bigger than expected (multiple non-trivial design decisions, ambiguous acceptance criteria, novel domain), surface that to the inspector and ask if they want to switch to `brainstorming` instead — re-set `planning-mode=brainstorming` and proceed to Step 4a.
+**Direct mode caveats.** Direct mode trades the chain's design-questions / spec-approval / plan-approval gates for speed. If, while reading the primer, you realize the feature is bigger than expected (multiple non-trivial design decisions, ambiguous acceptance criteria, novel domain), surface that to the inspector and ask if they want to switch to `brainstorming` instead — re-set `planning-mode=brainstorming` and proceed to Step 4a. In auto mode the inspector picked `direct` on purpose, so do not ask: print `auto: warning — <reason>; direct mode skips the design/plan gates` and keep implementing.
 
 ### Step 5 — Hand off
 

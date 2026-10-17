@@ -158,7 +158,7 @@ If the queue is empty AND `active` was null, `progress.sh activate` errors out �
 
 On `proceed`, re-invoke `/mi-apply-impact`: the `active` block is already populated at `current-stage=2`, so the re-entry branch takes over and calls `ensure-current` without re-running the check. This backstop exists for cycles scaffolded before the `/mi-run` Step-3 gate and for hand-edited queues — post-gate cycles arrive here with collision-free names.
 
-If the inspector replies `walkthrough` after the `check-current=0` short-circuit message above, run the Step 3.3 requirements walkthrough against the existing `blueprints/current/requirements.md` — the short-circuit path is the same review gate as Step 3.2, just re-entered.
+If the inspector replies `walkthrough` after the `check-current=0` short-circuit message above, run the Step 3.3 requirements walkthrough against the existing `blueprints/current/requirements.md` — the short-circuit path is the same review gate as Step 3.2, just re-entered. In auto mode, follow the short-circuit message with Step 3.2's `planning_note` line, and handle a `brainstorming` / `direct` reply as Step 3.2 does.
 
 ### Step 1.5 — Lessons-filter Pre-Step A
 
@@ -477,6 +477,14 @@ When Phase E of the auto-fired review declined or kept any scope-expanding propo
 
 Empty groups print nothing. On the `check-current=0` short-circuit re-entry Step B did not run, so `skill_report` is empty there — do not guess. When `skill_report` is empty, omit its line (and its blank `>` line) from the message entirely, as with `scope_gate_note`. Write each line of `skill_report` as its own `> `-prefixed line inside the blockquote.
 
+**Planning mode (auto mode only).** Auto mode answers stage 3's planning-mode prompt itself, so ask for it here, where the inspector has just read the blueprint. If `"$CLAUDE_PLUGIN_ROOT/scripts/auto.sh" is-on` succeeds, run:
+
+```bash
+"$CLAUDE_PLUGIN_ROOT/scripts/auto.sh" planning-mode
+```
+
+and set `planning_note` to: ``Auto mode will implement this feature in **`<printed mode>`** planning mode. Reply **`brainstorming`** (design questions first, then spec → plan → sub-agents) or **`direct`** (I implement straight from the blueprint) to change it for this feature.`` Otherwise leave `planning_note` empty and omit its line (and its blank `>` line), as with `scope_gate_note`.
+
 Tell the inspector (append `$effort_suggestion` only when non-empty):
 
 > "Blueprints generated for `$active_feature` at `workflow-stream/$active_feature/blueprints/current/`. The blueprint was ${review_status}. Review `requirements.md`, `config.md`, and `diagrams/`.
@@ -487,12 +495,19 @@ Tell the inspector (append `$effort_suggestion` only when non-empty):
 >
 > Optional: reply **`walkthrough`** and I'll go over `requirements.md` with you item by item — each item gets a one-sentence summary in plain language, a short explanation, and a concrete example, waiting for your go-ahead before moving to the next one.
 >
+> ${planning_note}
+>
 > When ready, type **`/mi-continue`**.${effort_suggestion}"
 
-Then stop and wait. Two accepted signals:
+Then stop and wait. Two accepted signals, plus a third in auto mode:
 
 - **`walkthrough`** (or a natural-language equivalent — "yes, walk me through it", "explain the requirements one by one") → run Step 3.3, then return to waiting for `/mi-continue`.
 - **`/mi-continue`** → the Approve Handler in `commands/mi-continue.md` (current-stage = 2) takes over: blueprint sanity check, clear-point gate, then auto-fire of `/mi-plan-implementation`.
+- **`brainstorming`** or **`direct`** (auto mode only) → save it for this feature, reply `Planning mode for <feature>: <mode>. Type /mi-continue when ready.`, and return to waiting. It is accepted at any point while this gate waits, during or after a walkthrough too. It is not approval — `/mi-continue` still is:
+
+  ```bash
+  "$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" set "planning-mode=<mode>"
+  ```
 
 Do NOT auto-advance to stage 3 without `/mi-continue` — this is the mandatory review gate, and the walkthrough does not substitute for it (the inspector still approves explicitly).
 

@@ -13,7 +13,13 @@
 #                                                 # an `auto-answer` ledger row (stage = active
 #                                                 # current-stage, or `-` between features).
 #                                                 # A ledger failure only warns.
-#   auto.sh switch on|off|status                  # /mi-auto backend
+#   auto.sh switch on <brainstorming|direct>      # /mi-auto backend. `on` requires the
+#   auto.sh switch off|status                     # planning mode, so turning auto mode on
+#                                                 # always records the inspector's choice.
+#   auto.sh planning-mode                         # prints the stage-3 planning mode auto mode
+#                                                 # uses: active.planning-mode when set (the
+#                                                 # stage-2 pick), else auto-planning-mode,
+#                                                 # else brainstorming.
 #   auto.sh create-branch <slug> <config.md>      # dirty tracked tree (data root excluded) →
 #                                                 # exit 3; else creates feat/<slug> (or -2, -3,
 #                                                 # ...), switches to it, rewrites config.md's
@@ -36,6 +42,15 @@ auto_is_on() {
   local v
   v="$("$PROG" get-top auto-mode 2>/dev/null)" || return 1
   [[ "$v" == "true" ]]
+}
+
+auto_planning_mode() {
+  local v
+  v="$("$PROG" get-top auto-planning-mode 2>/dev/null)" || v=""
+  case "$v" in
+    brainstorming|direct) echo "$v" ;;
+    *) echo brainstorming ;;
+  esac
 }
 
 active_feature() {
@@ -85,29 +100,54 @@ case "$cmd" in
     ;;
 
   switch)
-    mode="${1:-status}"
+    mode="${1:-status}"; planning="${2:-}"
     [[ -f "$(mi_progress_file 2>/dev/null)" ]] \
       || mi_die "no active quest cycle — run /mi-run first (auto mode is stored per cycle)"
     case "$mode" in
       on|off)
-        val=true; [[ "$mode" == "off" ]] && val=false
-        "$PROG" set-top "auto-mode=$val" >/dev/null 2>&1 || mi_die "could not write auto-mode"
+        if [[ "$mode" == "on" ]]; then
+          case "$planning" in
+            brainstorming|direct) ;;
+            *) mi_die "switch on: planning mode required — brainstorming or direct" ;;
+          esac
+          "$PROG" set-top auto-mode=true "auto-planning-mode=$planning" >/dev/null 2>&1 \
+            || mi_die "could not write auto-mode"
+        else
+          "$PROG" set-top auto-mode=false >/dev/null 2>&1 || mi_die "could not write auto-mode"
+        fi
         a="$(active_feature)"
         if [[ -n "$a" && "$a" != "null" ]]; then
           dp=auto; [[ "$mode" == "off" ]] && dp=prompt
           "$PROG" set "diagram-prompt=$dp" >/dev/null 2>&1 || mi_info "warning: could not set diagram-prompt=$dp"
         fi
-        ledger_row "/mi-auto" "auto-mode-switch" "auto-mode → $mode"
         if [[ "$mode" == "on" ]]; then
-          echo "auto mode ON — remaining questions this cycle will be answered automatically"
+          ledger_row "/mi-auto" "auto-mode-switch" "auto-mode → on (planning mode: $planning)"
+          echo "auto mode ON (planning mode: $planning) — remaining questions this cycle will be answered automatically"
         else
+          ledger_row "/mi-auto" "auto-mode-switch" "auto-mode → off"
           echo "auto mode OFF — prompts restored"
         fi
         ;;
       status)
-        if auto_is_on; then echo "auto mode: on"; else echo "auto mode: off"; fi
+        if auto_is_on; then
+          echo "auto mode: on (planning mode: $(auto_planning_mode))"
+        else
+          echo "auto mode: off"
+        fi
         ;;
       *) mi_die "switch: expected on|off|status, got '$mode'" ;;
+    esac
+    ;;
+
+  planning-mode)
+    v=""
+    a="$(active_feature)"
+    if [[ -n "$a" && "$a" != "null" ]]; then
+      v="$("$PROG" get planning-mode 2>/dev/null)" || v=""
+    fi
+    case "$v" in
+      brainstorming|direct) echo "$v" ;;
+      *) auto_planning_mode ;;
     esac
     ;;
 
@@ -195,7 +235,7 @@ PYEOF
     ;;
 
   *)
-    echo "usage: auto.sh {is-on|answer|switch|create-branch|approve-guard} ..." >&2
+    echo "usage: auto.sh {is-on|answer|switch|planning-mode|create-branch|approve-guard} ..." >&2
     exit 2
     ;;
 esac

@@ -549,6 +549,7 @@ todo-list-id: <uuid of the related todo-list.md>
 queue: [notifications, audit-log]   # features still to run, in priority order
 completed: [onboarding]             # features finalized via mi-complete-workflow
 auto-mode: false                    # top-level — cycle-wide auto-mode switch (§7.3 /mi-auto)
+auto-planning-mode: brainstorming   # top-level — optional; stage-3 planning mode auto mode picks (asked at every switch-on)
 completed-branches: []              # top-level — feature branches finished via mi-complete-workflow, in order
 active:                             # null between workflows; populated while a feature runs
   feature: payments
@@ -559,7 +560,7 @@ active:                             # null between workflows; populated while a 
   review-stop-shown: false          # optional — true once the stage-5 auto-mode review stop has fired
   base-commit: a1b2c3d              # null until stage 3
   execution-mode: subagent-driven   # subagent-driven | inline | none
-  planning-mode: brainstorming      # brainstorming | direct | none — set at stage 3
+  planning-mode: brainstorming      # brainstorming | direct | none — set at stage 3 (in auto mode, optionally at the stage-2 stop)
   review-mode: none                 # brainstorming | direct | none — set at stage 6
   review-mode-suggestion: none      # brainstorming | direct | none — computed at stage 5 from finding scopes
   diagram-prompt: prompt            # prompt | auto — ask before each diagram event, or skip the prompt
@@ -589,6 +590,14 @@ the stage-8 stacked-branch note and the stage-2 `## GIT BRANCH` pre-fill skip (�
 unchanged and reads as auto mode off. `get-top`/`set-top` (§8.5) read and write them
 without requiring `active` to be populated; the existing `get`/`set` subcommands and
 their fixtures are untouched.
+
+**`auto-planning-mode`** *(1.14.0)* is the stage-3 planning mode auto mode picks —
+`brainstorming` or `direct`. The inspector chooses it every time auto mode is turned on:
+`auto.sh switch on` refuses without it, so `/mi-run --auto` and `/mi-auto on` ask when it
+was not named. At the stage-2 blueprint stop, the inspector can reply `brainstorming` or
+`direct` to set the feature's own `active.planning-mode`, which wins. `auto.sh
+planning-mode` resolves the value stage 3 uses: the feature's pick, then
+`auto-planning-mode`, then `brainstorming` (a pre-1.14.0 cycle with no stored choice).
 
 **Two-step activation lifecycle:**
 
@@ -1142,13 +1151,14 @@ arguments. Step 2: detect non-text files and run the per-file ingest decision fl
 compute the cycle slug, create `quest/<slug>/`, `quest.sh start`. Step 4: generate
 `todo-list.md`, `summary.md`, `progress.md` (queue populated, `active: null`), and
 `reference.md` (with `journal-refs`). Refuses if a cycle is already active unless
-`--archive-active` is passed. Branch selection is deferred to stage 2. `--auto` passes
-through to `progress.sh init --auto`, so the cycle starts with auto mode already on
-(§7.3, `/mi-auto`).
+`--archive-active` is passed. Branch selection is deferred to stage 2. `--auto` turns auto
+mode on right after `init` (`auto.sh switch on <planning-mode>`, §7.3, `/mi-auto`);
+`--auto=brainstorming|direct` names the planning mode, otherwise Step 1 asks for it.
 
-**`/mi-auto [on|off]`** *(v1.9.0)* — inspector, any time during a cycle (works between
-features too). Thin wrapper over `auto.sh switch`. `on` turns on the cycle-wide
-auto-mode switch and prints `auto mode ON — remaining questions this cycle will be
+**`/mi-auto [on [brainstorming|direct] | off]`** *(v1.9.0)* — inspector, any time during a cycle (works between
+features too). Thin wrapper over `auto.sh switch`. `on` asks for the stage-3 planning mode
+unless it is named (1.14.0), turns on the cycle-wide auto-mode switch and prints
+`auto mode ON (planning mode: <mode>) — remaining questions this cycle will be
 answered automatically`; if a prompt is already waiting, the inspector still answers
 that one — auto mode takes over from the next. `off` restores normal prompting. No
 argument prints the current state. See §3.5 for the underlying `auto-mode` field and
@@ -1963,7 +1973,7 @@ refit for per-batch use in v1.5; rendered by the sub-agents at review-call time,
 | `bundle.sh` | Engine for `/mi-export-bundle`. Subcommand: `export`. |
 | `info-bar.sh` | Pull-only Claude Code `statusLine` renderer (not a hook). Reads stdin JSON, prints one line, exits 0; ≤ 100 ms hot-path target. |
 | `ledger.sh` | Manage `context-ledger.md`. Subcommands: `init`, `append`. Append failures warn but never block. |
-| `auto.sh` | (v1.9.0) Auto-mode helper — the one tested home for the on/off check, the auto-answer audit trail, the `/mi-auto` switch, stacked-branch creation, and the stage-6 approve guard. Subcommands: `is-on` (reads `progress.sh get-top auto-mode`; no cycle / missing / unreadable = off), `answer "<prompt>" "<answer>" [--cmd <cmd>]` (prints `auto: <prompt> → <answer>`; appends an `auto-answer` ledger row; a ledger failure only warns), `switch on\|off\|status` (`/mi-auto`'s backend; also sets `diagram-prompt` when a feature is active), `create-branch <slug> <config.md>` (refuses on a dirty tracked tree, excluding the data root, exit 3; else creates `feat/<slug>` or the next free `-2`, `-3`, … suffix, switches to it, and rewrites `config.md`'s `## GIT BRANCH` section), `approve-guard <feature>` (exit 0 only when every `inspector-review.md` finding is `scope: fix\|re-implement` and `status: fixed` and no deferred question is still open; else exit 1 and name the offending `IR-NNN`s and open `DQ-NNN`s). |
+| `auto.sh` | (v1.9.0) Auto-mode helper — the one tested home for the on/off check, the auto-answer audit trail, the `/mi-auto` switch, stacked-branch creation, and the stage-6 approve guard. Subcommands: `is-on` (reads `progress.sh get-top auto-mode`; no cycle / missing / unreadable = off), `answer "<prompt>" "<answer>" [--cmd <cmd>]` (prints `auto: <prompt> → <answer>`; appends an `auto-answer` ledger row; a ledger failure only warns), `switch on <brainstorming\|direct>\|off\|status` (`/mi-auto`'s backend; `on` requires the planning mode and stores it as `auto-planning-mode`; also sets `diagram-prompt` when a feature is active), `planning-mode` (prints the stage-3 planning mode auto mode uses: the feature's own `planning-mode` when set, else `auto-planning-mode`, else `brainstorming`), `create-branch <slug> <config.md>` (refuses on a dirty tracked tree, excluding the data root, exit 3; else creates `feat/<slug>` or the next free `-2`, `-3`, … suffix, switches to it, and rewrites `config.md`'s `## GIT BRANCH` section), `approve-guard <feature>` (exit 0 only when every `inspector-review.md` finding is `scope: fix\|re-implement` and `status: fixed` and no deferred question is still open; else exit 1 and name the offending `IR-NNN`s and open `DQ-NNN`s). |
 | `pr-review.sh` | Drive `/mi-analyze-review`. Subcommands: `parse-url`, `new-session`, `fetch`, `canonicalize`, `count-marked`, `find-awaiting`, `list-actionable`, `normalize`, `set-status`, `post-reply`, `report-status`. |
 | `blueprint-review.sh` | Drive the three `/mi-blueprint-review*` commands (v1.2.0+; v1.5 refit; see §7.9). Subcommands: `resolve-reviewer` (v1.8.0; agent name → absolute path of its CLI wrapper, after checking the CLI works), `enumerate` (deterministic byte-offset computation from reviewer-supplied `{id, anchor_line, occurrence_index}`), `parse-findings` (extract `<!-- REVIEW-FINDING -->` blocks as JSON), `alloc-final-id` (lifetime-monotonic F-NNN allocator backed by `last-finding-id` frontmatter), `diff-drift` (heads-up diff against `summary.md` / `todo-list.md` after stage-2 review), `build-summary` (v1.5; deterministic ≤ 1500-token `review-history.md` summary for reviewer-session openers; truncation invariant protects every unresolved reportable severity — blocker/critical/high/medium — plus current-item-tied resolved findings, and drops oldest legacy low-severity unresolved first), `persist-findings` (v1.5; append new + flip earlier entries to resolved/dropped/deferred + recompute frontmatter counters), `size-stat` (v1.6.10; `<body-lines> <items> <bytes>` with frontmatter and REVIEW-FINDING blocks excluded, for the Phase A → G growth report), `ledger … meta` (v1.6.10; run-scoped key/value so the size baseline survives across fresh Bash subshells). |
 | `codex-review.sh` | (v1.8.0; see §7.9 "Reviewer transport") Headless codex transport for the reviewer sub-agents. `open --effort R` starts a read-only `codex exec` session; `reply --thread ID --effort R` resumes it; `check` verifies the CLI. Prompt on stdin; prints `{"threadId", "content"}`; exit 3 = session not found. |

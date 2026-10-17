@@ -243,24 +243,71 @@ err="$(run_in "$sb" "$A" answer "queue order" "accept" --cmd /mi-continue 2>&1 >
 if [[ "$err" != *"could not append"* ]]; then ok "$t"; else ng "$t" "err=$err"; fi
 
 t="auto.sh switch refuses without a quest cycle"
-if (cd "$empty" && MI_DATA_ROOT="$empty/none" "$A" switch on >/dev/null 2>&1); then ng "$t" "exit 0"; else ok "$t"; fi
+if (cd "$empty" && MI_DATA_ROOT="$empty/none" "$A" switch on brainstorming >/dev/null 2>&1); then ng "$t" "exit 0"; else ok "$t"; fi
 
-t="auto.sh switch on between features sets flag, prints ON line, logs switch row"
+t="auto.sh switch on between features sets flag + planning mode, prints ON line, logs switch row"
 sb="$(make_sandbox)"
-out="$(run_in "$sb" "$A" switch on 2>/dev/null)"
+out="$(run_in "$sb" "$A" switch on direct 2>/dev/null)"
 ledger="$sb/millwright-inspector/quest/2026-09-25-demo/context-ledger.md"
-if [[ "$out" == "auto mode ON — remaining questions this cycle will be answered automatically" ]] \
+if [[ "$out" == "auto mode ON (planning mode: direct) — remaining questions this cycle will be answered automatically" ]] \
    && [[ "$(run_in "$sb" "$P" get-top auto-mode 2>/dev/null)" == "true" ]] \
-   && grep -qF '| - | /mi-auto | auto-mode-switch | small | main | auto-mode → on |' "$ledger"; then
+   && [[ "$(run_in "$sb" "$P" get-top auto-planning-mode 2>/dev/null)" == "direct" ]] \
+   && grep -qF '| - | /mi-auto | auto-mode-switch | small | main | auto-mode → on (planning mode: direct) |' "$ledger"; then
   ok "$t"
 else
   ng "$t" "out=$out"
 fi
 
+t="auto.sh switch on refuses without a planning mode, or with an unknown one, and leaves auto mode off"
+sb="$(make_sandbox)"
+if run_in "$sb" "$A" switch on >/dev/null 2>&1; then ng "$t" "no mode → exit 0"
+elif run_in "$sb" "$A" switch on inline >/dev/null 2>&1; then ng "$t" "inline → exit 0"
+elif [[ "$(run_in "$sb" "$P" get-top auto-mode 2>/dev/null)" != "null" ]]; then ng "$t" "auto-mode written"
+else ok "$t"; fi
+
+t="auto.sh switch off keeps the stored planning mode and logs a plain off row"
+run_in "$sb" "$A" switch on direct >/dev/null 2>&1
+run_in "$sb" "$A" switch off >/dev/null 2>&1
+ledger="$sb/millwright-inspector/quest/2026-09-25-demo/context-ledger.md"
+if [[ "$(run_in "$sb" "$P" get-top auto-planning-mode 2>/dev/null)" == "direct" ]] \
+   && grep -qF '| - | /mi-auto | auto-mode-switch | small | main | auto-mode → off |' "$ledger"; then
+  ok "$t"
+else
+  ng "$t" "planning mode lost or off row missing"
+fi
+
+t="auto.sh switch status prints the planning mode when on"
+run_in "$sb" "$A" switch on brainstorming >/dev/null 2>&1
+out="$(run_in "$sb" "$A" switch status 2>/dev/null)"
+[[ "$out" == "auto mode: on (planning mode: brainstorming)" ]] && ok "$t" || ng "$t" "got $out"
+
+t="auto.sh planning-mode: brainstorming when nothing is stored (pre-1.14.0 cycle)"
+sb="$(make_sandbox --auto)"
+out="$(run_in "$sb" "$A" planning-mode 2>/dev/null)"
+[[ "$out" == "brainstorming" ]] && ok "$t" || ng "$t" "got $out"
+
+t="auto.sh planning-mode: the auto-mode choice, between features and on a feature with no pick"
+run_in "$sb" "$P" set-top auto-planning-mode=direct >/dev/null 2>&1
+a="$(run_in "$sb" "$A" planning-mode 2>/dev/null)"
+run_in "$sb" "$P" activate >/dev/null 2>&1
+b="$(run_in "$sb" "$A" planning-mode 2>/dev/null)"
+[[ "$a|$b" == "direct|direct" ]] && ok "$t" || ng "$t" "got $a|$b"
+
+t="auto.sh planning-mode: the feature's own stage-2 pick wins; the next feature falls back"
+run_in "$sb" "$P" set planning-mode=brainstorming >/dev/null 2>&1
+a="$(run_in "$sb" "$A" planning-mode 2>/dev/null)"
+run_in "$sb" "$P" finish >/dev/null 2>&1
+run_in "$sb" "$P" activate >/dev/null 2>&1
+b="$(run_in "$sb" "$A" planning-mode 2>/dev/null)"
+[[ "$a|$b" == "brainstorming|direct" ]] && ok "$t" || ng "$t" "got $a|$b"
+
+t="schema rejects an unknown auto-planning-mode"
+if run_in "$sb" "$P" set-top auto-planning-mode=inline >/dev/null 2>&1; then ng "$t" "exit 0"; else ok "$t"; fi
+
 t="auto.sh switch on/off toggles diagram-prompt on the active feature"
 sb="$(make_sandbox)"
 run_in "$sb" "$P" activate >/dev/null 2>&1
-run_in "$sb" "$A" switch on >/dev/null 2>&1
+run_in "$sb" "$A" switch on brainstorming >/dev/null 2>&1
 a="$(run_in "$sb" "$P" get diagram-prompt 2>/dev/null)"
 run_in "$sb" "$A" switch off >/dev/null 2>&1
 b="$(run_in "$sb" "$P" get diagram-prompt 2>/dev/null)"
@@ -272,6 +319,10 @@ out="$(run_in "$sb" "$A" switch status 2>/dev/null)"
 
 t="/mi-auto command exists and wraps auto.sh switch"
 assert_contains "$t" commands/mi-auto.md 'auto.sh" switch'
+assert_contains "/mi-auto on passes the planning mode" commands/mi-auto.md \
+  'auto.sh" switch on <planning-mode>'
+assert_contains "/mi-auto on asks for the planning mode when not named" commands/mi-auto.md \
+  'Which planning mode should auto mode use'
 
 # ---- Task 3: create-branch / approve-guard -------------------------------------
 
@@ -454,7 +505,15 @@ assert_auto_before draw-skipped commands/mi-draw-diagrams.md '"generate skipped 
 assert_contains "item 7 Stop gains the auto-mode exception" commands/mi-continue.md \
   'Do NOT auto-fire Step 2B from here — unless auto mode is on (`auto.sh is-on`), in which case continue straight into Step 2B without re-prompting (item 5 above already recorded'
 assert_contains "mi-run parses --auto" commands/mi-run.md '--auto'
-assert_contains "mi-run passes --auto to progress.sh init" commands/mi-run.md 'progress.sh" init --auto'
+assert_contains "mi-run turns auto mode on right after init" commands/mi-run.md 'auto.sh" switch on <planning-mode>'
+assert_contains "mi-run asks for the planning mode when --auto names none" commands/mi-run.md \
+  'Which planning mode should auto mode use'
+assert_contains "mi-run accepts --auto=<mode>" commands/mi-run.md '`--auto=brainstorming` or `--auto=direct`'
+assert_contains "stage-2 stop names the planning mode in auto mode" commands/mi-apply-impact.md \
+  'auto.sh" planning-mode'
+assert_contains "stage-2 hand-off carries the planning note" commands/mi-apply-impact.md '${planning_note}'
+assert_contains "stage-2 reply saves the feature's planning mode" commands/mi-apply-impact.md \
+  'progress.sh" set "planning-mode=<mode>"'
 assert_contains "mi-apply-impact logs the blueprint-diagrams auto answer" commands/mi-apply-impact.md \
   'auto.sh" answer "blueprint diagrams" "auto" --cmd /mi-apply-impact'
 assert_contains "Step B skips pre-fill for completed branches" docs/blueprint-regeneration.md \
@@ -464,7 +523,12 @@ assert_contains "Step B skips pre-fill for completed branches" docs/blueprint-re
 assert_prompt_kept branch-empty commands/mi-plan-implementation.md
 assert_auto_before branch-empty commands/mi-plan-implementation.md 'auto.sh" create-branch' 'exit 3'
 assert_prompt_kept planning-mode commands/mi-plan-implementation.md
-assert_auto_before planning-mode commands/mi-plan-implementation.md '"planning mode" "brainstorming"'
+assert_auto_before planning-mode commands/mi-plan-implementation.md \
+  'auto.sh" planning-mode' '"planning mode" "<mode>"'
+assert_contains "direct mode follows the chain rules in auto mode" commands/mi-plan-implementation.md \
+  'Its finishing rule does not apply — direct mode has no finishing step.'
+assert_contains "direct-mode caveat becomes a warning in auto mode" commands/mi-plan-implementation.md \
+  'auto: warning — <reason>; direct mode skips the design/plan gates'
 assert_prompt_kept primer-4a commands/mi-plan-implementation.md
 
 RULES=templates/auto-mode-chain-rules.md
@@ -727,7 +791,7 @@ fi
 
 # Item 8: mi-run's usage/error string mentions --auto.
 assert_contains "mi-run usage/error string lists --auto" commands/mi-run.md \
-  '/mi-run <folder1> [<folder2> ...] [--archive-active] [--auto]'
+  '/mi-run <folder1> [<folder2> ...] [--archive-active] [--auto[=brainstorming|direct]]'
 
 # Item 9: spec §3 rows 15 and 20 carry the concrete auto behaviour, not a placeholder.
 SPEC=docs/superpowers/specs/2026-09-25-auto-mode-design.md

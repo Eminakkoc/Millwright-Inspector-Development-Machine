@@ -53,6 +53,17 @@ properties:
       first feature. Written by `progress.sh init --auto` and `progress.sh set-top`
       (via `auto.sh switch`); read via `progress.sh get-top auto-mode`.
 
+  auto-planning-mode:
+    type: string
+    enum: [brainstorming, direct]
+    description: >
+      The stage-3 planning mode auto mode picks for each feature (1.14.0).
+      The inspector chooses it every time auto mode is turned on
+      (`/mi-run --auto`, `/mi-auto on`); `auto.sh switch on <mode>` writes it.
+      A feature's own `active.planning-mode`, set at the stage-2 blueprint
+      stop, overrides it. Optional — missing means brainstorming (the 1.9.0
+      behaviour). Read via `auto.sh planning-mode`.
+
   review-backend:
     type: string
     enum: [codex, claude]
@@ -150,7 +161,8 @@ properties:
               Skill in an isolated session; `direct` skips the Skill and has
               the millwright implement in the main session using primer.md
               as the required first read. `none` until /mi-plan-implementation
-              records the choice.
+              records the choice — or, in auto mode, until the inspector picks
+              one at the stage-2 blueprint stop (`/mi-apply-impact` Step 3.2).
           review-mode:
             type: string
             enum: [brainstorming, direct, none]
