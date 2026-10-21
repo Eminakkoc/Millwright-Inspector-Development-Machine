@@ -123,7 +123,7 @@ Consistency review has a characteristic failure here: two items disagree, and th
 Existing blocks already in the file carrying `severity: low` (from a review that ran before v1.6.8) are **not** rewritten or removed by this gate — reconcile them normally; only new entries are filtered.
 
 For each `existing[]` entry (downgrade `resolved` → `still-present` if `resolved_by_change` is missing/empty — the v1.2.4 F4 guard):
-- `status: resolved` (with non-empty `resolved_by_change`) — REMOVE the `<!-- REVIEW-FINDING id: X -->` block from the file.
+- `status: resolved` (with non-empty `resolved_by_change`) — REMOVE the `<!-- REVIEW-FINDING id: X -->` block from the file. Count every block you remove this way, over all rounds, and report the total as `fixed: <N>` in `Findings / risks` — the stage-2 stop summary reports it.
 - `status: refined` — UPDATE the block's `finding:` and `suggested-fix:` lines in place with refined text; bump `iteration:`. Leave every other field line untouched. Keep the canonical block format below.
 - `status: still-present` — bump the block's `iteration:`; leave finding text alone.
 
@@ -195,6 +195,7 @@ Findings / risks:
 - reason: <success | stable | stable-deferred | stable-medium | max-iter | blocked-detail>
 - counts: <B> blocker / <C> critical / <H> high / <M> medium remain inline
 - rounds: <N>
+- fixed: <N>                  (blocks removed as resolved, all rounds; omit when 0)
 - dropped-low: <N>            (omit the line entirely when 0)
 - expanding-deferred: <N>     (findings left for the Phase E gate; omit when 0)
 - reclassified-expanding: <N> (reviewer said clarifying, you judged expanding; omit when 0)

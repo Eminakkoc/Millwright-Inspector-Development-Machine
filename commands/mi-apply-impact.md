@@ -485,6 +485,14 @@ Empty groups print nothing. On the `check-current=0` short-circuit re-entry Step
 
 and set `planning_note` to: ``Auto mode will implement this feature in **`<printed mode>`** planning mode. Reply **`brainstorming`** (design questions first, then spec → plan → sub-agents) or **`direct`** (I implement straight from the blueprint) to change it for this feature.`` Otherwise leave `planning_note` empty and omit its line (and its blank `>` line), as with `scope_gate_note`.
 
+**Stop summary (both modes, 1.15.0).** The message ends with one sentence of numbers — stage, requirements reviewed, findings fixed and still open, scope proposals declined, skills waiting:
+
+```bash
+"$CLAUDE_PLUGIN_ROOT/scripts/stop-summary.sh" blueprint
+```
+
+Set `stop_summary` to the line it prints. When it prints nothing, omit its line (and its blank `>` line), as with `scope_gate_note`.
+
 Tell the inspector (append `$effort_suggestion` only when non-empty):
 
 > "Blueprints generated for `$active_feature` at `workflow-stream/$active_feature/blueprints/current/`. The blueprint was ${review_status}. Review `requirements.md`, `config.md`, and `diagrams/`.
@@ -497,7 +505,9 @@ Tell the inspector (append `$effort_suggestion` only when non-empty):
 >
 > ${planning_note}
 >
-> When ready, type **`/mi-continue`**.${effort_suggestion}"
+> When ready, type **`/mi-continue`**.${effort_suggestion}
+>
+> ${stop_summary}"
 
 Then stop and wait. Two accepted signals, plus a third in auto mode:
 

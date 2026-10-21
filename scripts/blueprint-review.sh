@@ -14,13 +14,16 @@
 #   diff-drift <req> <sum> <todo> <feature>  # (added in Task 5.2)
 #   build-reference-block <target> <manifest>  # (added in v1.6 — --reference-file)
 #   ledger init|mark|render|path|meta <file> [...] # (v1.5.2 phase-run enforcement; meta added v1.6.10)
-#   persist-findings <history> <input.json|->      # '-' reads the JSON from stdin (1.13.0)
+#   persist-findings <history> <input.json|-> [--items N --fixed N]
+#                                 # '-' reads the JSON from stdin (1.13.0); --items /
+#                                 #   --fixed record the run's reviewed-item and fixed-
+#                                 #   finding counts as last-review-items / -fixed (1.15.0)
 
 set -euo pipefail
 source "$(dirname "$0")/internal/common.sh"
 
 usage() {
-  sed -n '2,17p' "$0"
+  sed -n '2,20p' "$0"
 }
 
 cmd="${1:-}"
@@ -396,7 +399,22 @@ PYEOF
   persist-findings)
     history_file="${1:-}"
     input_json="${2:-}"
-    [[ -n "$history_file" && -n "$input_json" ]] || { echo "usage: $0 persist-findings <history-file> <input.json|->" >&2; exit 64; }
+    [[ -n "$history_file" && -n "$input_json" ]] || { echo "usage: $0 persist-findings <history-file> <input.json|-> [--items N --fixed N]" >&2; exit 64; }
+    shift 2
+    # 1.15.0: the run's own numbers for the stage-2 stop summary (stop-summary.sh).
+    # Both or neither; without them the two fields keep their previous values.
+    run_items="" run_fixed=""
+    while [[ $# -gt 0 ]]; do
+      case "$1" in
+        --items) run_items="${2:-}"; shift 2 ;;
+        --fixed) run_fixed="${2:-}"; shift 2 ;;
+        *) echo "error: persist-findings: unknown argument: $1" >&2; exit 64 ;;
+      esac
+    done
+    if [[ -n "$run_items$run_fixed" ]] && ! [[ "$run_items" =~ ^[0-9]+$ && "$run_fixed" =~ ^[0-9]+$ ]]; then
+      echo "error: persist-findings: --items and --fixed take a whole number each, and go together" >&2
+      exit 64
+    fi
     [[ -f "$history_file" && -w "$history_file" ]] || { echo "error: history file not found or not writable: $history_file" >&2; exit 1; }
     if [[ "$input_json" == "-" ]]; then
       # stdin carries the JSON (the command block pipes it in with printf, which,
@@ -407,10 +425,10 @@ PYEOF
     fi
     [[ -f "$input_json" ]] || { echo "error: input json not found: $input_json" >&2; exit 1; }
 
-    mi_py - "$history_file" "$input_json" <<'PYEOF'
+    mi_py - "$history_file" "$input_json" "$run_items" "$run_fixed" <<'PYEOF'
 import sys, re, json, datetime as dt
 
-history_path, input_path = sys.argv[1], sys.argv[2]
+history_path, input_path, run_items, run_fixed = sys.argv[1:5]
 with open(history_path, encoding="utf-8", errors="replace") as f:
     raw = f.read()
 with open(input_path, encoding="utf-8") as f:
@@ -538,6 +556,9 @@ fm_body = set_field(fm_body, "finding-count-unresolved", str(unresolved))
 # (The frontmatter.sh init renderer quotes scalars automatically; persist-findings
 # doesn't go through the renderer, so we quote explicitly here.)
 fm_body = set_field(fm_body, "last-review-at", f'"{now_iso}"')
+if run_items:
+    fm_body = set_field(fm_body, "last-review-items", run_items)
+    fm_body = set_field(fm_body, "last-review-fixed", run_fixed)
 
 new_raw = fm_open + fm_body + fm_close + body
 with open(history_path, "w", encoding="utf-8", newline="\n") as f:

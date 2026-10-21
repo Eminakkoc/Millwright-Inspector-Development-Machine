@@ -125,6 +125,7 @@ If `--discard-existing` was passed AND the plan file exists:
 "$CLAUDE_PLUGIN_ROOT/scripts/blueprints.sh" manual-test-plan-rotate "$active_feature"
 "$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" set manual-test-state=skipped manual-test-failure-policy=none
 echo "Existing manual-test plan discarded; manual-test phase marked skipped. Write findings into inspector-review.md and type /mi-continue when done."
+"$CLAUDE_PLUGIN_ROOT/scripts/stop-summary.sh" review
 exit 0
 ```
 
@@ -249,7 +250,7 @@ Branch on `(plan_exists, --from-resume, --force)`:
 
   Prompt: `"Generate manual-test-plan.md for <feature> before findings review? (Recommended for UI / integration changes; skippable for backend-only changes you're confident about.) y/n"`
 
-  - On `n`: `progress.sh set manual-test-state=skipped manual-test-failure-policy=none`. Print `"Skipped. Write findings into inspector-review.md and type /mi-continue when done."` Stop.
+  - On `n`: `progress.sh set manual-test-state=skipped manual-test-failure-policy=none`. Print `"Skipped. Write findings into inspector-review.md and type /mi-continue when done."`, then the stop summary line (`"$CLAUDE_PLUGIN_ROOT/scripts/stop-summary.sh" review`). Stop.
   - On `y`: continue to step 3.
 
 - **No existing plan, `--from-resume`:** treat as if `y` was answered. Continue to step 3.
@@ -258,7 +259,7 @@ Branch on `(plan_exists, --from-resume, --force)`:
 
   Prompt: `"Existing manual-test-plan.md found for <feature>. Regenerate it? (y to rotate and regenerate, n to leave it in place.)"`
 
-  - On `n`: do **not** set `manual-test-state=skipped`; print `"Existing plan left in place. Run /mi-manual-test-run when ready, or write findings into inspector-review.md and type /mi-continue to proceed without running it."` Stop with state unchanged.
+  - On `n`: do **not** set `manual-test-state=skipped`; print `"Existing plan left in place. Run /mi-manual-test-run when ready, or write findings into inspector-review.md and type /mi-continue to proceed without running it."`, then the stop summary line (`"$CLAUDE_PLUGIN_ROOT/scripts/stop-summary.sh" review`). Stop with state unchanged.
   - On `y`: continue to step 3 (regeneration).
 
 - **Existing plan present, `--from-resume` without `--force`, no `freshness_forced_regen`:** do **not** prompt and do **not** rotate/regenerate silently. Print `"Existing manual-test plan found; using it unchanged."` Skip steps 3–6 and jump to step 7's "perform now?" prompt. The stage-5 hand-off answer means "make a plan available," not "destroy and replace an existing plan without asking."
@@ -588,7 +589,7 @@ Both `y` and `y-autonomous` bring the environment up for you; they differ in **w
 
 If you'd rather start the services yourself, that is still available — type `/mi-manual-test-run --interactive-env` instead of answering `y`.
 
-- On `n`: print `"Deferred. Run /mi-manual-test-run when ready, or write findings into inspector-review.md and type /mi-continue to proceed without manual testing. The plan file stays available."` Stop. State stays `none`.
+- On `n`: print `"Deferred. Run /mi-manual-test-run when ready, or write findings into inspector-review.md and type /mi-continue to proceed without manual testing. The plan file stays available."`, then the stop summary line (`"$CLAUDE_PLUGIN_ROOT/scripts/stop-summary.sh" review`). Stop. State stays `none`.
 - On `y`:
 
   ```bash

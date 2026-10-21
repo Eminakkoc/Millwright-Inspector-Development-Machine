@@ -135,7 +135,7 @@ For each item's response entry, downgrade `resolved` → `still-present` if `res
 Existing blocks already in `working_copy` carrying `severity: low` (from a review that ran before v1.6.8) are **not** rewritten or removed by this gate — reconcile them normally; only new entries are filtered.
 
 For each `existing[]` entry:
-- `status: resolved` (with non-empty `resolved_by_change`) — REMOVE the matching `<!-- REVIEW-FINDING -->` block from `working_copy`.
+- `status: resolved` (with non-empty `resolved_by_change`) — REMOVE the matching `<!-- REVIEW-FINDING -->` block from `working_copy`. Count every block you remove this way, over all items and rounds — blocks you appended in an earlier round included — and report the total as `fixed: <N>` in `Findings / risks`; the stage-2 stop summary reports it.
 - `status: refined` — UPDATE the block's `finding:` and `suggested-fix:` lines in place; leave every other field line untouched. Keep the canonical block format below.
 - `status: still-present` — leave alone.
 
@@ -224,6 +224,7 @@ Findings / risks:
 - batch-id: <batch_id>
 - reason: <success | stable | stable-medium | max-iter | blocked-detail>
 - rounds: <N>
+- fixed: <N>                  (blocks removed as resolved, all items and rounds; omit when 0)
 - dropped-low: <N>            (omit the line entirely when 0)
 - expanding-deferred: <N>     (findings left for the Phase E gate; omit when 0)
 - reclassified-expanding: <N> (reviewer said clarifying, you judged expanding; omit when 0)

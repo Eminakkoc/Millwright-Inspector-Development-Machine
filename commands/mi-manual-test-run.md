@@ -640,7 +640,7 @@ record YOUR verdicts. Reply y or n.
 
 ##### 4.8 Hand-off message
 
-**Auto mode.** If `"$CLAUDE_PLUGIN_ROOT/scripts/auto.sh" is-on` succeeds, do not print the hand-off below. Instead run `"$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" set review-stop-shown=true`, list any rows of `"$CLAUDE_PLUGIN_ROOT/scripts/deferred-questions.sh" list-open "$active_feature"` as "Open deferred questions:", then print `auto: review stop for <feature> — check commits <base>..HEAD, diagrams and test results; add findings to inspector-review.md or leave it empty, then /mi-continue (No findings → it approves and completes.)` (with `<feature>` replaced by `$active_feature` and `<base>` by the short base commit) and stop. This stop never auto-continues. Otherwise continue below unchanged.
+**Auto mode.** If `"$CLAUDE_PLUGIN_ROOT/scripts/auto.sh" is-on` succeeds, do not print the hand-off below. Instead run `"$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" set review-stop-shown=true`, list any rows of `"$CLAUDE_PLUGIN_ROOT/scripts/deferred-questions.sh" list-open "$active_feature"` as "Open deferred questions:", then print `auto: review stop for <feature> — check commits <base>..HEAD, diagrams and test results; add findings to inspector-review.md or leave it empty, then /mi-continue (No findings → it approves and completes.)` (with `<feature>` replaced by `$active_feature` and `<base>` by the short base commit), then the stop summary (below), and stop. This stop never auto-continues. Otherwise continue below unchanged.
 
 ```
 Manual test done. Review inspector-review.md (auto-seeded failures appear at the bottom as canonical
@@ -666,6 +666,12 @@ here would deadlock the cycle, because the entry that resolves them runs last.
 **Guided and autonomous env-modes:** append a line listing the millwright-started background services (with their task ids) and note they are still running so the inspector can stop them once done exercising the environment (the runner does not tear them down automatically).
 
 **Autonomous env-mode only:** when the inspector declined the 4.7.1 guided re-run offer, append: `"Changed your mind? /mi-manual-test-run --rerun-guided walks you through the same plan with your own verdicts."`
+
+**Stop summary (both modes, 1.15.0).** The hand-off's last line — after every line above, and in auto mode after the review-stop line — is one sentence of numbers: stage, commits, test verdicts, findings waiting and fixed, deferred questions. Print what this prints, verbatim (nothing when it prints nothing):
+
+```bash
+"$CLAUDE_PLUGIN_ROOT/scripts/stop-summary.sh" review
+```
 
 ## Branch B — `--seed-only` invocation
 
@@ -719,6 +725,8 @@ Finalize on every **valid exit**:
 After finalization, the next `/mi-continue` lands in the Inspector Handler.
 
 Branch B does **not** fire the Step 4.7.1 guided re-run offer, even when the run it is recovering was autonomous — it is a seeding-recovery path, not the end of a run, and re-prompting there would compete with its own auto-seed prompt. Mention `/mi-manual-test-run --rerun-guided` in Branch B's closing message when `manual-test-env-mode == autonomous`, so the option is still visible.
+
+After a valid exit, end Branch B's closing message with the stop summary line (`stop-summary.sh review`, as in Step 4.8).
 
 ## Branch C — `--finalize-skipped` invocation
 

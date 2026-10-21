@@ -1431,7 +1431,11 @@ fi
   "$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" set manual-test-state=skipped manual-test-failure-policy=none
   ```
 
-  Then print the existing stage-5 review message tail (`"Write your findings into implementation/inspector-review.md (or leave it empty to approve). Type /mi-continue when done."`).
+  Then print the existing stage-5 review message tail (`"Write your findings into implementation/inspector-review.md (or leave it empty to approve). Type /mi-continue when done."`), and end with the stop summary line (1.15.0):
+
+  ```bash
+  "$CLAUDE_PLUGIN_ROOT/scripts/stop-summary.sh" review
+  ```
 
 Stop here.
 
@@ -1520,6 +1524,7 @@ if "$CLAUDE_PLUGIN_ROOT/scripts/auto.sh" is-on \
   base_short="$(git rev-parse --short "$("$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" get base-commit)")"
   echo "auto: review stop for <feature> — check commits <base>..HEAD, diagrams and test results; add findings to inspector-review.md or leave it empty, then /mi-continue (No findings → it approves and completes.)" \
     | sed "s|<base>|$base_short|; s|<feature>|$active_feature|"
+  "$CLAUDE_PLUGIN_ROOT/scripts/stop-summary.sh" review
   exit 0
 fi
 ```

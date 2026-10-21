@@ -323,7 +323,7 @@ for wave_start in range(0, len(batches), concurrency):
         validate_frontmatter_unchanged(file)
 ```
 
-When all waves complete, record Phase C — set `--findings` to the number of `<!-- REVIEW-FINDING -->` blocks the batch reviewers emitted this phase (0 is a valid, honest count):
+When all waves complete, record Phase C — set `--findings` to the number of `<!-- REVIEW-FINDING -->` blocks the batch reviewers emitted this phase (0 is a valid, honest count). Keep `phase_c_fixed`, the sum of the batch reviewers' `fixed:` lines (a missing line is 0), for Phase F:
 
 ```bash
 "$CLAUDE_PLUGIN_ROOT/scripts/blueprint-review.sh" ledger mark "$file" C done \
@@ -354,7 +354,7 @@ reference_block = $reference_block (from A.5; may be empty)
 
 On `success` / `partial` / `blocked`: continue to Step 6 (Phase F) regardless. Phase F persists whatever findings the file ended up with. On `partial` with `reason: max-iter`: surface a y/n prompt: `"<B>B/<C>C/<H>H/<M>M consistency findings remain after <K> rounds — run another loop? (y/n)"` (drop the zero-count severities from the string). On `y`: re-spawn the sub-agent with the file's current state. On `n`: continue.
 
-Once the loop resolves (whichever terminal outcome), record Phase D — set `--findings` to the number of consistency findings that remain inline:
+Once the loop resolves (whichever terminal outcome), record Phase D — set `--findings` to the number of consistency findings that remain inline. Keep `phase_d_fixed`, the sum of the consistency reviewer's `fixed:` lines over every spawn (a missing line is 0), for Phase F:
 
 ```bash
 "$CLAUDE_PLUGIN_ROOT/scripts/blueprint-review.sh" ledger mark "$file" D done \
@@ -441,11 +441,12 @@ Collect every `<!-- REVIEW-FINDING -->` block currently in the file via `scripts
 | no | yes (with `last-status: still-present` or `refined`) | emit `status: dropped` entry — the finding's `REVIEW-FINDING` block was removed from the spec body (fixer resolved it, OR inspector manually deleted it without a `resolved_by_change` note) |
 | no | yes (with `last-status: resolved` or `dropped`) | no entry (no state change needed) |
 
-Pipe the JSON array to `scripts/blueprint-review.sh persist-findings`:
+Pipe the JSON array to `scripts/blueprint-review.sh persist-findings`, with this run's numbers: `--items` is the Phase B descriptor count and `--fixed` is `phase_c_fixed + phase_d_fixed + approved_count` (the proposals applied at Phase E; 0 when it was skipped). They land in `review-history.md` as `last-review-items` / `last-review-fixed`, which the stage-2 stop summary reads (`stop-summary.sh blueprint`):
 
 ```bash
 # printf, not echo: zsh's echo turns the \n escapes inside the JSON into real line breaks.
-printf '%s\n' "$findings_json" | "$CLAUDE_PLUGIN_ROOT/scripts/blueprint-review.sh" persist-findings "$review_history" -
+printf '%s\n' "$findings_json" | "$CLAUDE_PLUGIN_ROOT/scripts/blueprint-review.sh" persist-findings "$review_history" - \
+  --items "$descriptor_count" --fixed "$fixed_count"
 "$CLAUDE_PLUGIN_ROOT/scripts/blueprint-review.sh" ledger mark "$file" F done \
   --findings "$persisted_count" --note "persisted to $(basename "$review_history")"
 ```

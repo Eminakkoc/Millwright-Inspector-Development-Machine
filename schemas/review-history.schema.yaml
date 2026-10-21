@@ -42,3 +42,11 @@ properties:
     type: string
     format: date-time
     description: ISO-8601 UTC timestamp of the most recent persist pass.
+  last-review-items:
+    type: integer
+    minimum: 0
+    description: (1.15.0) Items the most recent review checked (its Phase B descriptor count). Read by stop-summary.sh for the stage-2 stop summary; absent until a 1.15.0+ review persists.
+  last-review-fixed:
+    type: integer
+    minimum: 0
+    description: (1.15.0) Findings the most recent review fixed — resolved by the batch and consistency reviewers, plus scope proposals applied at the Phase E gate. Written together with last-review-items.
