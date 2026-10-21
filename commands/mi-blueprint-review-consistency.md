@@ -79,7 +79,7 @@ On `success` / `partial` / `blocked`: continue to Step 4 regardless. On `partial
 
 ### Step 3.5 — Run Phase E (scope-expansion gate)
 
-Same contract as `/mi-blueprint-review` Step 5.5, scoped to this file's consistency findings: collect the inline blocks with `scope-impact: expanding`, present them as one compact list, ask once (`none` / `all` / an id list / `keep <ids>`), apply only what the inspector approves, and mark the declined ones `deferred` for Step 4's persist. Skip only when there are none.
+Same contract as `/mi-blueprint-review` Step 5.5, scoped to this file's consistency findings: collect the inline blocks with `scope-impact: expanding`, walk the inspector through them one finding per reply (`apply` / `decline` / `keep` for each; E.2–E.3), apply only what they approve, and mark the declined ones `deferred` for Step 4's persist. Skip only when there are none.
 
 The gate belongs here as much as in the orchestrator — this wrapper drives the same consistency reviewer, whose fixer is under the same rule (apply `clarifying` only), so without Phase E its expanding findings would sit inline forever and be re-proposed on every later run.
 

@@ -122,7 +122,7 @@ lessons_block = ""    (always empty per spec §8.1.3)
 
 Apply the returned `new_region` to disk via `Edit(old_string=original_region, new_string=new_region)` — rewrite tmp-ids T1-<n> to final F-NNN via `scripts/blueprint-review.sh alloc-final-id` before applying. On exact-match failure: re-enumerate this item; re-spawn (same shape as orchestrator's Phase C exact-match-failure path).
 
-**Phase E:** run the scope-expansion gate for this item per `/mi-blueprint-review` Step 5.5 — collect its inline `scope-impact: expanding` blocks, show them as one compact list, ask once, apply only what the inspector approves, mark the rest `deferred`. Skip when there are none.
+**Phase E:** run the scope-expansion gate for this item per `/mi-blueprint-review` Step 5.5 — collect its inline `scope-impact: expanding` blocks, walk the inspector through them one finding per reply (E.2–E.3), apply only what they approve, mark the declined ones `deferred`. Skip when there are none.
 
 **Phase F:** persist findings (only this one item's worth) per `/mi-blueprint-review` Step 6.
 

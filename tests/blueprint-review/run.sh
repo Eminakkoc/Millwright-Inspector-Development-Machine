@@ -1061,6 +1061,15 @@ done
 grep -q 'Phase E' "$REPO_ROOT/commands/mi-blueprint-review.md" || missing+=("orchestrator: Phase E")
 grep -q 'size-stat' "$REPO_ROOT/commands/mi-blueprint-review.md" || missing+=("orchestrator: growth report")
 grep -q 'status: deferred' "$REPO_ROOT/commands/mi-blueprint-review.md" || missing+=("orchestrator: deferred persist")
+# 1.15.0: Phase E walks the inspector through the findings, one per reply.
+for f in commands/mi-blueprint-review.md commands/mi-blueprint-review-item.md \
+         commands/mi-blueprint-review-consistency.md; do
+  grep -q 'one finding per reply' "$REPO_ROOT/$f" || missing+=("$f: Phase E walkthrough")
+done
+grep -q 'reply apply, decline or keep' "$REPO_ROOT/commands/mi-blueprint-review.md" || missing+=("orchestrator: per-finding question")
+if grep -q 'none          — apply nothing' "$REPO_ROOT/commands/mi-blueprint-review.md"; then
+  missing+=("orchestrator: the old one-shot prompt is back")
+fi
 if [[ ${#missing[@]} -eq 0 ]]; then
   ok "$t"
 else

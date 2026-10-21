@@ -366,7 +366,7 @@ Once the loop resolves (whichever terminal outcome), record Phase D — set `--f
 Announce: `Phase E — scope-expansion gate — starting`.
 Record entry: `blueprint-review.sh ledger mark "$file" E running`.
 
-**Why this phase exists.** The fixer applies `clarifying` fixes automatically but is forbidden from applying `expanding` ones — fixes that would have the implementer build something the spec does not contain today. Without a gate, those either get silently applied (the spec grows a little more on every review run until it no longer matches what the inspector asked for) or get silently discarded (a real gap is lost). Phase E is where a human decides, once, per run.
+**Why this phase exists.** The fixer applies `clarifying` fixes automatically but is forbidden from applying `expanding` ones — fixes that would have the implementer build something the spec does not contain today. Without a gate, those either get silently applied (the spec grows a little more on every review run until it no longer matches what the inspector asked for) or get silently discarded (a real gap is lost). Phase E is where a human decides, one finding at a time, per run.
 
 **E.1 — Collect the expanding findings.**
 
@@ -385,36 +385,44 @@ If `expanding_count == 0`, there is nothing to gate — record the sanctioned sk
 
 (`ledger render` accepts `E skipped` **only** with `--findings 0`. Skipping it while expanding findings exist fails the run — the same enforcement shape as Phase C.)
 
-**E.2 — Present them compactly.** One block, not one prompt per finding. For each expanding finding print exactly one line:
+**E.2 — Walk the inspector through them, one finding per reply (1.15.0).** Your first reply says how many there are, gives the growth line, and goes straight into the first finding:
 
 ```
-<F-NNN> [<severity>, <target>] would add: <the mechanism, in ≤ 12 words>
-    why: <the finding, one line>
-```
-
-Then the growth line, from the Phase A baseline (`ledger meta … get size_baseline`) versus the current `size-stat`:
-
-```
+<N> findings propose adding NEW mechanism to this blueprint that isn't there today. None was
+applied: the review stops here so the scope stays yours. I'll take them one at a time.
 requirements.md this run: <lines_before> → <lines_after> lines (<+N>), <items_before> → <items_after> items.
-Applying all <N> expanding findings would add roughly <M> more lines of scope.
+Applying all <N> would add roughly <M> more lines of scope.
 ```
 
-**E.3 — Ask once:**
+The growth line comes from the Phase A baseline (`ledger meta … get size_baseline`) versus the current `size-stat`. Then give the finding these seven parts, in this order, in plain language:
+
+- **Title** — `<F-NNN> [<severity>, <target>]` and a short name for the mechanism it would add.
+- **Explanation** — two or three simple sentences: what the finding says is missing, and what its fix would add. When it mentions another item, a file or a term the inspector may not have in mind, add a few-word gloss in parentheses right after it, e.g. `PAY-003 (refund webhook)`.
+- **Summary** — one sentence.
+- **Example** — one concrete case, from this feature or from everyday use, where the missing mechanism would matter.
+- **Impact** — one or two lines, non-technical: the part of the product a person would notice changing, and how. When nothing a user sees changes, say so.
+- **Suggested fix** — at most two sentences: the finding's `suggested-fix`, said plainly.
+- **Suggested fix example** — the change to `requirements.md`, small enough to take in at a glance: the item's text before and after, a few lines each.
+
+End the reply with this finding's question, and wait:
 
 ```
-<N> findings propose adding NEW mechanism to this blueprint that isn't there today.
-These were NOT applied — the review deliberately stops here so scope stays yours.
-
-Reply:
-  none          — apply nothing (default). The findings stay inline as comments and are
-                  recorded as declined, so future reviews won't re-propose them.
-  all           — apply every proposal above.
-  F-003 F-007   — apply just these; the rest are recorded as declined.
-  keep F-003    — apply nothing now, but leave the listed ones open for next time
-                  (neither applied nor declined).
+<F-NNN> — reply apply, decline or keep.
+  apply    — write the fix into requirements.md.
+  decline  — leave it out (the default). Recorded as declined, so future reviews won't re-propose it.
+  keep     — decide later: neither applied nor declined; it comes back on the next review.
+  (apply rest / decline rest — the same answer for this finding and every one still to come)
 ```
 
-**E.4 — Apply the approved subset, in main, serially.** For each approved id: apply its `suggested-fix` to the file with `Edit`, then remove that `REVIEW-FINDING` block. Apply the smallest edit that satisfies the fix — the inspector approved the mechanism described on that one line, not a redesign of the item. Re-validate frontmatter after each edit (`last-finding-id` may change only via `alloc-final-id`).
+**E.3 — Take the answers.** One finding per reply: never two in one message, and never preview or summarize the ones still to come. After each answer, record it and present the next finding the same way; keep track of the position, so each answer lands on the finding it was given for.
+
+- `next`, `continue` or `skip` take the default: `decline`, which keeps the scope as it is.
+- Anything else — a question, a comment, a bare `yes` — is not a decision. Answer it, then ask the same finding's question again.
+- `apply rest` or `decline rest` gives that answer to this finding and to every remaining one, and ends the walkthrough.
+
+When the last finding has its answer, go on to E.4 with the applied, declined and kept ids, and finish the review from there (Phases F and G, then back to the command that ran the review). These answers are the only pauses the review makes for the inspector, apart from the Claude-or-skip question when codex is unavailable.
+
+**E.4 — Apply the approved subset, in main, serially.** For each approved id: apply its `suggested-fix` to the file with `Edit`, then remove that `REVIEW-FINDING` block. Apply the smallest edit that satisfies the fix — the inspector approved the mechanism that finding describes, not a redesign of the item. Re-validate frontmatter after each edit (`last-finding-id` may change only via `alloc-final-id`).
 
 For each **declined** id: leave the `REVIEW-FINDING` block inline and add it to the Phase F persist input with `status: deferred` plus a `deferred_reason` (the inspector's words when they gave a reason; otherwise `"inspector declined at the scope-expansion gate"`). This is what stops the regrowth loop: `build-summary` renders declined findings into every future reviewer session under a "DECLINED BY THE INSPECTOR — do NOT re-raise" heading, so the next run does not rediscover and re-apply the same mechanism.
 
@@ -504,7 +512,7 @@ The ledger file itself lives under `$TMPDIR` keyed by the reviewed file's path; 
 ## Notes
 
 - **Severity vocabulary (v1.6.8).** Findings carry `blocker | critical | high | medium`. There is no `low` — the reviewer templates declare it out of scope and both reviewer sub-agents drop any `low` entry that arrives anyway (reported as `dropped-low: N` in their return). Blocks carrying `severity: low` from a pre-v1.6.8 run are left alone in place and still parse; they are simply never created again.
-- **Scope-expansion gate (v1.6.10).** Reviewer findings carry `scope_impact: clarifying | expanding`. The fixer auto-applies only `clarifying` fixes; `expanding` ones — those that would have the implementer build something the spec does not contain today — are never applied automatically. Phase E shows them to the inspector once, applies only what they approve, and records the rest as `deferred` in `review-history.md` so future runs do not re-propose them. This is what keeps `requirements.md` from growing a little more on every review.
+- **Scope-expansion gate (v1.6.10).** Reviewer findings carry `scope_impact: clarifying | expanding`. The fixer auto-applies only `clarifying` fixes; `expanding` ones — those that would have the implementer build something the spec does not contain today — are never applied automatically. Phase E walks the inspector through them one finding per reply (1.15.0), applies only what they approve, and records the rest as `deferred` in `review-history.md` so future runs do not re-propose them. This is what keeps `requirements.md` from growing a little more on every review.
 - **Shipped-code regression is in scope.** Both reviewer passes check every item against already-shipped behavior — see the "Shipped-code regression check" section in `templates/blueprint-reviewer-prompt-batch.md.tmpl` (per item) and `…-consistency.md.tmpl` (file-wide). The evidence comes from the item's own `**Shipped-code impact:**` bullet and the grounding report injected via `--reference-file`.
 - This command does NOT mutate `progress.md` or any quest file. It is workflow-neutral when invoked manually. Stage-2 auto-invocation is wired in `commands/mi-apply-impact.md` (see Step B.5).
 - All file writes happen in main (Step 4 write-back loop, Step 5 sub-agent direct writes, Step 6 persist). Sub-agents read but never write the spec file (batch reviewer is structurally read-only; consistency reviewer is serial-safe).

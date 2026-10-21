@@ -1635,9 +1635,9 @@ inspector reviews a post-review `requirements.md` rather than the raw stage-2 ou
      spawn here uses the same session-resume continuation pattern.
   5. **Phase E — scope-expansion gate.** Collects every inline finding marked
      `scope-impact: expanding` (proposals that would add mechanism the spec does not
-     contain today — the fixer is forbidden from applying these), shows them to the
-     inspector as one compact list with the run's growth stat, applies only the approved
-     subset, and records the rest as `deferred`. Ledger-enforced: `skipped` is sanctioned
+     contain today — the fixer is forbidden from applying these), walks the inspector
+     through them one finding per reply after the run's growth stat (1.15.0), applies only
+     the approved ones, and records the declined ones as `deferred`. Ledger-enforced: `skipped` is sanctioned
      only when recorded with 0 expanding findings. See the scope-expansion section above.
   6. **Phase F — persist findings to `review-history.md`.** Calls
      `scripts/blueprint-review.sh persist-findings` to append a new history entry for
@@ -1678,11 +1678,14 @@ The contract that follows from it:
   unable to act on them, so another round can only re-report them. The consistency reviewer
   exits `stable-deferred`; delta prompts name the deferred ids and forbid re-raising them,
   escalating their severity, or proposing an equivalent mechanism under another name.
-- **Phase E asks the inspector, once per run.** All expanding findings are shown as one
-  compact list — each a single line naming the mechanism it would add — with the run's
-  growth stat (from the Phase A `size-stat` baseline stored in the ledger). The inspector
-  answers `none` (default), `all`, an id list, or `keep <ids>`. Only approved fixes are
-  applied. Non-interactive runs apply nothing and record `still-present`: silence is
+- **Phase E walks the inspector through them, one finding per reply (1.15.0).** The first
+  reply gives the count and the run's growth stat (from the Phase A `size-stat` baseline
+  stored in the ledger), then each finding in turn: title, plain explanation, one-sentence
+  summary, an example, the impact a person would notice, the suggested fix and a
+  before/after of the `requirements.md` change. The inspector answers each with `apply`,
+  `decline` (default; also `next`) or `keep`, or `apply rest` / `decline rest` for all the
+  ones left; anything else is answered and the same finding asked again. Only approved
+  fixes are applied. Non-interactive runs apply nothing and record `still-present`: silence is
   neither consent nor refusal.
 - **Declined proposals are remembered.** Phase F persists them as `last-status: deferred`
   with a `deferred-reason`, and `build-summary` renders them into every future reviewer
