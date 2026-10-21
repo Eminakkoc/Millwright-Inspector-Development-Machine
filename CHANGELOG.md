@@ -1,5 +1,45 @@
 # Changelog
 
+## 1.15.0 — Clear gates clear themselves; stop summaries; scope proposals one at a time
+
+### Clear gates clear themselves
+
+A clear gate used to stop and ask you to type `/clear`. Claude Code runs built-in commands only for text you type, so the millwright could print the instruction but not follow it. A small hook now follows it for you.
+
+- `hooks/clear-gate.ts` reads the end of each main-loop turn. When the last lines read "type `/clear`, then `/mi-continue`" (all three gates: stage 2 to 3, stage 5 to 6, stage 8 to 2), it runs the built-in `/clear` half a second later.
+- **Auto mode on:** the hook also runs `/mi-continue`, so the workflow carries on without you. The gate line `auto: clear gate <gate> — type /clear, then /mi-continue` says so on its own; when the final message restates the gate in its own words instead, the hook asks the workflow: `scripts/auto.sh is-on`, run with `bash` from the session's folder and with the plugin's `data_root` setting. When that check can't run, the gate only clears.
+- **Auto mode off:** the hook only clears. You still type `/mi-continue` yourself, so you can read the gate's message first.
+- An answer that quotes the gate earlier and then goes on, a sub-agent's turn and an interrupted turn are left alone.
+- New plugin setting `auto_clear` (default on). Turn it off to type `/clear` yourself, which is the way to carry context over a gate, as the manual gates allow.
+- Needs a Claude Code build with plugin hook modules (`hooks/hooks.json` `modules`). Tests: `hooks/clear-gate.test.ts` (`claude plugin test .`).
+
+### Stop summaries: the two stops end with their numbers
+
+The two stops every feature makes, the blueprint stop (stage 2) and the inspector review stop (stage 5), now end with one sentence of numbers, in auto and manual mode alike. It comes after everything the stop already prints, so you can see at a glance where the feature stands.
+
+- Blueprint stop, for example:
+
+  > **Summary:** Stage 2 of 8 (blueprint) for `invoice-export`, feature 2 of 3: the review checked 8 requirements and fixed 9 findings, 3 findings are still open (1 critical, 2 medium), 2 scope proposals were declined, and 1 suggested skill is waiting for your OK.
+
+- Review stop, for example:
+
+  > **Summary:** Stage 5 of 8 (inspector review) for `invoice-export`, feature 2 of 3: 11 commits, 18 test scenarios run (15 passed, 2 failed, 1 skipped), 3 findings waiting (2 from the failed tests, 1 from the conventions review), 0 fixed so far, and 1 of 3 deferred questions still open.
+
+  With nothing waiting, it ends "0 findings are open, so an empty review completes the feature."
+- New `scripts/stop-summary.sh blueprint|review` writes the sentence from the workflow's own files. Read-only, and it exits 0 whatever it finds, so a missing file only drops its part of the sentence. The feature-test entry gets "the whole-cycle test after N finished features" and a count of deferred test scenarios still without a verdict.
+- The review summary ends every message that hands you `inspector-review.md`: the manual-test runner's hand-off (and its `--seed-only` recovery), auto mode's review-stop line, the "skip testing" reply at the stage-5 hand-off, and the plan command's skip, keep and defer replies.
+- The blueprint review now records what it fixed. The batch and consistency reviewers report `fixed: <N>` (findings they resolved and removed), and Phase F passes the run's numbers to `persist-findings --items N --fixed N`. They land in `review-history.md` as the new optional fields `last-review-items` and `last-review-fixed`. Scope proposals you approve at the Phase E gate count as fixed too.
+- Tests: new `tests/stop-summary/run.sh`.
+
+### The scope-expansion gate is a walkthrough
+
+When the blueprint review's Phase E finds proposals that would add new scope, it no longer shows them as one compact list with a single `none` / `all` / ids / `keep` prompt. It walks you through them, one finding per reply.
+
+- The first reply gives the count and the run's growth line, then the first finding in seven parts: title, a plain explanation, a one-sentence summary, an example, the impact a person would notice, the suggested fix, and a before/after of the `requirements.md` change.
+- Each finding ends with its own question: `apply`, `decline` (the default, also `next`) or `keep`. `apply rest` / `decline rest` answers every one still to come. A question or a bare `yes` is answered, and the same finding is asked again.
+- After the last answer the review carries on (apply, persist, report) as before. What a decision does is unchanged: applied fixes are written in, declined ones are recorded so later reviews don't re-propose them, kept ones come back next time, and a run that can't ask applies nothing.
+- Same walkthrough in `/mi-blueprint-review-item` and `/mi-blueprint-review-consistency`.
+
 ## 1.14.0 — Auto mode asks for the planning mode
 
 Auto mode used to answer stage 3's planning-mode prompt with `brainstorming` every time. Now you choose.
