@@ -2398,8 +2398,8 @@ session, `approve`, `/mi-continue`, `y` (completion confirmation), `y` (diagram 
 plus every `progress.sh` / `todo.sh` / `blueprints.sh` / `review.sh` / `commits.sh`
 invocation. Clear-point recommendations fire at stage-2→3, stage-5→6, and feature-A→feature-B.
 Claude Code runs built-in commands only for typed text, so since 1.15.0 the plugin's
-`hooks/clear-gate.ts` runs `/clear` when a turn ends on one (and `/mi-continue` too in auto
-mode); with the `auto_clear` setting off, the inspector types `/clear` themselves.
+`hooks/clear-gate.ts` runs `/clear`, then `/mi-continue`, when a turn ends on one (auto mode
+or not); with the `auto_clear` setting off, the inspector types `/clear` themselves.
 
 ---
 

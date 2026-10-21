@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.15.1 — Clear gates always continue
+
+The clear-gate hook runs `/clear` and then `/mi-continue` at every gate, auto mode or not. It no longer asks `auto.sh is-on`, which read the wrong folder whenever the plugin's `data_root` setting differed from the project's, so a gate in auto mode only cleared.
+
 ## 1.15.0 — Clear gates clear themselves; stop summaries; scope proposals one at a time
 
 ### Clear gates clear themselves
