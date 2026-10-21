@@ -29,6 +29,13 @@
       "description": "Folder (relative to the project root) where workflow data lives: journal/, quest/, and workflow-stream/. Defaults to 'millwright-inspector'.",
       "default": "millwright-inspector",
       "sensitive": false
+    },
+    "auto_clear": {
+      "type": "boolean",
+      "title": "Clear at clear gates",
+      "description": "Run /clear by itself when a clear gate ends a turn. In auto mode it also sends /mi-continue; in manual mode you type /mi-continue yourself. Turn off to type /clear yourself.",
+      "default": true,
+      "sensitive": false
     }
   }
 }

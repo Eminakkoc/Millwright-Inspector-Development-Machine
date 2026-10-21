@@ -247,6 +247,6 @@ runner or CI list, so nothing else changes.
 
 ## 8. Out of scope
 
-Running `/clear` from the model; a sub-agent substitute for clear gates; auto-answering
+Running `/clear` from the model (superseded in 2.3.0: `hooks/clear-gate.ts` runs it when a gate ends a turn); a sub-agent substitute for clear gates; auto-answering
 superpowers prompts beyond what plugin text instructs; seeding non-failed manual-test
 scenarios; an unattended mode without the stage-5 stop; auto-selecting todo items.
