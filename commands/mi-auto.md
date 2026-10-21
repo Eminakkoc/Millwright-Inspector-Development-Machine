@@ -33,7 +33,8 @@ Toggles the cycle-wide `auto-mode` flag stored at the top level of the active cy
 ## What auto mode answers — and what it never does
 
 - Answers: queue order, diagram prompts, planning mode (the one chosen at `/mi-auto on` or `/mi-run --auto`, unless you picked another for the feature at its blueprint stop), drift check (`auto`), execution mode (`subagent-driven`), chain completion (when `chain-finished` is set), manual-test prompts, review mode (`direct`), and the stage-6 approve when every resolved finding was a clean `fix`/`re-implement`.
-- Always stops for you: todo selection, blueprint approval, the blueprint-review scope gate, the brainstorming design Q&A (end it with `/mi-implement`), two-or-more branch candidates, the stage-5 review stop, DTI Gate 1, open design points, and the three clear gates (type `/clear`, then `/mi-continue`).
+- Always stops for you: todo selection, blueprint approval, the blueprint-review scope gate, the brainstorming design Q&A (end it with `/mi-implement`), two-or-more branch candidates, the stage-5 review stop, DTI Gate 1, and open design points.
+- Clear gates: the turn ends at each of the three, and the clear-gate hook runs `/clear`, then `/mi-continue`, for you. With the plugin's `auto_clear` setting off, you type them.
 - Every automatic answer prints one `auto: <prompt> → <answer>` line and adds an `auto-answer` row to the cycle's context ledger. Anything you type always wins.
 
 `/mi-auto on` affects the active feature immediately (`diagram-prompt=auto`); `/mi-auto off` restores `diagram-prompt=prompt`.
