@@ -483,7 +483,7 @@ Empty groups print nothing. On the `check-current=0` short-circuit re-entry Step
 "$CLAUDE_PLUGIN_ROOT/scripts/auto.sh" planning-mode
 ```
 
-and set `planning_note` to: ``Auto mode will implement this feature in **`<printed mode>`** planning mode. Reply **`brainstorming`** (design questions first, then spec → plan → sub-agents) or **`direct`** (I implement straight from the blueprint) to change it for this feature.`` Otherwise leave `planning_note` empty and omit its line (and its blank `>` line), as with `scope_gate_note`.
+If it prints `auto`, the inspector left the choice to you: judge this feature's size with **Suggest a mode first** in `commands/mi-plan-implementation.md` Step 4 (using `requirements.md` and `grounding-report.md`), save it with `"$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" set "planning-mode=<suggested>"`, and use it as `<printed mode>`, adding ` (<reason>)` after it. Then set `planning_note` to: ``Auto mode will implement this feature in **`<printed mode>`** planning mode. Reply **`brainstorming`** (design questions first, then spec → plan → sub-agents) or **`direct`** (I implement straight from the blueprint) to change it for this feature.`` Otherwise leave `planning_note` empty and omit its line (and its blank `>` line), as with `scope_gate_note`.
 
 **Stop summary (both modes, 1.15.0).** The message ends with one sentence of numbers — stage, requirements reviewed, findings fixed and still open, scope proposals declined, skills waiting:
 

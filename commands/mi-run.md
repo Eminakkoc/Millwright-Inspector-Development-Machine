@@ -1,6 +1,6 @@
 ---
 description: Generate three quest cycle files (todo-list.md, summary.md, progress.md) inside a fresh per-cycle subfolder under quest/, from a selected list of journal folders. Stage 1 of the mi-workflow. The fourth cycle file, queue-rationale.md, is written later by /mi-continue at stage 1.5.
-argument-hint: "<journal-folder> [<journal-folder>...] [--archive-active] [--auto[=brainstorming|direct]]"
+argument-hint: "<journal-folder> [<journal-folder>...] [--archive-active] [--auto[=brainstorming|direct|auto]]"
 ---
 
 # mi-run
@@ -75,12 +75,12 @@ Tokenize `$ARGUMENTS`. Pull `--archive-active` out as a flag if present; every o
 
 ```
 error: no journal folders specified. Usage:
-  /mi-run <folder1> [<folder2> ...] [--archive-active] [--auto[=brainstorming|direct]]
+  /mi-run <folder1> [<folder2> ...] [--archive-active] [--auto[=brainstorming|direct|auto]]
 ```
 
 `--auto` — create the cycle with auto mode on. A bare `auto` token is also read as the flag, **only** when `journal/auto/` does not exist; if it exists, `auto` stays a journal folder name. Neither form counts as a journal folder.
 
-Auto mode always starts with a planning mode — the one it picks at stage 3 for each feature. `--auto=brainstorming` or `--auto=direct` names it. When the flag (or the bare `auto` token) came without one, ask now, in one line, before any journal work: "Which planning mode should auto mode use — `brainstorming` (design questions first, then spec → plan → sub-agents) or `direct` (I implement straight from the blueprint)? You can still change it per feature at each blueprint stop." Accept only those two words. Step 5 saves the answer.
+Auto mode always starts with a planning mode — the one it picks at stage 3 for each feature. `--auto=brainstorming`, `--auto=direct` or `--auto=auto` names it. When the flag (or the bare `auto` token) came without one, ask now, in one line, before any journal work: "Which planning mode should auto mode use — `brainstorming` (design questions first, then spec → plan → sub-agents), `direct` (I implement straight from the blueprint), or `auto` (I judge each feature's size and pick)? You can still change it per feature at each blueprint stop." Accept only those three words. Step 5 saves the answer.
 
 ### Step 1.5 — Active-quest pre-check
 

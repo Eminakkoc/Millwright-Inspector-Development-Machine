@@ -258,6 +258,15 @@ else
   ng "$t" "out=$out"
 fi
 
+t="auto.sh switch on auto records auto; planning-mode prints auto until the feature has its own pick"
+sb="$(make_sandbox)"
+run_in "$sb" "$A" switch on auto >/dev/null 2>&1
+a="$(run_in "$sb" "$A" planning-mode 2>/dev/null)"
+run_in "$sb" "$P" activate >/dev/null 2>&1
+run_in "$sb" "$P" set planning-mode=direct >/dev/null 2>&1
+b="$(run_in "$sb" "$A" planning-mode 2>/dev/null)"
+[[ "$a" == "auto" && "$b" == "direct" ]] && ok "$t" || ng "$t" "a=$a b=$b"
+
 t="auto.sh switch on refuses without a planning mode, or with an unknown one, and leaves auto mode off"
 sb="$(make_sandbox)"
 if run_in "$sb" "$A" switch on >/dev/null 2>&1; then ng "$t" "no mode → exit 0"
@@ -508,7 +517,7 @@ assert_contains "mi-run parses --auto" commands/mi-run.md '--auto'
 assert_contains "mi-run turns auto mode on right after init" commands/mi-run.md 'auto.sh" switch on <planning-mode>'
 assert_contains "mi-run asks for the planning mode when --auto names none" commands/mi-run.md \
   'Which planning mode should auto mode use'
-assert_contains "mi-run accepts --auto=<mode>" commands/mi-run.md '`--auto=brainstorming` or `--auto=direct`'
+assert_contains "mi-run accepts --auto=<mode>" commands/mi-run.md '`--auto=brainstorming`, `--auto=direct` or `--auto=auto`'
 assert_contains "stage-2 stop names the planning mode in auto mode" commands/mi-apply-impact.md \
   'auto.sh" planning-mode'
 assert_contains "stage-2 hand-off carries the planning note" commands/mi-apply-impact.md '${planning_note}'
@@ -791,7 +800,7 @@ fi
 
 # Item 8: mi-run's usage/error string mentions --auto.
 assert_contains "mi-run usage/error string lists --auto" commands/mi-run.md \
-  '/mi-run <folder1> [<folder2> ...] [--archive-active] [--auto[=brainstorming|direct]]'
+  '/mi-run <folder1> [<folder2> ...] [--archive-active] [--auto[=brainstorming|direct|auto]]'
 
 # Item 9: spec §3 rows 15 and 20 carry the concrete auto behaviour, not a placeholder.
 SPEC=docs/superpowers/specs/2026-09-25-auto-mode-design.md

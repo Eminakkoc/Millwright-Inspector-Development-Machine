@@ -281,18 +281,28 @@ The `## On-demand canonical files` section is template-emitted and does not need
 
 ### Step 4 — Ask the inspector to pick a planning mode
 
+**Suggest a mode first.** Before showing the prompt (or, in auto mode, when `auto.sh planning-mode` printed `auto`), judge the feature's size from whichever of `primer.md`, `requirements.md` and `grounding-report.md` (same folder as `requirements.md`) exist, and set `suggested` to `brainstorming` or `direct`. Pick `brainstorming` when any of these holds:
+
+- three or more IMPLEMENTING items or Goals items;
+- the work spans more than one seam, or touches roughly 8+ files or 500+ lines;
+- it changes a schema, wire contract, persisted data or public API;
+- `## Shipped-code regression risks` in the grounding report lists a real risk;
+- a Goals item leaves a design decision open or its acceptance criteria ambiguous.
+
+Otherwise pick `direct`. When unsure, pick `brainstorming`. Keep the reason to one short clause naming what decided it (e.g. "one file, one Goals item, additive only").
+
 Prompt the inspector:
 
-**Auto mode.** If `"$CLAUDE_PLUGIN_ROOT/scripts/auto.sh" is-on` succeeds, run `"$CLAUDE_PLUGIN_ROOT/scripts/auto.sh" planning-mode` — it prints `brainstorming` or `direct`: the mode the inspector picked for this feature at the stage-2 blueprint stop, or else the one they chose when turning auto mode on. Then run `"$CLAUDE_PLUGIN_ROOT/scripts/auto.sh" answer "planning mode" "<mode>" --cmd /mi-plan-implementation` with that value and continue as if the inspector had replied it — do not show the prompt below. Otherwise show the prompt below unchanged.
+**Auto mode.** If `"$CLAUDE_PLUGIN_ROOT/scripts/auto.sh" is-on` succeeds, run `"$CLAUDE_PLUGIN_ROOT/scripts/auto.sh" planning-mode` — it prints `brainstorming`, `direct` or `auto`: the mode the inspector picked for this feature at the stage-2 blueprint stop, or else the one they chose when turning auto mode on. On `auto` (no pick was made at the stop either), apply **Suggest a mode first** above, save the result with `progress.sh" set "planning-mode=<suggested>"`, and use it as the mode. Then run `"$CLAUDE_PLUGIN_ROOT/scripts/auto.sh" answer "planning mode" "<mode>" --cmd /mi-plan-implementation` with that value (after an `auto` judgement, pass `"<mode> (<reason>)"` as the answer) and continue as if the inspector had replied it — do not show the prompt below. Otherwise show the prompt below unchanged.
 
-> "Stage 3 — pick a planning mode for `$active_feature`:
+> "Stage 3 — planning mode for `$active_feature`: I suggest **`<suggested>`** (<reason>).
 >
->   - **`brainstorming`** (default) — invokes the brainstorming → writing-plans → executing-plans / subagent-driven-development chain in an isolated session. Best for non-trivial features where the design isn't obvious from the requirements, or where you want the chain's design-question / spec-approval / plan-approval gates.
+>   - **`brainstorming`** — invokes the brainstorming → writing-plans → executing-plans / subagent-driven-development chain in an isolated session. Best for non-trivial features where the design isn't obvious from the requirements, or where you want the chain's design-question / spec-approval / plan-approval gates.
 >   - **`direct`** — skips the brainstorming chain. I read `primer.md` (and any on-demand canonical files) and implement directly in this session. Best for straightforward features where the design is clear from the blueprint and you want to skip the chain ceremony. You'll still review the result at stage 5.
 >
-> Reply `brainstorming` or `direct`."
+> Reply `ok` to keep my suggestion, or `brainstorming` / `direct` to override it."
 
-Wait for the reply. Persist the choice:
+Wait for the reply; `ok` (or any plain yes) means `suggested`. Persist the choice:
 
 ```bash
 "$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" set "planning-mode=<choice>"
@@ -327,6 +337,8 @@ The IMPLEMENTING items listed in primer.md `## Active scope` are the committed s
 Proceed with your normal brainstorming flow: clarifying questions → design sections → spec doc → writing-plans → execution. Do NOT worry about the mi-workflow — I'll resume it automatically after your chain finishes.
 
 **Skills.** primer.md's `## Skills for this work (from config.md)` and `## Skills for reviewing this work` sections list the skills chosen for this feature at stage 2 (either may be absent). Load the relevant ones with the `Skill` tool before proposing the design, and list them in the spec. In the plan, every task an entry covers carries `**Skills:** <name> (load: Skill <name> or Read <path>)` for its implementer and `**Review skills:** <name> (load: Skill <name> or Read <path>)` for its reviewer — a task brief passes only the task's own section, so these lines are how skills reach those sub-agents. Paste the primer's `## Skills for reviewing this work` section into the final whole-branch reviewer and re-review dispatches, and its `## Skills for this work (from config.md)` section into the fix dispatch.
+
+**Questions.** Ask each design question with the `AskUserQuestion` tool, not as free text, and wait for the answer. Give 2–4 options with your recommended one first (label ending "(Recommended)") and a one-line description each; use `multiSelect: true` when the options are not mutually exclusive. The tool adds "Other" itself. Fall back to a plain-text question only when no sensible option set exists. Spec-approval and plan-approval gates stay as the skill words them.
 ```
 
 **Auto mode.** If `"$CLAUDE_PLUGIN_ROOT/scripts/auto.sh" is-on` succeeds, append this paragraph to the primer above before invoking the Skill (substitute the resolved plugin root):

@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased — The millwright suggests the planning mode
+
+- At stage 3 the millwright judges the feature's size (item and Goals count, seams and files touched, contract changes, regression risks, open design decisions) and names a suggested planning mode in the prompt. Reply `ok` to keep it, or `brainstorming` / `direct` to override.
+- Auto mode takes a third choice, `auto` (`/mi-run --auto=auto`, `/mi-auto on auto`, or the one-line question): the millwright makes the same judgement per feature, shows it at the stage-2 blueprint stop with its reason, and you can still reply `brainstorming` or `direct` to change it.
+- The brainstorming chain's primer now tells the skill to ask each design question with `AskUserQuestion` (2–4 options, recommended first, multi-select when answers aren't exclusive).
+
 ## 1.15.1 — Clear gates always continue
 
 The clear-gate hook runs `/clear` and then `/mi-continue` at every gate, auto mode or not. It no longer asks `auto.sh is-on`, which read the wrong folder whenever the plugin's `data_root` setting differed from the project's, so a gate in auto mode only cleared.

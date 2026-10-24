@@ -13,13 +13,14 @@
 #                                                 # an `auto-answer` ledger row (stage = active
 #                                                 # current-stage, or `-` between features).
 #                                                 # A ledger failure only warns.
-#   auto.sh switch on <brainstorming|direct>      # /mi-auto backend. `on` requires the
+#   auto.sh switch on <brainstorming|direct|auto> # /mi-auto backend. `on` requires the
 #   auto.sh switch off|status                     # planning mode, so turning auto mode on
 #                                                 # always records the inspector's choice.
 #   auto.sh planning-mode                         # prints the stage-3 planning mode auto mode
 #                                                 # uses: active.planning-mode when set (the
 #                                                 # stage-2 pick), else auto-planning-mode,
-#                                                 # else brainstorming.
+#                                                 # else brainstorming. `auto` (the cycle's
+#                                                 # choice) means: judge each feature by size.
 #   auto.sh create-branch <slug> <config.md>      # dirty tracked tree (data root excluded) →
 #                                                 # exit 3; else creates feat/<slug> (or -2, -3,
 #                                                 # ...), switches to it, rewrites config.md's
@@ -48,7 +49,7 @@ auto_planning_mode() {
   local v
   v="$("$PROG" get-top auto-planning-mode 2>/dev/null)" || v=""
   case "$v" in
-    brainstorming|direct) echo "$v" ;;
+    brainstorming|direct|auto) echo "$v" ;;
     *) echo brainstorming ;;
   esac
 }
@@ -107,8 +108,8 @@ case "$cmd" in
       on|off)
         if [[ "$mode" == "on" ]]; then
           case "$planning" in
-            brainstorming|direct) ;;
-            *) mi_die "switch on: planning mode required — brainstorming or direct" ;;
+            brainstorming|direct|auto) ;;
+            *) mi_die "switch on: planning mode required — brainstorming, direct or auto" ;;
           esac
           "$PROG" set-top auto-mode=true "auto-planning-mode=$planning" >/dev/null 2>&1 \
             || mi_die "could not write auto-mode"

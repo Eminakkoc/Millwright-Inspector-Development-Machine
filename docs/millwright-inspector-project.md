@@ -549,7 +549,7 @@ todo-list-id: <uuid of the related todo-list.md>
 queue: [notifications, audit-log]   # features still to run, in priority order
 completed: [onboarding]             # features finalized via mi-complete-workflow
 auto-mode: false                    # top-level — cycle-wide auto-mode switch (§7.3 /mi-auto)
-auto-planning-mode: brainstorming   # top-level — optional; stage-3 planning mode auto mode picks (asked at every switch-on)
+auto-planning-mode: brainstorming   # brainstorming | direct | auto (judge per feature); top-level — optional; stage-3 planning mode auto mode picks (asked at every switch-on)
 completed-branches: []              # top-level — feature branches finished via mi-complete-workflow, in order
 active:                             # null between workflows; populated while a feature runs
   feature: payments

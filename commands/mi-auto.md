@@ -13,8 +13,8 @@ Toggles the cycle-wide `auto-mode` flag stored at the top level of the active cy
 
 ## Execution
 
-1. Parse `$ARGUMENTS`: `on`, `on brainstorming`, `on direct`, `off`, or empty (show state). Anything else → print `usage: /mi-auto [on [brainstorming|direct] | off]` and stop.
-2. **`on`** — every time auto mode is turned on, it records a planning mode. If `$ARGUMENTS` did not name one, ask in one line and wait: "Which planning mode should auto mode use — `brainstorming` (design questions first, then spec → plan → sub-agents) or `direct` (I implement straight from the blueprint)? You can still change it per feature at each blueprint stop." Accept only those two words. Then run, with `<planning-mode>` set to the argument or the reply:
+1. Parse `$ARGUMENTS`: `on`, `on brainstorming`, `on direct`, `on auto`, `off`, or empty (show state). Anything else → print `usage: /mi-auto [on [brainstorming|direct|auto] | off]` and stop.
+2. **`on`** — every time auto mode is turned on, it records a planning mode. If `$ARGUMENTS` did not name one, ask in one line and wait: "Which planning mode should auto mode use — `brainstorming` (design questions first, then spec → plan → sub-agents), `direct` (I implement straight from the blueprint), or `auto` (I judge each feature's size and pick)? You can still change it per feature at each blueprint stop." Accept only those three words. Then run, with `<planning-mode>` set to the argument or the reply:
 
    ```bash
    "$CLAUDE_PLUGIN_ROOT/scripts/auto.sh" switch on <planning-mode>

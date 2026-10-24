@@ -14,7 +14,8 @@ commands/mi-manual-test-run.md:- Wait for the inspector to confirm `ready` (or `
 commands/mi-manual-test-run.md:Wait for the inspector's reply, one of: `pass`, `fail <observation>`, `skip <reason>`,
 commands/mi-plan-implementation.md:  If the inspector provides a branch name inline, use `Edit` to write it into `config.md` between `## GIT BRANCH` and the next heading, then continue to validation below. If they choose option 2, halt and wait for them to re-invoke.
 commands/mi-plan-implementation.md:  Wait for the inspector's reply. If they name one branch, use `Edit` to rewrite the section to that single line (remove the others), then re-enter validation. If they edit and re-run, halt.
-commands/mi-plan-implementation.md:Wait for the reply. Persist the choice:
+commands/mi-plan-implementation.md:**Questions.** Ask each design question with the `AskUserQuestion` tool, not as free text, and wait for the answer. Give 2–4 options with your recommended one first (label ending "(Recommended)") and a one-line description each; use `multiSelect: true` when the options are not mutually exclusive. The tool adds "Other" itself. Fall back to a plain-text question only when no sensible option set exists. Spec-approval and plan-approval gates stay as the skill words them.
+commands/mi-plan-implementation.md:Wait for the reply; `ok` (or any plain yes) means `suggested`. Persist the choice:
 commands/mi-review.md:Wait for the reply.
 commands/mi-review.md:Wait for the reply. If the inspector presses Enter without typing (accept-default), use the suggestion-derived default (`direct` when suggestion was `direct`, `brainstorming` otherwise). Persist the actual choice:
 commands/mi-sidequest.md:The read-only sub-agent has determined the ask cannot be answered without source edits. Do **not** re-spawn — write-mode is an explicit inspector decision, never automatic. Print:

@@ -55,8 +55,9 @@ properties:
 
   auto-planning-mode:
     type: string
-    enum: [brainstorming, direct]
+    enum: [brainstorming, direct, auto]
     description: >
+      `auto` means the millwright judges each feature's size and picks one.
       The stage-3 planning mode auto mode picks for each feature (1.14.0).
       The inspector chooses it every time auto mode is turned on
       (`/mi-run --auto`, `/mi-auto on`); `auto.sh switch on <mode>` writes it.

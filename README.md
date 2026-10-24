@@ -103,7 +103,7 @@ Everything else — `/mi-apply-impact`, `/mi-plan-implementation`, `/mi-review`,
 
 You also reply to a handful of short prompts in chat (no slash commands):
 
-- `brainstorming` or `direct` — planning-mode at stage 3 and review-mode at stage 6.
+- `brainstorming`, `direct` or `auto` (the millwright judges each feature's size) — planning-mode at stage 3 and review-mode at stage 6.
 - A short reason or `continue` — at the post-implementation drift check (stage 4).
 - `approve` — to end a brainstorming review session (stage 6).
 - `y` or `n` — at the optional diagram refresh after the review session.
@@ -207,7 +207,7 @@ See `docs/millwright-inspector-project.md` for the full stage-by-stage reference
 | `/mi-update-blueprint`       | inspector   | Manually rotate + regenerate `blueprints/current/` with a reason.           |
 | `/mi-update-todo-list`       | inspector   | Add / cancel / change state on todo items (state-machine safe).            |
 | `/mi-sidequest`              | inspector   | Mid-workflow Q&A or small fix via an isolated side-quest sub-agent; `--write` for source edits. |
-| `/mi-auto [on [brainstorming\|direct] \| off]` | inspector   | Turn auto mode on/off for the active cycle, or show its state (no argument). `on` asks for the stage-3 planning mode unless you name it. |
+| `/mi-auto [on [brainstorming\|direct\|auto] \| off]` | inspector   | Turn auto mode on/off for the active cycle, or show its state (no argument). `on` asks for the stage-3 planning mode unless you name it. |
 | `/mi-implement`              | inspector   | Ends the stage-3 brainstorming design Q&A and hands off to spec → plan → sub-agent implementation under the auto-mode end-of-chain rules. |
 
 **Blueprint review (v1.5.0+ token-reduction refit):**
