@@ -840,13 +840,24 @@ journal folder gets an `id.md` minted on first use. Only `todo-list.md`, `summar
 `quest/<active-slug>/` is preserved frozen, `quest/active.md` is cleared via `quest.sh
 end`, and a fresh subfolder is created.
 
+When a selected folder's top-level `task.md` carries `source: scriptorium` (a topic
+published by `/mi-scriptorium`), its `## Feature:` headings become the cycle's features
+verbatim, in order — the `todo-list.md` sections, `summary.md` headings and queue — and
+its Goal, Cross-cutting constraints and Out-of-scope sections feed `summary.md`. Plain
+folders selected alongside may add items or new features but never rename, merge or split
+a scriptorium feature; two selected files declaring the same feature stop the run. With
+no marker, `/mi-run` behaves exactly as before.
+
 Feature names pass a **uniqueness gate** before `todo-list.md` is written
 (`folder-id.sh feature-lineage-check`): a candidate that matches an existing
 `workflow-stream/<feature>/` folder is kept only when the folder's recorded lineage
 (quest `reference.md` links) shares a journal folder with the active cycle — genuine
 continuation. Otherwise the millwright renames the feature (preferring the source
 journal folder's own name, e.g. journal `general-fixes-2` → feature `general-fixes-2`)
-so a new effort never mixes artifacts into a completed workflow's folder.
+so a new effort never mixes artifacts into a completed workflow's folder. A scriptorium
+feature keeps its `task.md` heading as the stem and takes the first free ordinal instead
+(`refunds` → `refunds-2`, via `folder-id.sh free-name`) — the one allowed deviation from
+`task.md`, reported in the hand-off.
 `/mi-apply-impact` re-runs the same check at fresh activation as a late backstop
 (halts for an inspector `proceed` on collision) for pre-gate cycles and hand-edited
 queues.
@@ -1979,7 +1990,7 @@ refit for per-batch use in v1.5; rendered by the sub-agents at review-call time,
 | `quest.sh` | Manage the `quest/active.md` pointer and resolve the active cycle's directory. Subcommands: `slug`, `start`, `end`, `init-pointer`, `current`, `dir`, `has-active`, `status`, `list`, `feature-section`. |
 | `progress.sh` | Manage the active cycle's `progress.md`. Subcommands: `init` (`--auto` seeds `auto-mode: true`), `activate` (also seeds `diagram-prompt=auto` when `auto-mode` is on — §3.5), `finish` (also appends `active.branch` to `completed-branches`, deduplicated), `requeue`, `reset`, `reorder`, `enqueue`, `get-active`, `queue-remaining`, `get`, `set`, `get-top <field>` / `set-top <field>=<value>...` (v1.9.0 — read/write top-level fields such as `auto-mode` and `completed-branches` independent of `active`; `set-top` refuses `active`/`queue`/`completed`/`id`/`todo-list-id` and shares its write pipeline with `set`), `advance`, `advance-to` (atomic skip-transition; stage-pair whitelist `2→5, 3→5, 5→7, 6→7` — `2→5` is the feature-test entry's abbreviated-pipeline skip, §6.4), `add-clear-recommendation`, `has-clear-recommendation`, `check-worktree`, `check-feature-test-pin <ft-name> <order...>` (stage-1.5 validation; exit 0 when the name is absent from the order or is its last element, exit 3 otherwise; reads no files; deliberately separate from `reorder`, whose permutation-only contract is **unchanged** — a guard inside `reorder` would alter behaviour for cycles that carry no feature-test entry at all). |
 | `todo.sh` | Manage `todo-list.md`. Subcommands: `set-state` (optional `--assignee`), `bulk-transition` (optional `--feature`), `pend-selected` (reports promoted `<item-id>\t<assignee>` rows on stdout), `list <state>`, `add`, `feature-test-status`, `is-feature-test <name>` (read-only predicate; exit 0 when `<name>` is the cycle's pinned feature-test entry, exit 1 otherwise). Enforces the state machine and assignee invariants. |
-| `folder-id.sh` | Manage `id.md` markers and `reference.md`. Subcommands: `ensure`, `get`, `resolve <id>`, `list`, `init-reference`, `link-feature`, `feature-lineage-check`, `derive-feature-test-name`. |
+| `folder-id.sh` | Manage `id.md` markers and `reference.md`. Subcommands: `ensure`, `get`, `resolve <id>`, `list`, `init-reference`, `link-feature`, `feature-lineage-check`, `free-name`, `derive-feature-test-name`. |
 | `blueprints.sh` | Manage `blueprints/`. Subcommands: `ensure-current`, `rotate`, `resume-partial`, `preserve-inspector-sections`, `check-current [--require-primer]`, `branch-status`, `deferred-tests-path`. Rotation is resumable (`.partial.tmp → .partial → vN`). |
 | `deferred-tests.sh` | Manage `<ft-name>/test/deferred-tests.md`, the carried-forward manual-test scenarios. Subcommands: `path`, `ensure`, `count`, `list`, `upsert` (idempotent by the `<originating-feature>/<originating-scenario>` composite key; preserves an existing `Merged as:`), `set-merged-as`, `remove`, `unresolved <ft> <results-path>` (Gate 1's read; prints one TSV row per deferred entry with no `pass`/`fail`/`skip` verdict in the feature-test entry's results — empty output means nothing blocks), `offer-defer <feature>` (read-only predicate; exit 0 when `defer` should be offered for that feature, exit 1 otherwise). |
 | `deferred-questions.sh` | (v1.9.0) Manage `implementation/deferred-questions.md` — blocking questions the auto-mode end-of-chain rules recorded instead of stopping. Subcommands: `init <feature>`, `add <feature> <question> <assumed>`, `answer <feature> <DQ-NNN> <answer> [--needs-finding]`, `list-open <feature>`, `list-needs-finding <feature>` (needs-finding true and no follow-up yet), `set-follow-up <feature> <DQ-NNN> <IR-NNN>`. Resume Step 6 turns each `list-needs-finding` row into an `inspector-review.md` finding via `review.sh add` and idempotently records the `IR-NNN` back with `set-follow-up`. |

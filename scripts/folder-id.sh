@@ -65,6 +65,12 @@
 #       ordinal was needed. Requires at least two ordinary feature names — a
 #       single-feature cycle emits no feature-test entry (FTQ-007). Called by
 #       /mi-run.
+#
+#   folder-id.sh free-name <stem> [<taken>...]
+#       Print <stem>, or else <stem>-2, <stem>-3, ... — the first candidate
+#       that differs from every <taken> name and passes feature-lineage-check.
+#       Called by /mi-run's uniqueness gate to rename a scriptorium feature
+#       while keeping its task.md heading as the stem.
 
 set -euo pipefail
 source "$(dirname "$0")/internal/common.sh"
@@ -90,6 +96,36 @@ _fid_ensure() {
   # schemas/folder-id.schema.yaml.
   "${MI_PLUGIN_ROOT}/scripts/frontmatter.sh" init folder-id "$idfile" >/dev/null
   mi_fm_get "$idfile" id
+}
+
+# _fid_free_name <label> <stem> [<taken>...] — print <stem> itself, or
+# <stem>-2, <stem>-3, …: the first candidate that differs from every <taken>
+# name and passes feature-lineage-check. Dies after -99, naming <label>.
+# Shared by free-name and derive-feature-test-name.
+_fid_free_name() {
+  local label="$1" stem="$2"
+  shift 2
+  local candidate="$stem" ordinal=1 taken f
+  while :; do
+    taken=0
+    for f in "$@"; do
+      if [[ "$f" == "$candidate" ]]; then
+        taken=1
+        break
+      fi
+    done
+    if [[ "$taken" -eq 0 ]]; then
+      if "$0" feature-lineage-check "$candidate" >/dev/null 2>&1; then
+        break
+      fi
+    fi
+    ordinal=$((ordinal + 1))
+    if [[ "$ordinal" -gt 99 ]]; then
+      mi_die "$label: exhausted ordinals 2..99 for base '$stem'"
+    fi
+    candidate="${stem}-${ordinal}"
+  done
+  echo "$candidate"
 }
 
 cmd="${1:-}"; shift || true
@@ -280,6 +316,11 @@ sys.exit(3)
 PYEOF
     ;;
 
+  free-name)
+    [[ $# -ge 1 && -n "$1" ]] || mi_die "usage: folder-id.sh free-name <stem> [<taken>...]"
+    _fid_free_name free-name "$@"
+    ;;
+
   derive-feature-test-name)
     # Derive the cycle's feature-test entry name from the ACTIVE cycle's
     # journal folder(s) — the semantic part of the quest slug, kebab-normalized
@@ -297,27 +338,7 @@ PYEOF
     ft_base="$(mi_quest_feature_test_base)" || \
       mi_die "derive-feature-test-name: cannot derive a base name from the active cycle's journal folders"
     base="${ft_base}-feature-test"
-    candidate="$base"
-    ordinal=1
-    while :; do
-      taken=0
-      for f in "$@"; do
-        if [[ "$f" == "$candidate" ]]; then
-          taken=1
-          break
-        fi
-      done
-      if [[ "$taken" -eq 0 ]]; then
-        if "$0" feature-lineage-check "$candidate" >/dev/null 2>&1; then
-          break
-        fi
-      fi
-      ordinal=$((ordinal + 1))
-      if [[ "$ordinal" -gt 99 ]]; then
-        mi_die "derive-feature-test-name: exhausted ordinals 2..99 for base '$base'"
-      fi
-      candidate="${base}-${ordinal}"
-    done
+    candidate="$(_fid_free_name derive-feature-test-name "$base" "$@")" || exit 1
     if [[ "$candidate" != "$base" ]]; then
       echo "note: feature-test name '$base' was taken; using '$candidate'" >&2
     fi
@@ -325,7 +346,7 @@ PYEOF
     ;;
 
   *)
-    echo "usage: folder-id.sh {ensure|get|resolve|list|init-reference|link-feature|feature-lineage-check|derive-feature-test-name} ..." >&2
+    echo "usage: folder-id.sh {ensure|get|resolve|list|init-reference|link-feature|feature-lineage-check|free-name|derive-feature-test-name} ..." >&2
     exit 2
     ;;
 esac

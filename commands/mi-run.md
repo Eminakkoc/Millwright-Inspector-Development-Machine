@@ -19,7 +19,7 @@ The fourth cycle file, `queue-rationale.md`, is written later by `/mi-continue`'
 
 ## Inputs (positional, parsed from `$ARGUMENTS`)
 
-- **Journal folder list** (required, one or more) — each token is the name of a direct child under `millwright-inspector/journal/`. Example: `pricing-requirements-meeting`, `auth-slack-conversation`. Only files inside these folders are read.
+- **Journal folder list** (required, one or more) — each token is the name of a direct child under `millwright-inspector/journal/`. Example: `pricing-requirements-meeting`, `auth-slack-conversation`. Only files inside these folders are read. A folder may be a topic published by `/mi-scriptorium` — its `task.md` then names the cycle's features (Step 2).
 - **`--archive-active`** (optional flag) — if a previous quest cycle is still active (queue or in-flight feature, OR queue empty but unmarked `[ ] TODO` items remain), `/mi-run` refuses by default. Pass `--archive-active` to flip the previous cycle's status to `archived` (preserving its subfolder under `quest/<old-slug>/` for historical querying) before opening the new one.
 
 Branch selection is **not** part of stage 1 — the feature branch is declared per-feature in `blueprints/current/config.md`'s `## GIT BRANCH` section at stage 2 and validated at stage 3. Stage 1 is pure journal-to-quest.
@@ -259,6 +259,31 @@ If the un-ingested set is empty, proceed to the next paragraph. Otherwise run th
 
 For `.md` files, verify the YAML frontmatter has `contributors:` and `date:` — if missing, tell the inspector which files need those fields before proceeding. `.txt` files don't support frontmatter, so no metadata is required on them; read them as plain content. Other text-based formats (e.g., `.markdown`) in the specified folders are also read as context if present.
 
+**Scriptorium `task.md` detection.** A selected folder is a *scriptorium folder* when its top-level `task.md` (`journal/<folder>/task.md`, not one in a subfolder) carries the frontmatter `source: scriptorium` — the marker `/mi-scriptorium` writes when it publishes a topic. The marker decides, not the file name: a `task.md` without it is ordinary journal content. List every scriptorium feature, in selected-folder order and then each file's heading order (substitute the selected folders, in the order given):
+
+```bash
+data_root="$("$CLAUDE_PLUGIN_ROOT/scripts/data-root.sh")"
+sc_rows="$(
+  for folder in <folder1> [<folder2> ...]; do
+    t="$data_root/journal/$folder/task.md"
+    [[ -f "$t" ]] || continue
+    if [[ "$("$CLAUDE_PLUGIN_ROOT/scripts/frontmatter.sh" get "$t" source 2>/dev/null)" == "scriptorium" ]]; then
+      sed -n 's/^## Feature:[[:space:]]*\(.*[^[:space:]]\)[[:space:]]*$/\1/p' "$t" \
+        | while IFS= read -r name; do printf '%s\t%s\n' "$name" "$folder/task.md"; done
+    fi
+  done
+)"
+printf '%s\n' "$sc_rows"
+printf '%s\n' "$sc_rows" | awk -F'\t' 'NF == 2 {
+  if ($1 in from) print "duplicate: " $1 " in " from[$1] " and " $2; else from[$1] = $2 }'
+```
+
+Each row is `<feature>\t<folder>/task.md`.
+
+- **No rows** (the usual case) — no scriptorium folder is selected. Skip every scriptorium rule in Steps 3, 4 and 6: the run is exactly as before.
+- **A `duplicate:` line** — two selected `task.md` files declare the same feature, and joining them would merge two features. Stop here, before the cycle subfolder is opened: name both files, and ask the inspector to rename the heading in one topic and republish it, or drop one folder from the selection.
+- **Otherwise** keep the rows — they are Step 3's starting feature list. The headings come from the file itself (the `sed` above), so they stay verbatim even when Step 2.5 hands that file's body to a digester sub-agent.
+
 Record the selected folder list for use in the summary frontmatter (Step 4).
 
 ### Step 2.5 — Size manifest and threshold check
@@ -362,6 +387,8 @@ This creates `$quest_dir/reference.md` with the `journal-refs` frontmatter array
 
 Create `$quest_dir/todo-list.md` using the template. Analyze **only the content from the specified journal folders** and write todo items grouped by feature/module. Each item must have a stable `item-id` (e.g., `PAY-001`, `AUD-002`) and start in `TODO` state.
 
+**Scriptorium features (only when Step 2 listed rows).** The features start as Step 2's rows, in that order, named verbatim: one section per row, whose items come from that feature's `## Feature:` section in its `task.md` — no regrouping. Never rename, merge or split a scriptorium feature. Plain folders selected alongside are grouped as usual, with two limits: content about a scriptorium feature adds items to that feature's section, and anything else forms new features of their own, listed after the scriptorium ones, under names that differ from every scriptorium name. The `task.md`'s `## Goal`, `## Cross-cutting constraints` and `## Out-of-scope` sections yield no items — Step 4 maps them into `summary.md`.
+
 **Feature-name uniqueness gate (mandatory — run BEFORE writing `todo-list.md`).** Candidate feature names are derived from journal *content*, so two different journal folders about the same topic (`general-fixes-1` last cycle, `general-fixes-2` today) naturally distill to the same feature name (`general-fixes`) — and since `workflow-stream/<feature>/` is keyed by feature name, reusing it would mix this cycle's artifacts into the completed workflow's folder. Check every candidate name:
 
 ```bash
@@ -379,6 +406,14 @@ fi
   2. If the feature draws on multiple journal folders, or the journal-folder name is itself taken, append the source journal folder's distinguishing suffix (or an ordinal `-2`, `-3`) to the semantic name.
   3. Re-run `feature-lineage-check` on the replacement — it must exit 0 before the name is used anywhere.
 
+  **A scriptorium feature** skips steps 1–2: one topic folder holds several features, so its folder name cannot tell them apart. Keep the `task.md` heading as the stem and take the first ordinal from 2 that passes the gate and matches no other feature name in the cycle (`refunds` → `refunds-2`). This rename is the one allowed deviation from `task.md`:
+
+  ```bash
+  "$CLAUDE_PLUGIN_ROOT/scripts/folder-id.sh" free-name "<scriptorium-feature>" <every other feature name in the cycle>
+  ```
+
+  The heading has just failed the gate, so this prints the first free ordinal — `<scriptorium-feature>-2`, or the next one when that is taken.
+
 The final (possibly renamed) names are the ones written everywhere downstream — `todo-list.md` `related-features`, `summary.md` `features:` + `## Feature:` headings, and the `progress.md` queue — so a rename can never desync the cycle files. If the inspector actually wants to CONTINUE a completed feature in its old folder (reusing its manual-test plan and decisions), the supported path is re-selecting that feature's original journal folder for this cycle, which makes the check pass by lineage. Record any renames — Step 6's hand-off message must surface them.
 
 **Feature-test entry (multi-feature cycles only).** When `count(ordinary features) >= 2` — evaluated **after** the uniqueness gate above has settled every rename, so the derived name is built from final names — this cycle also carries a terminal whole-feature test entry. Derive its name:
@@ -387,7 +422,7 @@ The final (possibly renamed) names are the ones written everywhere downstream �
 ft_name="$("$CLAUDE_PLUGIN_ROOT/scripts/folder-id.sh" derive-feature-test-name "${final_features[@]}")"
 ```
 
-`derive-feature-test-name` builds the base from **the cycle's journal folder(s)** — the same names the quest folder holding `todo-list.md` is itself named after — kebab-normalized and joined with `-`, then appends `-feature-test`. Journal folder `whole-feature-test-workflow` gives `whole-feature-test-workflow-feature-test`; a two-folder cycle gives `pricing-meeting-auth-rfc-feature-test`. It does **not** use the first ordinary feature: that name said nothing about the cycle and changed whenever the queue was reordered. The ordinary names are still passed in, because they are the uniqueness gate — the candidate runs the same second-pass check ordinary names get (differ from every ordinary name; pass `feature-lineage-check`), appending `-2`, `-3`, … until both pass. It prints a rename note on stderr when an ordinal was needed — Step 6 must surface it. A single-feature cycle never calls it: `count == 1` emits no feature-test section, no `## Feature:` section, no queue entry, and no folder, producing a byte-identical `todo-list.md` to today.
+`derive-feature-test-name` builds the base from **the cycle's journal folder(s)** — the same names the quest folder holding `todo-list.md` is itself named after — kebab-normalized and joined with `-`, then appends `-feature-test`. Journal folder `whole-feature-test-workflow` gives `whole-feature-test-workflow-feature-test`; a two-folder cycle gives `pricing-meeting-auth-rfc-feature-test`. It does **not** use the first ordinary feature: that name said nothing about the cycle and changed whenever the queue was reordered. The ordinary names are still passed in, because they are the uniqueness gate — the candidate runs the same second-pass check ordinary names get (differ from every ordinary name; pass `feature-lineage-check`), appending `-2`, `-3`, … until both pass. It prints a rename note on stderr when an ordinal was needed — Step 6 must surface it. Scriptorium cycles derive it the same way: scriptorium features count as ordinary features, and the entry is never taken from a `task.md`. A single-feature cycle never calls it: `count == 1` emits no feature-test section, no `## Feature:` section, no queue entry, and no folder, producing a byte-identical `todo-list.md` to today.
 
 Pass `ft_name` **last** in `FEATURES`, then record it in frontmatter after `init`:
 
@@ -458,6 +493,15 @@ Then append the summary body. **The body is feature-indexed** — downstream sta
 4. **`## Sources`** — one bullet per source file from the selected journal folders, with a short note on what it contributed. Required even for small intakes — keep it terse, but never empty. Format: `- <journal-folder>/<file>: <one-line note>`. This is the back-reference downstream stages use to surface "see pricing-meeting.txt" in their reasoning without re-loading raw journal content.
 5. **`## In plain terms`** — a NON-NORMATIVE reader aid at the very bottom of the file. One short bullet per item that appears in the sections above (each cross-cutting constraint, each out-of-scope entry, and each feature — not `## Requested skills`), restating it in everyday language and giving ONE concrete example. Keep each to 1–2 sentences. This section is purely for a human skimming the gist; downstream stages ignore it and read the structured sections above, so nothing here is load-bearing. Keep the heading even when the body would be empty. Format each bullet as `- **<item it explains>** — <plain-language restatement>. Example: <concrete example>.`
 
+**Scriptorium sections (only when Step 2 listed rows).** `FEATURES` and the `## Feature:` headings use Step 3's final names in Step 3's order. A scriptorium `task.md` feeds the sections above — no heading is added:
+
+- its `## Cross-cutting constraints` → `## Cross-cutting constraints`, alongside any from plain folders;
+- its `## Out-of-scope` → `## Out-of-scope`;
+- its `## Goal` → condensed into `DESCRIPTION`, and woven into the opening paragraph of each of its features' `## Feature:` sections;
+- each of its `## Feature:` sections → the digest under that feature's final name (a renamed feature keeps its heading's content).
+
+`## Requested skills` and `## Sources` take it like any other journal file (`- <folder>/task.md: …`).
+
 The `features:` frontmatter array and the body's `## Feature: <name>` headings must agree. The schema validator enforces the frontmatter; downstream stages cross-check by heading name.
 
 **Feature-test section (multi-feature cycles only).** When Step 3 emitted a feature-test entry, pass the same `ft_name` last in `FEATURES` and mirror the field:
@@ -502,6 +546,8 @@ Tell the inspector (substitute `$quest_dir` and `$slug` literals into the messag
 When the Step-3 uniqueness gate renamed any feature, append one line per rename to the hand-off message:
 
 > "Note: feature `<semantic-name>` was named **`<final-name>`** — `workflow-stream/<semantic-name>/` already belongs to a previously completed workflow built from different journal folder(s) (`<lineage from feature-lineage-check>`), so reusing the name would mix artifacts."
+
+For a renamed scriptorium feature, `<semantic-name>` is its `task.md` heading — the note is the only place the rename shows.
 
 When the cycle carries a feature-test entry, append this to the hand-off message:
 
