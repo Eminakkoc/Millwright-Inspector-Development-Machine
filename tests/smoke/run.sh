@@ -29,10 +29,10 @@ dr="$sb/millwright-inspector"
 t="/mi-init scaffolding fence runs"
 fence="$(awk '/^### Step 5 — Scaffold/{f=1} f&&/^```bash$/{c=1;next} c&&/^```$/{exit} c' "$REPO_ROOT/commands/mi-init.md")"
 if [[ -n "$fence" ]] && run bash -c "$fence" >/dev/null 2>&1 \
-   && [[ -d "$dr/quest" && -f "$dr/quest/active.md" && -f "$dr/.gitattributes" ]]; then
+   && [[ -d "$dr/quest" && -d "$dr/scriptorium" && -f "$dr/quest/active.md" && -f "$dr/.gitattributes" ]]; then
   ok "$t"
 else
-  ng "$t" "scaffolding fence failed or left no quest/active.md / .gitattributes"
+  ng "$t" "scaffolding fence failed or left no quest/active.md / scriptorium/ / .gitattributes"
 fi
 
 t="cycle starts, activates and takes a set"

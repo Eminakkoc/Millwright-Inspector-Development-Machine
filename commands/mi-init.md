@@ -15,7 +15,7 @@ What it does:
 1. Checks every dependency (CLI tools, Python modules, MCP server, skills).
 2. If anything is missing, asks **one** y/n to install all Bash-runnable deps in a single batch.
 3. For plugin-kind deps that can't be auto-installed (e.g. superpowers), prints the slash commands and asks the inspector to run them, then re-run `/mi-init`.
-4. Scaffolds the workflow data folders (`journal/`, `quest/`, `workflow-stream/`) under the data root if absent, and seeds an empty `quest/active.md` pointer with `status: none` so future cycles can attach without scaffolding races. Adds a `.gitattributes` to the data root when it has none, so the shared workflow files stay LF on every OS.
+4. Scaffolds the workflow data folders (`journal/`, `quest/`, `workflow-stream/`, `scriptorium/`) under the data root if absent, and seeds an empty `quest/active.md` pointer with `status: none` so future cycles can attach without scaffolding races. Adds a `.gitattributes` to the data root when it has none, so the shared workflow files stay LF on every OS.
 5. Prints the exact next command to run.
 
 For per-dep prompts, `select` mode, detailed JSON output, and sudo handling — use `/mi-doctor` instead.
@@ -126,7 +126,7 @@ Resolve the data root via the canonical helper (`scripts/data-root.sh`), which h
 
 ```bash
 data_root="$("$CLAUDE_PLUGIN_ROOT/scripts/data-root.sh")"
-mkdir -p "$data_root/journal" "$data_root/quest" "$data_root/workflow-stream"
+mkdir -p "$data_root/journal" "$data_root/quest" "$data_root/workflow-stream" "$data_root/scriptorium"
 
 # Seed the empty active-quest pointer (idempotent — won't overwrite an
 # existing pointer or any per-cycle subfolder).
@@ -170,6 +170,7 @@ Print the ready-state followed by a full walkthrough of what the inspector does 
     journal/          (drop notes, meeting transcripts, spec docs here as .md or .txt — .md files need `contributors:` and `date:` frontmatter; .txt files have no metadata requirement. For PDFs, Word/PowerPoint/Excel docs, or images, run /mi-ingest first to produce sibling .md files — requires docling.)
     quest/            (per-cycle subfolders created by /mi-run; the top-level active.md tracks which one is currently active. Historical subfolders are preserved across cycles as a permanent task archive.)
     workflow-stream/  (populated during workflow execution)
+    scriptorium/      (optional — drop a topic's raw inputs into scriptorium/<topic>/ and refine them with /mi-scriptorium <topic> before publishing to journal/)
 
 Next steps — what you do to start and drive the workflow:
 

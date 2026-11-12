@@ -1121,7 +1121,7 @@ gate). Everything else is auto-fired or used only for non-happy-path situations.
 Bash-runnable (CLI tools / Python modules) and plugin-kind (slash-command-only) sets,
 offers a **single y/n** to install all Bash-runnable deps in batch, prints the
 `/plugin marketplace add` + `/plugin install` commands for plugin-kind deps, scaffolds
-`journal/`, `quest/`, `workflow-stream/` under the data root, seeds the `quest/active.md`
+`journal/`, `quest/`, `workflow-stream/`, `scriptorium/` under the data root, seeds the `quest/active.md`
 pointer with `status: none`, and offers to wire the status line. Prints the canonical
 next-steps walkthrough.
 

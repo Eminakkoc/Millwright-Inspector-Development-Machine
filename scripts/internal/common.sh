@@ -166,6 +166,7 @@ mi_data_root_segment() {
 mi_quest_dir()             { echo "$(mi_data_root)/quest"; }
 mi_quest_active_pointer()  { echo "$(mi_quest_dir)/active.md"; }
 mi_journal_dir()           { echo "$(mi_data_root)/journal"; }
+mi_scriptorium_dir()       { echo "$(mi_data_root)/scriptorium"; }
 mi_stream_dir()            { echo "$(mi_data_root)/workflow-stream"; }
 mi_feature_dir()           { echo "$(mi_stream_dir)/$1"; }
 mi_blueprints_current(){ echo "$(mi_feature_dir "$1")/blueprints/current"; }
