@@ -1,6 +1,6 @@
 ---
-description: Convert non-text journal files (.pdf, .docx, .pptx, .xlsx, .png, .jpg, etc.) to sibling .md via docling, so stage 1 can pick them up. Run before /mi-run if the inspector dropped non-text resources into journal/.
-argument-hint: "[<journal-subfolder>] [--dry-run] [--force]"
+description: Convert non-text journal files (.pdf, .docx, .pptx, .xlsx, .png, .jpg, etc.) to sibling .md via docling, so stage 1 can pick them up. Run before /mi-run if the inspector dropped non-text resources into journal/, or before /mi-scriptorium for a scriptorium/<topic> folder.
+argument-hint: "[<journal-subfolder> | scriptorium/<topic>] [--dry-run] [--force]"
 ---
 
 # mi-ingest
@@ -9,7 +9,7 @@ argument-hint: "[<journal-subfolder>] [--dry-run] [--force]"
 
 **Running blocks.** Run each fenced `bash` block with the Bash tool (never the PowerShell tool), as written, in one call. Don't wrap a block in `bash -c`, `sh -c`, `zsh -c` or `eval`: Claude Code can't check a wrapped script, so it may stop for permission, and an unattended session denies it. The blocks run the same in bash and zsh; if one fails on shell syntax, stop and report it as a plugin bug instead of working around it.
 
-Pre-processor for the `journal/` folder. Runs [docling](https://github.com/docling-project/docling) over every non-text file and produces a sibling `.md` that the stage-1 glob in `/mi-run` will pick up (mi-run.md:87). Originals are preserved for audit.
+Pre-processor for the `journal/` folder and for scriptorium topic folders (`scriptorium/<topic>/`). Runs [docling](https://github.com/docling-project/docling) over every non-text file and produces a sibling `.md` that the stage-1 glob in `/mi-run` will pick up (mi-run.md:87). Originals are preserved for audit.
 
 ## When to use
 
@@ -72,6 +72,7 @@ journal/specs/
 - `/mi-ingest <folder>` — process just one subfolder (matches `/mi-run`'s argument style).
 - `/mi-ingest <folder> --dry-run` — list what would be converted without writing.
 - `/mi-ingest <folder> --force` — re-convert even if a sibling `.md` is newer than its source.
+- `/mi-ingest scriptorium/<topic>` — process one scriptorium topic folder (also takes `--dry-run` / `--force`). Only an argument that starts with `scriptorium/` means a topic; every other argument is a journal subfolder, so a journal folder named `scriptorium` is still reached by its bare name (`/mi-ingest scriptorium`), and a journal path under it as `./scriptorium/<sub>`. A topic scan skips its `v<N>/` archives and `.scratch/` folder as well as `*.images/`. A bare `/mi-ingest` never scans `scriptorium/`.
 
 **Single-file mode** (fine-grained — used internally by `/mi-run`'s per-file decision flow, also available for manual use):
 
@@ -81,7 +82,7 @@ journal/specs/
 ## Preconditions
 
 - `docling` on PATH — if missing, Step 1 offers to install it with full cost disclosure (ML deps are ~1–2 GB). `/mi-doctor` also reports it as an optional dep.
-- `journal/` exists (created by `/mi-init`).
+- `journal/` exists (created by `/mi-init`) — or, for `scriptorium/<topic>`, that topic folder exists under `scriptorium/`.
 
 ## Execution
 
@@ -158,7 +159,7 @@ Pass through the inspector's arguments verbatim:
 The script:
 
 1. Resolves the data root via `mi_data_root` (same precedence as every other `/mi-*` command).
-2. Enumerates supported files in scope, **excluding any `*.images/` subfolder** so that PNGs docling extracted from PDFs on a previous run aren't picked up as new inputs.
+2. Enumerates supported files in scope, **excluding any `*.images/` subfolder** so that PNGs docling extracted from PDFs on a previous run aren't picked up as new inputs. For a scriptorium topic it also skips the `v<N>/` archives and `.scratch/`, and shows paths relative to `scriptorium/`.
 3. Dispatches each file to the right handler:
    - Documents → `docling --to md --image-export-mode referenced --output <tmpdir> <src>`, then moves extracted PNGs into `<stem>.images/` and rewrites references in the produced `.md`.
    - Standalone images → stub `.md` generation only, no docling call.
@@ -191,13 +192,17 @@ If `converted > 0`, tell the inspector:
 
 > "Ingested N files into `journal/`. Each original now has a sibling `<stem>.md` that `/mi-run` will pick up. You can now run `/mi-run <folder1> [<folder2> ...]` as usual."
 
+For a `scriptorium/<topic>` argument, say instead:
+
+> "Ingested N files into `scriptorium/<topic>/`. Each original now has a sibling `<stem>.md`. You can now run `/mi-scriptorium <topic>`."
+
 If `converted == 0 && skipped > 0`, tell them:
 
 > "Nothing new to ingest — every supported file already has an up-to-date sibling `.md`. If you meant to re-convert, pass `--force`."
 
 If `converted == 0 && skipped == 0 && failed == 0`, tell them:
 
-> "No supported files found in journal/. Either the folder only has `.md`/`.txt` (ingest unnecessary) or the files use an unsupported extension. Supported: `.pdf .docx .pptx .xlsx .html .png .jpg .jpeg .webp .tiff`."
+> "No supported files found in journal/ (or `scriptorium/<topic>/` for a topic argument). Either the folder only has `.md`/`.txt` (ingest unnecessary) or the files use an unsupported extension. Supported: `.pdf .docx .pptx .xlsx .html .png .jpg .jpeg .webp .tiff`."
 
 ## Notes
 

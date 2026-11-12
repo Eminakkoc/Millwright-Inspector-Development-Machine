@@ -4,6 +4,7 @@
 # Usage:
 #   ingest.sh                              # folder mode — all subfolders under journal/
 #   ingest.sh <subfolder>                  # folder mode — one subfolder
+#   ingest.sh scriptorium/<topic>          # folder mode — one scriptorium topic
 #   ingest.sh --dry-run [<subfolder>]      # folder mode, no writes
 #   ingest.sh --force   [<subfolder>]      # folder mode, re-convert even if up-to-date
 #   ingest.sh --file <path>                # single-file mode — dispatch by extension
@@ -38,6 +39,12 @@
 # Enumeration excludes *.images/ subfolders so figures docling extracted
 # from a PDF can't be mistaken for inspector-supplied inputs on re-runs.
 #
+# An argument starting with scriptorium/ names a topic under the data
+# root's scriptorium/; every other argument is journal-relative, so a
+# journal folder named scriptorium is still reached by its bare name.
+# A topic scan also skips its v<N>/ archives and .scratch/ folder, and
+# shows paths relative to scriptorium/. A bare run scans journal/ only.
+#
 # Idempotency: an up-to-date sibling .md is skipped unless --force is
 # passed. When --force re-processes a document, its <stem>.images/
 # subfolder is cleared first.
@@ -68,7 +75,7 @@ while [[ $# -gt 0 ]]; do
       shift 2
       ;;
     -h|--help)
-      sed -n '2,44p' "$0"
+      sed -n '2,50p' "$0"
       exit 0
       ;;
     --*)
@@ -82,8 +89,19 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-journal_root="$(mi_journal_dir)"
-[[ -d "$journal_root" ]] || mi_die "journal directory not found: $journal_root. Run /mi-init first."
+# root: the folder display paths are shown relative to — journal/, or
+# scriptorium/ for a topic argument.
+topic=0
+if [[ "$mode" == "folder" && "$folder_arg" == scriptorium/* ]]; then
+  topic=1
+  folder_arg="${folder_arg#scriptorium/}"
+  folder_arg="${folder_arg%/}"
+  [[ -n "$folder_arg" ]] || mi_die "scriptorium topic required: scriptorium/<topic>"
+  root="$(mi_scriptorium_dir)"
+else
+  root="$(mi_journal_dir)"
+  [[ -d "$root" ]] || mi_die "journal directory not found: $root. Run /mi-init first."
+fi
 
 # Extension groups. Case-insensitive matching is applied when we enumerate.
 doc_exts=(pdf docx pptx xlsx html)
@@ -131,7 +149,7 @@ ingest_document() {
   local stem="${src%.*}"
   local dst="${stem}.md"
   local images_dir="${stem}.images"
-  local rel="${src#"$journal_root"/}"
+  local rel="${src#"$root"/}"
   local images_dir_basename
   images_dir_basename="$(basename "$images_dir")"
 
@@ -142,7 +160,7 @@ ingest_document() {
   fi
 
   if (( dry_run )); then
-    mi_info "would convert (doc): $rel  ->  ${dst#"$journal_root"/}"
+    mi_info "would convert (doc): $rel  ->  ${dst#"$root"/}"
     return 0
   fi
 
@@ -227,7 +245,7 @@ write_stub() {
   local src="$1"
   local stem="${src%.*}"
   local dst="${stem}.md"
-  local rel="${src#"$journal_root"/}"
+  local rel="${src#"$root"/}"
   local src_basename
   src_basename="$(basename "$src")"
   local ext
@@ -240,7 +258,7 @@ write_stub() {
   fi
 
   if (( dry_run )); then
-    mi_info "would stub: $rel  ->  ${dst#"$journal_root"/}"
+    mi_info "would stub: $rel  ->  ${dst#"$root"/}"
     return 0
   fi
 
@@ -321,14 +339,14 @@ dispatch_by_extension() {
   case "$ext" in
     pdf|docx|pptx|xlsx|html)    ingest_document "$src" || return 1 ;;
     png|jpg|jpeg|webp|tiff|tif) write_stub "$src" || return 1 ;;
-    *) mi_info "skip (unsupported): ${src#"$journal_root"/}" ;;
+    *) mi_info "skip (unsupported): ${src#"$root"/}" ;;
   esac
 }
 
 # ---------- single-file modes ----------
 if [[ "$mode" == "file" || "$mode" == "stub" ]]; then
   [[ -f "$single_file" ]] || mi_die "file not found: $single_file"
-  # Accept either an absolute path (assumed under journal_root) or a
+  # Accept either an absolute path (assumed under journal/) or a
   # relative path resolved against the CWD.
   if [[ "$single_file" != /* ]]; then
     single_file="$(cd "$(dirname "$single_file")" && pwd)/$(basename "$single_file")"
@@ -346,14 +364,18 @@ fi
 
 # ---------- folder mode ----------
 folders=()
-if [[ -n "$folder_arg" ]]; then
-  target="$journal_root/$folder_arg"
+if (( topic )); then
+  target="$root/$folder_arg"
+  [[ -d "$target" ]] || mi_die "scriptorium topic not found: $target"
+  folders+=("$target")
+elif [[ -n "$folder_arg" ]]; then
+  target="$root/$folder_arg"
   [[ -d "$target" ]] || mi_die "journal subfolder not found: $target"
   folders+=("$target")
 else
   while IFS= read -r -d '' d; do
     folders+=("$d")
-  done < <(find "$journal_root" -mindepth 1 -maxdepth 1 -type d -print0)
+  done < <(find "$root" -mindepth 1 -maxdepth 1 -type d -print0)
 fi
 
 [[ ${#folders[@]} -gt 0 ]] || mi_die "no journal subfolders to process (journal/ is empty)"
@@ -361,15 +383,28 @@ fi
 sources=()
 for folder in "${folders[@]}"; do
   for ext in "${doc_exts[@]}" "${img_exts[@]}"; do
-    while IFS= read -r -d '' src; do
-      sources+=("$src")
-    done < <(find "$folder" -type f -iname "*.${ext}" -not -path "*/*.images/*" -print0)
+    if (( topic )); then
+      # Prune *.images/, .scratch/ and v<N>/ (digits only, so v2-notes/ is scanned).
+      while IFS= read -r -d '' src; do
+        sources+=("$src")
+      done < <(find "$folder" -mindepth 1 -type d \
+                 \( -name '*.images' -o -name '.scratch' -o \( -name 'v[0-9]*' ! -name 'v*[!0-9]*' \) \) \
+                 -prune -o -type f -iname "*.${ext}" -print0)
+    else
+      while IFS= read -r -d '' src; do
+        sources+=("$src")
+      done < <(find "$folder" -type f -iname "*.${ext}" -not -path "*/*.images/*" -print0)
+    fi
   done
 done
 
-for src in "${sources[@]}"; do
-  dispatch_by_extension "$src" || true
-done
+# Guarded: bash 3.2 (macOS) treats "${sources[@]}" of an empty array as
+# unbound under set -u, which crashed a folder with no supported files.
+if (( ${#sources[@]} > 0 )); then
+  for src in "${sources[@]}"; do
+    dispatch_by_extension "$src" || true
+  done
+fi
 
 echo
 echo "ingest summary: converted=$converted  skipped=$skipped  failed=$failed"
