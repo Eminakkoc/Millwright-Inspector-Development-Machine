@@ -533,7 +533,7 @@ When the inspector chose Claude at Step 0.5, save it right after `init`:
 "$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" set-top review-backend=claude
 ```
 
-`progress.sh init` resolves the destination path through the active-quest pointer, so the file lands at `$quest_dir/progress.md` automatically. The new file has the queue populated, `completed: []`, and `active: null`. The feature list here is the distinct feature names surfaced in the todo list — the inspector confirms the priority order in the next step (that's stage 1.5 / item 3 of the workflow). For now, pass them in an order that seems sensible from the journal context; dependencies are resolved later.
+`progress.sh init` resolves the destination path through the active-quest pointer, so the file lands at `$quest_dir/progress.md` automatically. The new file has the queue populated, `completed: []`, and `active: null`. The feature list here is the distinct feature names surfaced in the todo list — the inspector confirms the priority order in the next step (that's stage 1.5 / item 3 of the workflow). For now, pass them in an order that seems sensible from the journal context; dependencies are resolved later. When Step 2 listed scriptorium rows, pass Step 3's order instead — the same order as `todo-list.md` and `summary.md`.
 
 Pass **only the ordinary features** here. The feature-test name is deliberately withheld from `progress.sh init`: selection is unknown at stage 1, so the entry is appended later by `progress.sh enqueue` at the stage-1.5 moment its auto-select condition fires.
 
