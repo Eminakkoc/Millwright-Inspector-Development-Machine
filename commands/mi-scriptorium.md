@@ -26,13 +26,14 @@ argument-hint: "<topic> [--continue]"
 
 ## Inputs (positional, parsed from `$ARGUMENTS`)
 
-- **`<topic>`** (one token) — the name of a direct child of `<data_root>/scriptorium/`. A leading `scriptorium/` and a trailing `/` are dropped, so `scriptorium/payments` means `payments`.
-- **`--continue`** (optional flag) — start at Step 2 (the next review iteration) instead of Step 1 (organize).
+- **`<topic>`** — the name of a direct child of `<data_root>/scriptorium/`: all of the arguments except `--continue`, with surrounding whitespace trimmed. It is taken as typed, spaces included, so `/mi-scriptorium my topic` means the folder `scriptorium/my topic/`, never topic `my` plus a stray `topic`. One pair of surrounding quotes (`"…"` or `'…'`) is dropped, and so are a leading `scriptorium/` and a trailing `/`, so `scriptorium/payments` means `payments`.
+- **`--continue`** (optional flag, before or after the topic) — start at Step 2 (the next review iteration) instead of Step 1 (organize).
 
 Invocations:
 
 - `/mi-scriptorium payments` — organize the inputs in `scriptorium/payments/` into `task.md`, then stop.
 - `/mi-scriptorium payments --continue` — run the next iteration: archive into `v<N>/`, review, summarize, then iterate, publish or pause.
+- `/mi-scriptorium my topic --continue` — the same for `scriptorium/my topic/`; quotes are optional.
 
 ## Topic folder layout
 
@@ -482,7 +483,7 @@ Copies the working `task.md` to `<data_root>/journal/<name>/task.md`, the input 
    topic_dir="$data_root/scriptorium/<topic>"
    name="<journal folder name>"
    jdir="$data_root/journal/$name"
-   if [[ -z "$name" || "$name" == */* || "$name" == .* ]]; then
+   if [[ -z "$name" || "$name" == */* || "$name" == .* || "$name" == *[[:space:]]* ]]; then
      echo "target: bad-name"
      exit 0
    fi
@@ -520,7 +521,7 @@ Copies the working `task.md` to `<data_root>/journal/<name>/task.md`, the input 
    - **`new`** — `journal/<name>/` did not exist and now holds the published `task.md`.
    - **`replace`** — `journal/<name>/` held only an earlier publish (a `task.md` with `source: scriptorium`, plus an optional `id.md`). Only `task.md` was replaced; `id.md` is untouched, so the folder keeps its identity (its UUID, its lineage and the quest `reference.md` links to it).
    - **`taken`** — the folder holds something else, such as a journal folder the inspector made by hand. Nothing was written. Ask: "`journal/<name>/` already holds files that aren't an earlier publish of a scriptorium topic, so I won't write there. Which journal folder name should I publish `<topic>` to instead?" Re-run the block with the new name; the same rules apply.
-   - **`bad-name`** — nothing was written. Ask for a plain folder name (no `/`, not starting with `.`).
+   - **`bad-name`** — nothing was written. Ask for a plain folder name (no `/`, no spaces, not starting with `.`). A topic whose name has a space always lands here first: `/mi-run` reads each space-separated word as its own journal folder, so `journal/my topic/` could never be started.
 
    The published copy keeps `source: scriptorium` and gains `contributors:` and `date:` (today, YYYY-MM-DD), which `/mi-run` requires on every journal `.md` file.
 
