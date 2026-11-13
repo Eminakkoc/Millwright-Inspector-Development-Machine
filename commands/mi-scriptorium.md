@@ -9,7 +9,7 @@ argument-hint: "<topic> [--continue]"
 
 **Running blocks.** Run each fenced `bash` block with the Bash tool (never the PowerShell tool), as written, in one call. Don't wrap a block in `bash -c`, `sh -c`, `zsh -c` or `eval`: Claude Code can't check a wrapped script, so it may stop for permission, and an unattended session denies it. The blocks run the same in bash and zsh; if one fails on shell syntax, stop and report it as a plugin bug instead of working around it.
 
-**Delegation contract.** This command REQUIRES the sub-agents listed below; §8.13's main-read budget forbids main from doing their work itself. **Invoking `/mi-scriptorium` IS the user requesting them** — Claude Code's default "do not call the Agent tool unless the user requested it" (and any stricter house rule layered on it) does not reach a sub-agent this command names at the step that names it, so spawn them without asking for extra confirmation. The default still holds everywhere else: never spawn a sub-agent that this command does not name, and never invent fan-out to parallelize a step main is supposed to run. If a named delegation genuinely cannot run (type unavailable, harness refusal), say so and stop — never silently do its work in main. Sub-agents: `journal-file-digester` (size policy Tier 1 — one oversized input file each, at Step 1 or the Step 2 merge), `journal-folder-digester` (size policy Tier 2 — one per topic folder with many small input files, at Step 1 or the Step 2 merge). Canonical rule: `docs/millwright-inspector-project.md` §8.15.
+**Delegation contract.** This command REQUIRES the sub-agents listed below; §8.13's main-read budget forbids main from doing their work itself. **Invoking `/mi-scriptorium` IS the user requesting them** — Claude Code's default "do not call the Agent tool unless the user requested it" (and any stricter house rule layered on it) does not reach a sub-agent this command names at the step that names it, so spawn them without asking for extra confirmation. The default still holds everywhere else: never spawn a sub-agent that this command does not name, and never invent fan-out to parallelize a step main is supposed to run. If a named delegation genuinely cannot run (type unavailable, harness refusal), say so and stop — never silently do its work in main. Sub-agents: `journal-file-digester` (size policy Tier 1 — one oversized input file each, at Step 1 or the Step 2 merge), `journal-folder-digester` (size policy Tier 2 — one per topic folder with many small input files, at Step 1 or the Step 2 merge), `scriptorium-section-reviewer` (Step 3 — one per `## ` section of `task.md`, one at a time in file order), `scriptorium-consistency-reviewer` (Step 4 — one per review iteration). Canonical rule: `docs/millwright-inspector-project.md` §8.15.
 
 **What it does.** An optional step before `/mi-run`. The inspector drops a topic's scattered raw inputs (notes, transcripts, converted documents) into `<data_root>/scriptorium/<topic>/`. This command organizes them into one `task.md`, refines it over one or more review iterations, and publishes it to `<data_root>/journal/<topic>/task.md`. `/mi-run` then starts the quest cycle from that refined file and takes its `## Feature:` headings as the cycle's features. An inspector can always skip scriptorium and put files straight into `journal/`.
 
@@ -381,13 +381,128 @@ find "$topic_dir" -mindepth 1 -maxdepth 1 ! -name '.*' ! -name task.md ! -name f
 
 Go to Step 3.
 
+### Review findings (used by Steps 3 and 4)
+
+Both review steps get findings back from a reviewer sub-agent, fix the trivial ones, walk the inspector through the rest and record every one in `findings.md`.
+
+**Reading a reply.** A reviewer's whole reply is `Findings: <count>` followed by one `### F-<n>` block per finding (see the return contract in `agents/scriptorium-section-reviewer.md`). Each block has the fields `sections`, `severity`, `type`, `text`, the seven walkthrough parts (`title`, `explanation`, `summary`, `example`, `impact`, `fix`, `fix-example`) and one or more `find-<k>` / `replace-<k>` edit pairs. A `|` field is a block whose lines are indented four spaces: strip exactly four to get the text.
+
+**Applying a finding.** Before the first change, check that every `find-<k>` occurs exactly once in the current `task.md`. When one does not (an earlier change rewrote that text), apply nothing: the finding *no longer matches*. Otherwise replace each `find-<k>` with its `replace-<k>`, in order, with the Edit tool.
+
+**Check after every change.** After every change to `task.md` (an auto-fix, `apply` or `edit`), run Step 1's check block (item 3), then repair `task.md` and re-run it until it passes.
+
+**Auto-fix rule.** A finding whose severity is `low` and whose type is `bug` or `clarifying` is fixed without asking: apply it and record it as `auto-fixed`. If it no longer matches, record it as `skipped`, with "no longer applies" in its summary. Every other finding goes to the findings walkthrough: every `medium`, `high`, `critical` or `blocker` finding of any type, and every `expanding-mandatory` or `expanding-optional` finding at any severity.
+
+**The record — `scriptorium/<topic>/findings.md`.** Step 3 creates it at the start of every iteration. Step 4's reviewer reads it so it raises no finding twice, and Step 5 reads it and the archived `v<N>/findings.md` copies. It has no frontmatter and no schema. Number the findings 1, 2, 3… across Steps 3 and 4 of the iteration: a finding takes the next free number when it is auto-fixed or when the walkthrough first presents it. Append each finding with the Edit tool as soon as it has an outcome:
+
+```
+### Finding <n> — <title>
+- step: section | consistency
+- sections: <the finding's sections line>
+- severity: <severity>
+- type: <type>
+- summary: <one sentence; for applied, it also names the change made>
+- outcome: auto-fixed | applied | skipped | edited
+- inspector's version: <only for edited: the inspector's version of the fix>
+```
+
+Only `applied` and `edited` mean the inspector approved a change. `auto-fixed` and `skipped` never count as approved in Step 5.
+
+### Findings walkthrough (used by Steps 3 and 4)
+
+Walks the inspector through a list of findings, one at a time. Every question here is asked, even while the active quest cycle has auto mode on.
+
+1. **Count first.** Open the walkthrough with how many findings it has: "<K> finding(s) to walk through for `<section heading>`." in Step 3, "<K> finding(s) to walk through from the consistency review." in Step 4. Then present the first finding.
+2. **One finding per reply.** Never show a second finding in the same reply, and never preview or summarize the remaining ones.
+3. **Format.** Head the finding `Finding <n> — <SEVERITY> <type>`, with the number it takes in `findings.md`. Then give its seven parts, in this order, from the reviewer's fields. Tighten a part that breaks its rule.
+   1. **Title** — a short name.
+   2. **Explanation** — two or three plain sentences with no jargon, with a few-word gloss in parentheses right after any item, file, component or term the inspector may not have in mind.
+   3. **Summary** — one sentence.
+   4. **Example** — one concrete example from the finding's context or ordinary real-world usage.
+   5. **Impact** — which modules or features are affected, in one or two lines of non-technical language (the part of the product a person would recognise and what changes for them), or a plain statement that nothing user-facing changes.
+   6. **Suggested fix** — at most two sentences.
+   7. **Suggested fix example** — a before/after, a snippet or the exact change, small enough to take in at a glance.
+
+   End the reply with: "Reply `apply`, `skip`, or `edit` with your own version."
+4. **Answers.**
+   - **`apply`** — apply the finding (see *Applying a finding*). If it no longer matches, say so instead: "This fix no longer matches `task.md` — an earlier answer changed that text. Reply `skip`, or `edit` with your version." The finding stays open and is never recorded as `applied`.
+   - **`skip`** — leave `task.md` unchanged.
+   - **`edit`** — apply the inspector's own version to `task.md` with the Edit tool. A bare `edit` with no version asks "What's your version?", and the finding stays open until that version is applied.
+   - **Anything else** — a question or comment. Answer it, then ask again for `apply`, `skip` or `edit`. Do not move on: the finding stays open until it gets one of the three answers.
+5. **Record and move on.** When an answer has taken effect, record the finding in `findings.md` (outcome `applied`, `skipped` or `edited`; for `edited`, the inspector's version). Then present the next finding in the same reply. After the last one, return to the step that started the walkthrough.
+
 ### Step 3 — Section review
 
-_Not built yet — the `scriptorium-review` feature fills this step in._ Go straight to Step 4.
+Reviews `task.md` one `## ` section at a time. Substitute the topic and the iteration number from Step 2:
+
+```bash
+data_root="$("$CLAUDE_PLUGIN_ROOT/scripts/data-root.sh")"
+topic_dir="$data_root/scriptorium/<topic>"
+printf '# Review findings — iteration %s\n' "<N>" > "$topic_dir/findings.md" || exit 1
+echo "task: $topic_dir/task.md"
+echo "project: $(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+awk '/^[[:space:]]*```/ { inside = !inside; next } !inside && /^## / { printf "section: "; print }' "$topic_dir/task.md"
+```
+
+The block creates this iteration's `findings.md` and prints the sections in file order. That list is fixed for this step: a section an applied finding creates later (such as the two halves of a split feature) is not reviewed again here, because its content was already reviewed and Step 4 sees the whole file.
+
+For each `section:` line, in order:
+
+1. **Gone?** If that heading line is no longer in `task.md` (an earlier answer renamed or removed it), say "`<heading>` is no longer in `task.md` — skipped." and go to the next section.
+2. **Spawn one fresh reviewer**, and wait for it before the next section — never in parallel. Use `Agent` with `subagent_type: millwright-inspector-development-machine:scriptorium-section-reviewer` (explicitly NOT a fork). Spawn prompt:
+
+   ```
+   Review one section of the scriptorium topic "<topic>" (iteration <N>).
+
+   Task file:    <the printed task: path>
+   Section:      <the heading line, exactly>
+   Project root: <the printed project: path>
+
+   Follow agents/scriptorium-section-reviewer.md: read the whole task file as
+   context, report findings on this section only, LOW included. Your whole
+   final reply is the return contract — Findings: <count>, then ### F-n blocks.
+   ```
+
+   The reviewer reads `task.md` when it starts, so it sees every change made for earlier sections. If the spawn errors or the agent type is unavailable, say so and stop.
+3. **Auto-fix** the section's findings that the auto-fix rule covers, recording each with step `section`.
+4. **Walk through the rest** with the findings walkthrough, in the order the reviewer returned them. When nothing is left to walk through, say so in one line ("`<heading>` — <n> wording fix(es) applied, nothing to walk through.") and go to the next section without waiting.
+
+When every section is done, go to Step 4.
 
 ### Step 4 — Consistency review
 
-_Not built yet — the `scriptorium-review` feature fills this step in._ Go straight to Step 5.
+Reviews the whole `task.md` once for problems between sections. Substitute the topic:
+
+```bash
+data_root="$("$CLAUDE_PLUGIN_ROOT/scripts/data-root.sh")"
+topic_dir="$data_root/scriptorium/<topic>"
+echo "task: $topic_dir/task.md"
+echo "findings: $topic_dir/findings.md"
+echo "project: $(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+```
+
+1. **Spawn one fresh reviewer**: `Agent` with `subagent_type: millwright-inspector-development-machine:scriptorium-consistency-reviewer` (explicitly NOT a fork). Spawn prompt:
+
+   ```
+   Review the whole task.md of the scriptorium topic "<topic>" for consistency
+   (iteration <N>).
+
+   Task file:     <the printed task: path>
+   Findings file: <the printed findings: path>
+   Project root:  <the printed project: path>
+
+   Follow agents/scriptorium-consistency-reviewer.md: one pass, only problems
+   that take two or more sections to see, nothing the findings file already
+   records, LOW included. Your whole final reply is the return contract —
+   Findings: <count>, then ### F-n blocks.
+   ```
+
+   If the spawn errors or the agent type is unavailable, say so and stop.
+2. **Auto-fix** the findings that the auto-fix rule covers, recording each with step `consistency`. Numbering continues after Step 3's findings.
+3. **Walk through the rest** with the findings walkthrough. When nothing is left to walk through, say so in one line.
+4. **Empty iteration.** If `findings.md` still holds no `### Finding` record, append the line `No findings in this iteration.`
+
+Go to Step 5.
 
 ### Step 5 — Refinement summary
 
