@@ -105,7 +105,7 @@ DELEGATING_COMMANDS=(
   mi-run mi-continue mi-apply-impact mi-generate-implementation-diagrams
   mi-review mi-complete-workflow mi-analyze-review mi-sidequest
   mi-blueprint-review mi-blueprint-review-item mi-blueprint-review-consistency
-  mi-conventions-review
+  mi-conventions-review mi-scriptorium
 )
 missing=""
 for c in "${DELEGATING_COMMANDS[@]}"; do
