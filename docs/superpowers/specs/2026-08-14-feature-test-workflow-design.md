@@ -96,6 +96,7 @@ Row A: active=null, queue non-empty, rationale confirmed, ordering invariant hol
   ├─ is-feature-test queue[0] →  progress.sh activate            (byte-identical)
   │                              folder-id.sh ensure             (id.md marker)
   │                              resolve + verify the union range   (§3.1)
+  │                              todo.sh bulk-transition PENDING IMPLEMENTING (its own item)
   │                              progress.sh set base-commit=<earliest base>
   │                              /mi-generate-implementation-diagrams
   │                              review.sh init
@@ -398,7 +399,7 @@ blueprint-dependent steps:
 
 | Step | Ordinary | Feature-test |
 | --- | --- | --- |
-| 2 — `IMPLEMENTING` → `IMPLEMENTED` | runs | runs (its own item) |
+| 2 — `IMPLEMENTING` → `IMPLEMENTED` | runs | runs (its own item, which the entry sequence moved to `IMPLEMENTING` — §1.2) |
 | 3 — commits list | `commits.sh populate-requirements` → `requirements.md` | union range → the entry's `change-summary.md` |
 | 3.5 — lessons distillation | evidence keyed by requirements id | evidence = the entry's `inspector-review.md` + `manual-test-results.md` |
 | 4 — `check-current --require-primer` preflight | required to return 0 | **skipped** — nothing to assert without a blueprint |

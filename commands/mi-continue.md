@@ -213,13 +213,21 @@ stop. Nothing has been written by this sequence yet at this point.
    Idempotent: `ensure` returns the existing id when `id.md` is already present, which is
    the normal case once stage 1.5 has created the folder (§ 3.4.1).
 
-4. **Pin the union base** so the shipped freshness caches (`commits.sh
-   change-summary-fresh` / `diagrams-fresh`) work unchanged — both key on
+4. **Start the item and pin the union base.** Move the entry's own todo item from
+   `PENDING` to `IMPLEMENTING`, and pin `base-commit` so the shipped freshness caches
+   (`commits.sh change-summary-fresh` / `diagrams-fresh`) work unchanged — both key on
    `.active.base-commit` and HEAD.
 
    ```bash
+   "$CLAUDE_PLUGIN_ROOT/scripts/todo.sh" bulk-transition PENDING IMPLEMENTING --feature "$ft_feature"
    "$CLAUDE_PLUGIN_ROOT/scripts/progress.sh" set "base-commit=$union_base"
    ```
+
+   An ordinary feature makes both writes in `/mi-plan-implementation` Step 3, which this
+   sequence never runs. Without the transition the item stays `PENDING`, and
+   `/mi-complete-workflow` Step 2 (`IMPLEMENTING` → `IMPLEMENTED`) finds nothing to
+   finish. Re-running it is a no-op; `/mi-abort-workflow` moves the item back to
+   `PENDING`, and the next run moves it forward again.
 
 5. **Run the complete-feature diagram pass** — invoke `/mi-generate-implementation-diagrams`,
    which auto-detects the feature-test path (see that command's Step 1.4).

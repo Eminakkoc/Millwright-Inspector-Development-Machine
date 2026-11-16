@@ -541,6 +541,43 @@ else
   ng "$t" "mi-continue.md does not record the ordinary-feature invariant at the fork"
 fi
 
+# The entry never runs /mi-plan-implementation, which is where an ordinary
+# item goes PENDING -> IMPLEMENTING. Run the sequence's own line, then stage
+# 8's, against the fixture: the entry's item must end IMPLEMENTED.
+# run_line <sandbox> <var>=<value> <line> — one command line from a command
+# file, with the plugin root, data root and one shell variable set.
+run_line() {
+  printf '%s\n' "$3" > "$1/line.sh"
+  env MI_DATA_ROOT="$1" CLAUDE_PLUGIN_ROOT="$REPO_ROOT" "$2" bash "$1/line.sh" >/dev/null 2>&1
+}
+ft_item() { grep 'FT-001' "$(quest_dir "$1")/todo-list.md"; }
+
+start_line="$(grep -E 'todo\.sh" bulk-transition PENDING IMPLEMENTING --feature "\$ft_feature"' "$MI_CONT" \
+  | sed 's/^[[:space:]]*//' | head -1)"
+finish_line="$(grep -E 'todo\.sh" bulk-transition IMPLEMENTING IMPLEMENTED --feature "\$active_feature"' \
+  "$REPO_ROOT/commands/mi-complete-workflow.md" | sed 's/^[[:space:]]*//' | head -1)"
+
+t="mi-continue: the entry sequence moves its own item PENDING -> IMPLEMENTING"
+sandbox="$(make_quest)"; seed_todo "$sandbox"
+if [[ -n "$start_line" ]]; then
+  run_line "$sandbox" ft_feature=payments-feature-test "$start_line"
+fi
+if [[ "$(ft_item "$sandbox")" == "- [x] (emin) IMPLEMENTING — FT-001: test the whole feature implementation" ]]; then
+  ok "$t"
+else
+  ng "$t" "line: '${start_line:-<missing>}' — item: $(ft_item "$sandbox")"
+fi
+
+t="stage 8: the entry's item then ends IMPLEMENTED"
+if [[ -n "$finish_line" ]]; then
+  run_line "$sandbox" active_feature=payments-feature-test "$finish_line"
+fi
+if [[ "$(ft_item "$sandbox")" == "- [x] (emin) IMPLEMENTED — FT-001: test the whole feature implementation" ]]; then
+  ok "$t"
+else
+  ng "$t" "line: '${finish_line:-<missing>}' — item: $(ft_item "$sandbox")"
+fi
+
 # ---- Task 6 review fix (finding 1): review.sh init for a feature-test entry -
 
 # seed_history_requirements <sandbox> <feature> <id> — archived requirements.md
