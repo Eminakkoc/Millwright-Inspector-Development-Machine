@@ -391,9 +391,9 @@ Both review steps get findings back from a reviewer sub-agent, fix the trivial o
 
 **Check after every change.** After every change to `task.md` (an auto-fix, `apply` or `edit`), run Step 1's check block (item 3), then repair `task.md` and re-run it until it passes.
 
-**Auto-fix rule.** A finding whose severity is `low` and whose type is `bug` or `clarifying` is fixed without asking: apply it and record it as `auto-fixed`. If it no longer matches, record it as `skipped`, with "no longer applies" in its summary. Every other finding goes to the findings walkthrough: every `medium`, `high`, `critical` or `blocker` finding of any type, and every `expanding-mandatory` or `expanding-optional` finding at any severity.
+**Auto-fix rule.** A finding whose severity is `low` and whose type is `bug` or `clarifying` is fixed without asking: apply it and record it as `auto-fixed`. If it no longer matches, record it as `skipped`, with "no longer applies" in its summary. Every other finding goes to the findings walkthrough: every `medium`, `high`, `critical` or `blocker` finding of any type, and every `expanding-mandatory` or `expanding-optional` finding at any severity. Auto-fixes run **after** the walkthrough, so a wording fix never rewrites text that a finding the inspector still has to answer depends on. The reviewer puts such a wording fix into the bigger finding's edit too, so nothing is lost when the bigger finding is applied.
 
-**The record — `scriptorium/<topic>/findings.md`.** Step 3 creates it at the start of every iteration. Step 4's reviewer reads it so it raises no finding twice, and Step 5 reads it and the archived `v<N>/findings.md` copies. It has no frontmatter and no schema. Number the findings 1, 2, 3… across Steps 3 and 4 of the iteration: a finding takes the next free number when it is auto-fixed or when the walkthrough first presents it. Append each finding with the Edit tool as soon as it has an outcome:
+**The record — `scriptorium/<topic>/findings.md`.** Step 3 creates it at the start of every iteration. Step 4's reviewer reads it so it raises no finding twice, and Step 5 reads it and the archived `v<N>/findings.md` copies. It has no frontmatter and no schema. Number the findings 1, 2, 3… across Steps 3 and 4 of the iteration: a finding takes the next free number when it is auto-fixed or when the walkthrough first presents it. Append each finding with the Edit tool as soon as it has an outcome. For `auto-fixed`, `applied` and `edited`, the outcome exists only once every edit to `task.md` has succeeded. Write the record in a later step, never in the same set of parallel tool calls as the match check or an edit: a record written alongside a failed edit says the change happened when it did not.
 
 ```
 ### Finding <n> — <title>
@@ -429,7 +429,7 @@ Walks the inspector through a list of findings, one at a time. Every question he
    - **`skip`** — leave `task.md` unchanged.
    - **`edit`** — apply the inspector's own version to `task.md` with the Edit tool. A bare `edit` with no version asks "What's your version?", and the finding stays open until that version is applied.
    - **Anything else** — a question or comment. Answer it, then ask again for `apply`, `skip` or `edit`. Do not move on: the finding stays open until it gets one of the three answers.
-5. **Record and move on.** When an answer has taken effect, record the finding in `findings.md` (outcome `applied`, `skipped` or `edited`; for `edited`, the inspector's version). Then present the next finding in the same reply. After the last one, return to the step that started the walkthrough.
+5. **Record and move on.** When an answer has taken effect, record the finding in `findings.md` (outcome `applied`, `skipped` or `edited`; for `edited`, the inspector's version). For `applied` and `edited`, write the record only after every edit has succeeded (see *The record*). Then present the next finding in the same reply. After the last one, return to the step that started the walkthrough.
 
 ### Step 3 — Section review
 
@@ -464,8 +464,8 @@ For each `section:` line, in order:
    ```
 
    The reviewer reads `task.md` when it starts, so it sees every change made for earlier sections. If the spawn errors or the agent type is unavailable, say so and stop.
-3. **Auto-fix** the section's findings that the auto-fix rule covers, recording each with step `section`.
-4. **Walk through the rest** with the findings walkthrough, in the order the reviewer returned them. When nothing is left to walk through, say so in one line ("`<heading>` — <n> wording fix(es) applied, nothing to walk through.") and go to the next section without waiting.
+3. **Walk through** the section's findings that the auto-fix rule does not cover, with the findings walkthrough, in the order the reviewer returned them.
+4. **Then auto-fix** the rest, recording each with step `section`. When there was nothing to walk through, say so in one line ("`<heading>` — <n> wording fix(es) applied, nothing to walk through.") and go to the next section without waiting.
 
 When every section is done, go to Step 4.
 
@@ -498,8 +498,8 @@ echo "project: $(git rev-parse --show-toplevel 2>/dev/null || pwd)"
    ```
 
    If the spawn errors or the agent type is unavailable, say so and stop.
-2. **Auto-fix** the findings that the auto-fix rule covers, recording each with step `consistency`. Numbering continues after Step 3's findings.
-3. **Walk through the rest** with the findings walkthrough. When nothing is left to walk through, say so in one line.
+2. **Walk through** the findings that the auto-fix rule does not cover, with the findings walkthrough. Numbering continues after Step 3's findings.
+3. **Then auto-fix** the rest, recording each with step `consistency`. When there was nothing to walk through, say so in one line.
 4. **Empty iteration.** If `findings.md` still holds no `### Finding` record, append the line `No findings in this iteration.`
 
 Go to Step 5.

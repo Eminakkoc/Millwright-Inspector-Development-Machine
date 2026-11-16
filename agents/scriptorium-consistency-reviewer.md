@@ -39,6 +39,13 @@ Main applies the edits you return. There is one pass: no rounds, no follow-up.
    file in the Explanation.
 5. Report every problem you find, including `low` ones. Return the findings most
    severe first. No cap.
+6. One problem per finding. Never fold a wording slip into a bigger finding: a
+   `low` problem next to a bigger one is its own finding, so main can fix it
+   without asking.
+7. When a `low` `bug` or `clarifying` finding changes text that another of your
+   findings also changes, put the low fix into the other finding's `replace` as
+   well. Main walks the inspector through the other finding first and fixes the
+   low one afterwards, only if its text still matches.
 
 ## Finding taxonomy
 
