@@ -1,5 +1,34 @@
 # Changelog
 
+## 1.17.0 — Scriptorium: refine a topic before the cycle
+
+### `/mi-scriptorium` — a refined topic brief from raw inputs
+
+Drop a topic's raw material (meeting notes, transcripts, screenshots, PDFs) into `scriptorium/<topic>/` and run `/mi-scriptorium <topic>`. The millwright organizes it into one `task.md` with a Goal, Cross-cutting constraints, Out-of-scope and one `## Feature: <name>` section per feature.
+
+- `/mi-scriptorium <topic> --continue` runs another round. Each round moves the previous inputs, `task.md` and findings into a `v<N>/` folder, merges anything new, and reviews the brief again.
+- Each round reviews every section with a fresh read-only reviewer, then the whole file with a consistency reviewer. You are walked through each finding one at a time (`apply`, `skip` or `edit`); obvious wording fixes are applied for you afterwards. Every outcome is recorded in `findings.md`, and a problem you already answered is not raised again from another section.
+- A feature section with more than 7 separate requirements gets a suggestion to split it in two.
+- When you're done, the command publishes the brief to `journal/<name>/task.md`, ready for `/mi-run`. The topic folder stays, so you can refine and publish again later.
+
+### `/mi-run` keeps a published topic's features as named
+
+- A selected journal folder whose `task.md` was published by `/mi-scriptorium` gives the cycle exactly its features, with the same names in the same order.
+- Plain journal folders selected alongside it can add items or new features, but never rename, merge or split a scriptorium feature.
+- A name that clashes with an existing feature folder becomes `<name>-2` (the first free number), and the hand-off says so. Two selected topics declaring the same feature stop the run before anything is written.
+- With no published topic selected, `/mi-run` behaves exactly as before.
+
+### Setup and ingest
+
+- `/mi-init` creates `scriptorium/` beside `journal/`, `quest/` and `workflow-stream/`.
+- `/mi-ingest "scriptorium/<topic>"` converts a topic's non-text files. It skips the `v<N>/` archives, hidden folders and extracted `*.images/`, and refuses a `task.*` or `findings.*` at the top of the topic (their `.md` names belong to `/mi-scriptorium`). Quote the path when the topic name has a space.
+- `/mi-ingest` now offers to install docling only when a document (PDF, Word, slides, spreadsheet, HTML) is in scope. A folder of screenshots or whiteboard photos never meets the install prompt.
+
+### Fixes
+
+- `/mi-run`'s Step 2 duplicate check, Step 2.5 folder tally and PDF page count no longer break when you pass several folders. Claude Code replaces `$1`, `$2`… in a command's text with your arguments, `awk` programs included; they now read fields as `$(NF-1)` / `$NF`.
+- The cycle's feature-test item now ends `IMPLEMENTED`. The entry sequence never ran the step that moves an item to `IMPLEMENTING`, so completion found nothing to finish and the item stayed `PENDING`.
+
 ## 1.16.0 — The millwright suggests the planning mode
 
 - At stage 3 the millwright judges the feature's size (item and Goals count, seams and files touched, contract changes, regression risks, open design decisions) and names a suggested planning mode in the prompt. Reply `ok` to keep it, or `brainstorming` / `direct` to override.
