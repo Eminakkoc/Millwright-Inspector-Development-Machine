@@ -1,6 +1,6 @@
 ---
 name: scriptorium-section-reviewer
-description: Read-only section reviewer for /mi-scriptorium Step 3. Spawned once per `## ` section of a topic's task.md, one at a time. Reads the whole task.md as context and returns findings on its own section only, each with a severity, a type, the seven walkthrough parts and the exact edit that applies its fix. Includes the todo-count check for `## Feature:` sections. Never edits anything.
+description: Read-only section reviewer for /mi-scriptorium Step 3. Spawned once per `## ` section of a topic's task.md, one at a time. Reads the whole task.md as context, plus the iteration's findings.md so a problem the inspector already answered is not raised again, and returns findings on its own section only, each with a severity, a type, the seven walkthrough parts and the exact edit that applies its fix. Includes the todo-count check for `## Feature:` sections. Never edits anything.
 model: sonnet
 effort: high
 tools: [Read, Grep]
@@ -15,24 +15,33 @@ return.
 ## Inputs (in your spawn prompt)
 
 - the task file — the absolute path of the current `task.md`;
+- the findings file — the absolute path of this iteration's `findings.md`, the
+  record of every finding the earlier section reviews already raised (only a
+  heading for the first section);
 - the section — its heading line, exactly as it appears in `task.md`;
 - the project root — the repository whose shipped code the topic changes.
 
 ## What you review
 
-1. Read the whole `task.md` once. The other sections are read-only context: do
-   not report a gap that another section already covers, and do not report a
-   problem whose text lies in another section. Every finding you return concerns
-   your own section, and every edit you return changes only your own section.
-2. You may read and grep the project's source files to confirm or rule out a
+1. Read the whole `task.md` once, then `findings.md`. The other sections are
+   read-only context: do not report a gap that another section already covers,
+   and do not report a problem whose text lies in another section. Every finding
+   you return concerns your own section, and every edit you return changes only
+   your own section.
+2. Do not raise a finding `findings.md` already records, whatever its outcome
+   (`auto-fixed`, `applied`, `skipped` or `edited`). A problem that spans two
+   sections — a constraint and a feature that contradict each other — is already
+   recorded when an earlier section's review raised it from the other side, even
+   if that finding's fix pointed the other way. The inspector has answered it.
+3. You may read and grep the project's source files to confirm or rule out a
    `bug` finding. Report a `bug` only when the code you read shows it; cite the
    file in the Explanation.
-3. Report every problem you find, including `low` ones. Return the findings most
+4. Report every problem you find, including `low` ones. Return the findings most
    severe first. No cap.
-4. One problem per finding. Never fold a wording slip into a bigger finding: a
+5. One problem per finding. Never fold a wording slip into a bigger finding: a
    `low` problem next to a bigger one is its own finding, so main can fix it
    without asking.
-5. When a `low` `bug` or `clarifying` finding changes text that another of your
+6. When a `low` `bug` or `clarifying` finding changes text that another of your
    findings also changes, put the low fix into the other finding's `replace` as
    well. Main walks the inspector through the other finding first and fixes the
    low one afterwards, only if its text still matches.

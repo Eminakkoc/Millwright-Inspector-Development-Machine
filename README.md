@@ -121,7 +121,7 @@ These exist for non-happy-path situations; you don't need them in the normal flo
 
 | Command | When you'd use it |
 | --- | --- |
-| `/mi-ingest <folder>` / `scriptorium/<topic>` / `--file <path>` | Convert non-text journal files (PDF, DOCX, PPTX, XLSX, HTML, images) into sibling `.md` — or a scriptorium topic's, skipping its `v<N>/` archives and `.scratch/`. Skip if your journal only ever contains `.md` and `.txt`. |
+| `/mi-ingest <folder>` / `scriptorium/<topic>` / `--file <path>` | Convert non-text journal files (PDF, DOCX, PPTX, XLSX, HTML, images) into sibling `.md` — or a scriptorium topic's, skipping its `v<N>/` archives and hidden folders. Images need no docling. Skip if your journal only ever contains `.md` and `.txt`. |
 | `/mi-scriptorium <topic>` / `--continue` | Optional, before `/mi-run`: organize the raw notes in `scriptorium/<topic>/` into one `task.md`, refine it over review rounds, and publish it to `journal/<topic>/`. |
 | `/mi-doctor` | Detailed dependency check with per-dep prompts. (Auto-invoked by `/mi-run` preflight.) |
 | `/mi-draw-diagrams` | Manually re-render implementation diagrams. (Auto-fired during stage 4; manual is for recovery.) |

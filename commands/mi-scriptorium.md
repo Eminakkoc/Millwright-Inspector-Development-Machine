@@ -191,9 +191,11 @@ Rows are `input\t<bytes>\t<path>` and `needs-ingest\t<path>`, with paths relativ
 
 **Non-text check.** Any `needs-ingest` row stops the step **before anything is written, copied or moved**:
 
-> "These files need converting to text first: `<path>`, …. Run `/mi-ingest scriptorium/<topic>`, then run `/mi-scriptorium <topic>` again."
+> "These files need converting to text first: `<path>`, …. Run `/mi-ingest "scriptorium/<topic>"`, then run `/mi-scriptorium <topic>` again."
 
-At Step 2, say `/mi-scriptorium <topic> --continue` instead.
+At Step 2, say `/mi-scriptorium <topic> --continue` instead. Keep the quotes around `scriptorium/<topic>`: `/mi-ingest` passes its arguments to the shell unquoted, so a topic name with a space would otherwise arrive as two arguments.
+
+A `task.<ext>` or `findings.<ext>` directly in the topic folder would convert to a name the command reserves, so `/mi-ingest` refuses it. When one is listed, add: "Rename `<path>` first (for example `<stem>-board.<ext>`) — its text version would be called `task.md` or `findings.md`, which this command writes itself."
 
 **Size policy.** These are the thresholds of `/mi-run` Step 2.5, applied to the topic folder (KB means 1000 bytes; byte counts come from `wc -c`):
 
@@ -393,7 +395,7 @@ Both review steps get findings back from a reviewer sub-agent, fix the trivial o
 
 **Auto-fix rule.** A finding whose severity is `low` and whose type is `bug` or `clarifying` is fixed without asking: apply it and record it as `auto-fixed`. If it no longer matches, record it as `skipped`, with "no longer applies" in its summary. Every other finding goes to the findings walkthrough: every `medium`, `high`, `critical` or `blocker` finding of any type, and every `expanding-mandatory` or `expanding-optional` finding at any severity. Auto-fixes run **after** the walkthrough, so a wording fix never rewrites text that a finding the inspector still has to answer depends on. The reviewer puts such a wording fix into the bigger finding's edit too, so nothing is lost when the bigger finding is applied.
 
-**The record — `scriptorium/<topic>/findings.md`.** Step 3 creates it at the start of every iteration. Step 4's reviewer reads it so it raises no finding twice, and Step 5 reads it and the archived `v<N>/findings.md` copies. It has no frontmatter and no schema. Number the findings 1, 2, 3… across Steps 3 and 4 of the iteration: a finding takes the next free number when it is auto-fixed or when the walkthrough first presents it. Append each finding with the Edit tool as soon as it has an outcome. For `auto-fixed`, `applied` and `edited`, the outcome exists only once every edit to `task.md` has succeeded. Write the record in a later step, never in the same set of parallel tool calls as the match check or an edit: a record written alongside a failed edit says the change happened when it did not.
+**The record — `scriptorium/<topic>/findings.md`.** Step 3 creates it at the start of every iteration. Every section reviewer after the first, and Step 4's reviewer, read it so no finding is raised twice, and Step 5 reads it and the archived `v<N>/findings.md` copies. It has no frontmatter and no schema. Number the findings 1, 2, 3… across Steps 3 and 4 of the iteration: a finding takes the next free number when it is auto-fixed or when the walkthrough first presents it. Append each finding with the Edit tool as soon as it has an outcome. For `auto-fixed`, `applied` and `edited`, the outcome exists only once every edit to `task.md` has succeeded. Write the record in a later step, never in the same set of parallel tool calls as the match check or an edit: a record written alongside a failed edit says the change happened when it did not.
 
 ```
 ### Finding <n> — <title>
@@ -440,6 +442,7 @@ data_root="$("$CLAUDE_PLUGIN_ROOT/scripts/data-root.sh")"
 topic_dir="$data_root/scriptorium/<topic>"
 printf '# Review findings — iteration %s\n' "<N>" > "$topic_dir/findings.md" || exit 1
 echo "task: $topic_dir/task.md"
+echo "findings: $topic_dir/findings.md"
 echo "project: $(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 awk '/^[[:space:]]*```/ { inside = !inside; next } !inside && /^## / { printf "section: "; print }' "$topic_dir/task.md"
 ```
@@ -454,16 +457,18 @@ For each `section:` line, in order:
    ```
    Review one section of the scriptorium topic "<topic>" (iteration <N>).
 
-   Task file:    <the printed task: path>
-   Section:      <the heading line, exactly>
-   Project root: <the printed project: path>
+   Task file:     <the printed task: path>
+   Findings file: <the printed findings: path>
+   Section:       <the heading line, exactly>
+   Project root:  <the printed project: path>
 
    Follow agents/scriptorium-section-reviewer.md: read the whole task file as
-   context, report findings on this section only, LOW included. Your whole
-   final reply is the return contract — Findings: <count>, then ### F-n blocks.
+   context, report findings on this section only, LOW included, nothing the
+   findings file already records. Your whole final reply is the return
+   contract — Findings: <count>, then ### F-n blocks.
    ```
 
-   The reviewer reads `task.md` when it starts, so it sees every change made for earlier sections. If the spawn errors or the agent type is unavailable, say so and stop.
+   The reviewer reads `task.md` and `findings.md` when it starts, so it sees every change made and every answer given for earlier sections. A problem that spans two sections is therefore raised once: after the inspector answers it from one side, the other side's reviewer finds it recorded. If the spawn errors or the agent type is unavailable, say so and stop.
 3. **Walk through** the section's findings that the auto-fix rule does not cover, with the findings walkthrough, in the order the reviewer returned them.
 4. **Then auto-fix** the rest, recording each with step `section`. When there was nothing to walk through, say so in one line ("`<heading>` — <n> wording fix(es) applied, nothing to walk through.") and go to the next section without waiting.
 
@@ -586,10 +591,10 @@ Copies the working `task.md` to `<data_root>/journal/<name>/task.md`, the input 
            printf '%s\n' "$names"
          fi
        done \
-     | sed 's/^[[:space:]]*//; s/[[:space:]]*$//; /^$/d' | LC_ALL=C sort -u
+     | sed 's/^[[:space:]]*//; s/[[:space:]]*$//; /^$/d; /^docling$/d' | LC_ALL=C sort -u
    ```
 
-   The printed names, one per line, are the union. When nothing is printed, ask the inspector once: "None of the archived input files lists its contributors. Who contributed to `<topic>`? (names, comma-separated)". Use their answer, one name per line.
+   The printed names, one per line, are the union. `docling` is left out: `/mi-ingest` writes it into every file it converts as a placeholder, not a person. When nothing is printed, ask the inspector once: "None of the archived input files lists its contributors. Who contributed to `<topic>`? (names, comma-separated)". Use their answer, one name per line.
 
 2. **Publish.** Substitute the journal folder name and the contributor names (one per line). The block refuses to write into a folder that is not an earlier publish of a scriptorium topic:
 

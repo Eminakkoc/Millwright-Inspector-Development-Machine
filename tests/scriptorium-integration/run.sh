@@ -57,6 +57,15 @@ else
   ng "$t" "no bash fence after **Scriptorium \`task.md\` detection.** in commands/mi-run.md"
 fi
 
+# A skill's text has $<digit> replaced by the command's arguments before it
+# runs, awk programs included, so `/mi-run a b` would turn $1 into "b".
+t="mi-run: the detection fence uses no \$<digit> field reference"
+if printf '%s\n' "$fence" | grep -q '\$[0-9]'; then
+  ng "$t" "found: $(printf '%s\n' "$fence" | grep '\$[0-9]')"
+else
+  ok "$t"
+fi
+
 dr="$(new_sandbox)"
 published "$dr/journal/payments/task.md" stripe-webhooks 'refunds  '
 published "$dr/journal/payments/sub/task.md" nested-is-ignored
@@ -157,6 +166,9 @@ for f in scriptorium/payments/contract.pdf scriptorium/payments/shot.png \
          scriptorium/payments/notes/n.docx scriptorium/payments/v2-notes/keep.pdf \
          scriptorium/payments/v1/old.docx scriptorium/payments/v12/z.pdf \
          scriptorium/payments/.scratch/s.pdf scriptorium/payments/contract.images/p.png \
+         scriptorium/payments/.drafts/old.pdf scriptorium/payments/.hidden.png \
+         scriptorium/reserved/Task.png scriptorium/reserved/findings.pdf \
+         scriptorium/reserved/board.png scriptorium/reserved/sub/task.png \
          journal/specs/a.pdf journal/scriptorium/j.pdf; do
   mkdir -p "$idr/$(dirname "$f")"
   : > "$idr/$f"
@@ -175,8 +187,20 @@ else
   ng "$t" "got: $out"
 fi
 
-t="ingest: a topic scan skips v<N>/, .scratch/ and *.images/"
-if [[ "$out" != *"v1/"* && "$out" != *"v12/"* && "$out" != *".scratch/"* && "$out" != *".images/"* ]]; then
+t="ingest: a topic scan skips v<N>/, hidden entries and *.images/"
+if [[ "$out" != *"v1/"* && "$out" != *"v12/"* && "$out" != *".scratch/"* && "$out" != *".images/"* \
+   && "$out" != *".drafts/"* && "$out" != *".hidden.png"* ]]; then
+  ok "$t"
+else
+  ng "$t" "got: $out"
+fi
+
+t="ingest: a top-level task.* / findings.* in a topic is refused, nothing else is"
+out="$(ingest scriptorium/reserved --dry-run)"
+if [[ "$out" == *"reserved/Task.png would convert to task.md"* \
+   && "$out" == *"reserved/findings.pdf would convert to findings.md"* \
+   && "$out" == *"would stub: reserved/board.png"* && "$out" == *"would stub: reserved/sub/task.png"* \
+   && "$out" == *"failed=2"* ]]; then
   ok "$t"
 else
   ng "$t" "got: $out"

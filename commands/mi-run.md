@@ -134,7 +134,7 @@ If the un-ingested set is empty, proceed to the next paragraph. Otherwise run th
    **Determining PDF page count.** Use `pdfinfo` (from poppler-utils, typically present on any machine that has PDF tooling):
 
    ```bash
-   pages=$(pdfinfo "$file" 2>/dev/null | awk '/^Pages:/ {print $2}')
+   pages=$(pdfinfo "$file" 2>/dev/null | awk '/^Pages:/ {print $NF}')
    ```
 
    If `pdfinfo` is missing or returns empty, fall back to "page count unknown" and let the inspector decide.
@@ -274,8 +274,10 @@ sc_rows="$(
   done
 )"
 printf '%s\n' "$sc_rows"
-printf '%s\n' "$sc_rows" | awk -F'\t' 'NF == 2 {
-  if ($1 in from) print "duplicate: " $1 " in " from[$1] " and " $2; else from[$1] = $2 }'
+# Fields as $(NF-1) / $NF: a skill's text has $<digit> replaced by the
+# command's arguments before it runs, even inside awk.
+printf '%s\n' "$sc_rows" | awk -F'\t' 'NF == 2 { name = $(NF-1); file = $NF
+  if (name in from) print "duplicate: " name " in " from[name] " and " file; else from[name] = file }'
 ```
 
 Each row is `<feature>\t<folder>/task.md`.
@@ -316,12 +318,13 @@ On `proceed`, follow the per-file summarization plan: spawn one fresh sub-agent 
 
 ```bash
 # awk does the per-folder tally: bash 3.2 (macOS) has no associative arrays,
-# and zsh spells their keys differently.
+# and zsh spells their keys differently. Fields as $(NF-1) / $NF, as in
+# Step 2's duplicate check.
 oversize_folders="$(
   for f in "${files[@]}"; do
     rel="${f#"$data_root"/journal/}"
     printf '%s\t%s\n' "${rel%%/*}" "$(wc -c <"$f" | tr -d ' ')"
-  done | awk -F'\t' '{ n[$1]++; b[$1] += $2 }
+  done | awk -F'\t' '{ n[$(NF-1)]++; b[$(NF-1)] += $NF }
     END { for (d in n) if (n[d] > 5 && b[d] > 40000) print d }' | sort
 )"
 printf '%s\n' "$oversize_folders"

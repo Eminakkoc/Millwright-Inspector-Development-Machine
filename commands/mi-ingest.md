@@ -72,7 +72,7 @@ journal/specs/
 - `/mi-ingest <folder>` — process just one subfolder (matches `/mi-run`'s argument style).
 - `/mi-ingest <folder> --dry-run` — list what would be converted without writing.
 - `/mi-ingest <folder> --force` — re-convert even if a sibling `.md` is newer than its source.
-- `/mi-ingest scriptorium/<topic>` — process one scriptorium topic folder (also takes `--dry-run` / `--force`). Only an argument that starts with `scriptorium/` means a topic; every other argument is a journal subfolder, so a journal folder named `scriptorium` is still reached by its bare name (`/mi-ingest scriptorium`), and a journal path under it as `./scriptorium/<sub>`. A topic scan skips its `v<N>/` archives and `.scratch/` folder as well as `*.images/`. A bare `/mi-ingest` never scans `scriptorium/`.
+- `/mi-ingest scriptorium/<topic>` — process one scriptorium topic folder (also takes `--dry-run` / `--force`). Only an argument that starts with `scriptorium/` means a topic; every other argument is a journal subfolder, so a journal folder named `scriptorium` is still reached by its bare name (`/mi-ingest scriptorium`), and a journal path under it as `./scriptorium/<sub>`. Quote it when the topic name has a space — `/mi-ingest "scriptorium/my topic"` — because the arguments reach the shell unquoted. A topic scan skips its `v<N>/` archives and hidden entries (such as `.scratch/`) as well as `*.images/`, the same files `/mi-scriptorium` leaves out. It refuses a `task.<ext>` or `findings.<ext>` directly in the topic folder: their `.md` names belong to `/mi-scriptorium`, so rename the file first. A bare `/mi-ingest` never scans `scriptorium/`.
 
 **Single-file mode** (fine-grained — used internally by `/mi-run`'s per-file decision flow, also available for manual use):
 
@@ -81,28 +81,30 @@ journal/specs/
 
 ## Preconditions
 
-- `docling` on PATH — if missing, Step 1 offers to install it with full cost disclosure (ML deps are ~1–2 GB). `/mi-doctor` also reports it as an optional dep.
+- `docling` on PATH when a document (`.pdf .docx .pptx .xlsx .html`) is in scope — if missing, Step 1 offers to install it with full cost disclosure (ML deps are ~1–2 GB). Images alone never need it. `/mi-doctor` also reports it as an optional dep.
 - `journal/` exists (created by `/mi-init`) — or, for `scriptorium/<topic>`, that topic folder exists under `scriptorium/`.
 
 ## Execution
 
 ### Step 1 — Preflight with informed-install prompt
 
-Check whether docling is on PATH:
+Check whether docling is on PATH, and when it is not, whether anything in scope needs it. Only documents do: images get a stub without docling. A dry run of the same arguments stops at the first document when docling is missing, so its message answers the question:
 
 ```bash
 if command -v docling >/dev/null 2>&1; then
-  docling_present=1
+  echo "docling: present"
+elif "$CLAUDE_PLUGIN_ROOT/scripts/ingest.sh" $ARGUMENTS --dry-run 2>&1 | grep -q 'docling not found on PATH'; then
+  echo "docling: needed"
 else
-  docling_present=0
+  echo "docling: not needed"
 fi
 ```
 
-If `docling_present=1`, skip to Step 2.
+On `docling: present` or `docling: not needed`, skip to Step 2. A folder of screenshots or whiteboard photos takes the second path and never meets the install prompt.
 
-If `docling_present=0`, **do not silently halt** — offer to install, with full disclosure of the cost. Show the inspector:
+On `docling: needed`, **do not silently halt** — offer to install, with full disclosure of the cost. Show the inspector:
 
-> "`docling` is not installed. It's required to convert non-text journal files (PDF/DOCX/PPTX/XLSX/images) into sibling `.md` files.
+> "`docling` is not installed. It's required to convert the documents in scope (PDF/DOCX/PPTX/XLSX/HTML) into sibling `.md` files. Images don't need it — they get a stub either way.
 >
 > **Install cost disclosure** — docling pulls ML dependencies: torch, transformers, pillow, and an OCR engine (easyocr or tesseract). Expect roughly **1–2 GB of disk** and a few minutes of download time. The first conversion may additionally download **~200–400 MB of model weights** from Hugging Face, cached under `~/.cache/huggingface/`.
 >
@@ -159,7 +161,7 @@ Pass through the inspector's arguments verbatim:
 The script:
 
 1. Resolves the data root via `mi_data_root` (same precedence as every other `/mi-*` command).
-2. Enumerates supported files in scope, **excluding any `*.images/` subfolder** so that PNGs docling extracted from PDFs on a previous run aren't picked up as new inputs. For a scriptorium topic it also skips the `v<N>/` archives and `.scratch/`, and shows paths relative to `scriptorium/`.
+2. Enumerates supported files in scope, **excluding any `*.images/` subfolder** so that PNGs docling extracted from PDFs on a previous run aren't picked up as new inputs. For a scriptorium topic it also skips the `v<N>/` archives and hidden entries, refuses a top-level `task.*` / `findings.*`, and shows paths relative to `scriptorium/`.
 3. Dispatches each file to the right handler:
    - Documents → `docling --to md --image-export-mode referenced --output <tmpdir> <src>`, then moves extracted PNGs into `<stem>.images/` and rewrites references in the produced `.md`.
    - Standalone images → stub `.md` generation only, no docling call.

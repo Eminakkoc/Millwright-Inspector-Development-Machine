@@ -42,8 +42,10 @@
 # An argument starting with scriptorium/ names a topic under the data
 # root's scriptorium/; every other argument is journal-relative, so a
 # journal folder named scriptorium is still reached by its bare name.
-# A topic scan also skips its v<N>/ archives and .scratch/ folder, and
-# shows paths relative to scriptorium/. A bare run scans journal/ only.
+# A topic scan also skips its v<N>/ archives and hidden entries (such as
+# .scratch/), refuses a top-level task.* or findings.* (their .md names
+# are reserved), and shows paths relative to scriptorium/. A bare run
+# scans journal/ only.
 #
 # Idempotency: an up-to-date sibling .md is skipped unless --force is
 # passed. When --force re-processes a document, its <stem>.images/
@@ -384,12 +386,14 @@ sources=()
 for folder in "${folders[@]}"; do
   for ext in "${doc_exts[@]}" "${img_exts[@]}"; do
     if (( topic )); then
-      # Prune *.images/, .scratch/ and v<N>/ (digits only, so v2-notes/ is scanned).
+      # Prune *.images/, hidden folders (.scratch/ and any other) and v<N>/
+      # (digits only, so v2-notes/ is scanned); skip hidden files. That is
+      # /mi-scriptorium's input scan, so nothing it never reads is converted.
       while IFS= read -r -d '' src; do
         sources+=("$src")
       done < <(find "$folder" -mindepth 1 -type d \
-                 \( -name '*.images' -o -name '.scratch' -o \( -name 'v[0-9]*' ! -name 'v*[!0-9]*' \) \) \
-                 -prune -o -type f -iname "*.${ext}" -print0)
+                 \( -name '*.images' -o -name '.*' -o \( -name 'v[0-9]*' ! -name 'v*[!0-9]*' \) \) \
+                 -prune -o -type f ! -name '.*' -iname "*.${ext}" -print0)
     else
       while IFS= read -r -d '' src; do
         sources+=("$src")
@@ -402,6 +406,18 @@ done
 # unbound under set -u, which crashed a folder with no supported files.
 if (( ${#sources[@]} > 0 )); then
   for src in "${sources[@]}"; do
+    # A topic's top-level task.md and findings.md are /mi-scriptorium's own
+    # files: converting task.png there would write one, which the command
+    # then asks to rename, leaving task.png unconverted again.
+    if (( topic )) && [[ "${src%/*}" == "$root/$folder_arg" ]]; then
+      stem="$(basename "${src%.*}" | tr '[:upper:]' '[:lower:]')"
+      if [[ "$stem" == task || "$stem" == findings ]]; then
+        mi_info "error: ${src#"$root"/} would convert to $stem.md, which /mi-scriptorium reserves — rename it first"
+        failed=$((failed + 1))
+        failed_paths+=("${src#"$root"/}")
+        continue
+      fi
+    fi
     dispatch_by_extension "$src" || true
   done
 fi
