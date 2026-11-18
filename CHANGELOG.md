@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.17.1 — Scriptorium review fixes
+
+Fixes from the scriptorium test runs.
+
+- **One answer settles a contradiction.** When two sections of `task.md` contradict each other, the section review's fix now edits both of them. Before, it changed only the reviewed section, so the consistency review raised the same contradiction a second time.
+- **Skipped stays skipped.** Reviewers now also read the earlier rounds' archived `v<N>/findings.md`. A finding you skipped in an earlier round isn't raised again, unless the text it was about has changed since.
+- **One rename question at a time.** When your own `task.md` and `findings.md` both need new names, `/mi-scriptorium` now asks about one file per reply and doesn't make up default names.
+- **Readable names.** `frontmatter.sh set` now writes letters such as "ë" as they are, so a published topic's contributors read "Zoë", not `"Zo\xEB"`.
+- **Placeholder wording.** The placeholder `/mi-ingest` writes next to an image or a directly-read PDF no longer calls itself a journal entry read at stage 1 or 2. It now fits scriptorium topics too.
+- **Full `--help`.** `ingest.sh --help` prints its whole comment header again. 1.17.0 grew the header past the fixed line range, which cut off the Idempotency paragraph.
+- **Reviewer rules match practice.** A reviewer's edit may now match part of a line, as long as the text appears exactly once in the file. Findings may be recorded with any tool, not only Edit.
+
 ## 1.17.0 — Scriptorium: refine a topic before the cycle
 
 ### `/mi-scriptorium` — a refined topic brief from raw inputs
