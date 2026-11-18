@@ -316,7 +316,8 @@ mi_fm_set() {
   local file="$1" field="$2" value="$3"
   local tmp
   tmp="$(mktemp)"
-  # Split frontmatter from body, edit frontmatter, restitch.
+  # Split frontmatter from body, edit frontmatter, restitch. Non-ASCII
+  # letters stay as they are rather than becoming YAML escapes.
   mi_py - "$file" "$field" "$value" <<'PYEOF' > "$tmp"
 import sys, re, yaml
 path, field, value = sys.argv[1], sys.argv[2], sys.argv[3]
@@ -334,7 +335,7 @@ except yaml.YAMLError:
     parsed = value
 fm[field] = parsed
 print('---')
-print(yaml.safe_dump(fm, default_flow_style=False, sort_keys=False).rstrip())
+print(yaml.safe_dump(fm, default_flow_style=False, sort_keys=False, allow_unicode=True).rstrip())
 print('---')
 print(m.group(2), end='')
 PYEOF

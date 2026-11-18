@@ -230,6 +230,41 @@ else
   ng "$t" "last line: $(printf '%s\n' "$out" | tail -1)"
 fi
 
+# ---- review rounds: reviewers get every archived findings.md --------------
+# A finding skipped in an earlier iteration stays skipped only if the
+# reviewers see the archived v<N>/findings.md files. v2-notes/ is an
+# inspector folder, not an archive; v1/ has no findings.md.
+
+sdr="$(new_sandbox)/millwright-inspector"
+topic="$sdr/scriptorium/pay ments"
+mkdir -p "$topic/v1" "$topic/v2" "$topic/v10" "$topic/v2-notes"
+printf '# Review findings — iteration 1\n' > "$topic/v2/findings.md"
+printf '# Review findings — iteration 9\n' > "$topic/v10/findings.md"
+printf 'not an archive\n' > "$topic/v2-notes/findings.md"
+published "$topic/task.md" refunds
+want="$(printf 'archived: %s\narchived: %s' "$topic/v10/findings.md" "$topic/v2/findings.md")"
+for step in 'Step 3 — Section review' 'Step 4 — Consistency review'; do
+  t="mi-scriptorium: the ${step%% —*} fence lists every archived v<N>/findings.md, nothing else"
+  fence="$(awk -v h="### $step" '$0 == h {f=1} f&&/^```bash$/{c=1;next} c&&/^```$/{exit} c' "$REPO_ROOT/commands/mi-scriptorium.md")"
+  printf '%s\n' "$fence" | sed -e 's|<topic>|pay ments|g' -e 's|<N>|11|g' > "$(dirname "$sdr")/review.sh"
+  got="$(cd "$(dirname "$sdr")" && env MI_DATA_ROOT="$sdr" CLAUDE_PLUGIN_ROOT="$REPO_ROOT" bash ./review.sh 2>/dev/null | grep '^archived: ' || true)"
+  if [[ -n "$fence" && "$got" == "$want" ]]; then ok "$t"; else ng "$t" "got: ${got:-<nothing>}"; fi
+done
+
+# ---- frontmatter: published contributors stay readable --------------------
+
+t="frontmatter: set writes non-ASCII contributors as letters, not YAML escapes"
+zoe="Zo$(printf '\xc3\xab')"
+f="$(new_sandbox)/task.md"
+printf -- '---\nsource: scriptorium\n---\n\nBody.\n' > "$f"
+"$REPO_ROOT/scripts/frontmatter.sh" set "$f" contributors "[\"emin\",\"$zoe\"]" 2>/dev/null
+back="$("$REPO_ROOT/scripts/frontmatter.sh" get "$f" 'contributors[]' 2>/dev/null | tail -1)"
+if grep -qx -- "- $zoe" "$f" && ! grep -q '\\x' "$f" && [[ "$back" == "$zoe" ]]; then
+  ok "$t"
+else
+  ng "$t" "frontmatter: $(sed -n 2,5p "$f" | tr '\n' ' ') / read back: $back"
+fi
+
 echo
 echo "scriptorium-integration: $pass passed, $fail failed"
 [[ "$fail" -eq 0 ]]

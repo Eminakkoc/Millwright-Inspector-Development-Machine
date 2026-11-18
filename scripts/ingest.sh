@@ -283,7 +283,7 @@ and diagrams), so it is deliberately skipped here.
 
 ![]($src_basename)
 
-When processing this journal entry during stage 1 or stage 2, the
+When this file is read as input (by /mi-run or /mi-scriptorium), the
 millwright will open the image file and extract whatever labels,
 values, diagram structure, or visual context are relevant to the
 active feature.
@@ -303,7 +303,7 @@ preprocessing overhead isn't justified.
 
 Original file: \`$src_basename\`
 
-When processing this journal entry during stage 1 or stage 2, the
+When this file is read as input (by /mi-run or /mi-scriptorium), the
 millwright should open \`$src_basename\` directly via the \`Read\` tool
 and extract whatever is relevant to the active feature. For PDFs over
 20 pages, use the \`pages\` parameter to chunk (\`pages: "1-20"\`,

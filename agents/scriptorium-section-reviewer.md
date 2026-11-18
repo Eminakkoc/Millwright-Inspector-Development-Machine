@@ -1,6 +1,6 @@
 ---
 name: scriptorium-section-reviewer
-description: Read-only section reviewer for /mi-scriptorium Step 3. Spawned once per `## ` section of a topic's task.md, one at a time. Reads the whole task.md as context, plus the iteration's findings.md so a problem the inspector already answered is not raised again, and returns findings on its own section only, each with a severity, a type, the seven walkthrough parts and the exact edit that applies its fix. Includes the todo-count check for `## Feature:` sections. Never edits anything.
+description: Read-only section reviewer for /mi-scriptorium Step 3. Spawned once per `## ` section of a topic's task.md, one at a time. Reads the whole task.md as context, plus the iteration's findings.md so a problem the inspector already answered is not raised again (and earlier iterations' archived findings.md, so a skipped finding stays skipped), and returns findings on its own section only, each with a severity, a type, the seven walkthrough parts and the exact edit that applies its fix. Includes the todo-count check for `## Feature:` sections. Never edits anything.
 model: sonnet
 effort: high
 tools: [Read, Grep]
@@ -18,6 +18,8 @@ return.
 - the findings file — the absolute path of this iteration's `findings.md`, the
   record of every finding the earlier section reviews already raised (only a
   heading for the first section);
+- the archived findings files — the absolute paths of every earlier
+  iteration's `v<N>/findings.md` (none in iteration 1);
 - the section — its heading line, exactly as it appears in `task.md`;
 - the project root — the repository whose shipped code the topic changes.
 
@@ -27,12 +29,18 @@ return.
    read-only context: do not report a gap that another section already covers,
    and do not report a problem whose text lies in another section. Every finding
    you return concerns your own section, and every edit you return changes only
-   your own section.
+   your own section — except a contradiction with another section: its fix also
+   edits that section's conflicting text, so one answer settles both sides.
 2. Do not raise a finding `findings.md` already records, whatever its outcome
    (`auto-fixed`, `applied`, `skipped` or `edited`). A problem that spans two
    sections — a constraint and a feature that contradict each other — is already
    recorded when an earlier section's review raised it from the other side, even
    if that finding's fix pointed the other way. The inspector has answered it.
+   Also read every archived findings file in your spawn prompt (earlier
+   iterations' `v<N>/findings.md`). Do not raise a finding one of them records
+   as `skipped` — same section and the same problem — unless the text it was
+   about reads differently in the current `task.md` than in the `task.md`
+   archived beside that findings file.
 3. You may read and grep the project's source files to confirm or rule out a
    `bug` finding. Report a `bug` only when the code you read shows it; cite the
    file in the Explanation.
@@ -121,8 +129,8 @@ Every finding carries one or more edits that apply its suggested fix to
 `task.md`, as `find-<k>` / `replace-<k>` pairs numbered from 1. Main applies them
 in order with an exact-match replace:
 
-- `find-<k>` is text copied exactly from the current `task.md` (whole lines,
-  blank lines and indentation included) that occurs exactly once in the file.
+- `find-<k>` is text copied exactly from the current `task.md` (blank lines
+  and indentation included) that occurs exactly once in the file.
 - `replace-<k>` is what that text becomes. For an `expanding-*` finding, `find`
   is the existing line the missing point goes after, and `replace` is that line
   followed by the new text. An empty `replace` deletes the found text.
@@ -140,7 +148,8 @@ fields directly. `Findings: 0` with no blocks is a valid reply.
 Findings: <count>
 
 ### F-1
-- sections: <your section's heading line, exactly>
+- sections: <your section's heading line, exactly; for a contradiction whose fix
+    also edits another section, both heading lines, separated by " · ">
 - severity: blocker | critical | high | medium | low
 - type: bug | clarifying | expanding-mandatory | expanding-optional
 - text: |
