@@ -77,7 +77,9 @@ while [[ $# -gt 0 ]]; do
       shift 2
       ;;
     -h|--help)
-      sed -n '2,50p' "$0"
+      # The comment header, however long it grows: line 2 up to the first
+      # line that is not a comment.
+      awk 'NR == 1 { next } /^#/ { print; next } { exit }' "$0"
       exit 0
       ;;
     --*)

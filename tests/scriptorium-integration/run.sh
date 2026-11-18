@@ -222,6 +222,14 @@ t="ingest: a folder with no supported files prints the summary line (bash 3.2 em
 out="$(ingest scriptorium/empty --dry-run)"
 if [[ "$out" == *"converted=0  skipped=0  failed=0"* ]]; then ok "$t"; else ng "$t" "got: $out"; fi
 
+t="ingest: --help prints the whole comment header, topic form included"
+out="$("$REPO_ROOT/scripts/ingest.sh" --help 2>&1)"
+if [[ "$out" == *"ingest.sh scriptorium/<topic>"* && "$(printf '%s\n' "$out" | tail -1)" == "# subfolder is cleared first." ]]; then
+  ok "$t"
+else
+  ng "$t" "last line: $(printf '%s\n' "$out" | tail -1)"
+fi
+
 echo
 echo "scriptorium-integration: $pass passed, $fail failed"
 [[ "$fail" -eq 0 ]]
